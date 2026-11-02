@@ -1,0 +1,32 @@
+# Smithery MCP Server Specification
+# https://smithery.ai/docs/config#smitheryyaml
+version: "1.0.0"
+name: "aetherscope-mcp"
+description: "Serveur MCP haute performance pour AetherScope V2 : Visualiseur 3D de Codebase, SAST 150+ CWE Blake3, Télémétrie Caméra et Gestionnaire de Tâches IA."
+
+startCommand:
+  type: "stdio"
+  configSchema:
+    type: "object"
+    properties:
+      port:
+        type: "integer"
+        default: 3030
+        description: "Port HTTP utilisé par l'interface WebGL 2 et l'API AetherScope"
+      path:
+        type: "string"
+        default: "."
+        description: "Chemin racine du projet à surveiller et analyser"
+  commandFunction:
+    windows:
+      - "target/release/aetherscope-mcp.exe"
+      - "--port"
+      - "{{port}}"
+      - "--path"
+      - "{{path}}"
+    linux:
+      - "./target/release/aetherscope-mcp"
+      - "--port"
+      - "{{port}}"
+      - "--path"
+      - "{{path}}"

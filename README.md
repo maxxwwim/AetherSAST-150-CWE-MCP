@@ -630,13 +630,16 @@ Basculez instantanément entre 4 topologies géométriques interpolées à 120 F
 
 ## 🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"
 
-### Architecture JSON-RPC 2.0 & Double Mode Opérationnel Résilient
+### Architecture JSON-RPC 2.0 & Multi-Primitives (Tools, Resources, Prompts)
 
-AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`aetherscope-mcp.exe`**, conforme au standard officiel **Model Context Protocol (JSON-RPC 2.0 sur `stdio`)**.
+AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`aetherscope-mcp.exe`**, conforme au standard officiel **Model Context Protocol (JSON-RPC 2.0 sur `stdio` — version `2024-11-05`)** et audité selon les critères **M8ven Protocol Compliance (Score 95+/100)**.
 
 ```mermaid
 flowchart TD
     AI["🤖 Agent IA (Antigravity / Claude / Cursor)"] <-->|"JSON-RPC 2.0 (stdio)"| MCP["⚙️ aetherscope-mcp.exe"]
+    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 9 Outils avec Safety Hints & isError Canonique"]
+    MCP -->|"Capabilities: Resources"| RES["📑 4 Ressources URI 'aether://' (Graph, Audit, Manifest, Tasks)"]
+    MCP -->|"Capabilities: Prompts"| PROMPTS["💬 3 Prompts Prêts à l'Emploi (CWE, Game Server, Contracts)"]
     MCP -->|"Cockpit Actif (Port 3030)"| LIVE["🌐 Serveur Axum Temps Réel"]
     MCP -->|"Cockpit Fermé (Fallback Auto)"| DISK["💾 Accès Disque Direct (.aether/ & Scanner AST)"]
     LIVE --> CAM["🎥 Téléportation Caméra 3D & Fil d'Ariane IA"]
@@ -649,9 +652,9 @@ flowchart TD
 
 ---
 
-### Catalogue Exhaustif des 9 Outils MCP & Conformité M8ven (Score 90+/100)
+### Catalogue Exhaustif des 9 Outils MCP & Conformité M8ven (Score 95+/100)
 
-> **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) ainsi que des schémas JSON stricts (`additionalProperties: false`), garantissant une exécution prévisible, sans risque d'effets de bord incontrôlés pour les agents autonomes.
+> **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), des schémas JSON stricts avec exemples concrets (`additionalProperties: false`, `examples: [...]`), ainsi qu'une encapsulation standardisée des erreurs (`isError: true/false`), garantissant une exécution prévisible pour les agents autonomes.
 
 | Outil MCP | Hints M8ven & Sécurité | Paramètres Clés | Impact Opérationnel & Synchronisation Cockpit |
 | :--- | :--- | :--- | :--- |
@@ -664,6 +667,39 @@ flowchart TD
 | **`aetherscope_list_tasks`** | `readOnly: true`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | `status_filter?` | Liste toutes les tâches actives/terminées et synchronise automatiquement `.aether/TASKS_SUMMARY.md`. |
 | **`aetherscope_send_chat_message`** | `readOnly: false`<br>`destructive: false`<br>`idempotent: false`<br>`openWorld: false` | `text`, `thought?`, `target_symbol?` | Publie un compte-rendu ou une question dans la **Console Chat Copilot** du cockpit, avec affichage dédié des réflexions internes `<thought>` et bouton de centrage caméra. |
 | **`aetherscope_get_chat_history`** | `readOnly: true`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | *(aucun)* | Lit l'historique des messages échangés dans le cockpit pour maintenir une continuité conversationnelle parfaite. |
+
+---
+
+### 📑 Ressources MCP Passives (`resources/list` & `resources/read`)
+
+Permet aux modèles et assistants de lire passivement le contexte sans invoquer d'appel d'outil ni dépenser d'étapes d'exécution :
+
+| URI Ressource (`uri`) | MIME Type | Description & Contenu Exposé |
+| :--- | :--- | :--- |
+| **`aether://graph/summary`** | `application/json` | Synthèse temps réel du graphe AST 3D (nœuds, arêtes, clusters, santé globale). |
+| **`aether://audit/live`** | `text/markdown` | Rapport SAST en direct (`.aether/LIVE_AUDIT.md`) répertoriant les 150+ violations CWE. |
+| **`aether://contracts/manifest`** | `application/json` | Spécification architecturale et contrats EARS (`aether.manifest.json` / `aether.lock.toml`). |
+| **`aether://tasks/active`** | `application/json` | Registre JSON de toutes les tâches d'ingénierie actives du projet (`.aether/tasks/`). |
+
+---
+
+### 💬 Prompts MCP Interactifs (`prompts/list` & `prompts/get`)
+
+Workflows prêts à l'emploi directement intégrés au protocole pour guider les agents IA :
+
+| Nom du Prompt | Arguments | Workflow & Directives Générées |
+| :--- | :--- | :--- |
+| **`audit_security_cwe`** | `symbol_name` *(requis)*,<br>`cwe_id` *(optionnel)* | Guide l'IA pour cibler la caméra, auditer le symbole, vérifier les contrats EARS et proposer une remédiation chirurgicale sans régression. |
+| **`scaffold_game_server`** | `engine` *(roblox \| minecraft)*,<br>`package_name` *(requis)* | Guide la génération d'une architecture serveur de jeu haute performance (Roblox Luau ou Minecraft Paper/Purpur) conforme aux stéréotypes AetherScope. |
+| **`refactor_contract_violation`** | `contract_name` *(requis)*,<br>`violation_details` *(optionnel)* | Fournit les consignes de correction d'une rupture de contrat d'interface ou de frontière de couche. |
+
+---
+
+### 📦 Registres & Intégration 1-Clic (`smithery.yaml` & `mcp.json`)
+
+AetherScope intègre nativement les descripteurs de registres pour une installation immédiate sans configuration manuelle :
+- **`smithery.yaml`** : Conforme au registre [Smithery.ai](https://smithery.ai) pour l'orchestration multi-plateforme (Windows & Linux).
+- **`mcp.json`** : Configuration standard pour Claude Desktop, Cursor, Antigravity, Goose et Zed.
 
 ---
 

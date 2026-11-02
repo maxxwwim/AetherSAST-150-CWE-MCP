@@ -108,6 +108,13 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     "tools": {
                         "listChanged": false
                     },
+                    "resources": {
+                        "subscribe": false,
+                        "listChanged": false
+                    },
+                    "prompts": {
+                        "listChanged": false
+                    },
                     "logging": {}
                 },
                 "serverInfo": {
@@ -127,6 +134,345 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
             error: None,
         }),
 
+        "resources/list" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(json!({
+                "resources": [
+                    {
+                        "uri": "aether://graph/summary",
+                        "name": "AetherScope 3D AST Graph Summary",
+                        "description": "Synthèse temps réel du graphe AST 3D (nœuds, arêtes, clusters, métriques de santé) pour injection de contexte immédiat.",
+                        "mimeType": "application/json"
+                    },
+                    {
+                        "uri": "aether://audit/live",
+                        "name": "AetherScope Live Security Audit (SAST/CWE)",
+                        "description": "Rapport d'audit SAST live (.aether/LIVE_AUDIT.md) analysant les 150+ motifs de vulnérabilités CWE détectées.",
+                        "mimeType": "text/markdown"
+                    },
+                    {
+                        "uri": "aether://contracts/manifest",
+                        "name": "Aether Architecture Manifest",
+                        "description": "Manifeste d'architecture aether.manifest.json ou aether.lock.toml définissant les contrats EARS et les frontières de couches.",
+                        "mimeType": "application/json"
+                    },
+                    {
+                        "uri": "aether://tasks/active",
+                        "name": "AetherScope Active AI Tasks",
+                        "description": "Registre des tâches d'ingénierie et de refactorisation pilotées par l'IA (.aether/tasks/).",
+                        "mimeType": "application/json"
+                    }
+                ]
+            })),
+            error: None,
+        }),
+
+        "resources/read" => {
+            let params = req.params.unwrap_or(json!({}));
+            let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
+
+            match uri {
+                "aether://graph/summary" => {
+                    let res = send_http_request(server_port, "GET", "/api/graph", None).await;
+                    let text = match res {
+                        Ok(val) => serde_json::to_string_pretty(&val).unwrap_or_default(),
+                        Err(_) => {
+                            let p_buf = PathBuf::from(default_path);
+                            let scanner = ast_scanner::ProjectScanner::default();
+                            let g = scanner.scan_project(&p_buf);
+                            serde_json::to_string_pretty(&g).unwrap_or_default()
+                        }
+                    };
+                    Some(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({
+                            "contents": [
+                                {
+                                    "uri": "aether://graph/summary",
+                                    "mimeType": "application/json",
+                                    "text": text
+                                }
+                            ]
+                        })),
+                        error: None,
+                    })
+                }
+
+                "aether://audit/live" => {
+                    let audit_path = Path::new(default_path).join(".aether").join("LIVE_AUDIT.md");
+                    let text = if audit_path.exists() {
+                        std::fs::read_to_string(&audit_path).unwrap_or_else(|e| format!("Erreur lecture LIVE_AUDIT.md: {}", e))
+                    } else {
+                        let p_buf = PathBuf::from(default_path);
+                        let scanner = ast_scanner::ProjectScanner::default();
+                        let g = scanner.scan_project(&p_buf);
+                        format_ast_summary(&g, &p_buf)
+                    };
+                    Some(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({
+                            "contents": [
+                                {
+                                    "uri": "aether://audit/live",
+                                    "mimeType": "text/markdown",
+                                    "text": text
+                                }
+                            ]
+                        })),
+                        error: None,
+                    })
+                }
+
+                "aether://contracts/manifest" => {
+                    let manifest_path = Path::new(default_path).join("aether.manifest.json");
+                    let dot_manifest_path = Path::new(default_path).join(".aether").join("manifest.json");
+                    let lock_path = Path::new(default_path).join("aether.lock.toml");
+                    let text = if manifest_path.exists() {
+                        std::fs::read_to_string(&manifest_path).unwrap_or_default()
+                    } else if dot_manifest_path.exists() {
+                        std::fs::read_to_string(&dot_manifest_path).unwrap_or_default()
+                    } else if lock_path.exists() {
+                        std::fs::read_to_string(&lock_path).unwrap_or_default()
+                    } else {
+                        json!({
+                            "project": default_path,
+                            "status": "unlocked",
+                            "info": "Aucun fichier aether.manifest.json ou aether.lock.toml détecté à la racine."
+                        }).to_string()
+                    };
+                    Some(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({
+                            "contents": [
+                                {
+                                    "uri": "aether://contracts/manifest",
+                                    "mimeType": "application/json",
+                                    "text": text
+                                }
+                            ]
+                        })),
+                        error: None,
+                    })
+                }
+
+                "aether://tasks/active" => {
+                    let p_buf = PathBuf::from(default_path);
+                    let raw_tasks = ai_file_bridge::TaskManager::list_tasks(&p_buf);
+                    let active_tasks: Vec<_> = raw_tasks.into_iter().filter(|t| t.status != ai_file_bridge::TaskStatus::Done && t.status != ai_file_bridge::TaskStatus::Cancelled).collect();
+                    let text = serde_json::to_string_pretty(&active_tasks).unwrap_or_else(|_| "[]".to_string());
+                    Some(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({
+                            "contents": [
+                                {
+                                    "uri": "aether://tasks/active",
+                                    "mimeType": "application/json",
+                                    "text": text
+                                }
+                            ]
+                        })),
+                        error: None,
+                    })
+                }
+
+                _ => Some(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id,
+                    result: None,
+                    error: Some(json!({
+                        "code": -32602,
+                        "message": format!("Resource not found: {}", uri)
+                    })),
+                }),
+            }
+        }
+
+        "prompts/list" => Some(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(json!({
+                "prompts": [
+                    {
+                        "name": "audit_security_cwe",
+                        "description": "Génère un prompt d'audit et de remédiation ciblée pour corriger une vulnérabilité SAST / violation CWE détectée dans le graphe AetherScope.",
+                        "arguments": [
+                            {
+                                "name": "symbol_name",
+                                "description": "Nom du symbole (fonction, classe, struct) ou chemin du fichier à auditer.",
+                                "required": true
+                            },
+                            {
+                                "name": "cwe_id",
+                                "description": "Identifiant CWE ou catégorie de la faille (ex: CWE-89, CWE-79, Memory Safety).",
+                                "required": false
+                            }
+                        ]
+                    },
+                    {
+                        "name": "scaffold_game_server",
+                        "description": "Génère un prompt guidé pour l'implémentation d'une architecture serveur de jeu (Roblox Luau ou Minecraft Paper/Purpur) optimisée pour AetherScope.",
+                        "arguments": [
+                            {
+                                "name": "engine",
+                                "description": "Moteur cible : 'roblox' ou 'minecraft'.",
+                                "required": true
+                            },
+                            {
+                                "name": "package_name",
+                                "description": "Nom du composant ou plugin serveur à créer.",
+                                "required": true
+                            }
+                        ]
+                    },
+                    {
+                        "name": "refactor_contract_violation",
+                        "description": "Génère un prompt d'analyse et de correction lorsqu'une rupture de contrat EARS ou une violation d'import de couche est détectée.",
+                        "arguments": [
+                            {
+                                "name": "contract_name",
+                                "description": "Nom du contrat ou de l'interface en violation.",
+                                "required": true
+                            },
+                            {
+                                "name": "violation_details",
+                                "description": "Détails de l'incompatibilité ou de la violation de frontière.",
+                                "required": false
+                            }
+                        ]
+                    }
+                ]
+            })),
+            error: None,
+        }),
+
+        "prompts/get" => {
+            let params = req.params.unwrap_or(json!({}));
+            let prompt_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+
+            match prompt_name {
+                "audit_security_cwe" => {
+                    let symbol_name = arguments.get("symbol_name").and_then(|v| v.as_str()).unwrap_or("<symbole>");
+                    let cwe_id = arguments.get("cwe_id").and_then(|v| v.as_str()).unwrap_or("CWE Anomaly");
+                    let prompt_text = format!(
+                        "Vous êtes l'architecte de sécurité AetherScope. Effectuez l'audit et la remédiation de la cible `{}` concernée par la vulnérabilité `{}`.\n\n\
+                        Protocole obligatoire :\n\
+                        1. Utilisez `aetherscope_teleport_camera` vers `{}` avec l'action 'Correction CVE'.\n\
+                        2. Utilisez `aetherscope_get_active_target` sur `{}` pour vérifier les contrats EARS et les appelants en amont.\n\
+                        3. Proposez une correction sécurisée (validation stricte des entrées, typage invariant, absence d'allocation superflue) sans rompre l'API publique.\n\
+                        4. Créez ou mettez à jour une tâche via `aetherscope_create_task` (type: 'security_fix').",
+                        symbol_name, cwe_id, symbol_name, symbol_name
+                    );
+                    Some(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({
+                            "description": format!("Audit de sécurité AetherScope pour {} ({})", symbol_name, cwe_id),
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": {
+                                        "type": "text",
+                                        "text": prompt_text
+                                    }
+                                }
+                            ]
+                        })),
+                        error: None,
+                    })
+                }
+
+                "scaffold_game_server" => {
+                    let engine = arguments.get("engine").and_then(|v| v.as_str()).unwrap_or("roblox");
+                    let package_name = arguments.get("package_name").and_then(|v| v.as_str()).unwrap_or("GameCore");
+                    let prompt_text = if engine.to_lowercase().contains("roblox") {
+                        format!(
+                            "Vous implémentez un module serveur de jeu haute performance sous Roblox Luau (`{}`) intégré dans l'écosystème AetherScope.\n\n\
+                            Spécifications techniques :\n\
+                            - Architecture contractuelle stricte : `contracts/` pour les paquets réseau RemoteEvent/RemoteFunction avec typage Luau strict (`--!strict`).\n\
+                            - Séparation stricte : `server/` (logique d'autorité exclusive), `client/` (prédiction locale, pas de trust), `data-nodes/` (sauvegarde DataStore atomique).\n\
+                            - Utilisez `aetherscope_create_task` avec le type 'function' pour suivre l'implémentation de `{}`.\n\
+                            - Téléportez la caméra sur le module via `aetherscope_teleport_camera`.",
+                            package_name, package_name
+                        )
+                    } else {
+                        format!(
+                            "Vous implémentez un plugin serveur Minecraft Paper/Purpur (`{}`) haute performance selon les standards AetherScope.\n\n\
+                            Spécifications techniques :\n\
+                            - Architecture découplée : API & Contrats d'événements séparés de l'implémentation Bukkit/Spigot.\n\
+                            - Concurrency & Tick-safety : Aucun blocage sur le Main Thread tick de 50ms, utilisation d'AsyncScheduler et collections concurrentes.\n\
+                            - Utilisez `aetherscope_create_task` pour déclarer les jalons du plugin `{}`.\n\
+                            - Vérifiez l'absence de fuite mémoire sur les EventHandler désenregistrés.",
+                            package_name, package_name
+                        )
+                    };
+                    Some(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({
+                            "description": format!("Scaffolding serveur de jeu {} pour {}", engine, package_name),
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": {
+                                        "type": "text",
+                                        "text": prompt_text
+                                    }
+                                }
+                            ]
+                        })),
+                        error: None,
+                    })
+                }
+
+                "refactor_contract_violation" => {
+                    let contract_name = arguments.get("contract_name").and_then(|v| v.as_str()).unwrap_or("<contrat>");
+                    let details = arguments.get("violation_details").and_then(|v| v.as_str()).unwrap_or("Non-respect des règles EARS ou fuite de dépendances.");
+                    let prompt_text = format!(
+                        "Une violation de contrat d'architecture a été relevée sur `{}` :\n`{}`\n\n\
+                        Directives AetherScope :\n\
+                        1. Inspectez les liaisons amont/aval via `aetherscope_get_active_target` sur `{}`.\n\
+                        2. Vérifiez le respect du README de spécification EARS et du fichier `aether.manifest.json`.\n\
+                        3. Supprimez les imports circulaires ou illicites entre couches (ex: core ne doit jamais importer desktop-shell).\n\
+                        4. Signalez l'avancement via `aetherscope_send_chat_message`.",
+                        contract_name, details, contract_name
+                    );
+                    Some(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({
+                            "description": format!("Résolution violation contrat {}", contract_name),
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": {
+                                        "type": "text",
+                                        "text": prompt_text
+                                    }
+                                }
+                            ]
+                        })),
+                        error: None,
+                    })
+                }
+
+                _ => Some(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id,
+                    result: None,
+                    error: Some(json!({
+                        "code": -32602,
+                        "message": format!("Prompt not found: {}", prompt_name)
+                    })),
+                }),
+            }
+        }
+
         "tools/list" => Some(JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             id,
@@ -140,15 +486,18 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "target": {
                                     "type": "string",
-                                    "description": "Nom du symbole, fichier ou dossier cible (ex: 'RoomBooking', 'BookingEngine', 'contracts/packets.rs', 'server/api')"
+                                    "description": "Nom du symbole, fichier ou dossier cible (ex: 'RoomBooking', 'BookingEngine', 'contracts/packets.rs', 'server/api')",
+                                    "examples": ["RoomBooking", "BookingEngine", "contracts/packets.rs", "server/api"]
                                 },
                                 "action": {
                                     "type": "string",
-                                    "description": "Action en cours (ex: 'Inspection', 'Analyse', 'Création', 'Refactoring', 'Correction CVE', 'Audit', 'Tests')"
+                                    "description": "Action en cours (ex: 'Inspection', 'Analyse', 'Création', 'Refactoring', 'Correction CVE', 'Audit', 'Tests')",
+                                    "examples": ["Inspection", "Refactoring", "Correction CVE", "Audit", "Tests"]
                                 },
                                 "details": {
                                     "type": "string",
-                                    "description": "Courte description technique de ce que vous observez ou réalisez"
+                                    "description": "Courte description technique de ce que vous observez ou réalisez",
+                                    "examples": ["Vérification des invariants et de la non-nullabilité du token d'accès"]
                                 }
                             },
                             "required": ["target", "action", "details"],
@@ -170,7 +519,8 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "path": {
                                     "type": "string",
-                                    "description": "Chemin optionnel du projet à analyser (par défaut le projet actif)"
+                                    "description": "Chemin optionnel du projet à analyser (par défaut le projet actif)",
+                                    "examples": [".", "crates/desktop-shell", "crates/core-graph"]
                                 }
                             },
                             "required": [],
@@ -192,15 +542,18 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "text": {
                                     "type": "string",
-                                    "description": "Contenu du message ou compte-rendu pour l'utilisateur"
+                                    "description": "Contenu du message ou compte-rendu pour l'utilisateur",
+                                    "examples": ["Analyse terminée : 0 vulnérabilité détectée sur le module d'authentification."]
                                 },
                                 "thought": {
                                     "type": "string",
-                                    "description": "Raisonnement ou réflexion interne de l'IA (optionnel)"
+                                    "description": "Raisonnement ou réflexion interne de l'IA (optionnel)",
+                                    "examples": ["Le scan SAST valide l'arbre AST et les contrats EARS sans anomalie de mémoire."]
                                 },
                                 "target_symbol": {
                                     "type": "string",
-                                    "description": "Symbole ou fichier associé au message (optionnel)"
+                                    "description": "Symbole ou fichier associé au message (optionnel)",
+                                    "examples": ["AuthService", "crates/desktop-shell/src/mcp.rs"]
                                 }
                             },
                             "required": ["text"],
@@ -239,7 +592,8 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "symbol_id": {
                                     "type": "string",
-                                    "description": "Nom ou identifiant du symbole ou fichier (ex: 'handle_booking', 'BookingForm')"
+                                    "description": "Nom ou identifiant du symbole ou fichier (ex: 'handle_booking', 'BookingForm')",
+                                    "examples": ["handle_booking", "BookingForm", "crates/core-graph/src/manifest.rs"]
                                 }
                             },
                             "required": ["symbol_id"],
@@ -261,7 +615,8 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "path": {
                                     "type": "string",
-                                    "description": "Chemin du projet à réanalyser"
+                                    "description": "Chemin du projet à réanalyser",
+                                    "examples": [".", "../monorepo", "crates/desktop-shell"]
                                 }
                             },
                             "required": [],
@@ -283,29 +638,35 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "title": {
                                     "type": "string",
-                                    "description": "Titre explicite de la tâche à accomplir"
+                                    "description": "Titre explicite de la tâche à accomplir",
+                                    "examples": ["Correction vulnérabilité CWE-89 dans SQL Query Builder"]
                                 },
                                 "kind": {
                                     "type": "string",
                                     "description": "Type de tâche : 'function', 'research', 'security_fix', 'arch_refactor', 'documentation', 'test', ou 'other'",
-                                    "enum": ["function", "research", "security_fix", "arch_refactor", "documentation", "test", "other"]
+                                    "enum": ["function", "research", "security_fix", "arch_refactor", "documentation", "test", "other"],
+                                    "examples": ["security_fix", "function", "arch_refactor"]
                                 },
                                 "target_symbol": {
                                     "type": "string",
-                                    "description": "Nom optionnel du symbole AST ciblé dans le graphe (ex: 'BookingService', 'verify_token')"
+                                    "description": "Nom optionnel du symbole AST ciblé dans le graphe (ex: 'BookingService', 'verify_token')",
+                                    "examples": ["execute_query", "BookingService"]
                                 },
                                 "target_file": {
                                     "type": "string",
-                                    "description": "Chemin optionnel du fichier concerné (ex: 'src/auth.rs', 'contracts/ports.rs')"
+                                    "description": "Chemin optionnel du fichier concerné (ex: 'src/auth.rs', 'contracts/ports.rs')",
+                                    "examples": ["src/db/query.rs", "contracts/packets.rs"]
                                 },
                                 "priority": {
                                     "type": "string",
                                     "description": "Priorité de la tâche ('low', 'medium', 'high', 'critical')",
-                                    "enum": ["low", "medium", "high", "critical"]
+                                    "enum": ["low", "medium", "high", "critical"],
+                                    "examples": ["critical", "high", "medium"]
                                 },
                                 "initial_readme": {
                                     "type": "string",
-                                    "description": "Contenu Markdown optionnel pour initialiser le mini-README d'avancement (objectifs, checklist d'étapes)"
+                                    "description": "Contenu Markdown optionnel pour initialiser le mini-README d'avancement (objectifs, checklist d'étapes)",
+                                    "examples": ["### Objectifs\n- Remplacer interpolation par requête préparée\n- Vérifier tests unitaires"]
                                 }
                             },
                             "required": ["title"],
@@ -327,26 +688,31 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "task_id": {
                                     "type": "string",
-                                    "description": "Identifiant unique de la tâche (ex: 'task_123456_nom')"
+                                    "description": "Identifiant unique de la tâche (ex: 'task_123456_nom')",
+                                    "examples": ["task_1730000000_sec", "task_01_game_server"]
                                 },
                                 "status": {
                                     "type": "string",
                                     "description": "Nouveau statut de la tâche ('pending', 'in_progress', 'blocked', 'done', 'cancelled')",
-                                    "enum": ["pending", "in_progress", "blocked", "done", "cancelled"]
+                                    "enum": ["pending", "in_progress", "blocked", "done", "cancelled"],
+                                    "examples": ["in_progress", "done", "blocked"]
                                 },
                                 "progress": {
                                     "type": "integer",
                                     "description": "Pourcentage d'avancement estimé de la tâche entre 0 et 100",
                                     "minimum": 0,
-                                    "maximum": 100
+                                    "maximum": 100,
+                                    "examples": [50, 100]
                                 },
                                 "progress_note": {
                                     "type": "string",
-                                    "description": "Courte note de progrès à consigner dans le mini-README de la tâche"
+                                    "description": "Courte note de progrès à consigner dans le mini-README de la tâche",
+                                    "examples": ["Contrat validé, implémentation des tests unitaires en cours."]
                                 },
                                 "full_readme": {
                                     "type": "string",
-                                    "description": "Nouveau contenu complet du mini-README de la tâche (si réécriture / mise à jour complète de la checklist)"
+                                    "description": "Nouveau contenu complet du mini-README de la tâche (si réécriture / mise à jour complète de la checklist)",
+                                    "examples": ["# Tâche Terminée\n- [x] Spécifications rédigées\n- [x] Code validé\n- [x] Audit SAST 0 faille"]
                                 }
                             },
                             "required": ["task_id"],
@@ -369,7 +735,8 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 "status_filter": {
                                     "type": "string",
                                     "description": "Filtre optionnel : 'active' (par défaut, exclut les terminées), 'all' (toutes les tâches), 'done' (uniquement terminées)",
-                                    "enum": ["active", "all", "done"]
+                                    "enum": ["active", "all", "done"],
+                                    "examples": ["active", "all", "done"]
                                 }
                             },
                             "required": [],
@@ -388,13 +755,12 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
             error: None,
         }),
 
-
         "tools/call" => {
             let params = req.params.unwrap_or(json!({}));
             let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
-            let result_content = match tool_name {
+            let (result_content, is_error) = match tool_name {
                 "aetherscope_teleport_camera" => {
                     let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("Inspection").to_string();
@@ -407,14 +773,14 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     }))).await;
 
                     match res {
-                        Ok(_) => json!([{
+                        Ok(_) => (json!([{
                             "type": "text",
                             "text": format!("🪐 Caméra AetherScope alignée sur : {} ({})\n📡 Faisceau quantique et fil d'Ariane stellaire illuminés sur le graphe 3D WebGL 2.", target, action)
-                        }]),
-                        Err(e) => json!([{
+                        }]), false),
+                        Err(e) => (json!([{
                             "type": "text",
                             "text": format!("⚠️ Télémétrie enregistrée : [{}] sur {}\n(Détails : {})", action, target, e)
-                        }]),
+                        }]), false),
                     }
                 }
 
@@ -437,7 +803,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     match graph_val_res {
                         Ok(graph_val) => {
                             let summary = format_graph_summary(&graph_val);
-                            json!([{ "type": "text", "text": summary }])
+                            (json!([{ "type": "text", "text": summary }]), false)
                         }
                         Err(_) => {
                             // Fallback direct AST scanner offline : scanne directement le projet sans dépendre du serveur web
@@ -446,7 +812,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             let scanner = ast_scanner::ProjectScanner::default();
                             let g = scanner.scan_project(&p_buf);
                             let summary = format_ast_summary(&g, &p_buf);
-                            json!([{ "type": "text", "text": summary }])
+                            (json!([{ "type": "text", "text": summary }]), false)
                         }
                     }
                 }
@@ -456,46 +822,56 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let thought = arguments.get("thought").and_then(|v| v.as_str()).unwrap_or("");
                     let target = arguments.get("target_symbol").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-                    let full_payload = if !thought.is_empty() {
-                        format!("<thought>\n{}\n</thought>\n{}", thought, text)
+                    if text.trim().is_empty() {
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'text' ne peut pas être vide." }]), true)
                     } else {
-                        text
-                    };
+                        let full_payload = if !thought.is_empty() {
+                            format!("<thought>\n{}\n</thought>\n{}", thought, text)
+                        } else {
+                            text
+                        };
 
-                    let res = send_http_request(server_port, "POST", "/api/ai/chat", Some(&json!({
-                        "text": full_payload,
-                        "sender": "ai",
-                        "target_symbol": target
-                    }))).await;
+                        let res = send_http_request(server_port, "POST", "/api/ai/chat", Some(&json!({
+                            "text": full_payload,
+                            "sender": "ai",
+                            "target_symbol": target
+                        }))).await;
 
-                    match res {
-                        Ok(_) => json!([{ "type": "text", "text": "💬 Message affiché dans le HUD AetherScope de l'utilisateur." }]),
-                        Err(e) => json!([{ "type": "text", "text": format!("⚠️ Erreur envoi chat AetherScope : {}", e) }]),
+                        match res {
+                            Ok(_) => (json!([{ "type": "text", "text": "💬 Message affiché dans le HUD AetherScope de l'utilisateur." }]), false),
+                            Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur envoi chat AetherScope : {}", e) }]), true),
+                        }
                     }
                 }
 
                 "aetherscope_get_chat_history" => {
                     let res = send_http_request(server_port, "GET", "/api/ai/chat", None).await;
                     match res {
-                        Ok(val) => json!([{ "type": "text", "text": serde_json::to_string_pretty(&val).unwrap_or_default() }]),
-                        Err(e) => json!([{ "type": "text", "text": format!("⚠️ Erreur historique chat : {}", e) }]),
+                        Ok(val) => (json!([{ "type": "text", "text": serde_json::to_string_pretty(&val).unwrap_or_default() }]), false),
+                        Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur historique chat : {}", e) }]), true),
                     }
                 }
 
                 "aetherscope_get_active_target" => {
                     let symbol_id = arguments.get("symbol_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let res = send_http_request(server_port, "POST", "/api/ai/target", Some(&json!({
-                        "symbol_id": symbol_id
-                    }))).await;
+                    if symbol_id.trim().is_empty() {
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'symbol_id' est requis." }]), true)
+                    } else {
+                        let res = send_http_request(server_port, "POST", "/api/ai/target", Some(&json!({
+                            "symbol_id": symbol_id
+                        }))).await;
 
-                    match res {
-                        Ok(val) => {
-                            let text = format_active_target_response(&val);
-                            json!([{ "type": "text", "text": text }])
-                        }
-                        Err(_) => {
-                            let text = offline_active_target_fallback(default_path, &symbol_id);
-                            json!([{ "type": "text", "text": text }])
+                        match res {
+                            Ok(val) => {
+                                let text = format_active_target_response(&val);
+                                let is_err = val.get("status").and_then(|v| v.as_str()) != Some("ok");
+                                (json!([{ "type": "text", "text": text }]), is_err)
+                            }
+                            Err(_) => {
+                                let text = offline_active_target_fallback(default_path, &symbol_id);
+                                let is_err = text.starts_with("⚠️");
+                                (json!([{ "type": "text", "text": text }]), is_err)
+                            }
                         }
                     }
                 }
@@ -515,10 +891,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             }))).await;
 
                             let summary = format_graph_summary(&val);
-                            json!([{
+                            (json!([{
                                 "type": "text",
                                 "text": format!("⚡ Projet `{}` réanalysé et synchronisé avec succès dans AetherScope V2 !\n\n{}", scan_path, summary)
-                            }])
+                            }]), false)
                         }
                         Err(e) => {
                             // Fallback direct AST scanner offline si le serveur n'est pas joignable
@@ -526,10 +902,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             let scanner = ast_scanner::ProjectScanner::default();
                             let g = scanner.scan_project(&p_buf);
                             let summary = format_ast_summary(&g, &p_buf);
-                            json!([{
+                            (json!([{
                                 "type": "text",
                                 "text": format!("⚡ Projet `{}` analysé (mode autonome AST direct - serveur: {}) :\n\n{}", scan_path, e, summary)
-                            }])
+                            }]), false)
                         }
                     }
                 }
@@ -557,10 +933,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                         Ok(val) => {
                             let task_obj = val.get("task");
                             let task_id = task_obj.and_then(|t| t.get("id")).and_then(|i| i.as_str()).unwrap_or("");
-                            json!([{
+                            (json!([{
                                 "type": "text",
                                 "text": format!("📋 Tâche `{}` créée avec succès !\n📁 Mini-README disponible dans `.aether/tasks/{}/README.md`\n{}", task_id, task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
-                            }])
+                            }]), false)
                         }
                         Err(_) => {
                             let p_buf = PathBuf::from(default_path);
@@ -575,11 +951,11 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 priority.as_deref(),
                                 initial_readme.as_deref(),
                             ) {
-                                Ok(t) => json!([{
+                                Ok(t) => (json!([{
                                     "type": "text",
                                     "text": format!("📋 Tâche `{}` créée (mode offline) !\n📁 Fichier : `.aether/tasks/{}/README.md`", t.id, t.id)
-                                }]),
-                                Err(e) => json!([{ "type": "text", "text": format!("⚠️ Erreur création tâche : {}", e) }]),
+                                }]), false),
+                                Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur création tâche : {}", e) }]), true),
                             }
                         }
                     }
@@ -592,37 +968,41 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let progress_note = arguments.get("progress_note").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let full_readme = arguments.get("full_readme").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-                    let payload = json!({
-                        "task_id": task_id,
-                        "status": status_str,
-                        "progress": progress,
-                        "progress_note": progress_note,
-                        "full_readme": full_readme
-                    });
+                    if task_id.trim().is_empty() {
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: 'task_id' requis pour la mise à jour." }]), true)
+                    } else {
+                        let payload = json!({
+                            "task_id": task_id,
+                            "status": status_str,
+                            "progress": progress,
+                            "progress_note": progress_note,
+                            "full_readme": full_readme
+                        });
 
-                    let res = send_http_request(server_port, "POST", "/api/tasks/update", Some(&payload)).await;
-                    match res {
-                        Ok(val) => json!([{
-                            "type": "text",
-                            "text": format!("⚡ Tâche `{}` mise à jour avec succès :\n{}", task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
-                        }]),
-                        Err(_) => {
-                            let p_buf = PathBuf::from(default_path);
-                            let status = status_str.as_deref().map(ai_file_bridge::TaskStatus::from_str_loose);
-                            match ai_file_bridge::TaskManager::update_task(
-                                &p_buf,
-                                &task_id,
-                                status,
-                                progress,
-                                progress_note.as_deref(),
-                                full_readme.as_deref(),
-                            ) {
-                                Ok(Some(t)) => json!([{
-                                    "type": "text",
-                                    "text": format!("⚡ Tâche `{}` mise à jour (mode offline). Statut: {:?}, Progrès: {}%", t.id, t.status, t.progress)
-                                }]),
-                                Ok(None) => json!([{ "type": "text", "text": format!("⚠️ Tâche `{}` introuvable.", task_id) }]),
-                                Err(e) => json!([{ "type": "text", "text": format!("⚠️ Erreur mise à jour tâche : {}", e) }]),
+                        let res = send_http_request(server_port, "POST", "/api/tasks/update", Some(&payload)).await;
+                        match res {
+                            Ok(val) => (json!([{
+                                "type": "text",
+                                "text": format!("⚡ Tâche `{}` mise à jour avec succès :\n{}", task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
+                            }]), false),
+                            Err(_) => {
+                                let p_buf = PathBuf::from(default_path);
+                                let status = status_str.as_deref().map(ai_file_bridge::TaskStatus::from_str_loose);
+                                match ai_file_bridge::TaskManager::update_task(
+                                    &p_buf,
+                                    &task_id,
+                                    status,
+                                    progress,
+                                    progress_note.as_deref(),
+                                    full_readme.as_deref(),
+                                ) {
+                                    Ok(Some(t)) => (json!([{
+                                        "type": "text",
+                                        "text": format!("⚡ Tâche `{}` mise à jour (mode offline). Statut: {:?}, Progrès: {}%", t.id, t.status, t.progress)
+                                    }]), false),
+                                    Ok(None) => (json!([{ "type": "text", "text": format!("⚠️ Tâche `{}` introuvable.", task_id) }]), true),
+                                    Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur mise à jour tâche : {}", e) }]), true),
+                                }
                             }
                         }
                     }
@@ -657,7 +1037,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     }).collect();
 
                     if filtered.is_empty() {
-                        json!([{ "type": "text", "text": "📋 Aucune tâche trouvée pour ce filtre." }])
+                        (json!([{ "type": "text", "text": "📋 Aucune tâche trouvée pour ce filtre." }]), false)
                     } else {
                         let mut output = format!("📋 Tâches AetherScope (Total : {}):\n\n", filtered.len());
                         for t in filtered {
@@ -671,18 +1051,20 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
 
                             output.push_str(&format!("• `{}` [{}] **{}** ({}, {}%)\n  - Cible : `{}`\n  - Avancement : {}\n\n", id, kind, title, status, progress, target, summary));
                         }
-                        json!([{ "type": "text", "text": output }])
+                        (json!([{ "type": "text", "text": output }]), false)
                     }
                 }
 
-                _ => json!([{ "type": "text", "text": format!("Outil inconnu : {}", tool_name) }]),
-
+                _ => (json!([{ "type": "text", "text": format!("Outil inconnu : {}", tool_name) }]), true),
             };
 
             Some(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
-                result: Some(json!({ "content": result_content })),
+                result: Some(json!({
+                    "content": result_content,
+                    "isError": is_error
+                })),
                 error: None,
             })
         }
@@ -949,4 +1331,111 @@ pub async fn send_http_request(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_mcp_initialize_declares_multi_primitives() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "initialize".to_string(),
+            params: None,
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("initialize should return response");
+        assert_eq!(resp.jsonrpc, "2.0");
+        assert_eq!(resp.id, Some(json!(1)));
+        let res = resp.result.expect("result should be present");
+        assert_eq!(res["protocolVersion"], "2024-11-05");
+        assert!(res["capabilities"]["tools"].is_object());
+        assert!(res["capabilities"]["resources"].is_object());
+        assert!(res["capabilities"]["prompts"].is_object());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_resources_list_and_read() {
+        let list_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(2)),
+            method: "resources/list".to_string(),
+            params: None,
+        };
+        let list_resp = handle_mcp_request(list_req, 3030, ".").await.expect("resources/list response");
+        let list_res = list_resp.result.expect("result present");
+        let resources = list_res["resources"].as_array().expect("resources array");
+        assert_eq!(resources.len(), 4);
+        let uris: Vec<&str> = resources.iter().filter_map(|r| r["uri"].as_str()).collect();
+        assert!(uris.contains(&"aether://graph/summary"));
+        assert!(uris.contains(&"aether://audit/live"));
+        assert!(uris.contains(&"aether://contracts/manifest"));
+        assert!(uris.contains(&"aether://tasks/active"));
+
+        let read_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(3)),
+            method: "resources/read".to_string(),
+            params: Some(json!({ "uri": "aether://contracts/manifest" })),
+        };
+        let read_resp = handle_mcp_request(read_req, 3030, ".").await.expect("resources/read response");
+        let read_res = read_resp.result.expect("result present");
+        let contents = read_res["contents"].as_array().expect("contents array");
+        assert_eq!(contents.len(), 1);
+        assert_eq!(contents[0]["uri"], "aether://contracts/manifest");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_prompts_list_and_get() {
+        let list_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(4)),
+            method: "prompts/list".to_string(),
+            params: None,
+        };
+        let list_resp = handle_mcp_request(list_req, 3030, ".").await.expect("prompts/list response");
+        let list_res = list_resp.result.expect("result present");
+        let prompts = list_res["prompts"].as_array().expect("prompts array");
+        assert_eq!(prompts.len(), 3);
+
+        let get_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(5)),
+            method: "prompts/get".to_string(),
+            params: Some(json!({
+                "name": "scaffold_game_server",
+                "arguments": { "engine": "roblox", "package_name": "CombatEngine" }
+            })),
+        };
+        let get_resp = handle_mcp_request(get_req, 3030, ".").await.expect("prompts/get response");
+        let get_res = get_resp.result.expect("result present");
+        let messages = get_res["messages"].as_array().expect("messages array");
+        assert!(!messages.is_empty());
+        let text = messages[0]["content"]["text"].as_str().expect("text string");
+        assert!(text.contains("CombatEngine"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tools_call_returns_canonical_is_error() {
+        let req_unknown = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(6)),
+            method: "tools/call".to_string(),
+            params: Some(json!({ "name": "unknown_tool", "arguments": {} })),
+        };
+        let resp_unknown = handle_mcp_request(req_unknown, 3030, ".").await.expect("tools/call response");
+        let res_unknown = resp_unknown.result.expect("result present");
+        assert_eq!(res_unknown["isError"], true);
+
+        let req_summary = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(7)),
+            method: "tools/call".to_string(),
+            params: Some(json!({ "name": "aetherscope_get_graph_summary", "arguments": { "path": "." } })),
+        };
+        let resp_summary = handle_mcp_request(req_summary, 3030, ".").await.expect("tools/call response");
+        let res_summary = resp_summary.result.expect("result present");
+        assert_eq!(res_summary["isError"], false);
+    }
 }
