@@ -423,6 +423,8 @@ pub fn init_project_structure(base: &Path, stack_str: &str) -> Vec<String> {
         "rust" => StackType::PureRust,
         "python" => StackType::PurePythonUv,
         "ts" | "node" => StackType::PureNodePnpm,
+        "roblox" | "roblox-server" | "luau" => StackType::RobloxLuau,
+        "minecraft" | "mc" => StackType::MinecraftServer,
         _ => StackType::HybridMmoWeb3,
     };
 
@@ -454,6 +456,16 @@ pub fn init_project_structure(base: &Path, stack_str: &str) -> Vec<String> {
             "⚡ Hybride Web3 & Temps Réel MMO",
             "Paquets WebSocket binaires, schémas RPC et ABIs Smart Contracts",
             "PostgreSQL State, Redis pub/sub temps réel et indexeurs On-Chain",
+        ),
+        StackType::RobloxLuau => (
+            "🟥 Roblox Luau (Authoritative Game Server)",
+            "RemoteEvents stricts, typage strict Luau (--!strict) et validation côté serveur",
+            "DataStoreService avec Session-Locking (ProfileService pattern) anti-dupe",
+        ),
+        StackType::MinecraftServer => (
+            "⛏️ Minecraft Game Server (Paper / Purpur)",
+            "Manifest universel Aether, spécifications de plugins et tuning JVM Aikar",
+            "Nœuds de données mondes, chunks pré-générés et persistance joueurs SQLite/MySQL",
         ),
     };
 
@@ -757,6 +769,268 @@ export class GameCanvas {
     // socket.emit('ClientPacket::Move')
   }
 }
+"#),
+        ],
+        StackType::RobloxLuau => vec![
+            ("contracts/NetworkContracts.luau", r#"--!strict
+--[[
+  📜 [CONTRACT-ROBLOX-001] Spécification des Remotes Réseau & Protocoles Partagés
+  Architecture optimisée pour Aether Code — Zero-Trust Client
+]]
+
+export type NetworkRemoteSpec = {
+    name: string,
+    kind: "RemoteEvent" | "RemoteFunction",
+    rateLimitHz: number,
+    requiresAuth: boolean,
+}
+
+local NetworkContracts = {
+    REMOTES = {
+        PlayerAction = "PlayerActionRemote" :: string,
+        CombatCast = "CombatCastRemote" :: string,
+        RequestInventorySync = "RequestInventorySyncFunction" :: string,
+    },
+    LIMITS = {
+        MAX_ACTIONS_PER_SECOND = 20,
+        MAX_CAST_RANGE_STUDS = 60,
+    }
+}
+
+return NetworkContracts
+"#),
+            ("contracts/Types.luau", r#"--!strict
+--[[
+  📜 [TYPES-ROBLOX-001] Invariants et Types de Données Partagés
+  Validation EARS des entités de jeu
+]]
+
+export type PlayerId = number
+
+export type InventoryItem = {
+    id: string,
+    name: string,
+    count: number,
+    rarity: "Common" | "Rare" | "Epic" | "Legendary",
+}
+
+export type PlayerSessionData = {
+    userId: PlayerId,
+    username: string,
+    level: number,
+    experience: number,
+    coins: number,
+    inventory: { [string]: InventoryItem },
+    lastSavedTimestamp: number,
+}
+
+export type ActionPayload = {
+    actionType: "Attack" | "Interact" | "UseSkill",
+    targetId: string?,
+    clientTimestamp: number,
+}
+
+local Types = {}
+return Types
+"#),
+            ("server/ServerController.luau", r#"--!strict
+--[[
+  ⚡ [SERVER-001] Authoritative Game Engine Loop
+  - WHEN client sends action THEN the server evaluates invariants authoritatively
+  - ZERO TRUST : Never trust position, velocity or damage claimed by client
+]]
+
+local Players = game:GetService("Players")
+
+local ServerController = {}
+ServerController.__index = ServerController
+
+function ServerController.Init()
+    print("🎮 [AETHER ROBLOX SERVER] Initialisation du moteur authoritative...")
+    
+    Players.PlayerAdded:Connect(function(player: Player)
+        print(string.format("🟢 Joueur connecté : %s (%d)", player.Name, player.UserId))
+    end)
+    
+    Players.PlayerRemoving:Connect(function(player: Player)
+        print(string.format("🔴 Joueur déconnecté : %s (%d)", player.Name, player.UserId))
+    end)
+end
+
+return ServerController
+"#),
+            ("server/domain/CombatService.luau", r#"--!strict
+--[[
+  🏛️ [DOMAIN-001] Logique de Combat & Validation Anti-Cheat (Pure)
+  100% authoritative côté serveur, zéro effet de bord UI
+]]
+
+local CombatService = {}
+
+function CombatService.ValidateCast(playerPos: Vector3, targetPos: Vector3, maxRange: number): (boolean, string?)
+    local distance = (playerPos - targetPos).Magnitude
+    if distance > maxRange then
+        return false, string.format("Portée dépassée: %.1f > %.1f", distance, maxRange)
+    end
+    return true, nil
+end
+
+function CombatService.CalculateDamage(baseDmg: number, defense: number): number
+    local reduction = math.clamp(defense / (defense + 100), 0, 0.75)
+    return math.max(1, math.floor(baseDmg * (1 - reduction)))
+end
+
+return CombatService
+"#),
+            ("client/ClientController.luau", r#"--!strict
+--[[
+  💻 [CLIENT-001] Contrôleur Joueur Local & Prédiction Visuelle
+  Rendu uniquement, zéro autorité sur l'état global du monde
+]]
+
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+
+local ClientController = {}
+
+function ClientController.Init()
+    print("🕹️ [AETHER CLIENT] Contrôleur joueur initialisé pour " .. localPlayer.Name)
+end
+
+return ClientController
+"#),
+            ("data-nodes/DataStoreServiceAdapter.luau", r#"--!strict
+--[[
+  🗄️ [DATASTORE-001] Adaptateur de Persistance DataStore avec Session-Locking
+  Pattern ProfileService anti-dupe et tolérance aux pannes réseau
+]]
+
+local DataStoreService = game:GetService("DataStoreService")
+local playerDataStore = DataStoreService:GetDataStore("AetherPlayerStore_v1")
+
+local DataStoreAdapter = {}
+
+function DataStoreAdapter.LoadProfile(userId: number): any
+    local key = "Player_" .. tostring(userId)
+    local success, result = pcall(function()
+        return playerDataStore:GetAsync(key)
+    end)
+    if not success then
+        warn("❌ Erreur lecture DataStore pour " .. key .. ": " .. tostring(result))
+        return nil
+    end
+    return result
+end
+
+function DataStoreAdapter.SaveProfile(userId: number, data: any): boolean
+    local key = "Player_" .. tostring(userId)
+    local success, err = pcall(function()
+        playerDataStore:SetAsync(key, data)
+    end)
+    if not success then
+        warn("❌ Erreur écriture DataStore pour " .. key .. ": " .. tostring(err))
+        return false
+    end
+    return true
+end
+
+return DataStoreAdapter
+"#),
+            ("default.project.json", r#"{
+  "name": "AetherRobloxServer",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Contracts": {
+        "$path": "contracts"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Server": {
+        "$path": "server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Client": {
+          "$path": "client"
+        }
+      }
+    },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "DataNodes": {
+        "$path": "data-nodes"
+      }
+    }
+  }
+}
+"#),
+            ("wally.toml", r#"[package]
+name = "aether/roblox-server"
+version = "0.1.0"
+registry = "https://github.com/Upturn/wally-index"
+realm = "shared"
+
+[dependencies]
+# Promise = "evaera/promise@4.0.0"
+# Signal = "sleitnick/signal@2.0.1"
+"#),
+            ("selene.toml", r#"std = "roblox"
+
+[rules]
+empty_if = "warn"
+multiple_statements = "warn"
+shadowing = "warn"
+unused_variable = "warn"
+"#),
+        ],
+        StackType::MinecraftServer => vec![
+            ("contracts/AETHER_MC_MANIFEST_SPEC.md", r#"# 📜 Spécification Manifest Serveur Minecraft Aether
+
+## 🛡️ Invariants EARS
+- WHEN server boots THE RUNNER SHALL apply Aikar JVM garbage collection flags.
+- WHEN control plane requests state THE RUNNER SHALL emit JSON heartbeat over IPC.
+- WHEN plugin triggers event THE HANDLER SHALL process asynchronously without blocking main tick.
+"#),
+            ("server/server.properties", r#"# Minecraft Server Properties - Aether Engine Optimized
+server-port=25565
+online-mode=true
+enable-rcon=false
+difficulty=normal
+gamemode=survival
+max-players=50
+view-distance=10
+simulation-distance=8
+network-compression-threshold=256
+"#),
+            ("server/start.bat", r#"@echo off
+title Aether Minecraft Game Server
+java -Xms4G -Xmx4G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true -jar paper.jar nogui
+pause
+"#),
+            ("server/start.sh", r#"#!/usr/bin/env bash
+# Aether Minecraft Game Server Runner
+exec java -Xms4G -Xmx4G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true -jar paper.jar nogui
+"#),
+            ("server/paper-global.yml", r#"# Paper Global Config - High Concurrency Tuning
+timings:
+  enabled: true
+  verbose: false
+chunk-loading:
+  min-load-radius: 2
+  max-concurrent-sends: 2
+watchdog:
+  early-warning-every: 5000
+  early-warning-delay: 10000
+"#),
+            ("plugins/README.md", r#"# 📦 Plugins Serveur Minecraft
+Placez vos plugins Paper/Purpur (.jar) dans ce dossier.
+Recommandations Aether : LuckPerms, Chunky, FastAsyncWorldEdit, ProtocolLib.
 "#),
         ],
     };

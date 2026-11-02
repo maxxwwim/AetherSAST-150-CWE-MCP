@@ -1,11 +1,12 @@
 import os
 import uuid
 import re
-from flask import Flask, render_template, request, jsonify, session, abort
+from flask import Flask, render_template, request, jsonify, session, abort, redirect
 from services.manifest_generator import build_server_manifest
 from services.store_service import get_store_items, get_item_by_id, process_checkout, ORDERS_HISTORY
 from services.player_service import get_leaderboards, get_player_profile
 from services.server_status_service import get_live_server_status
+from services.market_service import get_market_minerals
 
 app = Flask(__name__)
 app.secret_key = "aethercraft_secret_session_key_2026"
@@ -45,6 +46,44 @@ def shop():
     cart = session.get("cart", [])
     cart_total = sum(i["price"] for i in cart)
     return render_template("shop.html", items=items, current_cat=cat, cart=cart, cart_total=cart_total)
+
+@app.route("/animaux")
+@app.route("/pets")
+def redirect_pets():
+    return redirect("/boutique?cat=pets")
+
+@app.route("/objets")
+@app.route("/items")
+def redirect_items():
+    return redirect("/boutique?cat=items")
+
+@app.route("/grades")
+def redirect_grades():
+    return redirect("/boutique?cat=grades")
+
+@app.route("/caisses")
+@app.route("/crates")
+@app.route("/cles")
+def redirect_keys():
+    return redirect("/boutique?cat=keys")
+
+@app.route("/shop")
+def redirect_shop():
+    return redirect("/boutique")
+
+@app.route("/marche")
+@app.route("/marche/")
+@app.route("/marche-minerais")
+@app.route("/bourse")
+@app.route("/hdv")
+def market():
+    """Page du marché des minerais et de la bourse économique."""
+    minerals = get_market_minerals()
+    return render_template("marche.html", minerals=minerals)
+
+@app.route("/favicon.ico")
+def favicon():
+    return ("", 204)
 
 @app.route("/api/store/cart/add", methods=["POST"])
 def add_to_cart():

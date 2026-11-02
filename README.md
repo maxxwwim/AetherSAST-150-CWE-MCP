@@ -8,6 +8,7 @@
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
+[![M8ven Score](https://m8ven.ai/badge/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7)](https://m8ven.ai/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?s=readme)
 [![SAST Linter](https://img.shields.io/badge/SAST_%26_Bug_Bounty-150%2B_CWE_Rules_%26_Zero--Day_Patterns-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
 [![Catalogue CWE](https://img.shields.io/badge/Catalogue_CWE-150%2B_Règles_Officielles-fbbf24?style=for-the-badge&logo=target)](./CWE_CATALOG.md)
 [![BLAKE3](https://img.shields.io/badge/Contracts-BLAKE3_%2B_EARS_Sealed-10b981?style=for-the-badge)](#🔒-gouvernance-spec-driven-contrats-ears--sceau-blake3)
@@ -649,19 +650,21 @@ flowchart TD
 
 ---
 
-### Catalogue Exhaustif des 9 Outils MCP
+### Catalogue Exhaustif des 9 Outils MCP & Conformité M8ven (Score 90+/100)
 
-| Outil MCP | Paramètres Clés | Impact Opérationnel & Synchronisation Cockpit |
-| :--- | :--- | :--- |
-| **`aetherscope_get_graph_summary`** | `path?` | Retourne l'architecture globale du projet : nombre de nœuds, flux, répartition des dossiers, score de santé et décompte des violations CVE. |
-| **`aetherscope_get_active_target`** | `symbol_id?` | Extrait le contexte chirurgical d'un symbole : code, docstring, **flux entrants/sortants classés en 6 catégories** (UI, HTTP, WS, DB, Contrats, Appels), règles EARS et tâches liées. |
-| **`aetherscope_teleport_camera`** | `target`, `action?`, `details?` | **Téléporte la caméra 3D du cockpit** sur le symbole ou dossier ciblé par l'IA, trace le fil d'Ariane stellaire et affiche l'action en cours dans le bandeau de télémétrie. |
-| **`aetherscope_scan_project`** | `path?` | Déclenche à chaud une ré-analyse AST multithread et un audit SAST complet (< 100 ms) et rafraîchit le graphe WebGL 2. |
-| **`aetherscope_create_task`** | `title`, `kind?`, `target_symbol?`, `target_file?`, `priority?`, `initial_readme?` | Crée une tâche persistante (`function`, `research`, `security_fix`, `arch_refactor`, `documentation`, `test`) avec son dossier `.aether/tasks/<id>/`, son `task.json` et son mini-`README.md`. |
-| **`aetherscope_update_task`** | `task_id`, `status?`, `progress?`, `progress_note?`, `full_readme?` | Met à jour le statut (`pending`, `in_progress`, `blocked`, `done`), le pourcentage `0-100%` et enrichit le journal technique Markdown de la tâche. |
-| **`aetherscope_list_tasks`** | `status_filter?` | Liste toutes les tâches actives/terminées et synchronise automatiquement `.aether/TASKS_SUMMARY.md`. |
-| **`aetherscope_send_chat_message`** | `text`, `thought?`, `target_symbol?` | Publie un compte-rendu ou une question dans la **Console Chat Copilot** du cockpit, avec affichage dédié des réflexions internes `<thought>` et bouton de centrage caméra. |
-| **`aetherscope_get_chat_history`** | *(aucun)* | Lit l'historique des messages échangés dans le cockpit pour maintenir une continuité conversationnelle parfaite. |
+> **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) ainsi que des schémas JSON stricts (`additionalProperties: false`), garantissant une exécution prévisible, sans risque d'effets de bord incontrôlés pour les agents autonomes.
+
+| Outil MCP | Hints M8ven & Sécurité | Paramètres Clés | Impact Opérationnel & Synchronisation Cockpit |
+| :--- | :--- | :--- | :--- |
+| **`aetherscope_get_graph_summary`** | `readOnly: true`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | `path?` | Retourne l'architecture globale du projet : nombre de nœuds, flux, répartition des dossiers, score de santé et décompte des violations CVE. |
+| **`aetherscope_get_active_target`** | `readOnly: true`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | `symbol_id` | Extrait le contexte chirurgical d'un symbole : code, docstring, **flux entrants/sortants classés en 6 catégories** (UI, HTTP, WS, DB, Contrats, Appels), règles EARS et tâches liées. |
+| **`aetherscope_teleport_camera`** | `readOnly: true`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | `target`, `action`, `details` | **Téléporte la caméra 3D du cockpit** sur le symbole ou dossier ciblé par l'IA, trace le fil d'Ariane stellaire et affiche l'action en cours dans le bandeau de télémétrie. |
+| **`aetherscope_scan_project`** | `readOnly: true`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | `path?` | Déclenche à chaud une ré-analyse AST multithread et un audit SAST complet (< 100 ms) et rafraîchit le graphe WebGL 2. |
+| **`aetherscope_create_task`** | `readOnly: false`<br>`destructive: false`<br>`idempotent: false`<br>`openWorld: false` | `title`, `kind?`, `target_symbol?`, `target_file?`, `priority?`, `initial_readme?` | Crée une tâche persistante (`function`, `research`, `security_fix`, `arch_refactor`, `documentation`, `test`) avec son dossier `.aether/tasks/<id>/`, son `task.json` et son mini-`README.md`. |
+| **`aetherscope_update_task`** | `readOnly: false`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | `task_id`, `status?`, `progress?`, `progress_note?`, `full_readme?` | Met à jour le statut (`pending`, `in_progress`, `blocked`, `done`), le pourcentage `0-100%` et enrichit le journal technique Markdown de la tâche. |
+| **`aetherscope_list_tasks`** | `readOnly: true`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | `status_filter?` | Liste toutes les tâches actives/terminées et synchronise automatiquement `.aether/TASKS_SUMMARY.md`. |
+| **`aetherscope_send_chat_message`** | `readOnly: false`<br>`destructive: false`<br>`idempotent: false`<br>`openWorld: false` | `text`, `thought?`, `target_symbol?` | Publie un compte-rendu ou une question dans la **Console Chat Copilot** du cockpit, avec affichage dédié des réflexions internes `<thought>` et bouton de centrage caméra. |
+| **`aetherscope_get_chat_history`** | `readOnly: true`<br>`destructive: false`<br>`idempotent: true`<br>`openWorld: false` | *(aucun)* | Lit l'historique des messages échangés dans le cockpit pour maintenir une continuité conversationnelle parfaite. |
 
 ---
 

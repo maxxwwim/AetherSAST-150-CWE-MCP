@@ -220,6 +220,10 @@
            class="px-4 py-2 rounded-xl transition flex items-center gap-1.5 {% if request.path == '/boutique' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}text-slate-300 hover:text-white hover:bg-white/5{% endif %}">
           <span>👑</span> BOUTIQUE
         </a>
+        <a href="/marche" onclick="AudioSys.playClick()" 
+           class="px-4 py-2 rounded-xl transition flex items-center gap-1.5 {% if request.path == '/marche' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}text-slate-300 hover:text-white hover:bg-white/5{% endif %}">
+          <span>📈</span> MARCHÉ
+        </a>
         <a href="/joueurs" onclick="AudioSys.playClick()" 
            class="px-4 py-2 rounded-xl transition flex items-center gap-1.5 {% if request.path == '/joueurs' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}text-slate-300 hover:text-white hover:bg-white/5{% endif %}">
           <span>👥</span> CLASSEMENTS

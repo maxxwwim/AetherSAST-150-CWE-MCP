@@ -34,6 +34,8 @@ Cargo.lock.bak
 *.bak
 *.swp
 *.patch
+instances/**/world/
+.aether_pending_deliveries.json
 
 # ==========================================
 # Python Cache

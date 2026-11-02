@@ -13,11 +13,11 @@
   <!-- Header -->
   <div class="text-center max-w-2xl mx-auto mb-10">
     <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-950/80 border border-amber-800 text-amber-400 text-xs font-gaming tracking-wide mb-3 shadow-inner">
-      <span>⭐</span> BOUTIQUE SÉCURISÉE • LIVRAISON AUTOMATIQUE RCON
+      <span>⭐</span> BOUTIQUE SÉCURISÉE • LIVRAISON INVENTAIRE INSTANTANÉE (RCON)
     </div>
     <h1 class="text-3xl sm:text-5xl font-black font-gaming tracking-tight text-white">BOUTIQUE OFFICIELLE</h1>
     <p class="text-xs sm:text-sm text-slate-400 mt-2 font-normal">
-      Débloquez des privilèges exclusifs, soutenez le serveur et hissez-vous au sommet du classement.
+      Objets mythiques avec bonus exclusifs, animaux de compagnie et grades délivrés directement dans votre inventaire.
     </p>
   </div>
 
@@ -30,20 +30,24 @@
       <!-- Category Filter Tabs (Hypixel Style) -->
       <div class="flex flex-wrap gap-2 pb-2 font-gaming text-xs font-bold tracking-wide">
         <a href="/boutique?cat=all" onclick="AudioSys.playClick()" 
-           class="px-5 py-2.5 rounded-xl transition {% if current_cat == 'all' or not current_cat %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
-          TOUS LES ARTICLES
+           class="px-4 py-2.5 rounded-xl transition {% if current_cat == 'all' or not current_cat %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
+          TOUT VOIR
+        </a>
+        <a href="/boutique?cat=items" onclick="AudioSys.playClick()" 
+           class="px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 {% if current_cat == 'items' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
+          <span>⚔️</span> ÉQUIPEMENTS & OBJETS
+        </a>
+        <a href="/boutique?cat=pets" onclick="AudioSys.playClick()" 
+           class="px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 {% if current_cat == 'pets' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
+          <span>🐉</span> ANIMAUX & FAMILIERS
         </a>
         <a href="/boutique?cat=grades" onclick="AudioSys.playClick()" 
-           class="px-5 py-2.5 rounded-xl transition flex items-center gap-2 {% if current_cat == 'grades' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
+           class="px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 {% if current_cat == 'grades' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
           <span>👑</span> GRADES VIP
         </a>
         <a href="/boutique?cat=keys" onclick="AudioSys.playClick()" 
-           class="px-5 py-2.5 rounded-xl transition flex items-center gap-2 {% if current_cat == 'keys' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
+           class="px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 {% if current_cat == 'keys' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
           <span>🗝️</span> CLÉS & CAISSES
-        </a>
-        <a href="/boutique?cat=cosmetics" onclick="AudioSys.playClick()" 
-           class="px-5 py-2.5 rounded-xl transition flex items-center gap-2 {% if current_cat == 'cosmetics' %}bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-black shadow-lg shadow-amber-500/25{% else %}glass-panel text-slate-300 hover:text-white hover:bg-white/10{% endif %}">
-          <span>🪽</span> COSMÉTIQUES
         </a>
       </div>
 
@@ -70,15 +74,28 @@
             <div class="mb-3">
               <span class="px-2.5 py-0.5 rounded text-[10px] font-gaming font-bold uppercase tracking-wider 
                 {% if item.badge_color == 'emerald' %}bg-emerald-950 text-emerald-400 border border-emerald-800
-                {% elif item.badge_color == 'sky' %}bg-amber-950 text-amber-400 border border-amber-800
+                {% elif item.badge_color == 'sky' %}bg-sky-950 text-sky-400 border border-sky-800
                 {% elif item.badge_color == 'amber' %}bg-amber-950 text-amber-400 border border-amber-800
                 {% elif item.badge_color == 'purple' %}bg-purple-950 text-purple-400 border border-purple-800
+                {% elif item.badge_color == 'violet' %}bg-violet-950 text-violet-300 border border-violet-800
+                {% elif item.badge_color == 'rose' %}bg-rose-950 text-rose-300 border border-rose-800
                 {% else %}bg-slate-800 text-slate-300 border border-slate-700{% endif %}">
                 {{ item.badge }}
               </span>
               <h3 class="text-lg font-bold font-gaming text-white mt-1.5">{{ item.name }}</h3>
               <p class="text-xs text-slate-400 mt-1 leading-relaxed">{{ item.description }}</p>
             </div>
+
+            <!-- LE PETIT + EXCLUSIF COMPARED TO VANILLA -->
+            {% if item.petit_plus %}
+            <div class="mt-3 p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 to-amber-900/10 border border-amber-500/40 shadow-inner">
+              <div class="flex items-center gap-1.5 mb-1">
+                <span class="text-amber-400 text-xs">✦</span>
+                <span class="text-[10px] font-gaming font-black text-amber-300 uppercase tracking-wider">Le Petit + Boutique :</span>
+              </div>
+              <p class="text-[11px] leading-snug font-medium text-amber-100/90">{{ item.petit_plus }}</p>
+            </div>
+            {% endif %}
 
             <!-- Perks List -->
             <div class="space-y-1.5 border-t border-white/10 pt-3 my-4">
@@ -116,10 +133,10 @@
       <!-- Trust Badges -->
       <div class="mt-4 glass-panel rounded-2xl p-4 text-xs text-slate-400 space-y-2 border border-white/5">
         <div class="flex items-center gap-2 text-slate-300 font-gaming font-bold text-xs">
-          <span>🔒</span> LIVRAISON IMMÉDIATE RCON
+          <span>🔒</span> LIVRAISON INVENTAIRE RCON
         </div>
         <p class="text-[11px] leading-relaxed">
-          Les commandes en jeu sont expédiées sur le serveur dans les 5 secondes suivant le paiement.
+          Les objets, animaux et kits sont instantanément insérés dans l'inventaire du joueur via connexion RCON sécurisée.
         </p>
       </div>
     </div>

@@ -7,6 +7,8 @@ pub enum StackType {
     PurePythonUv,
     PureNodePnpm,
     HybridMmoWeb3,
+    RobloxLuau,
+    MinecraftServer,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

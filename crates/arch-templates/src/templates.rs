@@ -180,6 +180,90 @@ impl ArchScaffolder {
                     },
                 );
             }
+            StackType::RobloxLuau => {
+                galaxies.insert(
+                    "contracts".to_string(),
+                    GalaxyManifest {
+                        path: "./contracts".to_string(),
+                        role: "Shared Luau types, RemoteEvent/RemoteFunction definitions & EARS contracts".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "server".to_string(),
+                    GalaxyManifest {
+                        path: "./server".to_string(),
+                        role: "Authoritative server loop, hit validation, anti-exploit & domain services".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "client".to_string(),
+                    GalaxyManifest {
+                        path: "./client".to_string(),
+                        role: "Client controllers, local prediction, camera and UI interaction".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "data-nodes".to_string(),
+                    GalaxyManifest {
+                        path: "./data-nodes".to_string(),
+                        role: "DataStoreService adapter, ProfileService session locking & auto-save".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+            }
+            StackType::MinecraftServer => {
+                galaxies.insert(
+                    "contracts".to_string(),
+                    GalaxyManifest {
+                        path: "./contracts".to_string(),
+                        role: "Plugin communication protocols, EARS specs and manifest contracts".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "server".to_string(),
+                    GalaxyManifest {
+                        path: "./server".to_string(),
+                        role: "Paper/Purpur server configs, Aikar JVM scripts and engine tuning".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "plugins".to_string(),
+                    GalaxyManifest {
+                        path: "./plugins".to_string(),
+                        role: "Paper/Spigot plugins, extensions and event handlers".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "data-nodes".to_string(),
+                    GalaxyManifest {
+                        path: "./data-nodes".to_string(),
+                        role: "World saves, SQLite/MySQL player stores and backups".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+            }
         }
 
         ProjectManifest {
@@ -190,5 +274,27 @@ impl ArchScaffolder {
             galaxies,
             guardrails: GuardrailSettings::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_roblox_and_minecraft_manifests() {
+        let roblox = ArchScaffolder::create_manifest("RobloxGame", StackType::RobloxLuau, TopologyMode::MonorepoLocal);
+        assert_eq!(roblox.galaxies.len(), 4);
+        assert!(roblox.galaxies.contains_key("contracts"));
+        assert!(roblox.galaxies.contains_key("server"));
+        assert!(roblox.galaxies.contains_key("client"));
+        assert!(roblox.galaxies.contains_key("data-nodes"));
+
+        let mc = ArchScaffolder::create_manifest("McServer", StackType::MinecraftServer, TopologyMode::MonorepoLocal);
+        assert_eq!(mc.galaxies.len(), 4);
+        assert!(mc.galaxies.contains_key("contracts"));
+        assert!(mc.galaxies.contains_key("server"));
+        assert!(mc.galaxies.contains_key("plugins"));
+        assert!(mc.galaxies.contains_key("data-nodes"));
     }
 }

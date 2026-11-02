@@ -132,7 +132,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
             result: Some(json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
-                    "tools": {}
+                    "tools": {
+                        "listChanged": false
+                    },
+                    "logging": {}
                 },
                 "serverInfo": {
                     "name": "aetherscope-mcp",
@@ -175,7 +178,15 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                     "description": "Courte description technique de ce que vous observez ou réalisez"
                                 }
                             },
-                            "required": ["target", "action", "details"]
+                            "required": ["target", "action", "details"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Téléportation Caméra 3D AetherScope",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
                         }
                     },
                     {
@@ -188,7 +199,16 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                     "type": "string",
                                     "description": "Chemin optionnel du projet à analyser (par défaut le projet actif)"
                                 }
-                            }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Résumé d'Architecture & Santé Projet",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
                         }
                     },
                     {
@@ -210,7 +230,15 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                     "description": "Symbole ou fichier associé au message (optionnel)"
                                 }
                             },
-                            "required": ["text"]
+                            "required": ["text"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Envoi Message Chat AetherScope",
+                            "readOnlyHint": false,
+                            "destructiveHint": false,
+                            "idempotentHint": false,
+                            "openWorldHint": false
                         }
                     },
                     {
@@ -218,7 +246,16 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                         "description": "Récupère l'historique des échanges récents du chat AetherScope.",
                         "inputSchema": {
                             "type": "object",
-                            "properties": {}
+                            "properties": {},
+                            "required": [],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Historique du Chat AetherScope",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
                         }
                     },
                     {
@@ -232,7 +269,15 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                     "description": "Nom ou identifiant du symbole ou fichier (ex: 'handle_booking', 'BookingForm')"
                                 }
                             },
-                            "required": ["symbol_id"]
+                            "required": ["symbol_id"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Contexte & Handshake Symbole",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
                         }
                     },
                     {
@@ -245,7 +290,16 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                     "type": "string",
                                     "description": "Chemin du projet à réanalyser"
                                 }
-                            }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Scan & Analyse Architecturale du Projet",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
                         }
                     },
                     {
@@ -281,7 +335,15 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                     "description": "Contenu Markdown optionnel pour initialiser le mini-README d'avancement (objectifs, checklist d'étapes)"
                                 }
                             },
-                            "required": ["title"]
+                            "required": ["title"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Création de Tâche AetherScope",
+                            "readOnlyHint": false,
+                            "destructiveHint": false,
+                            "idempotentHint": false,
+                            "openWorldHint": false
                         }
                     },
                     {
@@ -301,7 +363,9 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 },
                                 "progress": {
                                     "type": "integer",
-                                    "description": "Pourcentage d'avancement estimé de la tâche entre 0 et 100"
+                                    "description": "Pourcentage d'avancement estimé de la tâche entre 0 et 100",
+                                    "minimum": 0,
+                                    "maximum": 100
                                 },
                                 "progress_note": {
                                     "type": "string",
@@ -312,7 +376,15 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                     "description": "Nouveau contenu complet du mini-README de la tâche (si réécriture / mise à jour complète de la checklist)"
                                 }
                             },
-                            "required": ["task_id"]
+                            "required": ["task_id"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Mise à Jour de Tâche AetherScope",
+                            "readOnlyHint": false,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
                         }
                     },
                     {
@@ -326,7 +398,16 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                     "description": "Filtre optionnel : 'active' (par défaut, exclut les terminées), 'all' (toutes les tâches), 'done' (uniquement terminées)",
                                     "enum": ["active", "all", "done"]
                                 }
-                            }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Liste des Tâches AetherScope",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
                         }
                     }
                 ]

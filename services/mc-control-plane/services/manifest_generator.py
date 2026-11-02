@@ -63,6 +63,10 @@ def build_server_manifest(
         f"simulation-distance=8\n"
         f"max-players=20\n"
         f"enable-command-block=true\n"
+        f"enable-rcon=true\n"
+        f"rcon.port=25575\n"
+        f"rcon.password=aether2026\n"
+        f"broadcast-rcon-to-ops=true\n"
     )
 
     manifest = {
@@ -88,7 +92,30 @@ def build_server_manifest(
         "plugins_and_mods": plugin_artifacts,
         "configs": {
             "eula.txt": "eula=true\n",
-            "server.properties": server_props
+            "server.properties": server_props,
+            "world/datapacks/aether_sanctuary/pack.mcmeta": '{\n  "pack": {\n    "pack_format": 48,\n    "description": "Aether Sanctuary - Regle Invulnerable Equilibre"\n  }\n}\n',
+            "world/datapacks/aether_sanctuary/data/minecraft/tags/function/tick.json": '{\n  "values": [\n    "aether:tick"\n  ]\n}\n',
+            "world/datapacks/aether_sanctuary/data/aether/function/tick.mcfunction": (
+                "# Regle Aether Sanctuary : Si invulnerable -> degats annules, PvP et pose de blocs bloques\n"
+                "effect give @a[tag=invulnerable] minecraft:resistance 2 255 true\n"
+                "effect give @a[tag=invulnerable] minecraft:fire_resistance 2 255 true\n"
+                "effect give @a[tag=invulnerable] minecraft:weakness 2 255 true\n"
+                "gamemode adventure @a[tag=invulnerable,gamemode=survival]\n"
+                'title @a[tag=invulnerable] actionbar {"text":"🛡️ SANCTUAIRE ACTIF : Dégâts annulés | Attaque & Pose de blocs bloquées","color":"gold"}\n'
+                "gamemode survival @a[tag=!invulnerable,gamemode=adventure]\n"
+            ),
+            "world/datapacks/aether_sanctuary/data/aether/function/enable_god.mcfunction": (
+                "tag @s add invulnerable\n"
+                "gamemode adventure @s\n"
+                'title @s title {"text":"🛡️ SANCTUAIRE ACTIVÉ","color":"gold","bold":true}\n'
+            ),
+            "world/datapacks/aether_sanctuary/data/aether/function/disable_god.mcfunction": (
+                "tag @s remove invulnerable\n"
+                "gamemode survival @s\n"
+                "effect clear @s minecraft:resistance\n"
+                "effect clear @s minecraft:weakness\n"
+                'title @s title {"text":"⚔️ SANCTUAIRE DÉSACTIVÉ","color":"red","bold":true}\n'
+            )
         }
     }
 

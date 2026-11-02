@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Marché des Minerais & Bourse — AetherCraft{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 py-10 relative">
+
+  <!-- Header -->
+  <div class="text-center max-w-3xl mx-auto mb-10">
+    <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-950/80 border border-amber-800 text-amber-400 text-xs font-gaming tracking-wide mb-3 shadow-inner">
+      <span>📈</span> COURS DE LA BOURSE DU SPAWN • ACTUALISATION EN TEMPS RÉEL
+    </div>
+    <h1 class="text-3xl sm:text-5xl font-black font-gaming tracking-tight text-white">MARCHÉ DES MINERAIS</h1>
+    <p class="text-xs sm:text-sm text-slate-400 mt-2 font-normal">
+      Consultez les fluctuations en direct, vendez vos minerais aux marchands du Spawn ou échangez avec les joueurs via l'Hôtel des Ventes (<code class="text-amber-300 font-mono">/ah</code>).
+    </p>
+  </div>
+
+  <!-- Quick Command Banner -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3">
+      <span class="text-2xl p-2.5 rounded-xl bg-black/40 border border-white/10">🏛️</span>
+      <div>
+        <span class="text-[10px] font-gaming text-slate-400 uppercase tracking-wider block">Hôtel des Ventes</span>
+        <code class="text-xs font-mono font-bold text-amber-300">/ah</code>
+        <span class="text-[11px] text-slate-300 block">Vendez à d'autres joueurs</span>
+      </div>
+    </div>
+    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3">
+      <span class="text-2xl p-2.5 rounded-xl bg-black/40 border border-white/10">⚖️</span>
+      <div>
+        <span class="text-[10px] font-gaming text-slate-400 uppercase tracking-wider block">Bourse du Spawn</span>
+        <code class="text-xs font-mono font-bold text-emerald-400">/bourse</code>
+        <span class="text-[11px] text-slate-300 block">Rachat instantané au cours</span>
+      </div>
+    </div>
+    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3">
+      <span class="text-2xl p-2.5 rounded-xl bg-black/40 border border-white/10">💰</span>
+      <div>
+        <span class="text-[10px] font-gaming text-slate-400 uppercase tracking-wider block">Vente Rapide en Main</span>
+        <code class="text-xs font-mono font-bold text-sky-400">/sell hand</code>
+        <span class="text-[11px] text-slate-300 block">Liquidité immédiate</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Minerals Market Table -->
+  <div class="glass-panel border border-white/10 rounded-3xl p-6 shadow-2xl mb-10 overflow-hidden">
+    <div class="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">💎</span>
+        <div>
+          <h2 class="font-gaming font-bold text-white text-lg">Cotations des Minerais Précieux</h2>
+          <p class="text-xs text-slate-400">Taux officiel garanti par le Trésor d'Aether</p>
+        </div>
+      </div>
+      <span class="px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 text-xs font-mono border border-emerald-800 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        MARCHÉ OUVERT
+      </span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead class="text-[10px] font-gaming uppercase tracking-wider text-slate-400 border-b border-white/5">
+          <tr>
+            <th class="pb-3 pl-2">Ressource</th>
+            <th class="pb-3">Symbole</th>
+            <th class="pb-3">Prix d'Achat (Spawn)</th>
+            <th class="pb-3">Prix de Vente (Joueur)</th>
+            <th class="pb-3">Tendance 24h</th>
+            <th class="pb-3 pr-2 text-right">Volume échangé</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-white/5 font-sans">
+          {% for m in minerals %}
+          <tr class="hover:bg-white/5 transition">
+            <td class="py-4 pl-2 flex items-center gap-3">
+              <span class="text-2xl p-1.5 rounded-xl bg-black/40 border border-white/5">{{ m.icon }}</span>
+              <div>
+                <span class="font-gaming font-bold text-white block text-sm">{{ m.name }}</span>
+                <span class="text-[10px] text-slate-400">{{ m.category }}</span>
+              </div>
+            </td>
+            <td class="py-4 font-mono font-bold text-slate-300">
+              <span class="px-2 py-0.5 rounded bg-black/40 border border-white/5">{{ m.symbol }}</span>
+            </td>
+            <td class="py-4 font-mono font-black text-amber-300 text-sm">
+              {{ "{:,.0f}".format(m.base_price) }} <span class="text-[10px] text-slate-400 font-normal">Aether Coins</span>
+            </td>
+            <td class="py-4 font-mono font-bold text-emerald-400">
+              {{ "{:,.0f}".format(m.sell_price) }} <span class="text-[10px] text-slate-400 font-normal">Coins</span>
+            </td>
+            <td class="py-4 font-mono font-bold {% if m.is_up %}text-emerald-400{% else %}text-rose-400{% endif %}">
+              {% if m.is_up %}▲{% else %}▼{% endif %} {{ m.trend }}
+            </td>
+            <td class="py-4 pr-2 text-right font-mono text-slate-300">
+              {{ m.volume_24h }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Callout to Boutique (Tools & Keys) -->
+  <div class="glass-panel-gold border border-amber-500/30 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+    <div class="space-y-2 text-center md:text-left">
+      <span class="px-2.5 py-0.5 rounded bg-amber-950 text-amber-400 text-[10px] font-gaming font-bold uppercase tracking-wider border border-amber-800">
+        BOOSTER D'ÉCONOMIE
+      </span>
+      <h3 class="text-xl font-bold font-gaming text-white">Besoin d'un équipement pour forer plus vite ?</h3>
+      <p class="text-xs text-slate-300 max-w-xl">
+        Découvrez la <strong>Foreuse Quantique Aether</strong> (Fortune V & Minage Instantané) et les <strong>Packs de Clés Célestes</strong> disponibles dans la boutique officielle.
+      </p>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="/boutique?cat=items" class="px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-obsidian-950 font-gaming font-black text-xs hover:from-amber-400 hover:to-amber-500 transition shadow-lg shadow-amber-500/25 active:scale-95">
+        VOIR LES OUTILS
+      </a>
+      <a href="/caisses" class="px-5 py-3 rounded-xl glass-panel text-slate-200 font-gaming font-bold text-xs hover:text-white hover:bg-white/10 transition border border-white/10 active:scale-95">
+        OUVRIR DES CAISSES
+      </a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

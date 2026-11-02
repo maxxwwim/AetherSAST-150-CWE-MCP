@@ -2435,6 +2435,166 @@ setTimeout(() => {
 }, 600);
 
 // ========================================================
+// GAME SERVERS CREATION & ORCHESTRATION CONTROLLER
+// ========================================================
+let selectedGameServerStack = 'roblox';
+
+function openGameServersModal() {
+  const modal = document.getElementById('game-servers-modal');
+  if (!modal) return;
+  const curDir = document.getElementById('project-path-input')?.value.trim();
+  const gameDirInput = document.getElementById('game-project-dir');
+  if (gameDirInput && !gameDirInput.value) {
+    if (curDir) {
+      const parts = curDir.split(/[\\/]/);
+      parts.pop();
+      gameDirInput.value = parts.join('\\') || curDir;
+    } else {
+      gameDirInput.value = 'C:\\Users\\1234\\Desktop\\Projets';
+    }
+  }
+  updateGameServerSelection(selectedGameServerStack);
+  modal.classList.add('open');
+}
+window.openGameServersModal = openGameServersModal;
+
+function closeGameServersModal() {
+  document.getElementById('game-servers-modal')?.classList.remove('open');
+}
+window.closeGameServersModal = closeGameServersModal;
+
+function selectGameServerType(type) {
+  selectedGameServerStack = type;
+  updateGameServerSelection(type);
+  if (window.AudioSys?.nodeSelect) AudioSys.nodeSelect();
+}
+window.selectGameServerType = selectGameServerType;
+
+function updateGameServerSelection(type) {
+  const cardMc = document.getElementById('card-server-mc');
+  const cardRoblox = document.getElementById('card-server-roblox');
+  const btnSelectMc = document.getElementById('btn-select-mc');
+  const btnSelectRoblox = document.getElementById('btn-select-roblox');
+  const nameInput = document.getElementById('game-project-name');
+  const specsBox = document.getElementById('game-server-specs-box');
+  const preview = document.getElementById('game-structure-preview');
+
+  if (type === 'roblox') {
+    cardRoblox?.classList.add('selected');
+    cardMc?.classList.remove('selected');
+    if (btnSelectRoblox) {
+      btnSelectRoblox.classList.add('primary');
+      btnSelectRoblox.innerHTML = '<span>✓ Stack Sélectionnée</span>';
+    }
+    if (btnSelectMc) {
+      btnSelectMc.classList.remove('primary');
+      btnSelectMc.innerHTML = '<span>Choisir cette stack</span>';
+    }
+    if (nameInput && (!nameInput.value || nameInput.value === 'AetherMinecraftServer')) {
+      nameInput.value = 'AetherRobloxServer';
+    }
+    if (specsBox) {
+      specsBox.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div style="font-weight:800; font-size:0.86rem; color:#f87171; display:flex; align-items:center; gap:8px;">
+            <span>🟥</span> Architecture Serveur Roblox Optimisée Aether Code (Strict Luau + Rojo 7)
+          </div>
+          <span class="game-tag" style="color:#f87171; border-color:rgba(239,68,68,0.4); font-weight:700;">Zero-Trust Authoritative</span>
+        </div>
+        <div style="font-size:0.75rem; color:#cbd5e1; line-height:1.5;">
+          • <strong>contracts/ :</strong> <code>NetworkContracts.luau</code> (RemoteEvents validés, anti-exploit, rate-limiting) + <code>Types.luau</code>.<br>
+          • <strong>server/ :</strong> Boucle authoritative <code>ServerController.luau</code> & logique métier pure <code>domain/CombatService.luau</code> (zéro I/O).<br>
+          • <strong>client/ :</strong> Contrôleurs locaux <code>ClientController.luau</code> avec prédiction et interpolation fluide sans autorité.<br>
+          • <strong>data-nodes/ :</strong> Persistance <code>DataStoreServiceAdapter.luau</code> avec session-locking anti-dupe (Pattern ProfileService).<br>
+          • <strong>Outillage & Linting :</strong> <code>default.project.json</code> (Rojo 7), <code>wally.toml</code>, <code>selene.toml</code>, <code>AETHER_AI_RULES.md</code> et manifeste <code>aether.lock.toml</code> scellé BLAKE3.
+        </div>
+      `;
+    }
+    if (preview) {
+      preview.innerHTML = `Structure créée : <code>contracts/</code>, <code>server/</code>, <code>client/</code>, <code>data-nodes/</code>, <code>default.project.json</code>, <code>aether.lock.toml</code>.`;
+    }
+  } else {
+    cardMc?.classList.add('selected');
+    cardRoblox?.classList.remove('selected');
+    if (btnSelectMc) {
+      btnSelectMc.classList.add('primary');
+      btnSelectMc.innerHTML = '<span>✓ Stack Sélectionnée</span>';
+    }
+    if (btnSelectRoblox) {
+      btnSelectRoblox.classList.remove('primary');
+      btnSelectRoblox.innerHTML = '<span>Choisir cette stack</span>';
+    }
+    if (nameInput && (!nameInput.value || nameInput.value === 'AetherRobloxServer')) {
+      nameInput.value = 'AetherMinecraftServer';
+    }
+    if (specsBox) {
+      specsBox.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div style="font-weight:800; font-size:0.86rem; color:#38bdf8; display:flex; align-items:center; gap:8px;">
+            <span>⛏️</span> Architecture Serveur Minecraft (Paper/Purpur + Control-Plane Flask)
+          </div>
+          <span class="game-tag" style="color:#38bdf8; border-color:rgba(14,165,233,0.4); font-weight:700;">Tokio + JVM Aikar</span>
+        </div>
+        <div style="font-size:0.75rem; color:#cbd5e1; line-height:1.5;">
+          • <strong>contracts/ :</strong> Spécification universelle <code>AETHER_MC_MANIFEST_SPEC.md</code> & Invariants EARS.<br>
+          • <strong>server/ :</strong> Fichiers <code>server.properties</code>, <code>paper-global.yml</code> et scripts de démarrage <code>start.bat</code> / <code>start.sh</code> avec drapeaux Aikar flags.<br>
+          • <strong>plugins/ :</strong> Répertoire plugins et hooks (Chunky, LuckPerms, Vault).<br>
+          • <strong>data-nodes/ :</strong> Sauvegardes de mondes, chunks et persistance joueurs SQLite / MySQL.<br>
+          • <strong>Cockpit Web :</strong> Accessible en local sur <a href="http://127.0.0.1:5000" target="_blank" style="color:#38bdf8; text-decoration:underline; font-weight:700;">http://127.0.0.1:5000</a> (dashboard admin <code>/admin</code>, boutique & joueurs).
+        </div>
+      `;
+    }
+    if (preview) {
+      preview.innerHTML = `Structure créée : <code>contracts/</code>, <code>server/</code>, <code>plugins/</code>, <code>data-nodes/</code>, <code>start.bat</code>, <code>aether.lock.toml</code>.`;
+    }
+  }
+}
+
+async function browseGameServerDir() {
+  try {
+    const d = await window.AetherAPI.pickWorkspace();
+    if (d.status === 'ok' && d.workspace) {
+      const inp = document.getElementById('game-project-dir');
+      if (inp) inp.value = d.workspace;
+    }
+  } catch (e) {
+    showToast('❌ Erreur sélection dossier');
+  }
+}
+window.browseGameServerDir = browseGameServerDir;
+
+async function createGameServerProject() {
+  const baseDir = document.getElementById('game-project-dir')?.value.trim();
+  const projName = document.getElementById('game-project-name')?.value.trim();
+
+  if (!baseDir || !projName) {
+    showToast('⚠️ Veuillez renseigner le dossier parent et le nom du serveur !');
+    return;
+  }
+
+  const fullPath = baseDir.replace(/[\\/]+$/, '') + '\\' + projName;
+  const stackName = selectedGameServerStack === 'roblox' ? 'roblox' : 'minecraft';
+  showToast(`🎮 Forgeage du serveur de jeu [${stackName.toUpperCase()}] dans ${projName}...`);
+  try {
+    const d = await window.AetherAPI.initProject(fullPath, stackName);
+    if (d.status === 'ok') {
+      showToast(`✨ ${d.message || 'Serveur forgé avec succès'} !`);
+      closeGameServersModal();
+      const pInput = document.getElementById('project-path-input');
+      if (pInput) pInput.value = fullPath;
+      setTimeout(() => {
+        analyze(fullPath);
+      }, 400);
+    } else {
+      showToast(`❌ Erreur: ${d.message || 'Échec initialisation'}`);
+    }
+  } catch (err) {
+    showToast('❌ Erreur de communication serveur');
+  }
+}
+window.createGameServerProject = createGameServerProject;
+
+// ========================================================
 // COCKPIT SETTINGS & PREFERENCES CONTROLLER
 // ========================================================
 function openSettingsModal() {

@@ -176,6 +176,25 @@
                 <strong>🔒 Découplage :</strong> Paquets binaires WebSocket + Indexeur on-chain déporté sur nœuds distribués indépendants.
               </div>
             </div>
+
+            <!-- Carte Roblox Luau Authoritative -->
+            <div class="arch-card theme-roblox" data-stack="roblox">
+              <div class="arch-header">
+                <div class="arch-title-group"><span>🟥</span> Roblox Game Server</div>
+                <span class="arch-badge">Luau Strict • Rojo 7 • Zero-Trust</span>
+              </div>
+              <div class="arch-detail-row">
+                <span class="arch-detail-label">🎯 Profil & Attentes :</span>
+                <span class="arch-detail-text">Serveurs de jeu Roblox haute cadence, anti-exploit, architecture authoritative Zero-Trust.</span>
+              </div>
+              <div class="arch-detail-row">
+                <span class="arch-detail-label">🏛️ Architecture Recommandée :</span>
+                <span class="arch-detail-text">Rojo 7 Monorepo (<code>contracts/</code>, <code>server/</code>, <code>client/</code>, <code>data-nodes/</code>) + Wally + DataStore Session Locking.</span>
+              </div>
+              <div class="arch-decoupling">
+                <strong>🔒 Découplage :</strong> RemoteEvents typés et validés côté serveur. Zéro logique critique côté client.
+              </div>
+            </div>
           </div>
 
           <!-- Formulaire de Génération -->
@@ -202,6 +221,137 @@
                 ✨ Forger l'Architecture & Entrer dans le Cockpit WebGL 2
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       GAME SERVERS CREATION & ORCHESTRATION MODULE
+       ======================================================== -->
+  <div id="game-servers-modal" class="modal-overlay">
+    <div class="hub-modal-card game-servers-modal-card">
+      <div class="hub-header" style="background: linear-gradient(90deg, rgba(15, 23, 42, 0.95), rgba(46, 16, 101, 0.7)); border-bottom: 1px solid rgba(168, 85, 247, 0.35);">
+        <div class="hub-title-box">
+          <div class="hub-title-row">
+            <span>🎮</span>
+            <span>AETHERSCOPE • CRÉATION DE SERVEUR DE JEU</span>
+            <span class="arch-badge" style="background:rgba(168, 85, 247, 0.2); color:#c084fc; border:1px solid rgba(168, 85, 247, 0.5);">Gaming Engine Hub</span>
+          </div>
+          <div class="hub-sub">Générez et déployez des architectures serveur multijoueur contract-driven avec découplage strict et isolation des données.</div>
+        </div>
+        <button class="modal-close" id="btn-close-game-servers-modal" onclick="closeGameServersModal()">&times;</button>
+      </div>
+
+      <div class="hub-body">
+        <!-- Section 1 : Sélection de la Proposition -->
+        <div>
+          <div class="hub-section-title" style="color: #c084fc;"><span>🕹️</span> 1. Sélectionner l'Écosystème Serveur de Jeu</div>
+          <div class="game-servers-grid">
+            <!-- Proposition 1 : Minecraft Server (De Base) -->
+            <div class="game-card theme-minecraft" id="card-server-mc" onclick="selectGameServerType('minecraft')">
+              <div class="game-card-header">
+                <div class="game-card-title">
+                  <span class="game-card-icon">⛏️</span>
+                  <div>
+                    <div class="game-name">Minecraft Server (De Base)</div>
+                    <div class="game-tagline">Paper / Purpur 1.21+ • Rust Tokio Runner • Control-Plane :5000</div>
+                  </div>
+                </div>
+                <span class="game-pill mc-pill">Production Ready</span>
+              </div>
+              
+              <div class="game-card-body">
+                <p class="game-card-desc">
+                  Écosystème serveur Minecraft haute cadence. Orchestration asynchrone par Tokio (<code>aether-mc-runner</code>), tuning JVM Aikar flags, gestion de plugins et control-plane web Flask.
+                </p>
+                <div class="game-feature-tags">
+                  <span class="game-tag">⚡ Runner Tokio</span>
+                  <span class="game-tag">☕ JVM Aikar Flags</span>
+                  <span class="game-tag">📦 Plugins Paper</span>
+                  <span class="game-tag">📜 Manifest EARS</span>
+                  <span class="game-tag">🌐 Cockpit Web :5000</span>
+                </div>
+              </div>
+
+              <div class="game-card-actions">
+                <button class="aether-btn mc-open-btn" onclick="window.open('http://127.0.0.1:5000', '_blank'); event.stopPropagation();" title="Ouvrir le Cockpit Web Minecraft existant sur http://127.0.0.1:5000">
+                  <span>⛏️ Ouvrir Web Cockpit (:5000)</span>
+                </button>
+                <button class="aether-btn select-action-btn" id="btn-select-mc">
+                  <span>Choisir cette stack</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Proposition 2 : Roblox Server (Opti Aether Code) -->
+            <div class="game-card theme-roblox selected" id="card-server-roblox" onclick="selectGameServerType('roblox')">
+              <div class="game-card-header">
+                <div class="game-card-title">
+                  <span class="game-card-icon">🟥</span>
+                  <div>
+                    <div class="game-name">Roblox Server (Opti Aether Code)</div>
+                    <div class="game-tagline">Luau Strict • Rojo 7 • Authoritative Loop • Zero-Trust</div>
+                  </div>
+                </div>
+                <span class="game-pill roblox-pill">Aether Opti ★</span>
+              </div>
+
+              <div class="game-card-body">
+                <p class="game-card-desc">
+                  Architecture serveur Roblox authoritative optimisée pour Aether Code : validation anti-cheat stricte, contrats réseau RemoteEvent typés (<code>--!strict</code>), persistance ProfileService anti-dupe et synchro Rojo.
+                </p>
+                <div class="game-feature-tags">
+                  <span class="game-tag">🔒 Zero-Trust Client</span>
+                  <span class="game-tag">📜 contracts/ Luau Typés</span>
+                  <span class="game-tag">🏛️ Serveur Authoritative</span>
+                  <span class="game-tag">💾 Session-Lock DataStore</span>
+                  <span class="game-tag">🔧 Rojo 7 + Wally</span>
+                </div>
+              </div>
+
+              <div class="game-card-actions">
+                <button class="aether-btn select-action-btn primary" id="btn-select-roblox">
+                  <span>✓ Stack Sélectionnée</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2 : Spécifications Architecturales & Découplage -->
+        <div id="game-server-specs-box" class="game-specs-box">
+          <!-- Populé dynamiquement -->
+        </div>
+
+        <!-- Section 3 : Formulaire de Forgeage -->
+        <div class="scaffold-form-card" style="margin-top:0;">
+          <div class="hub-section-title" style="color: #38bdf8; margin-bottom:8px;">
+            <span>✨</span> 2. Forger l'Architecture du Serveur de Jeu
+          </div>
+          
+          <div class="scaffold-form-row">
+            <div class="scaffold-field">
+              <label>📁 DOSSIER RACINE DE DESTINATION :</label>
+              <div class="input-with-button">
+                <input type="text" id="game-project-dir" class="cosmo-input" style="flex:1;" placeholder="Ex: C:\Users\1234\Desktop\Projets" />
+                <button class="aether-btn" id="btn-game-browse-dir" onclick="browseGameServerDir()" style="font-size:0.75rem; padding:4px 10px;">Parcourir</button>
+              </div>
+            </div>
+            <div class="scaffold-field">
+              <label>🏷️ NOM DU NOUVEAU SERVEUR / JEU :</label>
+              <input type="text" id="game-project-name" class="cosmo-input" placeholder="Ex: AetherRobloxServer, AetherCraftInstance" value="AetherRobloxServer" />
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; flex-wrap:wrap; gap:10px;">
+            <div id="game-structure-preview" style="font-size:0.72rem; color:#94a3b8; font-family:var(--font-mono);">
+              Structure créée : <code>contracts/</code>, <code>server/</code>, <code>client/</code>, <code>data-nodes/</code>, <code>default.project.json</code>, <code>aether.lock.toml</code>.
+            </div>
+            <button class="aether-btn primary" id="btn-create-game-scaffold" onclick="createGameServerProject()" style="padding:9px 24px; font-weight:800; font-size:0.85rem; background:linear-gradient(135deg, #ec4899, #8b5cf6); box-shadow:0 0 25px rgba(236, 72, 153, 0.4);">
+              ✨ Forger le Serveur de Jeu & Entrer dans AetherScope
+            </button>
           </div>
         </div>
       </div>
@@ -445,9 +595,9 @@
             <button class="aether-dropdown-item" id="btn-open-hub">
               <span>🪐 <strong>Hub Multi-Architectures</strong></span>
             </button>
-            <button class="aether-dropdown-item highlight-mc" id="btn-open-mc-cockpit" onclick="window.open('http://127.0.0.1:5000', '_blank')">
-              <span>⛏️ <strong>Aether Minecraft Cockpit...</strong></span>
-              <span class="kbd-shortcut">:5000</span>
+            <button class="aether-dropdown-item highlight-game-servers" id="btn-open-game-servers" onclick="openGameServersModal()">
+              <span>🎮 <strong>Création serveur de jeu...</strong></span>
+              <span class="kbd-shortcut">Jeux</span>
             </button>
             <div class="aether-dropdown-divider"></div>
             <button class="aether-dropdown-item" id="btn-menu-pick-workspace">

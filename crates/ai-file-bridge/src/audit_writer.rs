@@ -211,6 +211,11 @@ impl AuditWriter {
                 "Java / Gradle / Maven : Plugins Paper/Purpur (`src/main/java`), Runner Tokio, API Endpoints & Event Listeners",
                 "Interfaces & Records Java, Invariants EARS et Spécifications Manifest universelles",
             ),
+            "roblox" | "roblox-server" | "luau" => (
+                "🟥 Roblox Luau (Authoritative Game Server)",
+                "Architecture Aether Contract-Driven : `contracts/` (Remotes & Types), `server/` (Authoritative Game Engine), `client/` (Controllers/UI), `data-nodes/` (DataStore session-lock)",
+                "Typage strict Luau (--!strict), RemoteEvents validés côté serveur, schémas de paquets sans confiance client",
+            ),
             _ => (
                 "⚡ Hybride Web3 & Temps Réel MMO",
                 "Client PixiJS/TS + Serveur Rust WebSocket + Adaptateurs Data-Nodes (PostgreSQL / Redis)",

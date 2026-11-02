@@ -10,17 +10,34 @@
   </div>
 
   {% if order_success %}
-  <div class="p-4 rounded-2xl bg-emerald-950/90 border border-emerald-700 text-emerald-200 text-xs mb-4 shadow-xl">
-    <div class="font-gaming font-bold text-sm text-emerald-300 mb-1 flex items-center gap-1.5">
-      <span>🎉</span> COMMANDE VALIDÉE !
+  <div class="p-4 rounded-2xl {% if 'LIVRÉ' in order_success.status %}bg-emerald-950/90 border border-emerald-700 text-emerald-200{% else %}bg-sky-950/90 border border-sky-700 text-sky-200{% endif %} text-xs mb-4 shadow-xl">
+    <div class="font-gaming font-bold text-sm {% if 'LIVRÉ' in order_success.status %}text-emerald-300{% else %}text-sky-300{% endif %} mb-1 flex items-center justify-between">
+      <span class="flex items-center gap-1.5">
+        <span>🎉</span> COMMANDE VALIDÉE !
+      </span>
+      <span class="text-[10px] px-2 py-0.5 rounded bg-black/50 border border-white/10 font-mono">
+        {{ order_success.status }}
+      </span>
     </div>
-    <p class="text-[11px] leading-relaxed">Commande <strong>#{{ order_success.order_id }}</strong> attribuée au joueur <strong>{{ order_success.username }}</strong>.</p>
-    <div class="mt-2 text-[10px] font-gaming text-emerald-400 uppercase tracking-wider">Commandes RCON exécutées :</div>
-    <ul class="list-disc list-inside font-mono text-[10px] mt-1 space-y-0.5 text-emerald-300/80">
-      {% for cmd in order_success.command_to_run %}
-      <li><code>{{ cmd }}</code></li>
-      {% endfor %}
-    </ul>
+    <p class="text-[11px] leading-relaxed">
+      Commande <strong>#{{ order_success.order_id }}</strong> pour le joueur <strong>{{ order_success.username }}</strong>.
+    </p>
+    <p class="text-[11px] font-medium text-amber-300 mt-1">
+      {{ order_success.delivery_message }}
+    </p>
+
+    <div class="mt-3 text-[10px] font-gaming text-slate-300 uppercase tracking-wider">
+      Commandes Minecraft délivrées dans l'inventaire :
+    </div>
+    <div class="mt-1 bg-black/60 rounded-xl p-2 border border-white/10 max-h-36 overflow-y-auto">
+      <ul class="font-mono text-[9px] space-y-1 text-slate-300 break-all select-all">
+        {% for cmd in order_success.command_to_run %}
+        <li class="p-1 rounded bg-white/5 border border-white/5 text-amber-200/90">
+          <code>/{{ cmd }}</code>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
   </div>
   {% endif %}
 
@@ -56,13 +73,13 @@
     <div>
       <label class="block text-[11px] font-gaming font-bold text-slate-300 mb-1 uppercase tracking-wider">Pseudo Minecraft Exact :</label>
       <input type="text" name="username" placeholder="ex: Notch, Alex, Steve" required
-             class="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
-      <span class="text-[10px] text-slate-500 mt-1 block">💡 Le grade ou item sera envoyé en jeu à ce pseudo.</span>
+             class="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono">
+      <span class="text-[10px] text-slate-400 mt-1 block">💡 Vos items, familiers et kits seront injectés en jeu sur ce compte.</span>
     </div>
 
     <button type="submit" 
             class="w-full py-3.5 px-4 rounded-xl font-gaming font-black text-xs bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-obsidian-950 shadow-xl shadow-amber-500/25 transition active:scale-95 flex items-center justify-center gap-2 tracking-wide">
-      <span>💳</span> <span>COMMANDER MAINTENANT</span>
+      <span>💳</span> <span>COMMANDER & RECEVOIR EN JEU</span>
     </button>
   </form>
 
@@ -76,7 +93,7 @@
   <div class="py-10 text-center text-slate-500 text-xs">
     <div class="text-3xl mb-2">🛒</div>
     <p class="font-gaming">Votre panier est vide</p>
-    <p class="text-[10px] text-slate-600 mt-1">Cliquez sur "Ajouter au Panier" sur n'importe quel grade.</p>
+    <p class="text-[10px] text-slate-600 mt-1">Cliquez sur "Ajouter au Panier" pour choisir un équipement ou animal.</p>
   </div>
   {% endif %}
 </div>
