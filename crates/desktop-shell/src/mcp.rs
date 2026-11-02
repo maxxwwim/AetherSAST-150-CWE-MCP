@@ -481,6 +481,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_teleport_camera",
                         "description": "Oriente la caméra WebGL en direct dans AetherScope vers un symbole ou un fichier, et affiche où l'IA travaille en temps réel (fil d'Ariane violet, faisceau laser et réticule tactique).",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -514,6 +518,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_get_graph_summary",
                         "description": "Récupère l'architecture complète du projet (nombre de nœuds, flux, liste des dossiers, santé globale et violations de sécurité CVE) depuis AetherScope.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -537,6 +545,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_send_chat_message",
                         "description": "Envoie un message ou debrief technique de l'IA directement dans le chat intégré de l'interface AetherScope du développeur.",
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": false,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -570,6 +582,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_get_chat_history",
                         "description": "Récupère l'historique des échanges récents du chat AetherScope.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {},
@@ -587,6 +603,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_get_active_target",
                         "description": "Récupère le contexte ciblé et le handshake pour un symbole : appelants amont, dépendances aval, règles README EARS et imports interdits.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -610,6 +630,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_scan_project",
                         "description": "Déclenche une réanalyse complète de l'architecture d'un projet pour rafraîchir le graphe 3D.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -633,6 +657,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_create_task",
                         "description": "Crée une nouvelle tâche (fonction, recherche, sécurité, refactorisation, etc.) avec son mini-README d'avancement pour structurer le travail dans le contexte du modèle et du développeur.",
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": false,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -683,6 +711,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_update_task",
                         "description": "Met à jour l'état d'avancement d'une tâche, son statut ('pending', 'in_progress', 'blocked', 'done'), son pourcentage (0-100%) et ajoute des notes au mini-README.",
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -729,6 +761,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "name": "aetherscope_list_tasks",
                         "description": "Récupère la liste des tâches du projet AetherScope avec leur type, statut, avancement et résumé du mini-README.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -1417,25 +1453,243 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mcp_tools_call_returns_canonical_is_error() {
-        let req_unknown = JsonRpcRequest {
+    async fn test_mcp_tools_list_declares_all_four_hints_on_every_tool() {
+        let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
-            id: Some(json!(6)),
-            method: "tools/call".to_string(),
-            params: Some(json!({ "name": "unknown_tool", "arguments": {} })),
+            id: Some(json!(10)),
+            method: "tools/list".to_string(),
+            params: None,
         };
-        let resp_unknown = handle_mcp_request(req_unknown, 3030, ".").await.expect("tools/call response");
-        let res_unknown = resp_unknown.result.expect("result present");
-        assert_eq!(res_unknown["isError"], true);
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("tools/list response");
+        let res = resp.result.expect("tools/list result");
+        let tools = res["tools"].as_array().expect("tools array");
+        assert_eq!(tools.len(), 9);
 
-        let req_summary = JsonRpcRequest {
+        let expected_tools = [
+            ("aetherscope_teleport_camera", true, false, true, false),
+            ("aetherscope_get_graph_summary", true, false, true, false),
+            ("aetherscope_send_chat_message", false, false, false, false),
+            ("aetherscope_get_chat_history", true, false, true, false),
+            ("aetherscope_get_active_target", true, false, true, false),
+            ("aetherscope_scan_project", true, false, true, false),
+            ("aetherscope_create_task", false, false, false, false),
+            ("aetherscope_update_task", false, false, true, false),
+            ("aetherscope_list_tasks", true, false, true, false),
+        ];
+
+        for (name, ro, dest, idemp, ow) in expected_tools {
+            let tool = tools.iter().find(|t| t["name"] == name)
+                .unwrap_or_else(|| panic!("Tool {} missing from tools/list", name));
+
+            assert_eq!(tool["readOnlyHint"].as_bool(), Some(ro), "top-level readOnlyHint on {}", name);
+            assert_eq!(tool["destructiveHint"].as_bool(), Some(dest), "top-level destructiveHint on {}", name);
+            assert_eq!(tool["idempotentHint"].as_bool(), Some(idemp), "top-level idempotentHint on {}", name);
+            assert_eq!(tool["openWorldHint"].as_bool(), Some(ow), "top-level openWorldHint on {}", name);
+
+            let ann = &tool["annotations"];
+            assert!(ann.is_object(), "annotations object on {}", name);
+            assert_eq!(ann["readOnlyHint"].as_bool(), Some(ro), "annotations readOnlyHint on {}", name);
+            assert_eq!(ann["destructiveHint"].as_bool(), Some(dest), "annotations destructiveHint on {}", name);
+            assert_eq!(ann["idempotentHint"].as_bool(), Some(idemp), "annotations idempotentHint on {}", name);
+            assert_eq!(ann["openWorldHint"].as_bool(), Some(ow), "annotations openWorldHint on {}", name);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_teleport_camera() {
+        let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
-            id: Some(json!(7)),
+            id: Some(json!(101)),
             method: "tools/call".to_string(),
-            params: Some(json!({ "name": "aetherscope_get_graph_summary", "arguments": { "path": "." } })),
+            params: Some(json!({
+                "name": "aetherscope_teleport_camera",
+                "arguments": {
+                    "target": "crates/desktop-shell/src/mcp.rs",
+                    "action": "Inspection",
+                    "details": "Telemetry camera alignment unit test"
+                }
+            })),
         };
-        let resp_summary = handle_mcp_request(req_summary, 3030, ".").await.expect("tools/call response");
-        let res_summary = resp_summary.result.expect("result present");
-        assert_eq!(res_summary["isError"], false);
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("teleport_camera response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+        assert!(res["content"].as_array().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_get_graph_summary() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(102)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_get_graph_summary",
+                "arguments": { "path": "." }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("get_graph_summary response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+        let content = res["content"].as_array().expect("content array");
+        assert!(!content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_send_chat_message() {
+        let req_valid = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(103)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_send_chat_message",
+                "arguments": {
+                    "text": "Unit test chat broadcast message",
+                    "thought": "Testing MCP chat telemetry"
+                }
+            })),
+        };
+        let resp_valid = handle_mcp_request(req_valid, 3030, ".").await.expect("send_chat_message response");
+        assert!(resp_valid.result.is_some());
+
+        let req_empty = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(104)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_send_chat_message",
+                "arguments": { "text": "" }
+            })),
+        };
+        let resp_empty = handle_mcp_request(req_empty, 3030, ".").await.expect("empty text chat response");
+        let res_empty = resp_empty.result.expect("result present");
+        assert_eq!(res_empty["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_get_chat_history() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(105)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_get_chat_history",
+                "arguments": {}
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("get_chat_history response");
+        assert!(resp.result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_get_active_target() {
+        let req_valid = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(106)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_get_active_target",
+                "arguments": { "symbol_id": "crates/desktop-shell/src/mcp.rs" }
+            })),
+        };
+        let resp_valid = handle_mcp_request(req_valid, 3030, ".").await.expect("get_active_target response");
+        assert!(resp_valid.result.is_some());
+
+        let req_empty = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(107)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_get_active_target",
+                "arguments": { "symbol_id": "" }
+            })),
+        };
+        let resp_empty = handle_mcp_request(req_empty, 3030, ".").await.expect("empty symbol target response");
+        let res_empty = resp_empty.result.expect("result present");
+        assert_eq!(res_empty["isError"], true);
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_scan_project() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(108)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_scan_project",
+                "arguments": { "path": "." }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("scan_project response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_create_task() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(109)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_create_task",
+                "arguments": {
+                    "title": "M8ven 100/100 Tool Annotation Audit Task",
+                    "kind": "test",
+                    "priority": "high",
+                    "initial_readme": "### Scope\n- Verify annotations\n- Ensure tests coverage"
+                }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("create_task response");
+        assert!(resp.result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_update_task() {
+        let req_empty = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(110)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_update_task",
+                "arguments": { "task_id": "" }
+            })),
+        };
+        let resp_empty = handle_mcp_request(req_empty, 3030, ".").await.expect("empty task_id response");
+        let res_empty = resp_empty.result.expect("result present");
+        assert_eq!(res_empty["isError"], true);
+
+        let req_valid = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(111)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_update_task",
+                "arguments": {
+                    "task_id": "non_existent_task_test_999",
+                    "status": "in_progress",
+                    "progress": 75,
+                    "progress_note": "Executing automated tests verification"
+                }
+            })),
+        };
+        let resp_valid = handle_mcp_request(req_valid, 3030, ".").await.expect("update_task response");
+        assert!(resp_valid.result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_list_tasks() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(112)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_list_tasks",
+                "arguments": { "status_filter": "all" }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("list_tasks response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
     }
 }
