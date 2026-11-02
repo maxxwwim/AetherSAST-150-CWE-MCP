@@ -814,4 +814,6 @@ Ce projet est sous **Licence Source-Available Non-Commerciale ([PolyForm Noncomm
 - ✅ **Libre & Autorisé :** Usage personnel, recherche en cybersécurité, évaluation, audit individuel, éducation et contributions open-source.
 - 🚫 **Strictement Interdit sans accord écrit préalable :** Toute utilisation ou déploiement par une entreprise commerciale à but lucratif, toute vente, intégration dans un produit propriétaire ou hébergement sous forme de service payant (SaaS).
 
-*Pour toute demande de licence commerciale ou de partenariat : contacter l'auteur.*
+*Pour toute demande de licence commerciale ou de partenariat : contacter l'auteur. Ou rachat ? :33*
+
+[![M8ven Score](https://m8ven.ai/badge/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?v=e5fc9271e50e727d0de90ec2932faa58)](https://m8ven.ai/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?s=readme)
