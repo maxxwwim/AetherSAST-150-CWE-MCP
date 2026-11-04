@@ -425,6 +425,7 @@ pub fn init_project_structure(base: &Path, stack_str: &str) -> Vec<String> {
         "ts" | "node" => StackType::PureNodePnpm,
         "roblox" | "roblox-server" | "luau" => StackType::RobloxLuau,
         "minecraft" | "mc" => StackType::MinecraftServer,
+        "mvc" | "classic-mvc" | "clean-mvc" => StackType::ClassicMvc,
         _ => StackType::HybridMmoWeb3,
     };
 
@@ -466,6 +467,11 @@ pub fn init_project_structure(base: &Path, stack_str: &str) -> Vec<String> {
             "⛏️ Minecraft Game Server (Paper / Purpur)",
             "Manifest universel Aether, spécifications de plugins et tuning JVM Aikar",
             "Nœuds de données mondes, chunks pré-générés et persistance joueurs SQLite/MySQL",
+        ),
+        StackType::ClassicMvc => (
+            "🏛️ Architecture MVC Propre (Modèle-Vue-Contrôleur)",
+            "Contrats d'interfaces, DTOs stricts et validation des requêtes d'entrée",
+            "Couche Modèles & Persistance isolable (SQLite/PostgreSQL/Redis)",
         ),
     };
 
@@ -1031,6 +1037,24 @@ watchdog:
             ("plugins/README.md", r#"# 📦 Plugins Serveur Minecraft
 Placez vos plugins Paper/Purpur (.jar) dans ce dossier.
 Recommandations Aether : LuckPerms, Chunky, FastAsyncWorldEdit, ProtocolLib.
+"#),
+        ],
+        StackType::ClassicMvc => vec![
+            ("models/README.md", r#"# 🗄️ Modèles & Entités (M)
+Couche de données et de domaine représentant les entités métier, les schémas DTO et la persistance.
+- WHEN model is loaded THE SYSTEM SHALL enforce type safety and constraints.
+"#),
+            ("views/README.md", r#"# 💻 Vues & Composants (V)
+Rendu d'interface, formulaires utilisateur et templates.
+- WHEN view renders data THE SYSTEM SHALL escape dynamic values.
+- View SHALL NOT directly import or query models or database.
+"#),
+            ("controllers/README.md", r#"# ⚡ Contrôleurs d'Action (C)
+Points d'entrée des requêtes, dispatching d'actions et coordination.
+- WHEN controller receives request THE SYSTEM SHALL validate inputs before calling services.
+"#),
+            ("services/README.md", r#"# 🏛️ Services Métier
+Logique métier pure et orchestration des flux entre modèles et contrôleurs.
 "#),
         ],
     };

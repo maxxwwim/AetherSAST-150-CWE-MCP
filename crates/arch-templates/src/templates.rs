@@ -264,6 +264,58 @@ impl ArchScaffolder {
                     },
                 );
             }
+            StackType::ClassicMvc => {
+                galaxies.insert(
+                    "models".to_string(),
+                    GalaxyManifest {
+                        path: "./models".to_string(),
+                        role: "Domain entities, data transfer schemas and business models (M)".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "views".to_string(),
+                    GalaxyManifest {
+                        path: "./views".to_string(),
+                        role: "UI templates, presentation components and client forms (V)".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "controllers".to_string(),
+                    GalaxyManifest {
+                        path: "./controllers".to_string(),
+                        role: "Route handlers, request dispatchers and action controllers (C)".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "services".to_string(),
+                    GalaxyManifest {
+                        path: "./services".to_string(),
+                        role: "Core domain services, pure logic and workflow orchestration".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+                galaxies.insert(
+                    "data-nodes".to_string(),
+                    GalaxyManifest {
+                        path: "./data-nodes".to_string(),
+                        role: "Database repositories, ORM migrations and cache stores".to_string(),
+                        remote_sync: false,
+                        remote_endpoint: None,
+                        readme_blake3: None,
+                    },
+                );
+            }
         }
 
         ProjectManifest {
@@ -289,6 +341,14 @@ mod tests {
         assert!(roblox.galaxies.contains_key("server"));
         assert!(roblox.galaxies.contains_key("client"));
         assert!(roblox.galaxies.contains_key("data-nodes"));
+
+        let mvc = ArchScaffolder::create_manifest("MvcApp", StackType::ClassicMvc, TopologyMode::MonorepoLocal);
+        assert_eq!(mvc.galaxies.len(), 5);
+        assert!(mvc.galaxies.contains_key("models"));
+        assert!(mvc.galaxies.contains_key("views"));
+        assert!(mvc.galaxies.contains_key("controllers"));
+        assert!(mvc.galaxies.contains_key("services"));
+        assert!(mvc.galaxies.contains_key("data-nodes"));
 
         let mc = ArchScaffolder::create_manifest("McServer", StackType::MinecraftServer, TopologyMode::MonorepoLocal);
         assert_eq!(mc.galaxies.len(), 4);

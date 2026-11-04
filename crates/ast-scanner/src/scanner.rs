@@ -466,6 +466,9 @@ impl ProjectScanner {
         for entry in WalkDir::new(root_path)
             .into_iter()
             .filter_entry(|e| {
+                if e.depth() == 0 {
+                    return true;
+                }
                 let name = e.file_name().to_string_lossy();
                 let rel = e.path().strip_prefix(root_path).unwrap_or(e.path()).to_string_lossy();
                 !name.starts_with('.')

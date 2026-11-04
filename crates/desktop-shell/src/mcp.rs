@@ -785,6 +785,149 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "idempotentHint": true,
                             "openWorldHint": false
                         }
+                    },
+                    {
+                        "name": "aetherscope_search_symbols",
+                        "description": "Recherche avancée dans l'index AST d'AetherScope par mot-clé, couche MVC (ui, action, domain, database), stéréotype («Model», «Controller», «Component») ou statut de sécurité.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "Texte ou mot-clé à rechercher dans le nom du symbole, le fichier, la docstring ou les méthodes",
+                                    "examples": ["checkout", "Item", "auth", "BookingService"]
+                                },
+                                "layer": {
+                                    "type": "string",
+                                    "description": "Couche architecturale : 'ui' (Vue), 'action' (Contrôleur), 'domain' (Métier), 'database' (Modèle/Persistance), 'utility', 'config', 'docs' ou 'all'",
+                                    "enum": ["ui", "action", "domain", "database", "utility", "config", "docs", "all"],
+                                    "examples": ["action", "database", "ui"]
+                                },
+                                "kind": {
+                                    "type": "string",
+                                    "description": "Type de symbole : 'function', 'file', 'class', 'endpoint', 'contract' ou 'all'",
+                                    "enum": ["function", "file", "class", "endpoint", "contract", "all"],
+                                    "examples": ["endpoint", "class", "function"]
+                                },
+                                "stereotype": {
+                                    "type": "string",
+                                    "description": "Stéréotype architectural (ex: '«Model»', '«Controller»', '«Component»', '«Form»', '«Service»', '«Endpoint»')",
+                                    "examples": ["«Controller»", "«Model»", "«Component»"]
+                                },
+                                "has_violation": {
+                                    "type": "boolean",
+                                    "description": "Filtrer uniquement les symboles ayant des violations de sécurité ou CVE détectées"
+                                },
+                                "limit": {
+                                    "type": "integer",
+                                    "description": "Nombre maximum de résultats à renvoyer (par défaut 15, max 50)",
+                                    "minimum": 1,
+                                    "maximum": 50
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin optionnel du projet cible"
+                                }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Recherche Multi-Critères AST & Couches MVC",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
+                    },
+                    {
+                        "name": "aetherscope_trace_flow",
+                        "description": "Trace le flux complet d'une fonctionnalité à travers l'architecture MVC (Vue -> Contrôleur -> Service Métier -> Modèle -> Base de données).",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "symbol_id": {
+                                    "type": "string",
+                                    "description": "Identifiant ou nom du symbole de départ pour le traçage",
+                                    "examples": ["checkout", "handle_booking", "store_service", "AuditWriter"]
+                                },
+                                "direction": {
+                                    "type": "string",
+                                    "description": "Direction du traçage : 'upstream' (appelants & vues), 'downstream' (dépendances, modèles & DB), ou 'both' (les deux)",
+                                    "enum": ["upstream", "downstream", "both"],
+                                    "examples": ["both", "upstream", "downstream"]
+                                },
+                                "max_depth": {
+                                    "type": "integer",
+                                    "description": "Profondeur maximale de parcours des relations dans le graphe (défaut 2, max 5)",
+                                    "minimum": 1,
+                                    "maximum": 5
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin optionnel du projet cible"
+                                }
+                            },
+                            "required": ["symbol_id"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Traçage de Flux MVC & Dépendances",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
+                    },
+                    {
+                        "name": "aetherscope_query_violations",
+                        "description": "Requête directement les violations de sécurité SAST, motifs Zero-Day et failles CWE détectées sur l'architecture avec recommandations de correction.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "severity": {
+                                    "type": "string",
+                                    "description": "Niveau de sévérité requis : 'all', 'critical', 'high', 'medium', 'low', 'warning'",
+                                    "enum": ["all", "critical", "high", "medium", "low", "warning"],
+                                    "examples": ["critical", "high", "all"]
+                                },
+                                "cwe_id": {
+                                    "type": "string",
+                                    "description": "Identifiant CWE ou nom de règle recherché (ex: 'CWE-22', 'CWE-89', 'CWE-248', 'SQL-INJECTION')",
+                                    "examples": ["CWE-22", "CWE-89", "CWE-248"]
+                                },
+                                "file_pattern": {
+                                    "type": "string",
+                                    "description": "Filtre optionnel sur le chemin ou nom de fichier concerné",
+                                    "examples": ["audit_writer", "api_routes", "server.rs"]
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin optionnel du projet cible"
+                                }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Audit & Filtrage des Violations SAST/CWE",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
                     }
                 ]
             })),
@@ -890,6 +1033,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
 
                 "aetherscope_get_active_target" => {
                     let symbol_id = arguments.get("symbol_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let target_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
                     if symbol_id.trim().is_empty() {
                         (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'symbol_id' est requis." }]), true)
                     } else {
@@ -904,7 +1048,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 (json!([{ "type": "text", "text": text }]), is_err)
                             }
                             Err(_) => {
-                                let text = offline_active_target_fallback(default_path, &symbol_id);
+                                let text = offline_active_target_fallback(target_path, &symbol_id);
                                 let is_err = text.starts_with("⚠️");
                                 (json!([{ "type": "text", "text": text }]), is_err)
                             }
@@ -1091,6 +1235,52 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     }
                 }
 
+                "aetherscope_search_symbols" => {
+                    let query = arguments.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                    let layer = arguments.get("layer").and_then(|v| v.as_str());
+                    let kind = arguments.get("kind").and_then(|v| v.as_str());
+                    let stereotype = arguments.get("stereotype").and_then(|v| v.as_str());
+                    let has_violation = arguments.get("has_violation").and_then(|v| v.as_bool());
+                    let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(15) as usize;
+                    let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+
+                    let p_buf = resolve_project_root(req_path);
+                    let scanner = ast_scanner::ProjectScanner::default();
+                    let g = scanner.scan_project(&p_buf);
+                    let text = format_search_symbols_response(&g, query, layer, kind, stereotype, has_violation, limit);
+                    (json!([{ "type": "text", "text": text }]), false)
+                }
+
+                "aetherscope_trace_flow" => {
+                    let symbol_id = arguments.get("symbol_id").and_then(|v| v.as_str()).unwrap_or("");
+                    if symbol_id.trim().is_empty() {
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'symbol_id' est requis." }]), true)
+                    } else {
+                        let direction = arguments.get("direction").and_then(|v| v.as_str()).unwrap_or("both");
+                        let max_depth = arguments.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
+                        let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+
+                        let p_buf = resolve_project_root(req_path);
+                        let scanner = ast_scanner::ProjectScanner::default();
+                        let g = scanner.scan_project(&p_buf);
+                        let text = format_trace_flow_response(&g, symbol_id, direction, max_depth);
+                        (json!([{ "type": "text", "text": text }]), false)
+                    }
+                }
+
+                "aetherscope_query_violations" => {
+                    let severity = arguments.get("severity").and_then(|v| v.as_str());
+                    let cwe_id = arguments.get("cwe_id").and_then(|v| v.as_str());
+                    let file_pattern = arguments.get("file_pattern").and_then(|v| v.as_str());
+                    let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+
+                    let p_buf = resolve_project_root(req_path);
+                    let scanner = ast_scanner::ProjectScanner::default();
+                    let g = scanner.scan_project(&p_buf);
+                    let text = format_violations_response(&g, severity, cwe_id, file_pattern);
+                    (json!([{ "type": "text", "text": text }]), false)
+                }
+
                 _ => (json!([{ "type": "text", "text": format!("Outil inconnu : {}", tool_name) }]), true),
             };
 
@@ -1260,8 +1450,29 @@ fn format_active_target_response(val: &Value) -> String {
     }
 }
 
+pub fn resolve_project_root(path_str: &str) -> PathBuf {
+    let raw = path_str.trim().trim_matches('"').trim_matches('\'');
+    let clean = raw.strip_prefix(r"\\?\").unwrap_or(raw);
+    let p = if clean.is_empty() || clean == "." {
+        if let Ok(cur) = std::env::current_dir() {
+            cur
+        } else {
+            PathBuf::from(clean)
+        }
+    } else {
+        PathBuf::from(clean)
+    };
+
+    if let Ok(canon) = std::fs::canonicalize(&p) {
+        let s = canon.to_string_lossy().to_string();
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        return PathBuf::from(stripped);
+    }
+    p
+}
+
 fn offline_active_target_fallback(project_path: &str, symbol_id: &str) -> String {
-    let p_buf = PathBuf::from(project_path);
+    let p_buf = resolve_project_root(project_path);
     let scanner = ast_scanner::ProjectScanner::default();
     let g = scanner.scan_project(&p_buf);
 
@@ -1313,7 +1524,17 @@ fn offline_active_target_fallback(project_path: &str, symbol_id: &str) -> String
             deps_md
         )
     } else {
-        format!("⚠️ Symbole '{}' introuvable dans le projet '{}'.", symbol_id, project_path)
+        let sym_low = symbol_id.to_lowercase();
+        let suggestions: Vec<&str> = g.nodes.iter()
+            .filter(|n| n.name.to_lowercase().contains(&sym_low) || sym_low.contains(&n.name.to_lowercase()))
+            .map(|n| n.name.as_str())
+            .take(5)
+            .collect();
+        if !suggestions.is_empty() {
+            format!("⚠️ Symbole '{}' introuvable dans '{}'.\n💡 Symboles proches détectés : {}\n👉 Utilisez `aetherscope_search_symbols` pour explorer l'index.", symbol_id, p_buf.display(), suggestions.join(", "))
+        } else {
+            format!("⚠️ Symbole '{}' introuvable dans '{}'. Utilisez `aetherscope_search_symbols` pour rechercher par mot-clé.", symbol_id, p_buf.display())
+        }
     }
 }
 
@@ -1367,6 +1588,257 @@ pub async fn send_http_request(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+
+fn format_search_symbols_response(
+    g: &core_graph::graph::AetherGraph,
+    query: &str,
+    layer_filter: Option<&str>,
+    kind_filter: Option<&str>,
+    stereo_filter: Option<&str>,
+    violation_filter: Option<bool>,
+    limit: usize,
+) -> String {
+    let q_lower = query.trim().to_lowercase();
+    let layer_opt = layer_filter.map(|s| s.trim().to_lowercase());
+    let kind_opt = kind_filter.map(|s| s.trim().to_lowercase());
+    let stereo_opt = stereo_filter.map(|s| s.trim().to_lowercase());
+
+    let mut scored: Vec<(i32, &core_graph::bubble::SymbolBubble)> = Vec::new();
+
+    for n in &g.nodes {
+        if let Some(ref l) = layer_opt {
+            if !l.is_empty() && l != "all" && !n.layer.to_lowercase().contains(l) {
+                continue;
+            }
+        }
+        if let Some(ref k) = kind_opt {
+            if !k.is_empty() && k != "all" && !n.symbol_type.to_lowercase().contains(k) {
+                continue;
+            }
+        }
+        if let Some(ref s) = stereo_opt {
+            if !s.is_empty() && s != "all" && !n.stereotype.to_lowercase().contains(s) {
+                continue;
+            }
+        }
+        if let Some(v_only) = violation_filter {
+            if v_only && !n.has_security_violation {
+                continue;
+            }
+        }
+
+        if q_lower.is_empty() {
+            let base_score = if n.has_security_violation { 90 } else if n.is_class { 40 } else { 10 };
+            scored.push((base_score, n));
+        } else {
+            let name_lower = n.name.to_lowercase();
+            let file_lower = n.file_path.to_lowercase();
+            let doc_lower = n.docstring.to_lowercase();
+            let id_lower = n.id.to_lowercase();
+
+            let mut score = 0;
+            if name_lower == q_lower || id_lower == q_lower {
+                score = 100;
+            } else if name_lower.starts_with(&q_lower) {
+                score = 80;
+            } else if name_lower.contains(&q_lower) {
+                score = 60;
+            } else if file_lower.contains(&q_lower) {
+                score = 40;
+            } else if doc_lower.contains(&q_lower) {
+                score = 30;
+            } else if n.metadata.methods.iter().any(|m| m.name.to_lowercase().contains(&q_lower)) {
+                score = 50;
+            }
+
+            if score > 0 {
+                if n.has_security_violation {
+                    score += 15;
+                }
+                scored.push((score, n));
+            }
+        }
+    }
+
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    let total_matches = scored.len();
+    let display_items: Vec<_> = scored.into_iter().take(limit).collect();
+
+    if display_items.is_empty() {
+        return format!("🔍 Aucun symbole trouvé pour la requête '{}' avec les filtres sélectionnés.", query);
+    }
+
+    let mut out = format!(
+        "🔍 **Résultats de Recherche AetherScope ({}/{} trouvés) :**\n\n| Score | Symbole | Stéréotype | Couche / Galaxie | Fichier : Ligne | Statut |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n",
+        display_items.len(),
+        total_matches
+    );
+
+    for (score, n) in display_items {
+        let sec_badge = if n.has_security_violation {
+            "🚨 CVE/SAST"
+        } else if n.is_dead_code {
+            "⚪ Inactif"
+        } else {
+            "✅ Conforme"
+        };
+        out.push_str(&format!(
+            "| `{}` | `{}` | `{}` | `{}` (`{}`) | `{}:{}` | {} |\n",
+            score, n.name, n.stereotype, n.layer, n.galaxy, n.file_path, n.line_number, sec_badge
+        ));
+    }
+
+    out.push_str("\n💡 *Pour inspecter le contexte précis, les flux et règles EARS d'un symbole : utilisez `aetherscope_get_active_target(\"<symbole>\")` ou `aetherscope_trace_flow(\"<symbole>\")`.*");
+    out
+}
+
+fn format_trace_flow_response(
+    g: &core_graph::graph::AetherGraph,
+    symbol_id: &str,
+    direction: &str,
+    _max_depth: usize,
+) -> String {
+    let sym_opt = g.nodes.iter().find(|n| {
+        n.id == symbol_id
+            || n.name == symbol_id
+            || n.file_path == symbol_id
+            || n.id.ends_with(&format!("::{}", symbol_id))
+    });
+
+    let sym = match sym_opt {
+        Some(s) => s,
+        None => {
+            let suggestions: Vec<&str> = g.nodes.iter()
+                .filter(|n| n.name.to_lowercase().contains(&symbol_id.to_lowercase()))
+                .map(|n| n.name.as_str())
+                .take(5)
+                .collect();
+            if !suggestions.is_empty() {
+                return format!("⚠️ Symbole '{}' introuvable pour le traçage.\n💡 Symboles proches : {}\n👉 Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id, suggestions.join(", "));
+            } else {
+                return format!("⚠️ Symbole '{}' introuvable pour le traçage. Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id);
+            }
+        }
+    };
+
+    let dir_lower = direction.trim().to_lowercase();
+    let trace_up = dir_lower == "upstream" || dir_lower == "both" || dir_lower == "all";
+    let trace_down = dir_lower == "downstream" || dir_lower == "both" || dir_lower == "all";
+
+    let mut out = format!(
+        "# 🌊 Traçage de Flux Architectural pour `{}`\n- **Fichier :** `{}:{}`\n- **Couche :** `{}` | **Galaxie :** `{}` | **Stéréotype :** `{}`\n\n",
+        sym.name, sym.file_path, sym.line_number, sym.layer, sym.galaxy, sym.stereotype
+    );
+
+    if trace_up {
+        out.push_str("### 📥 Flux Amont (Appelants, Vues UI & Contrôleurs déclencheurs) :\n");
+        let incoming: Vec<&core_graph::edge::AffiliationEdge> = g
+            .edges
+            .iter()
+            .filter(|e| e.target == sym.id && e.relation != "contains")
+            .collect();
+
+        if incoming.is_empty() {
+            out.push_str("*(Aucun flux amont direct détecté — point d'entrée ou racine)*\n\n");
+        } else {
+            for e in incoming.iter().take(15) {
+                let src_node = g.nodes.iter().find(|n| n.id == e.source);
+                let (src_name, src_layer, src_file) = match src_node {
+                    Some(n) => (n.name.as_str(), n.layer.as_str(), n.file_path.as_str()),
+                    None => (e.source.as_str(), "inconnu", ""),
+                };
+                out.push_str(&format!(
+                    "- ➔ `[{}]` **{}** (`{}`) via `{}`\n",
+                    src_layer, src_name, src_file, e.relation
+                ));
+            }
+            out.push('\n');
+        }
+    }
+
+    if trace_down {
+        out.push_str("### 📤 Flux Aval (Services appelés, Modèles & Persistance DB) :\n");
+        let outgoing: Vec<&core_graph::edge::AffiliationEdge> = g
+            .edges
+            .iter()
+            .filter(|e| e.source == sym.id && e.relation != "contains")
+            .collect();
+
+        if outgoing.is_empty() {
+            out.push_str("*(Aucun flux aval direct détecté — feuille ou logique pure)*\n\n");
+        } else {
+            for e in outgoing.iter().take(15) {
+                let tgt_node = g.nodes.iter().find(|n| n.id == e.target);
+                let (tgt_name, tgt_layer, tgt_file) = match tgt_node {
+                    Some(n) => (n.name.as_str(), n.layer.as_str(), n.file_path.as_str()),
+                    None => (e.target.as_str(), "inconnu", ""),
+                };
+                out.push_str(&format!(
+                    "- ➔ `[{}]` **{}** (`{}`) via `{}`\n",
+                    tgt_layer, tgt_name, tgt_file, e.relation
+                ));
+            }
+            out.push('\n');
+        }
+    }
+
+    out
+}
+
+fn format_violations_response(
+    g: &core_graph::graph::AetherGraph,
+    severity_filter: Option<&str>,
+    cwe_filter: Option<&str>,
+    file_filter: Option<&str>,
+) -> String {
+    let sev_opt = severity_filter.map(|s| s.trim().to_uppercase());
+    let cwe_opt = cwe_filter.map(|s| s.trim().to_uppercase());
+    let file_opt = file_filter.map(|s| s.trim().to_lowercase());
+
+    let mut list = Vec::new();
+
+    for n in &g.nodes {
+        if let Some(ref fp) = file_opt {
+            if !fp.is_empty() && !n.file_path.to_lowercase().contains(fp) {
+                continue;
+            }
+        }
+
+        for anom in &n.metadata.cve_anomalies {
+            if let Some(ref s) = sev_opt {
+                if s != "ALL" && !anom.severity.to_uppercase().contains(s) {
+                    continue;
+                }
+            }
+            if let Some(ref c) = cwe_opt {
+                if !c.is_empty() && !anom.cve_id.to_uppercase().contains(c) && !anom.rule_id.to_uppercase().contains(c) {
+                    continue;
+                }
+            }
+            list.push((&anom.severity, &anom.file_path, anom.line_number, &anom.cve_id, &anom.message, &anom.remediation, &n.name));
+        }
+    }
+
+    if list.is_empty() {
+        return "✅ Aucune violation de sécurité ne correspond aux filtres demandés.".to_string();
+    }
+
+    let mut out = format!("🛡️ **Audit des Violations SAST/CWE ({}) :**\n\n", list.len());
+    for (sev, f, line, cwe, msg, fix, sym) in list.iter().take(20) {
+        let icon = match sev.as_str() {
+            "CRITICAL" => "🔴",
+            "HIGH" => "🟠",
+            "MEDIUM" => "🟡",
+            _ => "⚪",
+        };
+        out.push_str(&format!(
+            "- {} **[{}] {}** dans `{}:{}` (symbole: `{}`)\n  - *Problème :* {}\n  - *Remédiation :* {}\n\n",
+            icon, sev, cwe, f, line, sym, msg, fix
+        ));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1463,7 +1935,7 @@ mod tests {
         let resp = handle_mcp_request(req, 3030, ".").await.expect("tools/list response");
         let res = resp.result.expect("tools/list result");
         let tools = res["tools"].as_array().expect("tools array");
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 12);
 
         let expected_tools = [
             ("aetherscope_teleport_camera", true, false, true, false),
@@ -1475,6 +1947,9 @@ mod tests {
             ("aetherscope_create_task", false, false, false, false),
             ("aetherscope_update_task", false, false, true, false),
             ("aetherscope_list_tasks", true, false, true, false),
+            ("aetherscope_search_symbols", true, false, true, false),
+            ("aetherscope_trace_flow", true, false, true, false),
+            ("aetherscope_query_violations", true, false, true, false),
         ];
 
         for (name, ro, dest, idemp, ow) in expected_tools {
@@ -1689,6 +2164,62 @@ mod tests {
             })),
         };
         let resp = handle_mcp_request(req, 3030, ".").await.expect("list_tasks response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_search_symbols() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(113)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_search_symbols",
+                "arguments": {
+                    "query": "mcp",
+                    "limit": 5
+                }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("search_symbols response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_trace_flow() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(114)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_trace_flow",
+                "arguments": {
+                    "symbol_id": "crates/desktop-shell/src/mcp.rs",
+                    "direction": "both"
+                }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("trace_flow response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_query_violations() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(115)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_query_violations",
+                "arguments": {
+                    "severity": "all"
+                }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("query_violations response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
     }

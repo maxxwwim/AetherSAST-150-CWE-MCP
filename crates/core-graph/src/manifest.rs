@@ -9,6 +9,7 @@ pub enum StackType {
     HybridMmoWeb3,
     RobloxLuau,
     MinecraftServer,
+    ClassicMvc,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -23,8 +23,22 @@ Dès ton premier message ou au démarrage d'une session :
 
 ---
 
-## 🛠️ 2. OUTILLAGE MCP COMPLET (AETHERSCOPE MCP ENGINE)
-Utilise systématiquement les outils MCP mis à disposition :
+## 🛠️ 2. OUTILLAGE MCP COMPLET (AETHERSCOPE MCP ENGINE - 12 OUTILS)
+Utilise systématiquement les outils MCP mis à disposition selon la méthodologie de recherche en 4 phases :
+
+### 🔍 Méthodologie de Recherche pour le LLM :
+1. **Recherche & Exploration :** Appelle `aetherscope_search_symbols` pour localiser rapidement les symboles par mot-clé, couche MVC (`ui`, `action`, `domain`, `database`) ou stéréotype (`«Model»`, `«Controller»`, `«Component»`).
+2. **Traçabilité Verticale :** Appelle `aetherscope_trace_flow` pour comprendre le chemin complet d'une requête (Vue -> Contrôleur -> Service -> Modèle -> DB).
+3. **Audit Ciblé :** Appelle `aetherscope_query_violations` pour filtrer les failles SAST/CWE critiques et leurs remédiations.
+4. **Contexte & Handshake :** Appelle `aetherscope_get_active_target` sur le symbole final pour extraire les contrats EARS scellés.
+
+### Catalogue des Outils :
+- **`aetherscope_search_symbols(query, layer, kind, stereotype, has_violation, limit, path)`** :
+  Recherche multi-critères dans tout l'AST d'AetherScope avec scoring de pertinence et filtres par couche MVC et stéréotype.
+- **`aetherscope_trace_flow(symbol_id, direction, max_depth, path)`** :
+  Trace l'arbre des flux amont (appelants, vues UI) et aval (services, modèles, requêtes SQL/DB).
+- **`aetherscope_query_violations(severity, cwe_id, file_pattern, path)`** :
+  Filtre et affiche instantanément les violations de sécurité SAST, motifs Zero-Day et failles CWE avec remédiation.
 - **`aetherscope_teleport_camera(target, action, details)`** :
   Déplace instantanément et avec fluidité la caméra 3D sur la bulle/dossier cible, déclenche le faisceau quantique et éclaire le fil d'Ariane stellaire en direct pour le développeur.
 - **`aetherscope_get_graph_summary(path)`** :
