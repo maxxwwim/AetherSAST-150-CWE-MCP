@@ -452,14 +452,29 @@ const DEPTH_TITLES = {
 function switchDepth(d) {
   state.depth = d;
   state.folderAnchors = new Map();
-  wakePhysics(90);
+
+  // Reset lingering velocities so bubbles smoothly glide toward new targets without chaos
+  const nodes = state.data.nodes || [];
+  nodes.forEach(n => { n.vx = 0; n.vy = 0; });
+
+  state.physicsSleeping = false;
+  state.instanceDataDirty = true;
+  if (typeof invalidateEdgePathCache === 'function') invalidateEdgePathCache();
+  wakePhysics(240);
   AudioSys.depthSwitch();
+
   document.querySelectorAll('.depth-btn').forEach(b => {
     b.classList.toggle('active', parseInt(b.getAttribute('data-depth')) === d);
   });
   const el = document.getElementById('depth-title');
   if (el) el.innerText = DEPTH_TITLES[d] || '4D Depth Continuum';
-  showToast(`Cosmos basculé en ${DEPTH_TITLES[d].split('(')[0]}`);
+
+  // Smoothly reframe camera to encompass the full new geometric structure
+  setTimeout(() => {
+    if (typeof fitView === 'function') fitView();
+  }, 100);
+
+  showToast(`🚀 Cosmos basculé : ${DEPTH_TITLES[d]}`);
 }
 
 document.querySelectorAll('.depth-btn').forEach(btn => {

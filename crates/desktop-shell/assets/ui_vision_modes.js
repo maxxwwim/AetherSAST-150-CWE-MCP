@@ -92,6 +92,7 @@ function toggleXrayMode() {
       showToast('⚠️ Cliquez d\'abord sur une bulle pour entrer dans le Tunnel X-Ray !');
       return;
     }
+    if (state.securityVisionMode) toggleSecurityVisionMode();
     if (state.deadCodeMode) toggleDeadCodeMode();
     if (state.heatmapMode) toggleHeatmapMode();
     state.xrayMode = true;
@@ -197,6 +198,7 @@ function updateDeadCodeHud() {
 
 function toggleDeadCodeMode() {
   if (!state.deadCodeMode) {
+    if (state.securityVisionMode) toggleSecurityVisionMode();
     if (state.xrayMode) toggleXrayMode();
     if (state.heatmapMode) toggleHeatmapMode();
     state.deadCodeMode = true;
@@ -383,6 +385,84 @@ ${topHotspots.map(h => `- ${h.node.name} (${h.node.file_path}) [${h.loc} LOC] : 
 - Respect Strict des Couches & Contrats.
 </response_format_rules>`;
 }
+
+
+// --- 4. Mode Radar Sécurité & Zero-Day (SAST / Bug Bounty) ---
+function getSecurityViolations() {
+  const nodes = (state.data && state.data.nodes) || [];
+  const vulns = [];
+  let crit = 0, high = 0, med = 0;
+  nodes.forEach(n => {
+    const vList = n.violations || [];
+    const hasCve = (n.metadata && n.metadata.cve) || n.has_security_violation;
+    if (vList.length > 0 || hasCve) {
+      vulns.push(n);
+      if (vList.length > 0) {
+        vList.forEach(v => {
+          const s = (v.severity || '').toLowerCase();
+          if (s === 'critical') crit++;
+          else if (s === 'high') high++;
+          else med++;
+        });
+      } else {
+        crit++;
+      }
+    }
+  });
+  return { vulns, crit, high, med };
+}
+
+function updateSecurityVisionHud() {
+  const hud = document.getElementById('security-hud');
+  const btn = document.getElementById('btn-security');
+  const menuBtn = document.getElementById('btn-menu-security');
+  if (!hud) return;
+
+  if (state.securityVisionMode) {
+    hud.classList.remove('hidden');
+    if (btn) btn.classList.add('active');
+    if (menuBtn) menuBtn.classList.add('active');
+    const { vulns, crit, high, med } = getSecurityViolations();
+    const countEl = document.getElementById('security-cve-count');
+    if (countEl) countEl.innerText = `${vulns.length} Faille(s) Détectée(s)`;
+    const critEl = document.getElementById('security-stat-critical');
+    if (critEl) critEl.innerText = `🚨 ${crit} Critique(s)`;
+    const highEl = document.getElementById('security-stat-high');
+    if (highEl) highEl.innerText = `⚠️ ${high} Haute(s)`;
+    const medEl = document.getElementById('security-stat-medium');
+    if (medEl) medEl.innerText = `⚡ ${med} Moyenne(s)`;
+  } else {
+    hud.classList.add('hidden');
+    if (btn) btn.classList.remove('active');
+    if (menuBtn) menuBtn.classList.remove('active');
+  }
+}
+
+function toggleSecurityVisionMode() {
+  if (!state.securityVisionMode) {
+    if (state.xrayMode) toggleXrayMode();
+    if (state.deadCodeMode) toggleDeadCodeMode();
+    if (state.heatmapMode) toggleHeatmapMode();
+    state.securityVisionMode = true;
+    updateSecurityVisionHud();
+    AudioSys.playTone(320, 'sawtooth', 0.22, 0.08);
+    const { vulns } = getSecurityViolations();
+    showToast(`🛡️ Radar Sécurité Zero-Day activé : ${vulns.length} failles isolées`);
+    if (typeof fitView === 'function') fitView();
+  } else {
+    state.securityVisionMode = false;
+    updateSecurityVisionHud();
+    AudioSys.depthSwitch();
+    showToast('🌌 Mode Radar Sécurité désactivé (Cosmos complet restauré)');
+  }
+  state.instanceDataDirty = true;
+  if (typeof invalidateEdgePathCache === 'function') invalidateEdgePathCache();
+}
+window.getSecurityViolations = getSecurityViolations;
+window.updateSecurityVisionHud = updateSecurityVisionHud;
+window.toggleSecurityVisionMode = toggleSecurityVisionMode;
+
+// Also cancel securityVisionMode when switching to XRay, Deadcode, or Heatmap
 
 // --- Dynamic Affiliation Counts & 5 Affiliation Filters Controller ---
 // 1 = PHYSICAL, 2 = NETWORK_RPC, 4 = REALTIME_WS, 8 = SEMANTIC, 16 = SECURITY_VIOLATES

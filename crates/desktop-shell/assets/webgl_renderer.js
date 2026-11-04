@@ -275,6 +275,215 @@ function drawFolderBadges(ctx, badges, c, lodLevel) {
   ctx.restore();
 }
 
+
+// =========================================================================
+// ARCHITECTURAL SCENERY BY DEPTH / LAYOUT MODE (SYSTEM, DAG, UML)
+// =========================================================================
+
+function drawSystemArchitectureScenery(ctx, c, vLeft, vRight, vTop, vBottom, now, nodes) {
+  const SYSTEM_LAYERS = [
+    { id: 'docs', name: 'DOCS & SPÉCIFICATIONS', icon: '📖', x: -1050, color: '148, 163, 184', border: '#94a3b8' },
+    { id: 'ui', name: 'INTERFACE & PRÉSENTATION (UI)', icon: '💻', x: -760, color: '56, 189, 248', border: '#38bdf8' },
+    { id: 'config', name: 'CONFIG & ENVIRONNEMENTS', icon: '⚙️', x: -530, color: '234, 179, 8', border: '#eab308' },
+    { id: 'action', name: 'CONTRÔLEURS & ACTIONS', icon: '⚡', x: -300, color: '192, 132, 252', border: '#c084fc' },
+    { id: 'domain', name: 'DOMAINE MÉTIER PUR', icon: '💎', x: 260, color: '34, 197, 94', border: '#22c55e' },
+    { id: 'utility', name: 'UTILITAIRES & NOYAU', icon: '🛠️', x: 540, color: '129, 140, 248', border: '#818cf8' },
+    { id: 'database', name: 'PERSISTANCE & DATABASE', icon: '🗄️', x: 820, color: '244, 63, 94', border: '#f43f5e' },
+  ];
+
+  const colWidth = 230;
+  const topY = -800;
+  const botY = 800;
+  const height = botY - topY;
+
+  const layerCounts = new Map();
+  for (let i = 0; i < nodes.length; i++) {
+    const l = nodes[i].layer || 'domain';
+    layerCounts.set(l, (layerCounts.get(l) || 0) + 1);
+  }
+
+  for (let i = 0; i < SYSTEM_LAYERS.length; i++) {
+    const layer = SYSTEM_LAYERS[i];
+    const lx = layer.x - colWidth / 2;
+    if (lx + colWidth < vLeft || lx > vRight) continue;
+
+    ctx.save();
+    // 1. Column Vertical Gradient Cyber Corridor
+    const grad = ctx.createLinearGradient(0, topY, 0, botY);
+    grad.addColorStop(0, `rgba(${layer.color}, 0.09)`);
+    grad.addColorStop(0.5, `rgba(${layer.color}, 0.025)`);
+    grad.addColorStop(1, `rgba(${layer.color}, 0.09)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(lx, topY, colWidth, height);
+
+    // 2. Column Vertical Dotted Glow Borders
+    ctx.strokeStyle = `rgba(${layer.color}, 0.38)`;
+    ctx.lineWidth = Math.min(2.5, 1.2 / c.zoom);
+    ctx.setLineDash([8 / c.zoom, 8 / c.zoom]);
+    ctx.strokeRect(lx, topY, colWidth, height);
+    ctx.setLineDash([]);
+
+    // 3. Header Card
+    const headerY = topY - 32;
+    const count = layerCounts.get(layer.id) || 0;
+    const headerText = `${layer.icon} ${layer.name} (${count})`;
+    const fontSize = Math.round(12 / Math.max(0.4, Math.min(1.4, c.zoom)));
+    ctx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const textW = ctx.measureText(headerText).width + 24;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.strokeStyle = layer.border;
+    ctx.lineWidth = Math.min(2.0, 1.4 / c.zoom);
+    ctx.beginPath();
+    ctx.roundRect(layer.x - textW / 2, headerY - 14, textW, 28, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = layer.border;
+    ctx.shadowBlur = 8;
+    ctx.fillText(headerText, layer.x, headerY);
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+  }
+}
+
+function drawDagPipelineScenery(ctx, c, vLeft, vRight, vTop, vBottom, now, nodes) {
+  const DAG_STAGES = [
+    { idx: 0, name: '1. ENTRÉES & TRIGGERS', icon: '🌐', x: -840, desc: 'Web, Forms, HTTP Endpoints, WebSockets, CLI', color: '56, 189, 248', border: '#38bdf8' },
+    { idx: 1, name: '2. ROUTAGE & SÉCURITÉ', icon: '🛡️', x: -280, desc: 'Guards, Middlewares, Auth, Parsers', color: '192, 132, 252', border: '#c084fc' },
+    { idx: 2, name: '3. LOGIQUE & DOMAINE', icon: '⚙️', x: 280, desc: 'Services Métier, Calculateurs, Algorithmes', color: '34, 197, 94', border: '#22c55e' },
+    { idx: 3, name: '4. PERSISTANCE & SORTIES', icon: '💾', x: 840, desc: 'Base de données, Fichiers, Événements', color: '244, 63, 94', border: '#f43f5e' }
+  ];
+
+  const colWidth = 360;
+  const topY = -700;
+  const botY = 700;
+  const height = botY - topY;
+
+  const stageCounts = [0, 0, 0, 0];
+  for (let i = 0; i < nodes.length; i++) {
+    const s = Math.min(3, Math.max(0, nodes[i].stage_idx || 0));
+    stageCounts[s]++;
+  }
+
+  for (let i = 0; i < DAG_STAGES.length; i++) {
+    const st = DAG_STAGES[i];
+    const lx = st.x - colWidth / 2;
+    if (lx + colWidth < vLeft || lx > vRight) continue;
+
+    ctx.save();
+    // 1. Stage Gradient Background
+    const grad = ctx.createLinearGradient(0, topY, 0, botY);
+    grad.addColorStop(0, `rgba(${st.color}, 0.08)`);
+    grad.addColorStop(0.5, `rgba(${st.color}, 0.02)`);
+    grad.addColorStop(1, `rgba(${st.color}, 0.08)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(lx, topY, colWidth, height);
+
+    // 2. Stage Dotted Borders
+    ctx.strokeStyle = `rgba(${st.color}, 0.38)`;
+    ctx.lineWidth = Math.min(2.5, 1.2 / c.zoom);
+    ctx.setLineDash([10 / c.zoom, 6 / c.zoom]);
+    ctx.strokeRect(lx, topY, colWidth, height);
+    ctx.setLineDash([]);
+
+    // 3. Stage Header Card
+    const headerY = topY - 34;
+    const headerText = `${st.icon} ${st.name} (${stageCounts[i]})`;
+    const fontSize = Math.round(13 / Math.max(0.4, Math.min(1.4, c.zoom)));
+    ctx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const textW = ctx.measureText(headerText).width + 26;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.strokeStyle = st.border;
+    ctx.lineWidth = Math.min(2.2, 1.5 / c.zoom);
+    ctx.beginPath();
+    ctx.roundRect(st.x - textW / 2, headerY - 16, textW, 32, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = st.border;
+    ctx.shadowBlur = 10;
+    ctx.fillText(headerText, st.x, headerY);
+    ctx.shadowBlur = 0;
+
+    // Subtitle description below header
+    const subSize = Math.round(10 / Math.max(0.4, Math.min(1.4, c.zoom)));
+    ctx.font = `${subSize}px "Inter", sans-serif`;
+    ctx.fillStyle = `rgba(${st.color}, 0.85)`;
+    ctx.fillText(st.desc, st.x, headerY + 24);
+
+    // 4. Directional Pipeline Arrow Conduits Between Stages
+    if (i < DAG_STAGES.length - 1) {
+      const nextSt = DAG_STAGES[i + 1];
+      const arrowX = (st.x + colWidth / 2 + nextSt.x - colWidth / 2) / 2;
+      const pulseProg = (now * 0.002 + i * 0.3) % 1.0;
+      const arrowSize = Math.round(22 / Math.max(0.4, Math.min(1.4, c.zoom)));
+      ctx.fillStyle = `rgba(56, 189, 248, ${0.35 + Math.sin(pulseProg * Math.PI) * 0.55})`;
+      ctx.font = `bold ${arrowSize}px monospace`;
+      ctx.fillText('➔➔', arrowX, 0);
+    }
+
+    ctx.restore();
+  }
+}
+
+function drawUmlMatrixScenery(ctx, c, vLeft, vRight, vTop, vBottom, now, nodes) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+  ctx.lineWidth = Math.min(1.5, 0.8 / c.zoom);
+  const gridSizeX = 340;
+  const gridSizeY = 160;
+
+  const startX = Math.floor(vLeft / gridSizeX) * gridSizeX;
+  const endX = Math.ceil(vRight / gridSizeX) * gridSizeX;
+  const startY = Math.floor(vTop / gridSizeY) * gridSizeY;
+  const endY = Math.ceil(vBottom / gridSizeY) * gridSizeY;
+
+  ctx.beginPath();
+  for (let x = startX; x <= endX; x += gridSizeX) {
+    ctx.moveTo(x, vTop);
+    ctx.lineTo(x, vBottom);
+  }
+  for (let y = startY; y <= endY; y += gridSizeY) {
+    ctx.moveTo(vLeft, y);
+    ctx.lineTo(vRight, y);
+  }
+  ctx.stroke();
+
+  // Top Title Banner
+  const titleY = vTop + 45 / c.zoom;
+  const fontSize = Math.round(14 / Math.max(0.4, Math.min(1.4, c.zoom)));
+  ctx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const titleText = `🏛️ MATRICE UML DES COMPOSANTS & CONTRATS (${nodes.length} symboles)`;
+  const tw = ctx.measureText(titleText).width + 32;
+
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+  ctx.strokeStyle = '#c084fc';
+  ctx.lineWidth = Math.min(2.0, 1.4 / c.zoom);
+  ctx.beginPath();
+  ctx.roundRect(0 - tw / 2, titleY - 16, tw, 32, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#f5d0fe';
+  ctx.shadowColor = '#c084fc';
+  ctx.shadowBlur = 8;
+  ctx.fillText(titleText, 0, titleY);
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
 function smoothFlyTo(tx, ty, tz = null, customDuration = null) {
   if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
   const c = state.camera;
@@ -506,6 +715,20 @@ function render(now) {
           } else {
             baseR *= 0.45;
             col = [col[0] * 0.30, col[1] * 0.30, col[2] * 0.30, 0.06]; // Ghost star
+          }
+        }
+
+        // Mode 4 : Radar Sécurité & Zero-Day SAST (V)
+        if (state.securityVisionMode) {
+          const hasVuln = (n.violations && n.violations.length > 0) || (n.metadata && n.metadata.cve) || n.has_security_violation;
+          if (hasVuln) {
+            const pulse = 1.45 + 0.35 * Math.sin(now * 0.008);
+            baseR *= pulse;
+            const isCrit = (n.violations || []).some(v => (v.severity || '').toLowerCase() === 'critical');
+            col = isCrit ? [0.99, 0.15, 0.25, 1.0] : [0.98, 0.55, 0.10, 1.0];
+          } else {
+            baseR *= 0.40;
+            col = [col[0] * 0.25, col[1] * 0.25, col[2] * 0.25, 0.08];
           }
         }
 
@@ -869,9 +1092,9 @@ function render(now) {
       state.waterRipples = survivingRipples;
     }
 
-    // Organic Aquatic Folder Bubbles (Membranes & Cytoskeletons in Background Layer)
+    // Background Scenery Pass by Active Depth / Layout Mode
     const pendingFolderBadges = [];
-    if (!state.xrayMode && folderStats && state.showFolderMembranes !== false) {
+    if (state.depth === 1 && !state.xrayMode && folderStats && state.showFolderMembranes !== false) {
       folderStats.forEach((st, folder) => {
         let birthInfo = state.bubbleBirthMap ? state.bubbleBirthMap.get(folder) : null;
         if (!birthInfo) {
@@ -909,6 +1132,12 @@ function render(now) {
           pendingFolderBadges.push(badgeData);
         }
       });
+    } else if (state.depth === 2) {
+      drawSystemArchitectureScenery(ctx, c, vLeft, vRight, vTop, vBottom, now, nodes);
+    } else if (state.depth === 3) {
+      drawDagPipelineScenery(ctx, c, vLeft, vRight, vTop, vBottom, now, nodes);
+    } else if (state.depth === 4) {
+      drawUmlMatrixScenery(ctx, c, vLeft, vRight, vTop, vBottom, now, nodes);
     }
 
     // =========================================================================
@@ -1718,6 +1947,13 @@ function render(now) {
         }
       }
 
+      if (state.securityVisionMode) {
+        const hasVuln = (n.violations && n.violations.length > 0) || (n.metadata && n.metadata.cve) || n.has_security_violation;
+        if (!hasVuln && !isSelected && !isHovered) {
+          continue;
+        }
+      }
+
       // Progressive spawn: don't show label or rings until node has emerged
       if (now < (n.birth_time || 0) + 120) continue;
 
@@ -1739,9 +1975,11 @@ function render(now) {
                              (!isDenseBubble || isPriorityLabel);
 
       const isHmHotspot = !!(state.heatmapMode && state.heatmapScores && state.heatmapScores.get && ((state.heatmapScores.get(n.id)?.score || 0) > 0.45));
+      const isSecurityVuln = !!(state.securityVisionMode && ((n.violations && n.violations.length > 0) || (n.metadata && n.metadata.cve) || n.has_security_violation));
       const shouldShowLabel = state.deadCodeMode 
         || isHmHotspot 
         || isPriorityLabel
+        || isSecurityVuln
         || (state.xrayMode && state.xrayTunnel) 
         || (allowFileLabel && n.is_file) 
         || (lodLevel === 3 && !isDenseBubble && (n.is_class || n.stereotype === '«Form»' || n.is_form));

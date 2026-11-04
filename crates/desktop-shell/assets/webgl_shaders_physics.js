@@ -375,9 +375,12 @@ function stepPhysics() {
   const isHuge = nodes.length > 1000;
   const activeDragId = state.draggedNode ? state.draggedNode.id : null;
   let totalSpeed = 0;
+  let distToTargetSum = 0;
+  let targetCount = 0;
 
-  // 1. Gentle pull towards active 4D topological layout target (soft so bubbles can live and breathe inside cell)
-  const pull = isHuge ? 0.045 : 0.026;
+  // 1. Snappy pull towards active 4D topological layout target
+  // Strong pull (0.18) in structured views (d >= 2) so nodes swiftly form clean swimlanes and stages
+  const pull = (d === 1) ? (isHuge ? 0.045 : 0.035) : 0.18;
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     if (activeDragId && n.id === activeDragId) continue;
@@ -393,10 +396,14 @@ function stepPhysics() {
       const dy = target.y - n.y;
       n.vx = (n.vx || 0) + dx * pull;
       n.vy = (n.vy || 0) + dy * pull;
+      distToTargetSum += Math.hypot(dx, dy);
+      targetCount++;
     }
   }
 
-  // 2. Hooke Spring Attraction on active edges (limit edge springs on huge graphs to avoid CPU starvation)
+  // 2. Hooke Spring Attraction on active edges
+  // In structured views (d >= 2), reduce spring pull so relations don't break the architectural columns
+  const springFactor = (d === 1) ? 1.0 : 0.12;
   const maxEdges = isHuge ? Math.min(edges.length, 2500) : edges.length;
   for (let i = 0; i < maxEdges; i++) {
     const e = edges[i];
@@ -410,7 +417,7 @@ function stepPhysics() {
     const dy = t.y - s.y;
     const dist = Math.hypot(dx, dy) || 1;
     const restLen = e.relation === 'contains' ? 65 : 160;
-    const force = Math.max(-4.5, Math.min(4.5, (dist - restLen) * 0.012));
+    const force = Math.max(-4.5, Math.min(4.5, (dist - restLen) * 0.012)) * springFactor;
     const fx = (dx / dist) * force;
     const fy = (dy / dist) * force;
     s.vx = (s.vx || 0) + fx;
@@ -419,129 +426,153 @@ function stepPhysics() {
     t.vy = (t.vy || 0) - fy;
   }
 
-  // 2b. Organic Cellular Membrane Confinement, Cytoplasmic Gravity & Bubble-to-Bubble Repulsion
-  updateFolderClusters();
-  if (state.folderClusters) {
-    // A) Intra-Cellular Organelle Dynamics (gravity to nucleus + soft anti-overlap spacing)
-    state.folderClusters.forEach((st, folder) => {
-      if (!st.nodes || st.nodes.length <= 1) return;
-      const cx = st.cx !== undefined ? st.cx : (st.sumX / st.count);
-      const cy = st.cy !== undefined ? st.cy : (st.sumY / st.count);
-      const maxR = st.computedRadius || Math.max(100, Math.sqrt(st.count) * 58);
-      const safeR = maxR * 0.85;
+  // 2b. Cellular Membrane Confinement ONLY in Obsidian Galaxy View (d === 1)
+  if (d === 1) {
+    updateFolderClusters();
+    if (state.folderClusters) {
+      // A) Intra-Cellular Organelle Dynamics (gravity to nucleus + soft anti-overlap spacing)
+      state.folderClusters.forEach((st, folder) => {
+        if (!st.nodes || st.nodes.length <= 1) return;
+        const cx = st.cx !== undefined ? st.cx : (st.sumX / st.count);
+        const cy = st.cy !== undefined ? st.cy : (st.sumY / st.count);
+        const maxR = st.computedRadius || Math.max(100, Math.sqrt(st.count) * 58);
+        const safeR = maxR * 0.85;
 
-      // Intra-cellular particle repulsion (strided O(K) cap on dense folders for 120 FPS)
-      const count = st.nodes.length;
-      const innerStep = count > 48 ? Math.max(1, Math.floor(count / 28)) : 1;
-      for (let i = 0; i < count; i++) {
-        const na = st.nodes[i];
-        for (let j = i + 1; j < count; j += innerStep) {
-          const nb = st.nodes[j];
-          const bdx = nb.x - na.x;
-          const bdy = nb.y - na.y;
-          const bdist2 = bdx * bdx + bdy * bdy;
-          const minD = 55; // comfortable padding between bubbles
-          if (bdist2 < minD * minD && bdist2 > 0.01) {
-            const bdist = Math.sqrt(bdist2);
-            const repulse = Math.min(3.5, (minD - bdist) * 0.05);
-            const pfx = (bdx / bdist) * repulse;
-            const pfy = (bdy / bdist) * repulse;
-            if (!activeDragId || na.id !== activeDragId) {
-              na.vx = (na.vx || 0) - pfx;
-              na.vy = (na.vy || 0) - pfy;
-            }
-            if (!activeDragId || nb.id !== activeDragId) {
-              nb.vx = (nb.vx || 0) + pfx;
-              nb.vy = (nb.vy || 0) + pfy;
+        // Intra-cellular particle repulsion
+        const count = st.nodes.length;
+        const innerStep = count > 48 ? Math.max(1, Math.floor(count / 28)) : 1;
+        for (let i = 0; i < count; i++) {
+          const na = st.nodes[i];
+          for (let j = i + 1; j < count; j += innerStep) {
+            const nb = st.nodes[j];
+            const bdx = nb.x - na.x;
+            const bdy = nb.y - na.y;
+            const bdist2 = bdx * bdx + bdy * bdy;
+            const minD = 55;
+            if (bdist2 < minD * minD && bdist2 > 0.01) {
+              const bdist = Math.sqrt(bdist2);
+              const repulse = Math.min(3.5, (minD - bdist) * 0.05);
+              const pfx = (bdx / bdist) * repulse;
+              const pfy = (bdy / bdist) * repulse;
+              if (!activeDragId || na.id !== activeDragId) {
+                na.vx = (na.vx || 0) - pfx;
+                na.vy = (na.vy || 0) - pfy;
+              }
+              if (!activeDragId || nb.id !== activeDragId) {
+                nb.vx = (nb.vx || 0) + pfx;
+                nb.vy = (nb.vy || 0) + pfy;
+              }
             }
           }
         }
+
+        // Micro-gravity towards folder nucleus & soft membrane perimeter retention
+        for (let ni = 0; ni < st.nodes.length; ni++) {
+          const n = st.nodes[ni];
+          if (activeDragId && n.id === activeDragId) continue;
+
+          const dx = n.x - cx;
+          const dy = n.y - cy;
+          const dist = Math.hypot(dx, dy) || 1;
+
+          const cohesion = 0.0025;
+          n.vx = (n.vx || 0) + (cx - n.x) * cohesion;
+          n.vy = (n.vy || 0) + (cy - n.y) * cohesion;
+
+          if (dist > safeR) {
+            const overflow = dist - safeR;
+            const pushBack = Math.min(5.0, overflow * 0.07);
+            n.vx -= (dx / dist) * pushBack;
+            n.vy -= (dy / dist) * pushBack;
+
+            const hardLimit = maxR * 0.94;
+            if (dist > hardLimit) {
+              n.x = cx + (dx / dist) * hardLimit;
+              n.y = cy + (dy / dist) * hardLimit;
+              n.vx *= 0.5;
+              n.vy *= 0.5;
+            }
+          }
+        }
+      });
+
+      // B) Inter-Cluster Repulsion
+      const clusterList = Array.from(state.folderClusters.values());
+      for (let i = 0; i < clusterList.length; i++) {
+        clusterList[i]._cfx = 0;
+        clusterList[i]._cfy = 0;
       }
+      for (let i = 0; i < clusterList.length; i++) {
+        const cA = clusterList[i];
+        if (!cA.nodes || cA.count === 0) continue;
+        const cxA = cA.cx !== undefined ? cA.cx : (cA.sumX / cA.count);
+        const cyA = cA.cy !== undefined ? cA.cy : (cA.sumY / cA.count);
+        const rA = cA.computedRadius || 120;
 
-      // Micro-gravity towards folder nucleus & soft membrane perimeter retention
-      for (let ni = 0; ni < st.nodes.length; ni++) {
-        const n = st.nodes[ni];
-        if (activeDragId && n.id === activeDragId) continue;
+        for (let j = i + 1; j < clusterList.length; j++) {
+          const cB = clusterList[j];
+          if (!cB.nodes || cB.count === 0) continue;
+          const cxB = cB.cx !== undefined ? cB.cx : (cB.sumX / cB.count);
+          const cyB = cB.cy !== undefined ? cB.cy : (cB.sumY / cB.count);
+          const rB = cB.computedRadius || 120;
 
-        const dx = n.x - cx;
-        const dy = n.y - cy;
-        const dist = Math.hypot(dx, dy) || 1;
+          const cdx = cxB - cxA;
+          const cdy = cyB - cyA;
+          const cdist = Math.hypot(cdx, cdy) || 1;
+          const safeClusterDist = rA + rB + 110;
 
-        // Gentle cohesive gravity towards stable folder center
-        const cohesion = 0.0025;
-        n.vx = (n.vx || 0) + (cx - n.x) * cohesion;
-        n.vy = (n.vy || 0) + (cy - n.y) * cohesion;
-
-        // Elastic Membrane Surface Tension (repels inward if approaching perimeter)
-        if (dist > safeR) {
-          const overflow = dist - safeR;
-          const pushBack = Math.min(5.0, overflow * 0.07);
-          n.vx -= (dx / dist) * pushBack;
-          n.vy -= (dy / dist) * pushBack;
-
-          const hardLimit = maxR * 0.94;
-          if (dist > hardLimit) {
-            n.x = cx + (dx / dist) * hardLimit;
-            n.y = cy + (dy / dist) * hardLimit;
-            n.vx *= 0.5;
-            n.vy *= 0.5;
+          if (cdist < safeClusterDist) {
+            const overlap = safeClusterDist - cdist;
+            const repulse = Math.min(6.5, overlap * 0.05);
+            const rfx = (cdx / cdist) * repulse * 0.6;
+            const rfy = (cdy / cdist) * repulse * 0.6;
+            cA._cfx -= rfx;
+            cA._cfy -= rfy;
+            cB._cfx += rfx;
+            cB._cfy += rfy;
           }
         }
       }
-    });
-
-    // B) Inter-Cluster Repulsion (accumulated per cluster in O(C^2) then applied in single O(N) pass)
-    const clusterList = Array.from(state.folderClusters.values());
-    for (let i = 0; i < clusterList.length; i++) {
-      clusterList[i]._cfx = 0;
-      clusterList[i]._cfy = 0;
-    }
-    for (let i = 0; i < clusterList.length; i++) {
-      const cA = clusterList[i];
-      if (!cA.nodes || cA.count === 0) continue;
-      const cxA = cA.cx !== undefined ? cA.cx : (cA.sumX / cA.count);
-      const cyA = cA.cy !== undefined ? cA.cy : (cA.sumY / cA.count);
-      const rA = cA.computedRadius || 120;
-
-      for (let j = i + 1; j < clusterList.length; j++) {
-        const cB = clusterList[j];
-        if (!cB.nodes || cB.count === 0) continue;
-        const cxB = cB.cx !== undefined ? cB.cx : (cB.sumX / cB.count);
-        const cyB = cB.cy !== undefined ? cB.cy : (cB.sumY / cB.count);
-        const rB = cB.computedRadius || 120;
-
-        const cdx = cxB - cxA;
-        const cdy = cyB - cyA;
-        const cdist = Math.hypot(cdx, cdy) || 1;
-        const safeClusterDist = rA + rB + 110; // wide celestial corridor between folders
-
-        if (cdist < safeClusterDist) {
-          const overlap = safeClusterDist - cdist;
-          const repulse = Math.min(6.5, overlap * 0.05);
-          const rfx = (cdx / cdist) * repulse * 0.6;
-          const rfy = (cdy / cdist) * repulse * 0.6;
-          cA._cfx -= rfx;
-          cA._cfy -= rfy;
-          cB._cfx += rfx;
-          cB._cfy += rfy;
+      for (let i = 0; i < clusterList.length; i++) {
+        const c = clusterList[i];
+        if (!c.nodes || (c._cfx === 0 && c._cfy === 0)) continue;
+        const fx = c._cfx, fy = c._cfy;
+        for (let k = 0; k < c.nodes.length; k++) {
+          const nd = c.nodes[k];
+          if (activeDragId && nd.id === activeDragId) continue;
+          nd.vx = (nd.vx || 0) + fx;
+          nd.vy = (nd.vy || 0) + fy;
         }
       }
     }
-    for (let i = 0; i < clusterList.length; i++) {
-      const c = clusterList[i];
-      if (!c.nodes || (c._cfx === 0 && c._cfy === 0)) continue;
-      const fx = c._cfx, fy = c._cfy;
-      for (let k = 0; k < c.nodes.length; k++) {
-        const nd = c.nodes[k];
-        if (activeDragId && nd.id === activeDragId) continue;
-        nd.vx = (nd.vx || 0) + fx;
-        nd.vy = (nd.vy || 0) + fy;
+  } else {
+    // In Structured Views (d >= 2 : System, Flow DAG, UML Classes):
+    // Soft particle anti-overlap so bubbles in the same column/stage don't stack directly on top of each other
+    const count = nodes.length;
+    const step = count > 350 ? Math.max(1, Math.floor(count / 90)) : 1;
+    for (let i = 0; i < count; i += step) {
+      const na = nodes[i];
+      for (let j = i + 1; j < Math.min(count, i + 32); j++) {
+        const nb = nodes[j];
+        const bdx = nb.x - na.x;
+        const bdy = nb.y - na.y;
+        const bdist2 = bdx * bdx + bdy * bdy;
+        const minD = 38;
+        if (bdist2 < minD * minD && bdist2 > 0.01) {
+          const bdist = Math.sqrt(bdist2);
+          const repulse = Math.min(3.5, (minD - bdist) * 0.08);
+          const pfx = (bdx / bdist) * repulse;
+          const pfy = (bdy / bdist) * repulse;
+          if (!activeDragId || na.id !== activeDragId) { na.vx = (na.vx || 0) - pfx; na.vy = (na.vy || 0) - pfy; }
+          if (!activeDragId || nb.id !== activeDragId) { nb.vx = (nb.vx || 0) + pfx; nb.vy = (nb.vy || 0) + pfy; }
+        }
       }
     }
   }
 
-  // 3. Serene Cosmic Integration & Friction Damping
-  const maxSpeed = 3.6;
+  // 3. Cosmic Integration & Friction Damping
+  const maxSpeed = (d === 1) ? 3.6 : 18.0;
+  const friction = (d === 1) ? 0.82 : 0.74;
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     if (activeDragId && n.id === activeDragId) {
@@ -549,8 +580,8 @@ function stepPhysics() {
       n.vy = 0;
       continue;
     }
-    n.vx = (n.vx || 0) * 0.82;
-    n.vy = (n.vy || 0) * 0.82;
+    n.vx = (n.vx || 0) * friction;
+    n.vy = (n.vy || 0) * friction;
     const sp = Math.hypot(n.vx, n.vy);
     if (sp > maxSpeed) {
       n.vx = (n.vx / sp) * maxSpeed;
@@ -564,7 +595,11 @@ function stepPhysics() {
   // Auto-sleep physics when nodes have reached relaxation to maintain solid 120 FPS
   if (state.physicsCooldown !== undefined) {
     state.physicsCooldown--;
-    if (!activeDragId && (state.physicsCooldown <= 0 || (isHuge ? totalSpeed < 0.80 : totalSpeed < 0.20))) {
+    const avgDist = targetCount > 0 ? (distToTargetSum / targetCount) : 0;
+    const isRelaxed = (d === 1)
+      ? (isHuge ? totalSpeed < 0.80 : totalSpeed < 0.20)
+      : (avgDist < 1.8 && totalSpeed < 0.6);
+    if (!activeDragId && (state.physicsCooldown <= 0 || isRelaxed)) {
       state.physicsSleeping = true;
       state.cachedEdgePaths = null; // trigger 1 clean static Path2D bake
     }

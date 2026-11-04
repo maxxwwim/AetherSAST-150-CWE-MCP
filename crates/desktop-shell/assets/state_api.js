@@ -45,6 +45,7 @@
       deadCodeSet: new Set(),
       heatmapMode: false,
       heatmapScores: new Map(),
+      securityVisionMode: false,
       aiTelemetry: null,
       aiLastTimestamp: 0,
       aiAutoCam: true,
