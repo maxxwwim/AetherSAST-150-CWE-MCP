@@ -20,6 +20,8 @@ node_modules/
 /.aether/*
 crates/**/.aether/*
 !/.aether/.gitkeep
+!/.aether/plugins/
+!/.aether/plugins/**
 
 # ==========================================
 # Release Archives & Binaries

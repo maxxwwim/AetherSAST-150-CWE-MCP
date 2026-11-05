@@ -1,3 +1,4 @@
+#![recursion_limit = "512"]
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -53,14 +54,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = args.port;
     let path = args.path.clone();
 
-    // 1. Vérifie si AetherScope tourne sur le port
+    // 1. VÃƒÆ’Ã‚Â©rifie si AetherScope tourne sur le port
     let is_server_listening = check_server_listening(port);
 
     if !is_server_listening {
-        eprintln!("📡 [AetherScope MCP] Serveur non détecté sur le port {}. Démarrage automatique de l'agent en tâche de fond...", port);
-        // Note: mcp_main est le binaire autonome stdio, on s'exécute directement en mode pont
+        eprintln!("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¡ [AetherScope MCP] Serveur non dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â© sur le port {}. DÃƒÆ’Ã‚Â©marrage automatique de l'agent en tÃƒÆ’Ã‚Â¢che de fond...", port);
+        // Note: mcp_main est le binaire autonome stdio, on s'exÃƒÆ’Ã‚Â©cute directement en mode pont
     } else {
-        eprintln!("📡 [AetherScope MCP] Connecté à l'instance active AetherScope sur http://127.0.0.1:{}", port);
+        eprintln!("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¡ [AetherScope MCP] ConnectÃƒÆ’Ã‚Â© ÃƒÆ’Ã‚Â  l'instance active AetherScope sur http://127.0.0.1:{}", port);
     }
 
     let stdin = io::stdin();
@@ -150,25 +151,25 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     {
                         "uri": "aether://graph/summary",
                         "name": "AetherScope 3D AST Graph Summary",
-                        "description": "Synthèse temps réel du graphe AST 3D (nœuds, arêtes, clusters, métriques de santé) pour injection de contexte immédiat.",
+                        "description": "SynthÃ¨se temps rÃ©el du graphe AST 3D (nÅ“uds, arÃªtes, clusters, mÃ©triques de santÃ©) pour injection de contexte immÃ©diat.",
                         "mimeType": "application/json"
                     },
                     {
                         "uri": "aether://audit/live",
                         "name": "AetherScope Live Security Audit (SAST/CWE)",
-                        "description": "Rapport d'audit SAST live (.aether/LIVE_AUDIT.md) analysant les 150+ motifs de vulnérabilités CWE détectées.",
+                        "description": "Rapport d'audit SAST live (.aether/LIVE_AUDIT.md) analysant les 150+ motifs de vulnÃ©rabilitÃ©s CWE dÃ©tectÃ©es.",
                         "mimeType": "text/markdown"
                     },
                     {
                         "uri": "aether://contracts/manifest",
                         "name": "Aether Architecture Manifest",
-                        "description": "Manifeste d'architecture aether.manifest.json ou aether.lock.toml définissant les contrats EARS et les frontières de couches.",
+                        "description": "Manifeste d'architecture aether.manifest.json ou aether.lock.toml dÃ©finissant les contrats EARS et les frontiÃ¨res de couches.",
                         "mimeType": "application/json"
                     },
                     {
                         "uri": "aether://tasks/active",
                         "name": "AetherScope Active AI Tasks",
-                        "description": "Registre des tâches d'ingénierie et de refactorisation pilotées par l'IA (.aether/tasks/).",
+                        "description": "Registre des tÃ¢ches d'ingÃ©nierie et de refactorisation pilotÃ©es par l'IA (.aether/tasks/).",
                         "mimeType": "application/json"
                     }
                 ]
@@ -248,7 +249,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                         json!({
                             "project": default_path,
                             "status": "unlocked",
-                            "info": "Aucun fichier aether.manifest.json ou aether.lock.toml détecté à la racine."
+                            "info": "Aucun fichier aether.manifest.json ou aether.lock.toml dÃ©tectÃ© Ã  la racine."
                         }).to_string()
                     };
                     Some(JsonRpcResponse {
@@ -307,23 +308,23 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                 "prompts": [
                     {
                         "name": "audit_security_cwe",
-                        "description": "Génère un prompt d'audit et de remédiation ciblée pour corriger une vulnérabilité SAST / violation CWE détectée dans le graphe AetherScope.",
+                        "description": "GÃ©nÃ¨re un prompt d'audit et de remÃ©diation ciblÃ©e pour corriger une vulnÃ©rabilitÃ© SAST / violation CWE dÃ©tectÃ©e dans le graphe AetherScope.",
                         "arguments": [
                             {
                                 "name": "symbol_name",
-                                "description": "Nom du symbole (fonction, classe, struct) ou chemin du fichier à auditer.",
+                                "description": "Nom du symbole (fonction, classe, struct) ou chemin du fichier Ã  auditer.",
                                 "required": true
                             },
                             {
                                 "name": "cwe_id",
-                                "description": "Identifiant CWE ou catégorie de la faille (ex: CWE-89, CWE-79, Memory Safety).",
+                                "description": "Identifiant CWE ou catÃ©gorie de la faille (ex: CWE-89, CWE-79, Memory Safety).",
                                 "required": false
                             }
                         ]
                     },
                     {
                         "name": "scaffold_game_server",
-                        "description": "Génère un prompt guidé pour l'implémentation d'une architecture serveur de jeu (Roblox Luau ou Minecraft Paper/Purpur) optimisée pour AetherScope.",
+                        "description": "GÃ©nÃ¨re un prompt guidÃ© pour l'implÃ©mentation d'une architecture serveur de jeu (Roblox Luau ou Minecraft Paper/Purpur) optimisÃ©e pour AetherScope.",
                         "arguments": [
                             {
                                 "name": "engine",
@@ -332,14 +333,14 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             },
                             {
                                 "name": "package_name",
-                                "description": "Nom du composant ou plugin serveur à créer.",
+                                "description": "Nom du composant ou plugin serveur Ã  crÃ©er.",
                                 "required": true
                             }
                         ]
                     },
                     {
                         "name": "refactor_contract_violation",
-                        "description": "Génère un prompt d'analyse et de correction lorsqu'une rupture de contrat EARS ou une violation d'import de couche est détectée.",
+                        "description": "GÃ©nÃ¨re un prompt d'analyse et de correction lorsqu'une rupture de contrat EARS ou une violation d'import de couche est dÃ©tectÃ©e.",
                         "arguments": [
                             {
                                 "name": "contract_name",
@@ -348,7 +349,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             },
                             {
                                 "name": "violation_details",
-                                "description": "Détails de l'incompatibilité ou de la violation de frontière.",
+                                "description": "DÃ©tails de l'incompatibilitÃ© ou de la violation de frontiÃ¨re.",
                                 "required": false
                             }
                         ]
@@ -368,19 +369,19 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let symbol_name = arguments.get("symbol_name").and_then(|v| v.as_str()).unwrap_or("<symbole>");
                     let cwe_id = arguments.get("cwe_id").and_then(|v| v.as_str()).unwrap_or("CWE Anomaly");
                     let prompt_text = format!(
-                        "Vous êtes l'architecte de sécurité AetherScope. Effectuez l'audit et la remédiation de la cible `{}` concernée par la vulnérabilité `{}`.\n\n\
+                        "Vous Ãªtes l'architecte de sÃ©curitÃ© AetherScope. Effectuez l'audit et la remÃ©diation de la cible `{}` concernÃ©e par la vulnÃ©rabilitÃ© `{}`.\n\n\
                         Protocole obligatoire :\n\
                         1. Utilisez `aetherscope_teleport_camera` vers `{}` avec l'action 'Correction CVE'.\n\
-                        2. Utilisez `aetherscope_get_active_target` sur `{}` pour vérifier les contrats EARS et les appelants en amont.\n\
-                        3. Proposez une correction sécurisée (validation stricte des entrées, typage invariant, absence d'allocation superflue) sans rompre l'API publique.\n\
-                        4. Créez ou mettez à jour une tâche via `aetherscope_create_task` (type: 'security_fix').",
+                        2. Utilisez `aetherscope_get_active_target` sur `{}` pour vÃ©rifier les contrats EARS et les appelants en amont.\n\
+                        3. Proposez une correction sÃ©curisÃ©e (validation stricte des entrÃ©es, typage invariant, absence d'allocation superflue) sans rompre l'API publique.\n\
+                        4. CrÃ©ez ou mettez Ã  jour une tÃ¢che via `aetherscope_create_task` (type: 'security_fix').",
                         symbol_name, cwe_id, symbol_name, symbol_name
                     );
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
                         result: Some(json!({
-                            "description": format!("Audit de sécurité AetherScope pour {} ({})", symbol_name, cwe_id),
+                            "description": format!("Audit de sÃ©curitÃ© AetherScope pour {} ({})", symbol_name, cwe_id),
                             "messages": [
                                 {
                                     "role": "user",
@@ -400,22 +401,22 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let package_name = arguments.get("package_name").and_then(|v| v.as_str()).unwrap_or("GameCore");
                     let prompt_text = if engine.to_lowercase().contains("roblox") {
                         format!(
-                            "Vous implémentez un module serveur de jeu haute performance sous Roblox Luau (`{}`) intégré dans l'écosystème AetherScope.\n\n\
-                            Spécifications techniques :\n\
-                            - Architecture contractuelle stricte : `contracts/` pour les paquets réseau RemoteEvent/RemoteFunction avec typage Luau strict (`--!strict`).\n\
-                            - Séparation stricte : `server/` (logique d'autorité exclusive), `client/` (prédiction locale, pas de trust), `data-nodes/` (sauvegarde DataStore atomique).\n\
-                            - Utilisez `aetherscope_create_task` avec le type 'function' pour suivre l'implémentation de `{}`.\n\
-                            - Téléportez la caméra sur le module via `aetherscope_teleport_camera`.",
+                            "Vous implÃ©mentez un module serveur de jeu haute performance sous Roblox Luau (`{}`) intÃ©grÃ© dans l'Ã©cosystÃ¨me AetherScope.\n\n\
+                            SpÃ©cifications techniques :\n\
+                            - Architecture contractuelle stricte : `contracts/` pour les paquets rÃ©seau RemoteEvent/RemoteFunction avec typage Luau strict (`--!strict`).\n\
+                            - SÃ©paration stricte : `server/` (logique d'autoritÃ© exclusive), `client/` (prÃ©diction locale, pas de trust), `data-nodes/` (sauvegarde DataStore atomique).\n\
+                            - Utilisez `aetherscope_create_task` avec le type 'function' pour suivre l'implÃ©mentation de `{}`.\n\
+                            - TÃ©lÃ©portez la camÃ©ra sur le module via `aetherscope_teleport_camera`.",
                             package_name, package_name
                         )
                     } else {
                         format!(
-                            "Vous implémentez un plugin serveur Minecraft Paper/Purpur (`{}`) haute performance selon les standards AetherScope.\n\n\
-                            Spécifications techniques :\n\
-                            - Architecture découplée : API & Contrats d'événements séparés de l'implémentation Bukkit/Spigot.\n\
+                            "Vous implÃ©mentez un plugin serveur Minecraft Paper/Purpur (`{}`) haute performance selon les standards AetherScope.\n\n\
+                            SpÃ©cifications techniques :\n\
+                            - Architecture dÃ©couplÃ©e : API & Contrats d'Ã©vÃ©nements sÃ©parÃ©s de l'implÃ©mentation Bukkit/Spigot.\n\
                             - Concurrency & Tick-safety : Aucun blocage sur le Main Thread tick de 50ms, utilisation d'AsyncScheduler et collections concurrentes.\n\
-                            - Utilisez `aetherscope_create_task` pour déclarer les jalons du plugin `{}`.\n\
-                            - Vérifiez l'absence de fuite mémoire sur les EventHandler désenregistrés.",
+                            - Utilisez `aetherscope_create_task` pour dÃ©clarer les jalons du plugin `{}`.\n\
+                            - VÃ©rifiez l'absence de fuite mÃ©moire sur les EventHandler dÃ©senregistrÃ©s.",
                             package_name, package_name
                         )
                     };
@@ -440,12 +441,12 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
 
                 "refactor_contract_violation" => {
                     let contract_name = arguments.get("contract_name").and_then(|v| v.as_str()).unwrap_or("<contrat>");
-                    let details = arguments.get("violation_details").and_then(|v| v.as_str()).unwrap_or("Non-respect des règles EARS ou fuite de dépendances.");
+                    let details = arguments.get("violation_details").and_then(|v| v.as_str()).unwrap_or("Non-respect des rÃ¨gles EARS ou fuite de dÃ©pendances.");
                     let prompt_text = format!(
-                        "Une violation de contrat d'architecture a été relevée sur `{}` :\n`{}`\n\n\
+                        "Une violation de contrat d'architecture a Ã©tÃ© relevÃ©e sur `{}` :\n`{}`\n\n\
                         Directives AetherScope :\n\
                         1. Inspectez les liaisons amont/aval via `aetherscope_get_active_target` sur `{}`.\n\
-                        2. Vérifiez le respect du README de spécification EARS et du fichier `aether.manifest.json`.\n\
+                        2. VÃ©rifiez le respect du README de spÃ©cification EARS et du fichier `aether.manifest.json`.\n\
                         3. Supprimez les imports circulaires ou illicites entre couches (ex: core ne doit jamais importer desktop-shell).\n\
                         4. Signalez l'avancement via `aetherscope_send_chat_message`.",
                         contract_name, details, contract_name
@@ -454,7 +455,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                         jsonrpc: "2.0".to_string(),
                         id,
                         result: Some(json!({
-                            "description": format!("Résolution violation contrat {}", contract_name),
+                            "description": format!("RÃ©solution violation contrat {}", contract_name),
                             "messages": [
                                 {
                                     "role": "user",
@@ -488,7 +489,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                 "tools": [
                     {
                         "name": "aetherscope_teleport_camera",
-                        "description": "Oriente la caméra WebGL en direct dans AetherScope vers un symbole ou un fichier, et affiche où l'IA travaille en temps réel (fil d'Ariane violet, faisceau laser et réticule tactique).",
+                        "description": "Oriente la camÃ©ra WebGL en direct dans AetherScope vers un symbole ou un fichier, et affiche oÃ¹ l'IA travaille en temps rÃ©el (fil d'Ariane violet, faisceau laser et rÃ©ticule tactique).",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -503,20 +504,20 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 },
                                 "action": {
                                     "type": "string",
-                                    "description": "Action en cours (ex: 'Inspection', 'Analyse', 'Création', 'Refactoring', 'Correction CVE', 'Audit', 'Tests')",
+                                    "description": "Action en cours (ex: 'Inspection', 'Analyse', 'CrÃ©ation', 'Refactoring', 'Correction CVE', 'Audit', 'Tests')",
                                     "examples": ["Inspection", "Refactoring", "Correction CVE", "Audit", "Tests"]
                                 },
                                 "details": {
                                     "type": "string",
-                                    "description": "Courte description technique de ce que vous observez ou réalisez",
-                                    "examples": ["Vérification des invariants et de la non-nullabilité du token d'accès"]
+                                    "description": "Courte description technique de ce que vous observez ou rÃ©alisez",
+                                    "examples": ["VÃ©rification des invariants et de la non-nullabilitÃ© du token d'accÃ¨s"]
                                 }
                             },
                             "required": ["target", "action", "details"],
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Téléportation Caméra 3D AetherScope",
+                            "title": "TÃ©lÃ©portation CamÃ©ra 3D AetherScope",
                             "readOnlyHint": true,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -525,7 +526,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_get_graph_summary",
-                        "description": "Récupère l'architecture complète du projet (nombre de nœuds, flux, liste des dossiers, santé globale et violations de sécurité CVE) depuis AetherScope.",
+                        "description": "RÃ©cupÃ¨re l'architecture complÃ¨te du projet (nombre de nÅ“uds, flux, liste des dossiers, santÃ© globale et violations de sÃ©curitÃ© CVE) depuis AetherScope.",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -535,7 +536,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "path": {
                                     "type": "string",
-                                    "description": "Chemin optionnel du projet à analyser (par défaut le projet actif)",
+                                    "description": "Chemin optionnel du projet Ã  analyser (par dÃ©faut le projet actif)",
                                     "examples": [".", "crates/desktop-shell", "crates/core-graph"]
                                 }
                             },
@@ -543,7 +544,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Résumé d'Architecture & Santé Projet",
+                            "title": "RÃ©sumÃ© d'Architecture & SantÃ© Projet",
                             "readOnlyHint": true,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -552,7 +553,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_send_chat_message",
-                        "description": "Envoie un message ou debrief technique de l'IA directement dans le chat intégré de l'interface AetherScope du développeur.",
+                        "description": "Envoie un message ou debrief technique de l'IA directement dans le chat intÃ©grÃ© de l'interface AetherScope du dÃ©veloppeur.",
                         "readOnlyHint": false,
                         "destructiveHint": false,
                         "idempotentHint": false,
@@ -563,16 +564,16 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 "text": {
                                     "type": "string",
                                     "description": "Contenu du message ou compte-rendu pour l'utilisateur",
-                                    "examples": ["Analyse terminée : 0 vulnérabilité détectée sur le module d'authentification."]
+                                    "examples": ["Analyse terminÃ©e : 0 vulnÃ©rabilitÃ© dÃ©tectÃ©e sur le module d'authentification."]
                                 },
                                 "thought": {
                                     "type": "string",
-                                    "description": "Raisonnement ou réflexion interne de l'IA (optionnel)",
-                                    "examples": ["Le scan SAST valide l'arbre AST et les contrats EARS sans anomalie de mémoire."]
+                                    "description": "Raisonnement ou rÃ©flexion interne de l'IA (optionnel)",
+                                    "examples": ["Le scan SAST valide l'arbre AST et les contrats EARS sans anomalie de mÃ©moire."]
                                 },
                                 "target_symbol": {
                                     "type": "string",
-                                    "description": "Symbole ou fichier associé au message (optionnel)",
+                                    "description": "Symbole ou fichier associÃ© au message (optionnel)",
                                     "examples": ["AuthService", "crates/desktop-shell/src/mcp.rs"]
                                 }
                             },
@@ -589,7 +590,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_get_chat_history",
-                        "description": "Récupère l'historique des échanges récents du chat AetherScope.",
+                        "description": "RÃ©cupÃ¨re l'historique des Ã©changes rÃ©cents du chat AetherScope.",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -610,7 +611,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_get_active_target",
-                        "description": "Récupère le contexte ciblé et le handshake pour un symbole : appelants amont, dépendances aval, règles README EARS et imports interdits.",
+                        "description": "RÃ©cupÃ¨re le contexte ciblÃ© et le handshake pour un symbole : appelants amont, dÃ©pendances aval, rÃ¨gles README EARS et imports interdits.",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -637,7 +638,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_scan_project",
-                        "description": "Déclenche une réanalyse complète de l'architecture d'un projet pour rafraîchir le graphe 3D.",
+                        "description": "DÃ©clenche une rÃ©analyse complÃ¨te de l'architecture d'un projet pour rafraÃ®chir le graphe 3D.",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -647,7 +648,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "path": {
                                     "type": "string",
-                                    "description": "Chemin du projet à réanalyser",
+                                    "description": "Chemin du projet Ã  rÃ©analyser",
                                     "examples": [".", "../monorepo", "crates/desktop-shell"]
                                 }
                             },
@@ -664,7 +665,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_create_task",
-                        "description": "Crée une nouvelle tâche (fonction, recherche, sécurité, refactorisation, etc.) avec son mini-README d'avancement pour structurer le travail dans le contexte du modèle et du développeur.",
+                        "description": "CrÃ©e une nouvelle tÃ¢che (fonction, recherche, sÃ©curitÃ©, refactorisation, etc.) avec son mini-README d'avancement pour structurer le travail dans le contexte du modÃ¨le et du dÃ©veloppeur.",
                         "readOnlyHint": false,
                         "destructiveHint": false,
                         "idempotentHint": false,
@@ -674,42 +675,42 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "title": {
                                     "type": "string",
-                                    "description": "Titre explicite de la tâche à accomplir",
-                                    "examples": ["Correction vulnérabilité CWE-89 dans SQL Query Builder"]
+                                    "description": "Titre explicite de la tÃ¢che Ã  accomplir",
+                                    "examples": ["Correction vulnÃ©rabilitÃ© CWE-89 dans SQL Query Builder"]
                                 },
                                 "kind": {
                                     "type": "string",
-                                    "description": "Type de tâche : 'function', 'research', 'security_fix', 'arch_refactor', 'documentation', 'test', ou 'other'",
+                                    "description": "Type de tÃ¢che : 'function', 'research', 'security_fix', 'arch_refactor', 'documentation', 'test', ou 'other'",
                                     "enum": ["function", "research", "security_fix", "arch_refactor", "documentation", "test", "other"],
                                     "examples": ["security_fix", "function", "arch_refactor"]
                                 },
                                 "target_symbol": {
                                     "type": "string",
-                                    "description": "Nom optionnel du symbole AST ciblé dans le graphe (ex: 'BookingService', 'verify_token')",
+                                    "description": "Nom optionnel du symbole AST ciblÃ© dans le graphe (ex: 'BookingService', 'verify_token')",
                                     "examples": ["execute_query", "BookingService"]
                                 },
                                 "target_file": {
                                     "type": "string",
-                                    "description": "Chemin optionnel du fichier concerné (ex: 'src/auth.rs', 'contracts/ports.rs')",
+                                    "description": "Chemin optionnel du fichier concernÃ© (ex: 'src/auth.rs', 'contracts/ports.rs')",
                                     "examples": ["src/db/query.rs", "contracts/packets.rs"]
                                 },
                                 "priority": {
                                     "type": "string",
-                                    "description": "Priorité de la tâche ('low', 'medium', 'high', 'critical')",
+                                    "description": "PrioritÃ© de la tÃ¢che ('low', 'medium', 'high', 'critical')",
                                     "enum": ["low", "medium", "high", "critical"],
                                     "examples": ["critical", "high", "medium"]
                                 },
                                 "initial_readme": {
                                     "type": "string",
-                                    "description": "Contenu Markdown optionnel pour initialiser le mini-README d'avancement (objectifs, checklist d'étapes)",
-                                    "examples": ["### Objectifs\n- Remplacer interpolation par requête préparée\n- Vérifier tests unitaires"]
+                                    "description": "Contenu Markdown optionnel pour initialiser le mini-README d'avancement (objectifs, checklist d'Ã©tapes)",
+                                    "examples": ["### Objectifs\n- Remplacer interpolation par requÃªte prÃ©parÃ©e\n- VÃ©rifier tests unitaires"]
                                 }
                             },
                             "required": ["title"],
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Création de Tâche AetherScope",
+                            "title": "CrÃ©ation de TÃ¢che AetherScope",
                             "readOnlyHint": false,
                             "destructiveHint": false,
                             "idempotentHint": false,
@@ -718,7 +719,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_update_task",
-                        "description": "Met à jour l'état d'avancement d'une tâche, son statut ('pending', 'in_progress', 'blocked', 'done'), son pourcentage (0-100%) et ajoute des notes au mini-README.",
+                        "description": "Met Ã  jour l'Ã©tat d'avancement d'une tÃ¢che, son statut ('pending', 'in_progress', 'blocked', 'done'), son pourcentage (0-100%) et ajoute des notes au mini-README.",
                         "readOnlyHint": false,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -728,38 +729,38 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "task_id": {
                                     "type": "string",
-                                    "description": "Identifiant unique de la tâche (ex: 'task_123456_nom')",
+                                    "description": "Identifiant unique de la tÃ¢che (ex: 'task_123456_nom')",
                                     "examples": ["task_1730000000_sec", "task_01_game_server"]
                                 },
                                 "status": {
                                     "type": "string",
-                                    "description": "Nouveau statut de la tâche ('pending', 'in_progress', 'blocked', 'done', 'cancelled')",
+                                    "description": "Nouveau statut de la tÃ¢che ('pending', 'in_progress', 'blocked', 'done', 'cancelled')",
                                     "enum": ["pending", "in_progress", "blocked", "done", "cancelled"],
                                     "examples": ["in_progress", "done", "blocked"]
                                 },
                                 "progress": {
                                     "type": "integer",
-                                    "description": "Pourcentage d'avancement estimé de la tâche entre 0 et 100",
+                                    "description": "Pourcentage d'avancement estimÃ© de la tÃ¢che entre 0 et 100",
                                     "minimum": 0,
                                     "maximum": 100,
                                     "examples": [50, 100]
                                 },
                                 "progress_note": {
                                     "type": "string",
-                                    "description": "Courte note de progrès à consigner dans le mini-README de la tâche",
-                                    "examples": ["Contrat validé, implémentation des tests unitaires en cours."]
+                                    "description": "Courte note de progrÃ¨s Ã  consigner dans le mini-README de la tÃ¢che",
+                                    "examples": ["Contrat validÃ©, implÃ©mentation des tests unitaires en cours."]
                                 },
                                 "full_readme": {
                                     "type": "string",
-                                    "description": "Nouveau contenu complet du mini-README de la tâche (si réécriture / mise à jour complète de la checklist)",
-                                    "examples": ["# Tâche Terminée\n- [x] Spécifications rédigées\n- [x] Code validé\n- [x] Audit SAST 0 faille"]
+                                    "description": "Nouveau contenu complet du mini-README de la tÃ¢che (si rÃ©Ã©criture / mise Ã  jour complÃ¨te de la checklist)",
+                                    "examples": ["# TÃ¢che TerminÃ©e\n- [x] SpÃ©cifications rÃ©digÃ©es\n- [x] Code validÃ©\n- [x] Audit SAST 0 faille"]
                                 }
                             },
                             "required": ["task_id"],
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Mise à Jour de Tâche AetherScope",
+                            "title": "Mise Ã  Jour de TÃ¢che AetherScope",
                             "readOnlyHint": false,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -768,7 +769,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_list_tasks",
-                        "description": "Récupère la liste des tâches du projet AetherScope avec leur type, statut, avancement et résumé du mini-README.",
+                        "description": "RÃ©cupÃ¨re la liste des tÃ¢ches du projet AetherScope avec leur type, statut, avancement et rÃ©sumÃ© du mini-README.",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -778,7 +779,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "status_filter": {
                                     "type": "string",
-                                    "description": "Filtre optionnel : 'active' (par défaut, exclut les terminées), 'all' (toutes les tâches), 'done' (uniquement terminées)",
+                                    "description": "Filtre optionnel : 'active' (par dÃ©faut, exclut les terminÃ©es), 'all' (toutes les tÃ¢ches), 'done' (uniquement terminÃ©es)",
                                     "enum": ["active", "all", "done"],
                                     "examples": ["active", "all", "done"]
                                 }
@@ -787,7 +788,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Liste des Tâches AetherScope",
+                            "title": "Liste des TÃ¢ches AetherScope",
                             "readOnlyHint": true,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -796,7 +797,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_search_symbols",
-                        "description": "Recherche avancée dans l'index AST d'AetherScope par mot-clé, couche MVC (ui, action, domain, database), stéréotype («Model», «Controller», «Component») ou statut de sécurité.",
+                        "description": "Recherche avancÃ©e dans l'index AST d'AetherScope par mot-clÃ©, couche MVC (ui, action, domain, database), stÃ©rÃ©otype (Â«ModelÂ», Â«ControllerÂ», Â«ComponentÂ») ou statut de sÃ©curitÃ©.",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -806,12 +807,12 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "query": {
                                     "type": "string",
-                                    "description": "Texte ou mot-clé à rechercher dans le nom du symbole, le fichier, la docstring ou les méthodes",
+                                    "description": "Texte ou mot-clÃ© Ã  rechercher dans le nom du symbole, le fichier, la docstring ou les mÃ©thodes",
                                     "examples": ["checkout", "Item", "auth", "BookingService"]
                                 },
                                 "layer": {
                                     "type": "string",
-                                    "description": "Couche architecturale : 'ui' (Vue), 'action' (Contrôleur), 'domain' (Métier), 'database' (Modèle/Persistance), 'utility', 'config', 'docs' ou 'all'",
+                                    "description": "Couche architecturale : 'ui' (Vue), 'action' (ContrÃ´leur), 'domain' (MÃ©tier), 'database' (ModÃ¨le/Persistance), 'utility', 'config', 'docs' ou 'all'",
                                     "enum": ["ui", "action", "domain", "database", "utility", "config", "docs", "all"],
                                     "examples": ["action", "database", "ui"]
                                 },
@@ -823,16 +824,16 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 },
                                 "stereotype": {
                                     "type": "string",
-                                    "description": "Stéréotype architectural (ex: '«Model»', '«Controller»', '«Component»', '«Form»', '«Service»', '«Endpoint»')",
-                                    "examples": ["«Controller»", "«Model»", "«Component»"]
+                                    "description": "StÃ©rÃ©otype architectural (ex: 'Â«ModelÂ»', 'Â«ControllerÂ»', 'Â«ComponentÂ»', 'Â«FormÂ»', 'Â«ServiceÂ»', 'Â«EndpointÂ»')",
+                                    "examples": ["Â«ControllerÂ»", "Â«ModelÂ»", "Â«ComponentÂ»"]
                                 },
                                 "has_violation": {
                                     "type": "boolean",
-                                    "description": "Filtrer uniquement les symboles ayant des violations de sécurité ou CVE détectées"
+                                    "description": "Filtrer uniquement les symboles ayant des violations de sÃ©curitÃ© ou CVE dÃ©tectÃ©es"
                                 },
                                 "limit": {
                                     "type": "integer",
-                                    "description": "Nombre maximum de résultats à renvoyer (par défaut 15, max 50)",
+                                    "description": "Nombre maximum de rÃ©sultats Ã  renvoyer (par dÃ©faut 15, max 50)",
                                     "minimum": 1,
                                     "maximum": 50
                                 },
@@ -845,7 +846,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Recherche Multi-Critères AST & Couches MVC",
+                            "title": "Recherche Multi-CritÃ¨res AST & Couches MVC",
                             "readOnlyHint": true,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -854,7 +855,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_trace_flow",
-                        "description": "Trace le flux complet d'une fonctionnalité à travers l'architecture MVC (Vue -> Contrôleur -> Service Métier -> Modèle -> Base de données).",
+                        "description": "Trace le flux complet d'une fonctionnalitÃ© Ã  travers l'architecture MVC (Vue -> ContrÃ´leur -> Service MÃ©tier -> ModÃ¨le -> Base de donnÃ©es).",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -864,18 +865,18 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "symbol_id": {
                                     "type": "string",
-                                    "description": "Identifiant ou nom du symbole de départ pour le traçage",
+                                    "description": "Identifiant ou nom du symbole de dÃ©part pour le traÃ§age",
                                     "examples": ["checkout", "handle_booking", "store_service", "AuditWriter"]
                                 },
                                 "direction": {
                                     "type": "string",
-                                    "description": "Direction du traçage : 'upstream' (appelants & vues), 'downstream' (dépendances, modèles & DB), ou 'both' (les deux)",
+                                    "description": "Direction du traÃ§age : 'upstream' (appelants & vues), 'downstream' (dÃ©pendances, modÃ¨les & DB), ou 'both' (les deux)",
                                     "enum": ["upstream", "downstream", "both"],
                                     "examples": ["both", "upstream", "downstream"]
                                 },
                                 "max_depth": {
                                     "type": "integer",
-                                    "description": "Profondeur maximale de parcours des relations dans le graphe (défaut 2, max 5)",
+                                    "description": "Profondeur maximale de parcours des relations dans le graphe (dÃ©faut 2, max 5)",
                                     "minimum": 1,
                                     "maximum": 5
                                 },
@@ -888,7 +889,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Traçage de Flux MVC & Dépendances",
+                            "title": "TraÃ§age de Flux MVC & DÃ©pendances",
                             "readOnlyHint": true,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -897,7 +898,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     },
                     {
                         "name": "aetherscope_query_violations",
-                        "description": "Requête directement les violations de sécurité SAST, motifs Zero-Day et failles CWE détectées sur l'architecture avec recommandations de correction.",
+                        "description": "RequÃªte directement les violations de sÃ©curitÃ© SAST, motifs Zero-Day et failles CWE dÃ©tectÃ©es sur l'architecture avec recommandations de correction.",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -907,18 +908,18 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "properties": {
                                 "severity": {
                                     "type": "string",
-                                    "description": "Niveau de sévérité requis : 'all', 'critical', 'high', 'medium', 'low', 'warning'",
+                                    "description": "Niveau de sÃ©vÃ©ritÃ© requis : 'all', 'critical', 'high', 'medium', 'low', 'warning'",
                                     "enum": ["all", "critical", "high", "medium", "low", "warning"],
                                     "examples": ["critical", "high", "all"]
                                 },
                                 "cwe_id": {
                                     "type": "string",
-                                    "description": "Identifiant CWE ou nom de règle recherché (ex: 'CWE-22', 'CWE-89', 'CWE-248', 'SQL-INJECTION')",
+                                    "description": "Identifiant CWE ou nom de rÃ¨gle recherchÃ© (ex: 'CWE-22', 'CWE-89', 'CWE-248', 'SQL-INJECTION')",
                                     "examples": ["CWE-22", "CWE-89", "CWE-248"]
                                 },
                                 "file_pattern": {
                                     "type": "string",
-                                    "description": "Filtre optionnel sur le chemin ou nom de fichier concerné",
+                                    "description": "Filtre optionnel sur le chemin ou nom de fichier concernÃ©",
                                     "examples": ["audit_writer", "api_routes", "server.rs"]
                                 },
                                 "path": {
@@ -932,6 +933,207 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                         "annotations": {
                             "title": "Audit & Filtrage des Violations SAST/CWE",
                             "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
+                    },
+                    {
+                        "name": "aetherscope_list_plugins",
+                        "description": "Liste tous les plugins de sÃ©curitÃ© SAST et leurs rÃ¨gles CWE dÃ©claratives chargÃ©s depuis .aether/plugins (ou dossier spÃ©cifiÃ©).",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "plugins_dir": {
+                                    "type": "string",
+                                    "description": "Chemin optionnel vers le dossier des plugins (dÃ©faut: '.aether/plugins')"
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin racine optionnel du projet"
+                                }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Inventaire des Plugins & RÃ¨gles CWE Custom",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
+                    },
+                    {
+                        "name": "aetherscope_test_plugins",
+                        "description": "ExÃ©cute la suite de tests unitaires intÃ©grÃ©e aux rÃ¨gles des plugins pour valider l'absence de faux positifs et certifier la dÃ©tection.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "plugins_dir": {
+                                    "type": "string",
+                                    "description": "Chemin optionnel vers le dossier des plugins (dÃ©faut: '.aether/plugins')"
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin racine optionnel du projet"
+                                }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Validation des Tests Unitaires Plugins",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
+                    },
+                    {
+                        "name": "aetherscope_scan_with_plugins",
+                        "description": "Audite un fichier ou un dossier avec les plugins de rÃ¨gles CWE personnalisÃ©s et renvoie les violations dÃ©tectÃ©es avec remÃ©diations.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "target_path": {
+                                    "type": "string",
+                                    "description": "Fichier ou dossier cible Ã  analyser avec les rÃ¨gles des plugins"
+                                },
+                                "plugins_dir": {
+                                    "type": "string",
+                                    "description": "Chemin optionnel vers le dossier des plugins (dÃ©faut: '.aether/plugins')"
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin racine optionnel du projet"
+                                }
+                            },
+                            "required": ["target_path"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Scan SAST avec Plugins CWE",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
+                    },
+                    {
+                        "name": "aetherscope_upsert_plugin_rule",
+                        "description": "CrÃ©e ou met Ã  jour une rÃ¨gle de sÃ©curitÃ© CWE dans un plugin YAML (.aether/plugins/<plugin_name>/plugin.yaml). Valide automatiquement les cas de test avant enregistrement.",
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "plugin_name": {
+                                    "type": "string",
+                                    "description": "Nom du plugin (ex: 'api-security-rules')"
+                                },
+                                "rule_id": {
+                                    "type": "string",
+                                    "description": "Identifiant unique de la rÃ¨gle (ex: 'CUSTOM-SEC-001')"
+                                },
+                                "cwe_id": {
+                                    "type": "string",
+                                    "description": "Identifiant CWE (ex: 'CWE-89 / SQL-INJECTION')"
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "description": "Nom court de la rÃ¨gle"
+                                },
+                                "severity": {
+                                    "type": "string",
+                                    "description": "SÃ©vÃ©ritÃ© : 'CRITICAL', 'HIGH', 'MEDIUM', 'WARNING', 'LOW'",
+                                    "enum": ["CRITICAL", "HIGH", "MEDIUM", "WARNING", "LOW"]
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "Description dÃ©taillÃ©e de la vulnÃ©rabilitÃ©"
+                                },
+                                "remediation": {
+                                    "type": "string",
+                                    "description": "Conseil technique de correction certifiÃ©"
+                                },
+                                "file_extensions": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Liste des extensions de fichiers visÃ©es (ex: ['.rs', '.py', '.php', '.ts'])"
+                                },
+                                "match_mode": {
+                                    "type": "string",
+                                    "enum": ["line_by_line", "whole_file"],
+                                    "description": "Mode d'Ã©valuation (dÃ©faut: 'line_by_line')"
+                                },
+                                "must_contain": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Sous-chaÃ®nes devant obligatoirement Ãªtre prÃ©sentes dans le fichier"
+                                },
+                                "must_not_contain": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Sous-chaÃ®nes neutralisant l'alerte (attÃ©nuation valide)"
+                                },
+                                "regex_patterns": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Expressions rÃ©guliÃ¨res dÃ©clenchant la violation"
+                                },
+                                "forbidden_tokens": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Mots-clÃ©s ou fonctions interdites"
+                                },
+                                "check_literals": {
+                                    "type": "boolean",
+                                    "description": "Si true, Ã©value Ã©galement les chaÃ®nes et commentaires littÃ©raux"
+                                },
+                                "test_cases": {
+                                    "type": "array",
+                                    "description": "Cas de tests unitaires pour valider la rÃ¨gle",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": { "type": "string" },
+                                            "code": { "type": "string" },
+                                            "file_name": { "type": "string" },
+                                            "should_trigger": { "type": "boolean" }
+                                        },
+                                        "required": ["name", "code", "file_name", "should_trigger"]
+                                    }
+                                },
+                                "plugins_dir": {
+                                    "type": "string",
+                                    "description": "Dossier des plugins (dÃ©faut: '.aether/plugins')"
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin racine optionnel du projet"
+                                }
+                            },
+                            "required": ["plugin_name", "rule_id", "cwe_id", "name", "severity", "description", "remediation", "file_extensions"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "CrÃ©ation / Mise Ã  jour de RÃ¨gle Plugin CWE",
+                            "readOnlyHint": false,
                             "destructiveHint": false,
                             "idempotentHint": true,
                             "openWorldHint": false
@@ -962,11 +1164,11 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     match res {
                         Ok(_) => (json!([{
                             "type": "text",
-                            "text": format!("🪐 Caméra AetherScope alignée sur : {} ({})\n📡 Faisceau quantique et fil d'Ariane stellaire illuminés sur le graphe 3D WebGL 2.", target, action)
+                            "text": format!("ðŸª CamÃ©ra AetherScope alignÃ©e sur : {} ({})\nðŸ“¡ Faisceau quantique et fil d'Ariane stellaire illuminÃ©s sur le graphe 3D WebGL 2.", target, action)
                         }]), false),
                         Err(e) => (json!([{
                             "type": "text",
-                            "text": format!("⚠️ Télémétrie enregistrée : [{}] sur {}\n(Détails : {})", action, target, e)
+                            "text": format!("âš ï¸ TÃ©lÃ©mÃ©trie enregistrÃ©e : [{}] sur {}\n(DÃ©tails : {})", action, target, e)
                         }]), false),
                     }
                 }
@@ -974,7 +1176,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                 "aetherscope_get_graph_summary" => {
                     let req_path_opt = arguments.get("path").and_then(|v| v.as_str()).map(|s| s.trim()).filter(|s| !s.is_empty());
 
-                    // Si un chemin spécifique a été fourni, on ordonne au serveur de basculer et d'analyser ce projet
+                    // Si un chemin spÃ©cifique a Ã©tÃ© fourni, on ordonne au serveur de basculer et d'analyser ce projet
                     let graph_val_res = if let Some(req_path) = req_path_opt {
                         let analyze_res = send_http_request(server_port, "POST", "/api/analyze", Some(&json!({
                             "path": req_path
@@ -993,7 +1195,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             (json!([{ "type": "text", "text": summary }]), false)
                         }
                         Err(_) => {
-                            // Fallback direct AST scanner offline : scanne directement le projet sans dépendre du serveur web
+                            // Fallback direct AST scanner offline : scanne directement le projet sans dÃ©pendre du serveur web
                             let target_path = req_path_opt.unwrap_or(default_path);
                             let p_buf = PathBuf::from(target_path);
                             let scanner = ast_scanner::ProjectScanner::default();
@@ -1010,7 +1212,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let target = arguments.get("target_symbol").and_then(|v| v.as_str()).map(|s| s.to_string());
 
                     if text.trim().is_empty() {
-                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'text' ne peut pas être vide." }]), true)
+                        (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'text' ne peut pas Ãªtre vide." }]), true)
                     } else {
                         let full_payload = if !thought.is_empty() {
                             format!("<thought>\n{}\n</thought>\n{}", thought, text)
@@ -1025,8 +1227,8 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                         }))).await;
 
                         match res {
-                            Ok(_) => (json!([{ "type": "text", "text": "💬 Message affiché dans le HUD AetherScope de l'utilisateur." }]), false),
-                            Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur envoi chat AetherScope : {}", e) }]), true),
+                            Ok(_) => (json!([{ "type": "text", "text": "ðŸ’¬ Message affichÃ© dans le HUD AetherScope de l'utilisateur." }]), false),
+                            Err(e) => (json!([{ "type": "text", "text": format!("âš ï¸ Erreur envoi chat AetherScope : {}", e) }]), true),
                         }
                     }
                 }
@@ -1035,7 +1237,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let res = send_http_request(server_port, "GET", "/api/ai/chat", None).await;
                     match res {
                         Ok(val) => (json!([{ "type": "text", "text": serde_json::to_string_pretty(&val).unwrap_or_default() }]), false),
-                        Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur historique chat : {}", e) }]), true),
+                        Err(e) => (json!([{ "type": "text", "text": format!("âš ï¸ Erreur historique chat : {}", e) }]), true),
                     }
                 }
 
@@ -1043,7 +1245,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let symbol_id = arguments.get("symbol_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let target_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
                     if symbol_id.trim().is_empty() {
-                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'symbol_id' est requis." }]), true)
+                        (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'symbol_id' est requis." }]), true)
                     } else {
                         let res = send_http_request(server_port, "POST", "/api/ai/target", Some(&json!({
                             "symbol_id": symbol_id
@@ -1057,7 +1259,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             }
                             Err(_) => {
                                 let text = offline_active_target_fallback(target_path, &symbol_id);
-                                let is_err = text.starts_with("⚠️");
+                                let is_err = text.starts_with("âš ï¸");
                                 (json!([{ "type": "text", "text": text }]), is_err)
                             }
                         }
@@ -1075,13 +1277,13 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&json!({
                                 "target": scan_path,
                                 "action": "Scan de Projet AST",
-                                "details": "Réanalyse complète déclenchée par l'agent IA via MCP"
+                                "details": "RÃ©analyse complÃ¨te dÃ©clenchÃ©e par l'agent IA via MCP"
                             }))).await;
 
                             let summary = format_graph_summary(&val);
                             (json!([{
                                 "type": "text",
-                                "text": format!("⚡ Projet `{}` réanalysé et synchronisé avec succès dans AetherScope V2 !\n\n{}", scan_path, summary)
+                                "text": format!("âš¡ Projet `{}` rÃ©analysÃ© et synchronisÃ© avec succÃ¨s dans AetherScope V2 !\n\n{}", scan_path, summary)
                             }]), false)
                         }
                         Err(e) => {
@@ -1092,14 +1294,14 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             let summary = format_ast_summary(&g, &p_buf);
                             (json!([{
                                 "type": "text",
-                                "text": format!("⚡ Projet `{}` analysé (mode autonome AST direct - serveur: {}) :\n\n{}", scan_path, e, summary)
+                                "text": format!("âš¡ Projet `{}` analysÃ© (mode autonome AST direct - serveur: {}) :\n\n{}", scan_path, e, summary)
                             }]), false)
                         }
                     }
                 }
 
                 "aetherscope_create_task" => {
-                    let title = arguments.get("title").and_then(|v| v.as_str()).unwrap_or("Nouvelle tâche").to_string();
+                    let title = arguments.get("title").and_then(|v| v.as_str()).unwrap_or("Nouvelle tÃ¢che").to_string();
                     let kind_str = arguments.get("kind").and_then(|v| v.as_str()).unwrap_or("function").to_string();
                     let target_symbol = arguments.get("target_symbol").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let target_file = arguments.get("target_file").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -1123,7 +1325,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             let task_id = task_obj.and_then(|t| t.get("id")).and_then(|i| i.as_str()).unwrap_or("");
                             (json!([{
                                 "type": "text",
-                                "text": format!("📋 Tâche `{}` créée avec succès !\n📁 Mini-README disponible dans `.aether/tasks/{}/README.md`\n{}", task_id, task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
+                                "text": format!("ðŸ“‹ TÃ¢che `{}` crÃ©Ã©e avec succÃ¨s !\nðŸ“ Mini-README disponible dans `.aether/tasks/{}/README.md`\n{}", task_id, task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
                             }]), false)
                         }
                         Err(_) => {
@@ -1141,9 +1343,9 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             ) {
                                 Ok(t) => (json!([{
                                     "type": "text",
-                                    "text": format!("📋 Tâche `{}` créée (mode offline) !\n📁 Fichier : `.aether/tasks/{}/README.md`", t.id, t.id)
+                                    "text": format!("ðŸ“‹ TÃ¢che `{}` crÃ©Ã©e (mode offline) !\nðŸ“ Fichier : `.aether/tasks/{}/README.md`", t.id, t.id)
                                 }]), false),
-                                Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur création tâche : {}", e) }]), true),
+                                Err(e) => (json!([{ "type": "text", "text": format!("âš ï¸ Erreur crÃ©ation tÃ¢che : {}", e) }]), true),
                             }
                         }
                     }
@@ -1157,7 +1359,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let full_readme = arguments.get("full_readme").and_then(|v| v.as_str()).map(|s| s.to_string());
 
                     if task_id.trim().is_empty() {
-                        (json!([{ "type": "text", "text": "⚠️ Erreur: 'task_id' requis pour la mise à jour." }]), true)
+                        (json!([{ "type": "text", "text": "âš ï¸ Erreur: 'task_id' requis pour la mise Ã  jour." }]), true)
                     } else {
                         let payload = json!({
                             "task_id": task_id,
@@ -1171,7 +1373,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                         match res {
                             Ok(val) => (json!([{
                                 "type": "text",
-                                "text": format!("⚡ Tâche `{}` mise à jour avec succès :\n{}", task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
+                                "text": format!("âš¡ TÃ¢che `{}` mise Ã  jour avec succÃ¨s :\n{}", task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
                             }]), false),
                             Err(_) => {
                                 let p_buf = PathBuf::from(default_path);
@@ -1186,10 +1388,10 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 ) {
                                     Ok(Some(t)) => (json!([{
                                         "type": "text",
-                                        "text": format!("⚡ Tâche `{}` mise à jour (mode offline). Statut: {:?}, Progrès: {}%", t.id, t.status, t.progress)
+                                        "text": format!("âš¡ TÃ¢che `{}` mise Ã  jour (mode offline). Statut: {:?}, ProgrÃ¨s: {}%", t.id, t.status, t.progress)
                                     }]), false),
-                                    Ok(None) => (json!([{ "type": "text", "text": format!("⚠️ Tâche `{}` introuvable.", task_id) }]), true),
-                                    Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur mise à jour tâche : {}", e) }]), true),
+                                    Ok(None) => (json!([{ "type": "text", "text": format!("âš ï¸ TÃ¢che `{}` introuvable.", task_id) }]), true),
+                                    Err(e) => (json!([{ "type": "text", "text": format!("âš ï¸ Erreur mise Ã  jour tÃ¢che : {}", e) }]), true),
                                 }
                             }
                         }
@@ -1225,9 +1427,9 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     }).collect();
 
                     if filtered.is_empty() {
-                        (json!([{ "type": "text", "text": "📋 Aucune tâche trouvée pour ce filtre." }]), false)
+                        (json!([{ "type": "text", "text": "ðŸ“‹ Aucune tÃ¢che trouvÃ©e pour ce filtre." }]), false)
                     } else {
-                        let mut output = format!("📋 Tâches AetherScope (Total : {}):\n\n", filtered.len());
+                        let mut output = format!("ðŸ“‹ TÃ¢ches AetherScope (Total : {}):\n\n", filtered.len());
                         for t in filtered {
                             let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("");
                             let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
@@ -1237,7 +1439,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             let target = t.get("target_symbol").and_then(|v| v.as_str()).unwrap_or("-");
                             let summary = t.get("readme_summary").and_then(|v| v.as_str()).unwrap_or("");
 
-                            output.push_str(&format!("• `{}` [{}] **{}** ({}, {}%)\n  - Cible : `{}`\n  - Avancement : {}\n\n", id, kind, title, status, progress, target, summary));
+                            output.push_str(&format!("â€¢ `{}` [{}] **{}** ({}, {}%)\n  - Cible : `{}`\n  - Avancement : {}\n\n", id, kind, title, status, progress, target, summary));
                         }
                         (json!([{ "type": "text", "text": output }]), false)
                     }
@@ -1262,7 +1464,7 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                 "aetherscope_trace_flow" => {
                     let symbol_id = arguments.get("symbol_id").and_then(|v| v.as_str()).unwrap_or("");
                     if symbol_id.trim().is_empty() {
-                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'symbol_id' est requis." }]), true)
+                        (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'symbol_id' est requis." }]), true)
                     } else {
                         let direction = arguments.get("direction").and_then(|v| v.as_str()).unwrap_or("both");
                         let max_depth = arguments.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
@@ -1287,6 +1489,310 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                     let g = scanner.scan_project(&p_buf);
                     let text = format_violations_response(&g, severity, cwe_id, file_pattern);
                     (json!([{ "type": "text", "text": text }]), false)
+                }
+
+                "aetherscope_list_plugins" => {
+                    let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+                    let plugins_sub = arguments.get("plugins_dir").and_then(|v| v.as_str()).unwrap_or(".aether/plugins");
+                    let p_buf = resolve_project_root(req_path);
+                    let plug_dir = resolve_plugins_dir(&p_buf, plugins_sub);
+
+                    if !plug_dir.exists() {
+                        let text = serde_json::to_string_pretty(&json!({
+                            "status": "ok",
+                            "plugins_dir": plug_dir.to_string_lossy(),
+                            "total_plugins": 0,
+                            "total_rules": 0,
+                            "plugins": []
+                        })).unwrap_or_default();
+                        (json!([{ "type": "text", "text": text }]), false)
+                    } else {
+                        let mut engine = security_linter::plugin::PluginEngine::new();
+                        match engine.load_from_directory(&plug_dir) {
+                            Ok(_) => {
+                                let mut plugins_info = Vec::new();
+                                let mut total_rules = 0;
+                                for p in &engine.plugins {
+                                    total_rules += p.rules.len();
+                                    plugins_info.push(json!({
+                                        "name": p.name,
+                                        "version": p.version,
+                                        "author": p.author,
+                                        "description": p.description,
+                                        "enabled": p.enabled,
+                                        "rules_count": p.rules.len(),
+                                        "rules": p.rules.iter().map(|r| json!({
+                                            "id": r.id,
+                                            "cwe_id": r.cwe_id,
+                                            "name": r.name,
+                                            "category": r.category,
+                                            "severity": r.severity,
+                                            "extensions": r.file_extensions,
+                                            "tests_count": r.test_cases.len()
+                                        })).collect::<Vec<_>>()
+                                    }));
+                                }
+                                let text = serde_json::to_string_pretty(&json!({
+                                    "status": "ok",
+                                    "plugins_dir": plug_dir.to_string_lossy(),
+                                    "total_plugins": engine.plugins.len(),
+                                    "total_rules": total_rules,
+                                    "plugins": plugins_info
+                                })).unwrap_or_default();
+                                (json!([{ "type": "text", "text": text }]), false)
+                            }
+                            Err(e) => (json!([{ "type": "text", "text": format!("Erreur lors du chargement des plugins : {}", e) }]), true),
+                        }
+                    }
+                }
+
+                "aetherscope_test_plugins" => {
+                    let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+                    let plugins_sub = arguments.get("plugins_dir").and_then(|v| v.as_str()).unwrap_or(".aether/plugins");
+                    let p_buf = resolve_project_root(req_path);
+                    let plug_dir = resolve_plugins_dir(&p_buf, plugins_sub);
+
+                    if !plug_dir.exists() {
+                        let text = serde_json::to_string_pretty(&json!({
+                            "status": "passed",
+                            "total_tests": 0,
+                            "passed": 0,
+                            "failed": 0,
+                            "failures": []
+                        })).unwrap_or_default();
+                        (json!([{ "type": "text", "text": text }]), false)
+                    } else {
+                        let mut engine = security_linter::plugin::PluginEngine::new();
+                        match engine.load_from_directory(&plug_dir) {
+                            Ok(_) => {
+                                let report = engine.run_test_suite();
+                                let text = serde_json::to_string_pretty(&json!({
+                                    "status": if report.failed == 0 { "passed" } else { "failed" },
+                                    "total_tests": report.total_tests,
+                                    "passed": report.passed,
+                                    "failed": report.failed,
+                                    "failures": report.failures
+                                })).unwrap_or_default();
+                                let is_error = report.failed > 0;
+                                (json!([{ "type": "text", "text": text }]), is_error)
+                            }
+                            Err(e) => (json!([{ "type": "text", "text": format!("Erreur : {}", e) }]), true),
+                        }
+                    }
+                }
+
+                "aetherscope_scan_with_plugins" => {
+                    let target_str = arguments.get("target_path").and_then(|v| v.as_str()).unwrap_or("");
+                    if target_str.is_empty() {
+                        (json!([{ "type": "text", "text": "ParamÃ¨tre 'target_path' manquant pour le scan par plugins." }]), true)
+                    } else {
+                        let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+                        let plugins_sub = arguments.get("plugins_dir").and_then(|v| v.as_str()).unwrap_or(".aether/plugins");
+                        let p_buf = resolve_project_root(req_path);
+                        let plug_dir = resolve_plugins_dir(&p_buf, plugins_sub);
+
+                        let mut engine = security_linter::plugin::PluginEngine::new();
+                        if plug_dir.exists() {
+                            let _ = engine.load_from_directory(&plug_dir);
+                        }
+
+                        let target = if Path::new(target_str).is_absolute() {
+                            PathBuf::from(target_str)
+                        } else {
+                            p_buf.join(target_str)
+                        };
+
+                        let mut all_violations = Vec::new();
+                        if target.is_file() {
+                            if let Ok(content) = std::fs::read_to_string(&target) {
+                                let rel = target.strip_prefix(&p_buf).unwrap_or(&target).to_string_lossy().to_string();
+                                all_violations.extend(engine.audit_file(&rel, &content));
+                            }
+                        } else if target.is_dir() {
+                            for entry in walkdir::WalkDir::new(&target).into_iter().filter_map(|e| e.ok()) {
+                                let p = entry.path();
+                                if p.is_file() {
+                                    let p_str = p.to_string_lossy();
+                                    if p_str.contains("target") || p_str.contains(".git") || p_str.contains("node_modules") {
+                                        continue;
+                                    }
+                                    if let Ok(content) = std::fs::read_to_string(p) {
+                                        let rel = p.strip_prefix(&p_buf).unwrap_or(p).to_string_lossy().to_string();
+                                        all_violations.extend(engine.audit_file(&rel, &content));
+                                    }
+                                }
+                            }
+                        }
+
+                        let text = serde_json::to_string_pretty(&json!({
+                            "status": "ok",
+                            "target": target.to_string_lossy(),
+                            "total_violations": all_violations.len(),
+                            "violations": all_violations.iter().map(|v| json!({
+                                "file": v.file_path,
+                                "line": v.line_number,
+                                "rule_id": v.rule_id,
+                                "cwe_id": v.cve_id,
+                                "severity": v.severity,
+                                "message": v.message,
+                                "snippet": v.transmitted_data,
+                                "remediation": v.remediation
+                            })).collect::<Vec<_>>()
+                        })).unwrap_or_default();
+                        (json!([{ "type": "text", "text": text }]), false)
+                    }
+                }
+
+                "aetherscope_upsert_plugin_rule" => {
+                    let plugin_name = arguments.get("plugin_name").and_then(|v| v.as_str()).unwrap_or("");
+                    let rule_id = arguments.get("rule_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let cwe_id = arguments.get("cwe_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let name = arguments.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let severity = arguments.get("severity").and_then(|v| v.as_str()).unwrap_or("HIGH");
+                    let description = arguments.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                    let remediation = arguments.get("remediation").and_then(|v| v.as_str()).unwrap_or("");
+                    let file_extensions: Vec<String> = arguments.get("file_extensions")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                        .unwrap_or_default();
+
+                    if plugin_name.is_empty() || rule_id.is_empty() || cwe_id.is_empty() || file_extensions.is_empty() {
+                        (json!([{ "type": "text", "text": "ParamÃ¨tres obligatoires manquants: plugin_name, rule_id, cwe_id, file_extensions" }]), true)
+                    } else {
+                        let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+                        let plugins_sub = arguments.get("plugins_dir").and_then(|v| v.as_str()).unwrap_or(".aether/plugins");
+                        let p_buf = resolve_project_root(req_path);
+                        let plugin_dir = p_buf.join(plugins_sub).join(plugin_name);
+                        let yaml_path = plugin_dir.join("plugin.yaml");
+
+                        if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
+                            (json!([{ "type": "text", "text": format!("Impossible de crÃ©er le dossier {} : {}", plugin_dir.display(), e) }]), true)
+                        } else {
+                            let mut manifest: security_linter::plugin::PluginManifest = if yaml_path.exists() {
+                                let content = std::fs::read_to_string(&yaml_path).unwrap_or_default();
+                                serde_yaml::from_str(&content).unwrap_or_else(|_| security_linter::plugin::PluginManifest {
+                                    name: plugin_name.to_string(),
+                                    version: "1.0.0".to_string(),
+                                    author: Some("AI Security Agent".to_string()),
+                                    description: Some(format!("Custom security plugin {}", plugin_name)),
+                                    enabled: true,
+                                    rules: Vec::new(),
+                                })
+                            } else {
+                                security_linter::plugin::PluginManifest {
+                                    name: plugin_name.to_string(),
+                                    version: "1.0.0".to_string(),
+                                    author: Some("AI Security Agent".to_string()),
+                                    description: Some(format!("Custom security plugin {}", plugin_name)),
+                                    enabled: true,
+                                    rules: Vec::new(),
+                                }
+                            };
+
+                            let match_mode = match arguments.get("match_mode").and_then(|v| v.as_str()) {
+                                Some("whole_file") => security_linter::plugin::MatchMode::WholeFile,
+                                _ => security_linter::plugin::MatchMode::LineByLine,
+                            };
+
+                            let must_contain = arguments.get("must_contain")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                                .unwrap_or_default();
+
+                            let must_not_contain = arguments.get("must_not_contain")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                                .unwrap_or_default();
+
+                            let regex_patterns = arguments.get("regex_patterns")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                                .unwrap_or_default();
+
+                            let forbidden_tokens = arguments.get("forbidden_tokens")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                                .unwrap_or_default();
+
+                            let check_literals = arguments.get("check_literals").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                            let mut test_cases = Vec::new();
+                            if let Some(tarr) = arguments.get("test_cases").and_then(|v| v.as_array()) {
+                                for t in tarr {
+                                    if let (Some(tname), Some(code), Some(fname), Some(should_trig)) = (
+                                        t.get("name").and_then(|s| s.as_str()),
+                                        t.get("code").and_then(|s| s.as_str()),
+                                        t.get("file_name").and_then(|s| s.as_str()),
+                                        t.get("should_trigger").and_then(|s| s.as_bool()),
+                                    ) {
+                                        test_cases.push(security_linter::plugin::RuleTestCase {
+                                            name: tname.to_string(),
+                                            code: code.to_string(),
+                                            file_name: fname.to_string(),
+                                            should_trigger: should_trig,
+                                        });
+                                    }
+                                }
+                            }
+
+                            let new_rule = security_linter::plugin::PluginRule {
+                                id: rule_id.to_string(),
+                                cwe_id: cwe_id.to_string(),
+                                name: name.to_string(),
+                                category: "Custom / Security".to_string(),
+                                severity: severity.to_string(),
+                                description: description.to_string(),
+                                remediation: remediation.to_string(),
+                                file_extensions,
+                                match_mode,
+                                conditions: security_linter::plugin::RuleConditions {
+                                    must_contain,
+                                    must_not_contain,
+                                    regex_patterns,
+                                    forbidden_tokens,
+                                    check_literals,
+                                },
+                                test_cases,
+                            };
+
+                            if let Some(pos) = manifest.rules.iter().position(|r| r.id == rule_id) {
+                                manifest.rules[pos] = new_rule;
+                            } else {
+                                manifest.rules.push(new_rule);
+                            }
+
+                            let mut test_engine = security_linter::plugin::PluginEngine::new();
+                            test_engine.plugins.push(manifest.clone());
+                            let report = test_engine.run_test_suite();
+
+                            if report.failed > 0 {
+                                (json!([{
+                                    "type": "text",
+                                    "text": format!("Validation Ã©chouÃ©e : {} test(s) unitaire(s) ont Ã©chouÃ© pour la rÃ¨gle {}. Fichier non modifiÃ©.\nErreurs : {:?}", report.failed, rule_id, report.failures)
+                                }]), true)
+                            } else {
+                                match serde_yaml::to_string(&manifest) {
+                                    Ok(yaml_str) => {
+                                        if let Err(e) = std::fs::write(&yaml_path, yaml_str) {
+                                            (json!([{ "type": "text", "text": format!("Ã‰chec d'Ã©criture {}: {}", yaml_path.display(), e) }]), true)
+                                        } else {
+                                            let text = serde_json::to_string_pretty(&json!({
+                                                "status": "ok",
+                                                "plugin": plugin_name,
+                                                "rule_id": rule_id,
+                                                "file": yaml_path.to_string_lossy(),
+                                                "tests_passed": report.passed,
+                                                "total_rules": manifest.rules.len(),
+                                                "message": format!("RÃ¨gle {} sauvegardÃ©e et certifiÃ©e avec succÃ¨s !", rule_id)
+                                            })).unwrap_or_default();
+                                            (json!([{ "type": "text", "text": text }]), false)
+                                        }
+                                    }
+                                    Err(e) => (json!([{ "type": "text", "text": format!("Erreur de sÃ©rialisation YAML : {}", e) }]), true),
+                                }
+                            }
+                        }
+                    }
                 }
 
                 _ => (json!([{ "type": "text", "text": format!("Outil inconnu : {}", tool_name) }]), true),
@@ -1342,21 +1848,21 @@ fn format_graph_summary(val: &Value) -> String {
                 } else {
                     String::new()
                 };
-                violations.push(format!("- 🚨 `{}`{} — `{}`", name, cve_desc, file));
+                violations.push(format!("- ðŸš¨ `{}`{} â€” `{}`", name, cve_desc, file));
             }
         }
     }
 
     let mut folders_str = String::new();
     for (f, cnt) in folders.iter().take(15) {
-        folders_str.push_str(&format!("  - 📁 `{}` : {} symbole(s)\n", f, cnt));
+        folders_str.push_str(&format!("  - ðŸ“ `{}` : {} symbole(s)\n", f, cnt));
     }
     if folders.len() > 15 {
         folders_str.push_str(&format!("  - ... et {} autre(s) dossier(s)\n", folders.len() - 15));
     }
 
     let violations_str = if violations.is_empty() {
-        "✅ Aucune violation de sécurité ou CVE détectée.".to_string()
+        "âœ… Aucune violation de sÃ©curitÃ© ou CVE dÃ©tectÃ©e.".to_string()
     } else {
         let total_v = violations.len();
         let display_v: Vec<String> = violations.into_iter().take(15).collect();
@@ -1365,24 +1871,24 @@ fn format_graph_summary(val: &Value) -> String {
         } else {
             String::new()
         };
-        format!("⚠️ {} Violation(s) de sécurité / CVE détectée(s) :\n{}{}", total_v, display_v.join("\n"), more_msg)
+        format!("âš ï¸ {} Violation(s) de sÃ©curitÃ© / CVE dÃ©tectÃ©e(s) :\n{}{}", total_v, display_v.join("\n"), more_msg)
     };
 
     let path_line = if !project_path.is_empty() {
-        format!("• Emplacement : `{}`\n", project_path)
+        format!("â€¢ Emplacement : `{}`\n", project_path)
     } else {
         String::new()
     };
 
     format!(
-        "🪐 Résumé Architectural AetherScope V2 :\n\
-         • Projet Actif : `{}`\n\
+        "ðŸª RÃ©sumÃ© Architectural AetherScope V2 :\n\
+         â€¢ Projet Actif : `{}`\n\
          {}\
-         • Total Nœuds (Bulles) : {}\n\
-         • Total Relations (Arêtes) : {}\n\
-         • Modules / Dossiers ({} au total) :\n{}\
-         • Statut Sécurité & Règles :\n{}\n\
-         • Visualiseur WebGL 2 disponible sur http://127.0.0.1:3030",
+         â€¢ Total NÅ“uds (Bulles) : {}\n\
+         â€¢ Total Relations (ArÃªtes) : {}\n\
+         â€¢ Modules / Dossiers ({} au total) :\n{}\
+         â€¢ Statut SÃ©curitÃ© & RÃ¨gles :\n{}\n\
+         â€¢ Visualiseur WebGL 2 disponible sur http://127.0.0.1:3030",
         project_name, path_line, total_nodes, total_edges, folders.len(), folders_str, violations_str
     )
 }
@@ -1402,20 +1908,20 @@ fn format_ast_summary(g: &core_graph::graph::AetherGraph, project_root: &Path) -
             } else {
                 String::new()
             };
-            violations.push(format!("- 🚨 `{}`{} — `{}`", n.name, cve_desc, n.file_path));
+            violations.push(format!("- ðŸš¨ `{}`{} â€” `{}`", n.name, cve_desc, n.file_path));
         }
     }
 
     let mut folders_str = String::new();
     for (f, cnt) in folders.iter().take(15) {
-        folders_str.push_str(&format!("  - 📁 `{}` : {} symbole(s)\n", f, cnt));
+        folders_str.push_str(&format!("  - ðŸ“ `{}` : {} symbole(s)\n", f, cnt));
     }
     if folders.len() > 15 {
         folders_str.push_str(&format!("  - ... et {} autre(s) dossier(s)\n", folders.len() - 15));
     }
 
     let violations_str = if violations.is_empty() {
-        "✅ Aucune violation de sécurité ou CVE détectée.".to_string()
+        "âœ… Aucune violation de sÃ©curitÃ© ou CVE dÃ©tectÃ©e.".to_string()
     } else {
         let total_v = violations.len();
         let display_v: Vec<String> = violations.into_iter().take(15).collect();
@@ -1424,18 +1930,18 @@ fn format_ast_summary(g: &core_graph::graph::AetherGraph, project_root: &Path) -
         } else {
             String::new()
         };
-        format!("⚠️ {} Violation(s) de sécurité / CVE détectée(s) :\n{}{}", total_v, display_v.join("\n"), more_msg)
+        format!("âš ï¸ {} Violation(s) de sÃ©curitÃ© / CVE dÃ©tectÃ©e(s) :\n{}{}", total_v, display_v.join("\n"), more_msg)
     };
 
     format!(
-        "🪐 Résumé Architectural AetherScope V2 (Mode Autonome AST) :\n\
-         • Projet Actif : `{}`\n\
-         • Emplacement : `{}`\n\
-         • Total Nœuds (Bulles) : {}\n\
-         • Total Relations (Arêtes) : {}\n\
-         • Modules / Dossiers ({} au total) :\n{}\
-         • Statut Sécurité & Règles :\n{}\n\
-         • Note : Lancez `aether-engine` pour activer la vue WebGL 2 interactive en direct.",
+        "ðŸª RÃ©sumÃ© Architectural AetherScope V2 (Mode Autonome AST) :\n\
+         â€¢ Projet Actif : `{}`\n\
+         â€¢ Emplacement : `{}`\n\
+         â€¢ Total NÅ“uds (Bulles) : {}\n\
+         â€¢ Total Relations (ArÃªtes) : {}\n\
+         â€¢ Modules / Dossiers ({} au total) :\n{}\
+         â€¢ Statut SÃ©curitÃ© & RÃ¨gles :\n{}\n\
+         â€¢ Note : Lancez `aether-engine` pour activer la vue WebGL 2 interactive en direct.",
         g.project_name, project_root.display(), total_nodes, total_edges, folders.len(), folders_str, violations_str
     )
 }
@@ -1443,19 +1949,35 @@ fn format_ast_summary(g: &core_graph::graph::AetherGraph, project_root: &Path) -
 fn format_active_target_response(val: &Value) -> String {
     let status = val.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
     if status != "ok" {
-        return "⚠️ Symbole ou module non trouvé dans le graphe actif AetherScope.".to_string();
+        return "âš ï¸ Symbole ou module non trouvÃ© dans le graphe actif AetherScope.".to_string();
     }
 
     if let Some(md) = val.get("formatted_doc_and_liaisons").and_then(|v| v.as_str()) {
         let handshake = val.get("handshake_xml").and_then(|v| v.as_str()).unwrap_or("");
         if !handshake.is_empty() {
-            format!("{}\n\n### 🤝 Handshake Copilote IA :\n```xml\n{}\n```", md, handshake)
+            format!("{}\n\n### ðŸ¤ Handshake Copilote IA :\n```xml\n{}\n```", md, handshake)
         } else {
             md.to_string()
         }
     } else {
         serde_json::to_string_pretty(val).unwrap_or_default()
     }
+}
+
+pub fn resolve_plugins_dir(p_buf: &Path, plugins_sub: &str) -> PathBuf {
+    let direct = p_buf.join(plugins_sub);
+    if direct.exists() {
+        return direct;
+    }
+    let mut curr = p_buf;
+    while let Some(parent) = curr.parent() {
+        let candidate = parent.join(plugins_sub);
+        if candidate.exists() {
+            return candidate;
+        }
+        curr = parent;
+    }
+    direct
 }
 
 pub fn resolve_project_root(path_str: &str) -> PathBuf {
@@ -1511,14 +2033,14 @@ fn offline_active_target_fallback(project_path: &str, symbol_id: &str) -> String
         } else if let Some(raw) = &sym.metadata.raw_content {
             raw.as_str()
         } else {
-            "*(Aucun commentaire AST direct détecté)*"
+            "*(Aucun commentaire AST direct dÃ©tectÃ©)*"
         };
 
         let callers_md = in_cat.to_compact_markdown("amont", 4);
         let deps_md = out_cat.to_compact_markdown("aval", 4);
 
         format!(
-            "# 🎯 Cible : `{}` (Mode Autonome AST)\n- **Fichier :** `{}:{}`\n- **Architecture :** Galaxie `{}` | Couche `{}` | Stéréotype `{}`\n\n## 📖 DOCUMENTATION & SPÉCIFICATIONS AST :\n{}\n\n## 📥 FLUX AMONT / APPELANTS (Total: {}):\n{}\n## 📤 FLUX AVAL / DÉPENDANCES & LIAISONS (Total: {}):\n{}",
+            "# ðŸŽ¯ Cible : `{}` (Mode Autonome AST)\n- **Fichier :** `{}:{}`\n- **Architecture :** Galaxie `{}` | Couche `{}` | StÃ©rÃ©otype `{}`\n\n## ðŸ“– DOCUMENTATION & SPÃ‰CIFICATIONS AST :\n{}\n\n## ðŸ“¥ FLUX AMONT / APPELANTS (Total: {}):\n{}\n## ðŸ“¤ FLUX AVAL / DÃ‰PENDANCES & LIAISONS (Total: {}):\n{}",
             sym.name,
             sym.file_path,
             sym.line_number,
@@ -1539,9 +2061,9 @@ fn offline_active_target_fallback(project_path: &str, symbol_id: &str) -> String
             .take(5)
             .collect();
         if !suggestions.is_empty() {
-            format!("⚠️ Symbole '{}' introuvable dans '{}'.\n💡 Symboles proches détectés : {}\n👉 Utilisez `aetherscope_search_symbols` pour explorer l'index.", symbol_id, p_buf.display(), suggestions.join(", "))
+            format!("âš ï¸ Symbole '{}' introuvable dans '{}'.\nðŸ’¡ Symboles proches dÃ©tectÃ©s : {}\nðŸ‘‰ Utilisez `aetherscope_search_symbols` pour explorer l'index.", symbol_id, p_buf.display(), suggestions.join(", "))
         } else {
-            format!("⚠️ Symbole '{}' introuvable dans '{}'. Utilisez `aetherscope_search_symbols` pour rechercher par mot-clé.", symbol_id, p_buf.display())
+            format!("âš ï¸ Symbole '{}' introuvable dans '{}'. Utilisez `aetherscope_search_symbols` pour rechercher par mot-clÃ©.", symbol_id, p_buf.display())
         }
     }
 }
@@ -1566,7 +2088,7 @@ pub async fn send_http_request(
 
     tokio::task::spawn_blocking(move || {
         let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(1500))
-            .map_err(|e| format!("AetherScope non connecté sur http://127.0.0.1:{} ({})", addr.port(), e))?;
+            .map_err(|e| format!("AetherScope non connectÃ© sur http://127.0.0.1:{} ({})", addr.port(), e))?;
 
         stream.set_read_timeout(Some(Duration::from_secs(45))).map_err(|e| e.to_string())?;
         stream.set_write_timeout(Some(Duration::from_secs(30))).map_err(|e| e.to_string())?;
@@ -1675,22 +2197,22 @@ fn format_search_symbols_response(
     let display_items: Vec<_> = scored.into_iter().take(limit).collect();
 
     if display_items.is_empty() {
-        return format!("🔍 Aucun symbole trouvé pour la requête '{}' avec les filtres sélectionnés.", query);
+        return format!("ðŸ” Aucun symbole trouvÃ© pour la requÃªte '{}' avec les filtres sÃ©lectionnÃ©s.", query);
     }
 
     let mut out = format!(
-        "🔍 **Résultats de Recherche AetherScope ({}/{} trouvés) :**\n\n| Score | Symbole | Stéréotype | Couche / Galaxie | Fichier : Ligne | Statut |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n",
+        "ðŸ” **RÃ©sultats de Recherche AetherScope ({}/{} trouvÃ©s) :**\n\n| Score | Symbole | StÃ©rÃ©otype | Couche / Galaxie | Fichier : Ligne | Statut |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n",
         display_items.len(),
         total_matches
     );
 
     for (score, n) in display_items {
         let sec_badge = if n.has_security_violation {
-            "🚨 CVE/SAST"
+            "ðŸš¨ CVE/SAST"
         } else if n.is_dead_code {
-            "⚪ Inactif"
+            "âšª Inactif"
         } else {
-            "✅ Conforme"
+            "âœ… Conforme"
         };
         out.push_str(&format!(
             "| `{}` | `{}` | `{}` | `{}` (`{}`) | `{}:{}` | {} |\n",
@@ -1698,7 +2220,7 @@ fn format_search_symbols_response(
         ));
     }
 
-    out.push_str("\n💡 *Pour inspecter le contexte précis, les flux et règles EARS d'un symbole : utilisez `aetherscope_get_active_target(\"<symbole>\")` ou `aetherscope_trace_flow(\"<symbole>\")`.*");
+    out.push_str("\nðŸ’¡ *Pour inspecter le contexte prÃ©cis, les flux et rÃ¨gles EARS d'un symbole : utilisez `aetherscope_get_active_target(\"<symbole>\")` ou `aetherscope_trace_flow(\"<symbole>\")`.*");
     out
 }
 
@@ -1724,9 +2246,9 @@ fn format_trace_flow_response(
                 .take(5)
                 .collect();
             if !suggestions.is_empty() {
-                return format!("⚠️ Symbole '{}' introuvable pour le traçage.\n💡 Symboles proches : {}\n👉 Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id, suggestions.join(", "));
+                return format!("âš ï¸ Symbole '{}' introuvable pour le traÃ§age.\nðŸ’¡ Symboles proches : {}\nðŸ‘‰ Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id, suggestions.join(", "));
             } else {
-                return format!("⚠️ Symbole '{}' introuvable pour le traçage. Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id);
+                return format!("âš ï¸ Symbole '{}' introuvable pour le traÃ§age. Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id);
             }
         }
     };
@@ -1736,12 +2258,12 @@ fn format_trace_flow_response(
     let trace_down = dir_lower == "downstream" || dir_lower == "both" || dir_lower == "all";
 
     let mut out = format!(
-        "# 🌊 Traçage de Flux Architectural pour `{}`\n- **Fichier :** `{}:{}`\n- **Couche :** `{}` | **Galaxie :** `{}` | **Stéréotype :** `{}`\n\n",
+        "# ðŸŒŠ TraÃ§age de Flux Architectural pour `{}`\n- **Fichier :** `{}:{}`\n- **Couche :** `{}` | **Galaxie :** `{}` | **StÃ©rÃ©otype :** `{}`\n\n",
         sym.name, sym.file_path, sym.line_number, sym.layer, sym.galaxy, sym.stereotype
     );
 
     if trace_up {
-        out.push_str("### 📥 Flux Amont (Appelants, Vues UI & Contrôleurs déclencheurs) :\n");
+        out.push_str("### ðŸ“¥ Flux Amont (Appelants, Vues UI & ContrÃ´leurs dÃ©clencheurs) :\n");
         let incoming: Vec<&core_graph::edge::AffiliationEdge> = g
             .edges
             .iter()
@@ -1749,7 +2271,7 @@ fn format_trace_flow_response(
             .collect();
 
         if incoming.is_empty() {
-            out.push_str("*(Aucun flux amont direct détecté — point d'entrée ou racine)*\n\n");
+            out.push_str("*(Aucun flux amont direct dÃ©tectÃ© â€” point d'entrÃ©e ou racine)*\n\n");
         } else {
             for e in incoming.iter().take(15) {
                 let src_node = g.nodes.iter().find(|n| n.id == e.source);
@@ -1758,7 +2280,7 @@ fn format_trace_flow_response(
                     None => (e.source.as_str(), "inconnu", ""),
                 };
                 out.push_str(&format!(
-                    "- ➔ `[{}]` **{}** (`{}`) via `{}`\n",
+                    "- âž” `[{}]` **{}** (`{}`) via `{}`\n",
                     src_layer, src_name, src_file, e.relation
                 ));
             }
@@ -1767,7 +2289,7 @@ fn format_trace_flow_response(
     }
 
     if trace_down {
-        out.push_str("### 📤 Flux Aval (Services appelés, Modèles & Persistance DB) :\n");
+        out.push_str("### ðŸ“¤ Flux Aval (Services appelÃ©s, ModÃ¨les & Persistance DB) :\n");
         let outgoing: Vec<&core_graph::edge::AffiliationEdge> = g
             .edges
             .iter()
@@ -1775,7 +2297,7 @@ fn format_trace_flow_response(
             .collect();
 
         if outgoing.is_empty() {
-            out.push_str("*(Aucun flux aval direct détecté — feuille ou logique pure)*\n\n");
+            out.push_str("*(Aucun flux aval direct dÃ©tectÃ© â€” feuille ou logique pure)*\n\n");
         } else {
             for e in outgoing.iter().take(15) {
                 let tgt_node = g.nodes.iter().find(|n| n.id == e.target);
@@ -1784,7 +2306,7 @@ fn format_trace_flow_response(
                     None => (e.target.as_str(), "inconnu", ""),
                 };
                 out.push_str(&format!(
-                    "- ➔ `[{}]` **{}** (`{}`) via `{}`\n",
+                    "- âž” `[{}]` **{}** (`{}`) via `{}`\n",
                     tgt_layer, tgt_name, tgt_file, e.relation
                 ));
             }
@@ -1830,19 +2352,19 @@ fn format_violations_response(
     }
 
     if list.is_empty() {
-        return "✅ Aucune violation de sécurité ne correspond aux filtres demandés.".to_string();
+        return "âœ… Aucune violation de sÃ©curitÃ© ne correspond aux filtres demandÃ©s.".to_string();
     }
 
-    let mut out = format!("🛡️ **Audit des Violations SAST/CWE ({}) :**\n\n", list.len());
+    let mut out = format!("ðŸ›¡ï¸ **Audit des Violations SAST/CWE ({}) :**\n\n", list.len());
     for (sev, f, line, cwe, msg, fix, sym) in list.iter().take(20) {
         let icon = match sev.as_str() {
-            "CRITICAL" => "🔴",
-            "HIGH" => "🟠",
-            "MEDIUM" => "🟡",
-            _ => "⚪",
+            "CRITICAL" => "ðŸ”´",
+            "HIGH" => "ðŸŸ ",
+            "MEDIUM" => "ðŸŸ¡",
+            _ => "âšª",
         };
         out.push_str(&format!(
-            "- {} **[{}] {}** dans `{}:{}` (symbole: `{}`)\n  - *Problème :* {}\n  - *Remédiation :* {}\n\n",
+            "- {} **[{}] {}** dans `{}:{}` (symbole: `{}`)\n  - *ProblÃ¨me :* {}\n  - *RemÃ©diation :* {}\n\n",
             icon, sev, cwe, f, line, sym, msg, fix
         ));
     }
@@ -1943,7 +2465,7 @@ mod tests {
         let resp = handle_mcp_request(req, 3030, ".").await.expect("tools/list response");
         let res = resp.result.expect("tools/list result");
         let tools = res["tools"].as_array().expect("tools array");
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 16);
 
         let expected_tools = [
             ("aetherscope_teleport_camera", true, false, true, false),
@@ -1958,6 +2480,10 @@ mod tests {
             ("aetherscope_search_symbols", true, false, true, false),
             ("aetherscope_trace_flow", true, false, true, false),
             ("aetherscope_query_violations", true, false, true, false),
+            ("aetherscope_list_plugins", true, false, true, false),
+            ("aetherscope_test_plugins", true, false, true, false),
+            ("aetherscope_scan_with_plugins", true, false, true, false),
+            ("aetherscope_upsert_plugin_rule", false, false, true, false),
         ];
 
         for (name, ro, dest, idemp, ow) in expected_tools {
@@ -2230,5 +2756,50 @@ mod tests {
         let resp = handle_mcp_request(req, 3030, ".").await.expect("query_violations response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_plugin_suite() {
+        // 1. List plugins
+        let req_list = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(200)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_list_plugins",
+                "arguments": { "plugins_dir": ".aether/plugins" }
+            })),
+        };
+        let resp_list = handle_mcp_request(req_list, 3030, ".").await.expect("list_plugins response");
+        assert_eq!(resp_list.result.expect("result present")["isError"], false);
+
+        // 2. Test plugins
+        let req_test = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(201)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_test_plugins",
+                "arguments": { "plugins_dir": ".aether/plugins" }
+            })),
+        };
+        let resp_test = handle_mcp_request(req_test, 3030, ".").await.expect("test_plugins response");
+        assert_eq!(resp_test.result.expect("result present")["isError"], false);
+
+        // 3. Scan with plugins
+        let req_scan = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(202)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_scan_with_plugins",
+                "arguments": {
+                    "target_path": "crates/core-graph/src/bubble.rs",
+                    "plugins_dir": ".aether/plugins"
+                }
+            })),
+        };
+        let resp_scan = handle_mcp_request(req_scan, 3030, ".").await.expect("scan_with_plugins response");
+        assert_eq!(resp_scan.result.expect("result present")["isError"], false);
     }
 }

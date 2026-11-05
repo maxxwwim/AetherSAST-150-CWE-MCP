@@ -1,4 +1,5 @@
 #![windows_subsystem = "windows"]
+#![recursion_limit = "512"]
 
 mod api_routes;
 mod local_guard;

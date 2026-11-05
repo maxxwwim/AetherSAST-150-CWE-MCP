@@ -1026,6 +1026,18 @@ impl SecurityLinter {
         }
     }
 
+    /// Audit complet incluant les règles natives et les règles chargées depuis les plugins
+    pub fn audit_file_with_plugins(
+        file_path: &str,
+        content: &str,
+        contract: Option<&ReadmeContract>,
+        plugin_engine: &mut crate::plugin::PluginEngine,
+    ) -> Vec<LinterViolation> {
+        let mut violations = Self::audit_file(file_path, content, contract);
+        violations.extend(plugin_engine.audit_file(file_path, content));
+        violations
+    }
+
     /// Règles dont la détection porte sur le contenu des littéraux de chaîne
     /// (secrets en dur, signatures mock, SQL concaténé...) : elles restent évaluées
     /// sur le code brut, les autres sur le code où strings/commentaires sont masqués.

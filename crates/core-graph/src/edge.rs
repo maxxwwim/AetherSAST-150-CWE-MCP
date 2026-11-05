@@ -160,6 +160,35 @@ impl AffiliationEdge {
             transmitted_type,
         }
     }
+
+    pub fn new_warning(
+        source: String,
+        target: String,
+        reason: &str,
+        cve_id: Option<String>,
+        severity: Option<String>,
+        transmitted_data: Option<String>,
+        transmitted_type: Option<String>,
+    ) -> Self {
+        let filters = FilterAffiliation::PHYSICAL;
+        let label = cve_id.clone().unwrap_or_else(|| "WARNING".to_string());
+        Self {
+            source,
+            target,
+            relation: "warns".to_string(),
+            order_label: "WARN".to_string(),
+            edge_type: EdgeType::IllegalCrossGalaxy,
+            filters,
+            filter_bits: filters.bits(),
+            weight: 1.5,
+            label: Some(label),
+            violation_details: Some(reason.to_string()),
+            cve_id,
+            severity: severity.or_else(|| Some("WARNING".to_string())),
+            transmitted_data,
+            transmitted_type,
+        }
+    }
 }
 
 /// Catégories sémantiques de liaisons pour structurer et alléger les prompts IA

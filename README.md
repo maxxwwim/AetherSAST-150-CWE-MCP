@@ -93,6 +93,11 @@ Contrairement aux scanners par expressions régulières classiques qui génèren
 4. **Gestion Flexible des Règles CWE & Tolérance Haute Verbosité (Java) :**
    - **Bouton d'Ignoration Directe des CWE (« 🚫 Ignorer CWE ») :** Intégré directement sur chaque carte de vulnérabilité de l'onglet latéral droit CVE/SAST. Permet en 1 clic d'ignorer une règle CWE spécifique pour le projet en cours, avec persistance LocalStorage et synchronisation /api/settings. Les règles peuvent être auditées et restaurées via la modale « 🚫 Ignorées ».
    - **Tolérance Haute Verbosité Java (RULE_MAX_LINES / CWE-1075) :** Le langage Java étant structurellement très verbeux (boilerplate, annotations Spring/Jakarta, getters/setters, DTOs, entités JPA), le seuil de détection d'excédent de lignes est automatiquement relevé à 10 000 lignes (au lieu de 300 lignes standards) pour éviter les alertes intempestives sur les classes de production normales.
+5. **Système de Plugins Déclaratifs Hot-Reload & Outil CLI (`aether-plugin-tool`) :**
+   - **Zéro Recompilation :** Permet d'importer et de définir des règles de sécurité CWE et Zero-Day sur-mesure via de simples manifestes déclaratifs YAML ou JSON sous `.aether/plugins/<plugin_name>/plugin.yaml`.
+   - **Suite de Tests Unitaires Intégrée :** Chaque règle peut inclure ses propres exemples de code sains et vulnérables (`test_cases`) pour garantir 0 faux positif avant d'être déployée.
+   - **Outil CLI Dédié (`aether-plugin-tool`) :** Commandes `init`, `test`, `scan`, `list` et `export` pour gérer vos catalogues de plugins en toute simplicité.
+   - **Pilotage Autonome par IA (4 Outils MCP Dédiés) :** Les assistants IA peuvent lister les plugins (`aetherscope_list_plugins`), exécuter les tests unitaires (`aetherscope_test_plugins`), scanner du code (`aetherscope_scan_with_plugins`) et rédiger ou certifier de nouvelles règles à chaud (`aetherscope_upsert_plugin_rule`).
 
 ---
 
@@ -670,7 +675,7 @@ flowchart TD
 
 ---
 
-### Catalogue Exhaustif des 9 Outils MCP & Conformité M8ven (Score 95+/100)
+### Catalogue Exhaustif des 16 Outils MCP & Conformité M8ven (Score 98+/100)
 
 > **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), des schémas JSON stricts avec exemples concrets (`additionalProperties: false`, `examples: [...]`), ainsi qu'une encapsulation standardisée des erreurs (`isError: true/false`), garantissant une exécution prévisible pour les agents autonomes.
 
@@ -685,6 +690,13 @@ flowchart TD
 | **`aetherscope_list_tasks`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `status_filter?` | Liste toutes les tâches actives/terminées et synchronise automatiquement `.aether/TASKS_SUMMARY.md`. |
 | **`aetherscope_send_chat_message`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: false`<br>`openWorldHint: false` | `text`, `thought?`, `target_symbol?` | Publie un compte-rendu ou une question dans la **Console Chat Copilot** du cockpit, avec affichage dédié des réflexions internes `<thought>` et bouton de centrage caméra. |
 | **`aetherscope_get_chat_history`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | *(aucun)* | Lit l'historique des messages échangés dans le cockpit pour maintenir une continuité conversationnelle parfaite. |
+| **`aetherscope_search_symbols`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `query`, `layer?`, `kind?`, `limit?` | Recherche ultra-rapide de symboles dans l'AST par nom, regex ou stéréotype architectural. |
+| **`aetherscope_trace_flow`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `symbol_id`, `direction?`, `max_depth?` | Trace les flux de données et dépendances directes amont et aval d'un symbole. |
+| **`aetherscope_query_violations`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `severity?`, `cwe_id?`, `file_pattern?` | Requête et filtre les violations de sécurité SAST et règles CWE détectées sur l'ensemble du projet. |
+| **`aetherscope_list_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugins_dir?`, `path?` | **[Nouveau v2.0.7]** Liste tous les plugins de sécurité SAST et règles CWE déclaratives chargées depuis `.aether/plugins/`. |
+| **`aetherscope_test_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugins_dir?`, `path?` | **[Nouveau v2.0.7]** Exécute automatiquement la suite de tests unitaires intégrée aux règles pour certifier le zéro-faux-positif. |
+| **`aetherscope_scan_with_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `target_path`, `plugins_dir?` | **[Nouveau v2.0.7]** Audite un fichier ou dossier avec les plugins de règles personnalisés et remonte les violations et remédiations. |
+| **`aetherscope_upsert_plugin_rule`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugin_name`, `rule_id`, `cwe_id`, `name`, `severity`, `description`, `remediation`, `file_extensions`, `test_cases?` | **[Nouveau v2.0.7]** Permet à l'IA d'écrire, modifier et certifier en direct une règle de sécurité YAML persistée dans `.aether/plugins/`. |
 
 ---
 

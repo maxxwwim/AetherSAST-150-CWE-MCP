@@ -1,0 +1,37 @@
+name: example-custom-auth
+version: 1.0.0
+author: Security Team
+description: 'Custom security plugin: example-custom-auth'
+enabled: true
+rules:
+- id: CUSTOM-EXAMPLE-CUSTOM-AUTH-001
+  cwe_id: CWE-287 / AUTH-BYPASS
+  name: Exemple de règle personnalisée anti-bypass
+  category: Custom / Security
+  severity: HIGH
+  description: Détection d'un contournement d'authentification ou fonction non protégée
+  remediation: Appliquez le middleware de vérification d'autorisation avant d'exécuter l'action.
+  file_extensions:
+  - .rs
+  - .py
+  - .ts
+  match_mode: line_by_line
+  conditions:
+    must_contain: []
+    must_not_contain:
+    - verify_token
+    - is_authenticated
+    regex_patterns:
+    - fn\s+admin_\w+\s*\(
+    - def\s+admin_\w+\s*\(
+    forbidden_tokens: []
+    check_literals: false
+  test_cases:
+  - name: Fonction admin sans vérification (Vulnérable)
+    code: pub fn admin_delete_user() { database.delete(); }
+    file_name: admin.rs
+    should_trigger: true
+  - name: Fonction admin sécurisée (Pass)
+    code: pub fn admin_delete_user() { if is_authenticated() { database.delete(); } }
+    file_name: admin.rs
+    should_trigger: false
