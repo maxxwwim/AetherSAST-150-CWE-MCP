@@ -7,6 +7,8 @@
 *.pdb
 Cargo.lock.bak
 *.WebView2/
+node_modules/
+**/dist/
 
 # ==========================================
 # AetherScope Runtime Transient Bridge
