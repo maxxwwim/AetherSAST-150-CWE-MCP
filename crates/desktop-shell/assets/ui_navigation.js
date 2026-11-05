@@ -569,9 +569,6 @@ document.querySelectorAll('.aether-dropdown-item').forEach(item => {
 document.getElementById('btn-menu-scaffold-project')?.addEventListener('click', () => {
   if (typeof openHubModal === 'function') openHubModal();
 });
-document.getElementById('btn-open-game-servers')?.addEventListener('click', () => {
-  if (typeof openGameServersModal === 'function') openGameServersModal();
-});
 document.getElementById('btn-quick-create-project')?.addEventListener('click', () => {
   if (typeof openHubModal === 'function') openHubModal();
 });
