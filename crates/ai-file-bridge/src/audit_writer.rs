@@ -277,6 +277,14 @@ Utilise systématiquement les outils MCP mis à disposition :
   Envoie un debrief technique ou compte-rendu directement dans le chat intégré du cockpit AetherScope.
 - **`aetherscope_get_chat_history()`** :
   Lit l'historique récent des échanges et demandes passées dans le cockpit.
+- **`aetherscope_list_plugins()`** :
+  Découvre et liste tous les plugins déclaratifs SAST/CWE installés dans `.aether/plugins/` (règles actives, sévérités, CWEs).
+- **`aetherscope_upsert_plugin_rule(plugin_id, rule_id, name, severity, cwe, regex_pattern, message, remediation)`** :
+  Crée ou met à jour dynamiquement une règle de sécurité déclarative dans un plugin YAML sans nécessiter de recompilation.
+- **`aetherscope_test_plugins()`** :
+  Exécute instantanément les jeux de tests unitaires embarqués (`test_cases`) de tous les plugins pour valider la non-régression.
+- **`aetherscope_scan_with_plugins(path)`** :
+  Déclenche un audit SAST étendu combinant les 150 règles CWE natives et les règles déclaratives de tous les plugins actifs.
 
 ---
 
@@ -301,7 +309,51 @@ Utilise systématiquement les outils MCP mis à disposition :
 
 ---
 
-## 🏛️ 5. INVARIANTS PAR COUCHE & SÉPARATION STRICTE
+## 🧩 5. MOTEUR DE PLUGINS SAST & CWE DÉCLARATIFS (.aether/plugins/)
+Tu as la pleine capacité de concevoir, auditer, tester et enrichir les plugins de sécurité déclaratifs personnalisés :
+1. **Emplacement & Manifeste :** Tout fichier `.aether/plugins/<nom_plugin>/plugin.yaml` (ou `.yml`/`.json`) est automatiquement scanné et rechargé à chaud par le moteur de linter.
+2. **Structure d'un Plugin YAML :**
+   ```yaml
+   name: "custom-auth-rules"
+   version: "1.0.0"
+   author: "Aether Copilot"
+   description: "Règles SAST personnalisées pour l'authentification et les tokens"
+   enabled: true
+   rules:
+     - id: "RULE_CUSTOM_JWT_SECRET"
+       cwe_id: "CWE-798"
+       name: "Hardcoded JWT Secret Detected"
+       category: "Security/Auth"
+       severity: "CRITICAL" # CRITICAL | HIGH | MEDIUM | LOW | WARNING
+       description: "Détection de secrets JWT écrits en dur dans le code source"
+       remediation: "Extraire le secret via une variable d'environnement ou un gestionnaire de secrets."
+       file_extensions: ["rs", "py", "ts", "js"]
+       match_mode: "line_by_line" # line_by_line | whole_file
+       conditions:
+         regex_patterns:
+           - 'jwt\.sign\([^,]+,\s*["\'][^"\']+[\"\']'
+         must_not_contain:
+           - "process.env"
+           - "std::env"
+       test_cases:
+         - name: "fails on hardcoded secret"
+           code: 'jwt.sign(payload, "secret123");'
+           file_name: "auth.ts"
+           should_trigger: true
+         - name: "passes with env var"
+           code: 'jwt.sign(payload, process.env.JWT_SECRET);'
+           file_name: "auth.ts"
+           should_trigger: false
+   ```
+3. **Création & Mise à jour Facile :**
+   - Soit via l'outil MCP `aetherscope_upsert_plugin_rule(...)`.
+   - Soit via la CLI `cargo run -p security-linter --bin aether-plugin-tool -- init <plugin_id>`.
+4. **Validation & Non-Régression :**
+   - Utilise l'outil MCP `aetherscope_test_plugins()` ou la CLI `aether-plugin-tool test` pour valider que tous les `test_cases` réussissent à 100% avant de déployer une règle.
+
+---
+
+## 🏛️ 6. INVARIANTS PAR COUCHE & SÉPARATION STRICTE
 - `contracts/` : {}
 - `client/` : Rendu graphique, formulaires («Form»), état réactif. Ne doit JAMAIS importer `server/domain` ni `data-nodes`.
 - `server/domain/` : **100% pur, déterministe, zéro I/O**. Interdiction formelle de requêtes SQL brutes, d'accès réseau ou de variables d'environnement (`process.env` / `std::env::var`).
@@ -311,7 +363,7 @@ Utilise systématiquement les outils MCP mis à disposition :
 
 ---
 
-## ⚡ 6. CONSIGNES DE RÉPONSE OPTIMISÉE
+## ⚡ 7. CONSIGNES DE RÉPONSE OPTIMISÉE
 - **Concision & Densité :** Réponse technique, chirurgicale et directe. Zéro bavardage inutile.
 - **Diffs Chirurgicaux :** Ne réécris jamais un fichier complet si seules quelques lignes changent. Fournis uniquement les extraits ciblés.
 - **Règle d'Atomicité (< 35 lignes) :** Découpe le code en fonctions atomiques pures de moins de 35 lignes maximum (particulièrement dans `domain/`).
