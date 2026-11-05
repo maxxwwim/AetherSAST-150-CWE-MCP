@@ -7,11 +7,13 @@ members = [
     "crates/security-linter",
     "crates/ai-file-bridge",
     "crates/desktop-shell",
-    "crates/aether-mc-runner",
+]
+exclude = [
+    "apps/aethercraft/runner",
 ]
 
 [workspace.package]
-version = "2.0.6"
+version = "2.0.7"
 authors = ["AetherScope Engineering Team"]
 edition = "2021"
 license = "PolyForm-Noncommercial-1.0.0"

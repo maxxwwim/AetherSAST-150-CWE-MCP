@@ -363,10 +363,155 @@ function pinNodeToActiveLayout(n) {
 }
 window.pinNodeToActiveLayout = pinNodeToActiveLayout;
 
+// =========================================================================
+// OFF-THREAD WEB WORKER INTEGRATION (Zero-Lag 120 FPS Physics)
+// =========================================================================
+let physicsWorker = null;
+let workerPendingStep = false;
+
+function initPhysicsWorker() {
+  if (typeof Worker === 'undefined') return;
+  try {
+    let workerUrl = 'physics_worker.js';
+    if (window.__PHYSICS_WORKER_CODE__) {
+      const blob = new Blob([window.__PHYSICS_WORKER_CODE__], { type: 'application/javascript' });
+      workerUrl = URL.createObjectURL(blob);
+    }
+    physicsWorker = new Worker(workerUrl);
+
+    physicsWorker.onmessage = function(e) {
+      const { type, positions, clusters, isSleeping } = e.data;
+      if (type === 'UPDATE' && positions) {
+        workerPendingStep = false;
+        const nodes = state.data?.nodes || [];
+        const count = Math.min(nodes.length, Math.floor(positions.length / 2));
+        for (let i = 0; i < count; i++) {
+          nodes[i].x = positions[i * 2];
+          nodes[i].y = positions[i * 2 + 1];
+        }
+
+        if (clusters) {
+          const map = new Map();
+          for (const k in clusters) {
+            const cl = clusters[k];
+            map.set(k, {
+              cx: cl.cx,
+              cy: cl.cy,
+              sumX: cl.sumX,
+              sumY: cl.sumY,
+              count: cl.count,
+              computedRadius: cl.computedRadius,
+              naturalRadius: cl.naturalRadius,
+              lobeProfile: new Float32Array(cl.lobeProfile),
+              nodes: state.cachedFolderStats?.get(k)?.nodes || []
+            });
+          }
+          state.cachedFolderStats = map;
+          state.folderClusters = map;
+        }
+
+        if (isSleeping) {
+          state.physicsSleeping = true;
+          state.cachedEdgePaths = null;
+        }
+        state.instanceDataDirty = true;
+      } else if (type === 'IDLE') {
+        workerPendingStep = false;
+      }
+    };
+
+    physicsWorker.onerror = function(err) {
+      console.warn('[AetherScope] Physics Worker fallback to main thread:', err);
+      physicsWorker = null;
+    };
+
+    if (state.data?.nodes && state.data.nodes.length > 0) {
+      sendGraphToWorker();
+    }
+  } catch (err) {
+    console.warn('[AetherScope] Web Worker unavailable, using main thread physics:', err);
+    physicsWorker = null;
+  }
+}
+
+function sendGraphToWorker() {
+  if (!physicsWorker || !state.data?.nodes) return;
+  physicsWorker.postMessage({
+    type: 'INIT',
+    payload: {
+      nodes: state.data.nodes.map(n => ({
+        id: n.id,
+        x: n.x,
+        y: n.y,
+        vx: n.vx || 0,
+        vy: n.vy || 0,
+        layer: n.layer,
+        folder: n.folder,
+        layouts: n.layouts
+      })),
+      edges: (state.data.edges || []).map(e => ({
+        source: e.source,
+        target: e.target,
+        relation: e.relation
+      })),
+      depth: state.depth || 1
+    }
+  });
+}
+
+function wakePhysicsWorker(steps = 100) {
+  if (physicsWorker) {
+    physicsWorker.postMessage({ type: 'WAKE', payload: { steps } });
+  }
+}
+
+function setDepthWorker(d) {
+  if (physicsWorker) {
+    physicsWorker.postMessage({ type: 'SET_DEPTH', payload: { depth: d } });
+  }
+}
+
+function dragNodeWorker(id, x, y) {
+  if (physicsWorker) {
+    physicsWorker.postMessage({ type: 'DRAG', payload: { id, x, y } });
+  }
+}
+
+function dragEndWorker() {
+  if (physicsWorker) {
+    physicsWorker.postMessage({ type: 'DRAG_END' });
+  }
+}
+
+window.initPhysicsWorker = initPhysicsWorker;
+window.sendGraphToWorker = sendGraphToWorker;
+window.wakePhysicsWorker = wakePhysicsWorker;
+window.setDepthWorker = setDepthWorker;
+window.dragNodeWorker = dragNodeWorker;
+window.dragEndWorker = dragEndWorker;
+
+// Initialize Worker asynchronously
+setTimeout(initPhysicsWorker, 20);
+
 // High-Performance Smooth Physics Step with Auto-Sleep & Adaptive Damping
 function stepPhysics() {
   if (!state.physicsRunning || !state.data.nodes || state.data.nodes.length === 0) return;
   if (state.physicsSleeping) return;
+
+  // Offload to Web Worker if enabled
+  if (physicsWorker) {
+    if (state.draggedNode) {
+      dragNodeWorker(state.draggedNode.id, state.draggedNode.x, state.draggedNode.y);
+    }
+    if (!workerPendingStep) {
+      workerPendingStep = true;
+      physicsWorker.postMessage({
+        type: 'STEP',
+        payload: { zoom: state.camera?.zoom || 1.0 }
+      });
+    }
+    return;
+  }
 
   const nodes = state.data.nodes;
   const edges = state.data.edges || [];

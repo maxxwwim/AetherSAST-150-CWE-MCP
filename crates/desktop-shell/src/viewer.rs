@@ -9,6 +9,7 @@ pub const UI_NAVIGATION_JS: &str = include_str!("../assets/ui_navigation.js");
 pub const UI_INSPECTOR_DOCS_JS: &str = include_str!("../assets/ui_inspector_docs.js");
 pub const UI_VISION_MODES_JS: &str = include_str!("../assets/ui_vision_modes.js");
 pub const UI_AI_MODALS_JS: &str = include_str!("../assets/ui_ai_modals.js");
+pub const PHYSICS_WORKER_JS: &str = include_str!("../assets/physics_worker.js");
 
 pub fn generate_standalone_html(graph: &AetherGraph) -> String {
     let mut graph_clone = graph.clone();
@@ -25,7 +26,11 @@ pub fn generate_standalone_html(graph: &AetherGraph) -> String {
         graph_clone.system_prompt = Some(prompt);
     }
     let json_data = serde_json::to_string(&graph_clone).unwrap_or_default();
-    let injection = format!("<script>window.__AETHERSCOPE_DATA__ = {};</script>", json_data);
+    let worker_json = serde_json::to_string(PHYSICS_WORKER_JS).unwrap_or_default();
+    let injection = format!(
+        "<script>window.__AETHERSCOPE_DATA__ = {};\nwindow.__PHYSICS_WORKER_CODE__ = {};</script>",
+        json_data, worker_json
+    );
 
     let combined_js = format!(
         "<script>\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n</script>",

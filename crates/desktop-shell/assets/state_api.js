@@ -92,6 +92,9 @@
       state.physicsSleeping = false;
       state.instanceDataDirty = true;
       state.cachedEdgePaths = null;
+      if (typeof wakePhysicsWorker === 'function') {
+        wakePhysicsWorker(steps);
+      }
     }
 
     function invalidateEdgePathCache() {
@@ -218,6 +221,9 @@
       }
       state.cachedDocImpactZones = docImpactZones;
       state.cachedFolderStats = null;
+      if (typeof sendGraphToWorker === 'function') {
+        sendGraphToWorker();
+      }
     }
 
     function truncateNodeName(name, maxLen = 18) {

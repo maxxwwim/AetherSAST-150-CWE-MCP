@@ -176,7 +176,7 @@ def generate_server():
     MANIFEST_STORE[server_id] = manifest
 
     manifest_url = f"http://127.0.0.1:5000/api/v1/servers/{server_id}/manifest"
-    cli_cmd = f"cargo run -p aether-mc-runner -- install-and-run --manifest {manifest_url}"
+    cli_cmd = f"cargo run --manifest-path apps/aethercraft/runner/Cargo.toml -- install-and-run --manifest {manifest_url}"
 
     html = f"""
     <div class="w-full text-left space-y-4 animate-fade-in bg-obsidian-950 p-5 rounded-2xl border border-amber-500/40 shadow-xl">

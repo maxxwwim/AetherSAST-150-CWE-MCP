@@ -339,6 +339,7 @@ window.addEventListener('mouseup', (e) => {
     dragMode = null;
     draggedNode = null;
     state.draggedNode = null;
+    if (typeof dragEndWorker === 'function') dragEndWorker();
     draggedFolder = null;
     dragFolderNodes = null;
     document.body.style.cursor = '';
@@ -452,6 +453,7 @@ const DEPTH_TITLES = {
 function switchDepth(d) {
   state.depth = d;
   state.folderAnchors = new Map();
+  if (typeof setDepthWorker === 'function') setDepthWorker(d);
 
   // Reset lingering velocities so bubbles smoothly glide toward new targets without chaos
   const nodes = state.data.nodes || [];

@@ -9,7 +9,7 @@ SERVER_INFO = {
     "version": "Paper 1.21.1",
     "max_players": 250,
     "discord_url": "https://discord.gg/aethercraft",
-    "runner_download_cmd": "cargo run -p aether-mc-runner -- install-and-run --manifest http://127.0.0.1:5000/api/v1/servers/default/manifest"
+    "runner_download_cmd": "cargo run --manifest-path apps/aethercraft/runner/Cargo.toml -- install-and-run --manifest http://127.0.0.1:5000/api/v1/servers/default/manifest"
 }
 
 def get_live_server_status() -> Dict:

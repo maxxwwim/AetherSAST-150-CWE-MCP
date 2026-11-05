@@ -5,6 +5,7 @@
 ### **Cockpit Spatial d'Architecture WebGL 2 (120 FPS) • Linter SAST Zero-Day (150+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-BLAKE3-Serveur-MCP-Visualiseur-de-code-feat-IA/)
+[![Release](https://img.shields.io/badge/Release-v2.0.7_Off--Thread_Physics-10b981?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-BLAKE3-Serveur-MCP-Visualiseur-de-code-feat-IA/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -411,6 +412,12 @@ aether-engine/
 │           ├── task.json                   # Métadonnées machine (statut, priorité, progression 0-100%)
 │           └── README.md                   # Journal technique et plan d'avancement de l'agent
 │
+├── apps/
+│   └── aethercraft/                        # Écosystème applicatif autonome & architecture modèle
+│       ├── runner/                         # Package indépendant Rust (aether-mc-runner)
+│       ├── control-plane/                  # Application Web Flask (MVC boutique, RCON, manifests)
+│       └── instances/                      # Instances de serveurs de jeu gérées
+│
 └── crates/
     ├── core-graph/                         # 1. Modèle de données & Algorithmes géométriques
     │   ├── src/bubble.rs                   # SymbolBubble, SymbolKind, Point2D, CveAnomalyRecord
@@ -449,7 +456,8 @@ aether-engine/
             ├── index.html                  # Squelette DOM sémantique, topbar, inspecteur & modales
             ├── styles.css                  # Design system cosmique (:root, lasers néon, badges BLAKE3)
             ├── state_api.js                # State store réactif, synthétiseur AudioSys & client REST AetherAPI
-            ├── webgl_shaders_physics.js    # Shaders GLSL SDF WebGL 2 & moteur physique Coulomb/Hooke
+            ├── physics_worker.js           # ⚡ Web Worker Off-Thread (Physique Coulomb/Hooke & 12 lobes sans lag UI)
+            ├── webgl_shaders_physics.js    # Shaders GLSL SDF WebGL 2 & pont de communication Web Worker
             ├── webgl_renderer.js           # Rendu instancié 120 FPS, membranes à 12 lobes & photons lasers
             ├── ui_navigation.js            # Caméra inertielle lerp, zoom LoD, survol spatial & sélection
             ├── ui_inspector_docs.js        # Inspecteur 4 onglets, lecteur/éditeur Markdown, sceau BLAKE3
@@ -473,6 +481,16 @@ Pour maintenir un rafraîchissement constant à **120 FPS** sur des graphes de p
    - **Plateau Cybernétique 3D en Perspective :** Applique une projection spatiale inclinée :
      $$y_{3D} = y_{\text{monde}} + (y_{\text{monde}} - y_{\text{centre}}) \times 0.35$$
    - Dessine la grille stellaire avec horizon zénithal, les membranes biologiques à double feuillet lipidique, les faisceaux lasers d'affiliation, les photons animés et les étiquettes typographiques.
+
+---
+
+### ⚡ Moteur Physique Off-Thread en Web Worker (Zero-Lag 120 FPS)
+
+Depuis la version **v2.0.7**, AetherScope V2 intègre un **Web Worker dédié (physics_worker.js)** qui déporte l'intégralité des calculs de simulation hors du thread UI :
+- **Simulation Vectorielle Off-Thread :** Les calculs de forces de répulsion de Coulomb ((N^2)$), les attractions élastiques de Hooke et le confinement biologique sont exécutés en tâche de fond.
+- **Transfert Mémoire Zéro-Copie (Transferable Float32Array) :** Les nouvelles coordonnées nodales [x, y] et les profils de lobes sont transmis au thread graphique par transfert binaire immédiat sans allocation ni garbage collection.
+- **Graphisme 100% Préservé & UI Ultra-Réactive :** Les shaders WebGL 2 instanciés, les halos néon SDF, le lissage laplacien des 12 lobes et les étoiles de fond restent strictement identiques. L'interface (Omnibox Ctrl+K, panneaux d'inspection, modales IA) conserve une réactivité instantanée à 120 FPS même sur des codebases massives de 10 000+ symboles.
+- **Résilience & Fallback Transparent :** Intégré directement via Blob URL dans le binaire autonome et l'export HTML sans dépendance réseau externe, avec fallback synchrone automatique.
 
 ---
 
