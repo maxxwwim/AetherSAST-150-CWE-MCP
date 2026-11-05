@@ -46,6 +46,8 @@
 
     #topbar {
 
+
+
       position: absolute; top: 0; left: 0; right: 0; height: 42px;
 
       background: rgba(9, 12, 18, 0.88); backdrop-filter: blur(12px);
@@ -54,13 +56,15 @@
 
       display: flex; align-items: center; justify-content: space-between;
 
-      padding: 0 8px; z-index: 50; gap: 6px;
+      padding: 0 8px; z-index: 100000; gap: 6px;
 
       overflow: visible;
 
-    }
+    
 
-    .topbar-left { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+}
+
+    .topbar-left { display: flex; align-items: center; gap: 4px; flex-shrink: 0; position: relative; z-index: 100001; overflow: visible; }
 
     .topbar-right {
 
@@ -622,70 +626,105 @@
 
     /* Desktop Dropdown Menus */
 
+        /* Ultra-sleek minimalist Desktop Menu Bar (Highest Z-Index) */
+        /* Ultra-sleek minimalist Desktop Menu Bar (Highest Z-Index) */
     .desktop-menu-bar {
-
-      display: inline-flex; align-items: center; gap: 3px; margin-left: 10px;
-
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      margin-left: 10px;
+      position: relative;
+      z-index: 100002;
+      overflow: visible;
     }
-
     .menu-bar-btn {
-
-      background: transparent; border: 1px solid transparent; color: #cbd5e1;
-
-      padding: 4px 9px; border-radius: 6px; font-size: 0.72rem; font-family: var(--font-ui);
-
-      font-weight: 600; cursor: pointer; transition: all 0.15s ease;
-
-      display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
-
+      background: transparent;
+      border: 1px solid transparent;
+      color: #94a3b8;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.73rem;
+      font-family: var(--font-ui);
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      white-space: nowrap;
+      letter-spacing: -0.01em;
+      user-select: none;
+    }
+    .menu-bar-btn .menu-chevron {
+      font-size: 0.58rem;
+      color: #64748b;
+      margin-left: 1px;
+      transition: transform 0.15s ease, color 0.15s ease;
+      display: inline-block;
+      line-height: 1;
+    }
+    .menu-bar-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #f1f5f9;
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+    .menu-bar-btn:hover .menu-chevron {
+      color: #94a3b8;
+    }
+    .aether-dropdown.open .menu-bar-btn {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      font-weight: 600;
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+    .aether-dropdown.open .menu-bar-btn .menu-chevron {
+      color: #38bdf8;
+      transform: rotate(180deg);
+    }
+    .menu-bar-btn.ai-menu-btn {
+      color: #c084fc;
+    }
+    .menu-bar-btn.ai-menu-btn:hover {
+      background: rgba(168, 85, 247, 0.12);
+      color: #f5d0fe;
+      border-color: rgba(168, 85, 247, 0.25);
+    }
+    .aether-dropdown.open .menu-bar-btn.ai-menu-btn {
+      background: rgba(168, 85, 247, 0.22);
+      color: #ffffff;
+      border-color: rgba(168, 85, 247, 0.40);
     }
 
-    .menu-bar-btn:hover, .aether-dropdown.open .menu-bar-btn {
-
-      background: rgba(56, 189, 248, 0.14); border-color: rgba(56, 189, 248, 0.35); color: #fff;
-
-    }
-
-    .menu-bar-btn.ai-menu-btn { color: #e9d5ff; }
-
-    .menu-bar-btn.ai-menu-btn:hover, .aether-dropdown.open .menu-bar-btn.ai-menu-btn {
-
-      background: rgba(192, 132, 252, 0.18); border-color: rgba(192, 132, 252, 0.45); color: #f5d0fe;
-
-    }
-
-
-
-    /* Dropdown Component */
-
+    /* Dropdown Component with Guaranteed Forefront Stacking */
     .aether-dropdown {
-
-      position: relative; display: inline-flex;
-
+      position: relative;
+      display: inline-flex;
+      z-index: 100003;
     }
-
+    .aether-dropdown.open {
+      z-index: 100020;
+    }
     .aether-dropdown-menu {
-
-      position: absolute; top: calc(100% + 5px); left: 0; min-width: 220px;
-
-      background: rgba(6, 10, 24, 0.98); backdrop-filter: blur(24px);
-
-      border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 10px;
-
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(56, 189, 248, 0.25);
-
-      padding: 5px; display: none; flex-direction: column; gap: 2px; z-index: 1000;
-
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      min-width: 220px;
+      background: rgba(11, 14, 22, 0.97);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 8px;
+      box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.06);
+      padding: 4px;
+      display: none;
+      flex-direction: column;
+      gap: 1px;
+      z-index: 100030;
       animation: menuFadeIn 0.12s cubic-bezier(0.16, 1, 0.3, 1);
-
+      overflow: visible;
     }
-
     .aether-dropdown-menu.align-right { left: auto; right: 0; }
-
     .aether-dropdown.open .aether-dropdown-menu {
-
       display: flex;
-
     }
 
     .aether-dropdown-item {
