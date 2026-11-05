@@ -719,6 +719,7 @@ impl ProjectScanner {
 
                 // Mark file node and closest symbol node in that file (RULE_MAX_LINES is strictly file-level, never attached to a symbol)
                 let is_file_level_rule = v.rule_id == "RULE_MAX_LINES";
+                let is_lines_warning = v.rule_id == "RULE_MAX_LINES" || v.cve_id.contains("ARCH-BUDGET-EXCEEDED") || v.severity == "WARNING";
                 let mut best_sym_id: Option<String> = None;
                 let mut best_line = 0usize;
 
@@ -726,7 +727,9 @@ impl ProjectScanner {
                     for &idx in indices {
                         let n = &mut graph.nodes[idx];
                         if n.is_file {
-                            n.has_security_violation = true;
+                            if !is_lines_warning {
+                                n.has_security_violation = true;
+                            }
                             n.metadata.violations.push(formatted.clone());
                         } else if !is_file_level_rule && n.line_number <= v.line_number && n.line_number >= best_line {
                             best_line = n.line_number;
@@ -739,7 +742,9 @@ impl ProjectScanner {
                     let sym_id = best_sym_id.as_ref().unwrap();
                     if let Some(&sym_idx) = node_idx_by_id.get(sym_id) {
                         let sym_node = &mut graph.nodes[sym_idx];
-                        sym_node.has_security_violation = true;
+                        if !is_lines_warning {
+                            sym_node.has_security_violation = true;
+                        }
                         sym_node.metadata.violations.push(formatted.clone());
                         sym_node.metadata.cve_anomalies.push(anomaly_rec.clone());
                     }
@@ -757,15 +762,27 @@ impl ProjectScanner {
                 } else {
                     file_node_id.clone()
                 };
-                linter_edges.push(AffiliationEdge::new_cve_violation(
-                    src_id,
-                    tgt_id,
-                    &format!("{}: {}", v.rule_id, v.message),
-                    Some(v.cve_id.clone()),
-                    Some(v.severity.clone()),
-                    v.transmitted_data.clone(),
-                    v.transmitted_type.clone(),
-                ));
+                if is_lines_warning {
+                    linter_edges.push(AffiliationEdge::new_warning(
+                        src_id,
+                        tgt_id,
+                        &format!("{}: {}", v.rule_id, v.message),
+                        Some(v.cve_id.clone()),
+                        Some(v.severity.clone()),
+                        v.transmitted_data.clone(),
+                        v.transmitted_type.clone(),
+                    ));
+                } else {
+                    linter_edges.push(AffiliationEdge::new_cve_violation(
+                        src_id,
+                        tgt_id,
+                        &format!("{}: {}", v.rule_id, v.message),
+                        Some(v.cve_id.clone()),
+                        Some(v.severity.clone()),
+                        v.transmitted_data.clone(),
+                        v.transmitted_type.clone(),
+                    ));
+                }
             }
         }
         graph.edges.extend(linter_edges);

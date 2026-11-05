@@ -141,7 +141,10 @@
           e.is_constraint_violation ||
           (e.relation && e.relation.toLowerCase().includes('violat'))
         ) {
-          violationEdges.push(e);
+          const isMaxLines = e.rule_id === 'RULE_MAX_LINES' || (e.cve_id && e.cve_id.includes('ARCH-BUDGET-EXCEEDED')) || (e.severity && e.severity.toUpperCase() === 'WARNING') || e.relation === 'warns';
+          if (!isMaxLines) {
+            violationEdges.push(e);
+          }
         }
 
         s._incidentEdges.push(e);

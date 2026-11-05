@@ -480,12 +480,15 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             *t_guard = Some(AiTelemetryEvent {
                                 target: proj_display.clone(),
                                 action: "Analyse AST & SAST Live".to_string(),
-                                details: format!(
-                                    "Codebase actualisée : {} nœuds, {} flux, {} failles SAST",
-                                    new_graph.nodes.len(),
-                                    new_graph.edges.len(),
-                                    violations.len()
-                                ),
+                                details: {
+                                    let failles_count = violations.iter().filter(|v| v.rule_id != "RULE_MAX_LINES" && v.severity != "WARNING" && !v.cve_id.contains("ARCH-BUDGET-EXCEEDED")).count();
+                                    format!(
+                                        "Codebase actualisée : {} nœuds, {} flux, {} failles SAST",
+                                        new_graph.nodes.len(),
+                                        new_graph.edges.len(),
+                                        failles_count
+                                    )
+                                },
                                 timestamp: now_ms,
                             });
                         }
@@ -558,12 +561,15 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             *t_guard = Some(AiTelemetryEvent {
                                 target: proj_display.clone(),
                                 action: "Analyse AST & SAST Live".to_string(),
-                                details: format!(
-                                    "Codebase actualisée : {} nœuds, {} flux, {} failles SAST",
-                                    new_graph.nodes.len(),
-                                    new_graph.edges.len(),
-                                    violations.len()
-                                ),
+                                details: {
+                                    let failles_count = violations.iter().filter(|v| v.rule_id != "RULE_MAX_LINES" && v.severity != "WARNING" && !v.cve_id.contains("ARCH-BUDGET-EXCEEDED")).count();
+                                    format!(
+                                        "Codebase actualisée : {} nœuds, {} flux, {} failles SAST",
+                                        new_graph.nodes.len(),
+                                        new_graph.edges.len(),
+                                        failles_count
+                                    )
+                                },
                                 timestamp: now_ms,
                             });
                         }
@@ -1228,7 +1234,9 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 }
                                 true
                             });
-                            if node.metadata.cve_anomalies.is_empty() {
+                            if node.metadata.cve_anomalies.is_empty()
+                                || node.metadata.cve_anomalies.iter().all(|a| a.rule_id == "RULE_MAX_LINES" || a.severity == "WARNING" || a.cve_id.contains("ARCH-BUDGET-EXCEEDED"))
+                            {
                                 node.has_security_violation = false;
                             }
                         }

@@ -388,13 +388,46 @@ ${topHotspots.map(h => `- ${h.node.name} (${h.node.file_path}) [${h.loc} LOC] : 
 
 
 // --- 4. Mode Radar Sécurité & Zero-Day (SAST / Bug Bounty) ---
+function isSecurityVulnNode(n) {
+  if (!n) return false;
+  if (n.has_security_violation) {
+    if (n.metadata && n.metadata.cve_anomalies && n.metadata.cve_anomalies.length > 0) {
+      return n.metadata.cve_anomalies.some(a => {
+        const isWarn = (a.severity || '').toUpperCase() === 'WARNING';
+        const isMaxLines = a.rule_id === 'RULE_MAX_LINES' || (a.cve_id && a.cve_id.includes('ARCH-BUDGET-EXCEEDED'));
+        return !isWarn && !isMaxLines;
+      });
+    }
+    return true;
+  }
+  if (n.metadata && n.metadata.cve) return true;
+  if (n.metadata && n.metadata.cve_anomalies && n.metadata.cve_anomalies.length > 0) {
+    return n.metadata.cve_anomalies.some(a => {
+      const isWarn = (a.severity || '').toUpperCase() === 'WARNING';
+      const isMaxLines = a.rule_id === 'RULE_MAX_LINES' || (a.cve_id && a.cve_id.includes('ARCH-BUDGET-EXCEEDED'));
+      return !isWarn && !isMaxLines;
+    });
+  }
+  if (n.violations && n.violations.length > 0) {
+    return n.violations.some(v => {
+      const vStr = typeof v === 'string' ? v : (v.message || '');
+      return !vStr.includes('RULE_MAX_LINES') && !vStr.includes('(WARNING)') && !vStr.includes('ARCH-BUDGET-EXCEEDED');
+    });
+  }
+  return false;
+}
+window.isSecurityVulnNode = isSecurityVulnNode;
+
 function getSecurityViolations() {
   const nodes = (state.data && state.data.nodes) || [];
   const vulns = [];
   let crit = 0, high = 0, med = 0;
   nodes.forEach(n => {
-    const vList = n.violations || [];
-    const hasCve = (n.metadata && n.metadata.cve) || n.has_security_violation;
+    const vList = (n.violations || []).filter(v => {
+      const vStr = typeof v === 'string' ? v : (v.message || '');
+      return !vStr.includes('RULE_MAX_LINES') && !vStr.includes('(WARNING)') && !vStr.includes('ARCH-BUDGET-EXCEEDED');
+    });
+    const hasCve = (n.metadata && n.metadata.cve) || isSecurityVulnNode(n);
     if (vList.length > 0 || hasCve) {
       vulns.push(n);
       if (vList.length > 0) {

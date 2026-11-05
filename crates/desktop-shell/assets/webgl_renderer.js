@@ -20,6 +20,36 @@ function trackFps(now) {
 const FONT_UI = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const FONT_MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
 
+function isSecurityVulnNode(n) {
+  if (!n) return false;
+  if (n.has_security_violation) {
+    if (n.metadata && n.metadata.cve_anomalies && n.metadata.cve_anomalies.length > 0) {
+      return n.metadata.cve_anomalies.some(a => {
+        const isWarn = (a.severity || '').toUpperCase() === 'WARNING';
+        const isMaxLines = a.rule_id === 'RULE_MAX_LINES' || (a.cve_id && a.cve_id.includes('ARCH-BUDGET-EXCEEDED'));
+        return !isWarn && !isMaxLines;
+      });
+    }
+    return true;
+  }
+  if (n.metadata && n.metadata.cve) return true;
+  if (n.metadata && n.metadata.cve_anomalies && n.metadata.cve_anomalies.length > 0) {
+    return n.metadata.cve_anomalies.some(a => {
+      const isWarn = (a.severity || '').toUpperCase() === 'WARNING';
+      const isMaxLines = a.rule_id === 'RULE_MAX_LINES' || (a.cve_id && a.cve_id.includes('ARCH-BUDGET-EXCEEDED'));
+      return !isWarn && !isMaxLines;
+    });
+  }
+  if (n.violations && n.violations.length > 0) {
+    return n.violations.some(v => {
+      const vStr = typeof v === 'string' ? v : (v.message || '');
+      return !vStr.includes('RULE_MAX_LINES') && !vStr.includes('(WARNING)') && !vStr.includes('ARCH-BUDGET-EXCEEDED');
+    });
+  }
+  return false;
+}
+window.isSecurityVulnNode = isSecurityVulnNode;
+
 // --- Organic Biological Cellular Bubble Renderer (12-Lobe Quadratic Spline + Bilayer + Nucleus) ---
 const _bubbleLabelCache = new Map();
 const _cellPtsX = new Float32Array(12);
@@ -720,7 +750,7 @@ function render(now) {
 
         // Mode 4 : Radar Sécurité & Zero-Day SAST (V)
         if (state.securityVisionMode) {
-          const hasVuln = (n.violations && n.violations.length > 0) || (n.metadata && n.metadata.cve) || n.has_security_violation;
+          const hasVuln = isSecurityVulnNode(n);
           if (hasVuln) {
             const pulse = 1.45 + 0.35 * Math.sin(now * 0.008);
             baseR *= pulse;
@@ -755,8 +785,8 @@ function render(now) {
           }
         }
 
-        // Node Security Violation Alert Pulse
-        if (n.has_security_violation) {
+        // Node Security Violation Alert Pulse (Exclut les simples warnings de dépassement de lignes)
+        if (n.has_security_violation && isSecurityVulnNode(n)) {
           const pulse = 1.25 + 0.28 * Math.sin(now * 0.009);
           baseR *= pulse;
           col = [0.99, 0.15, 0.25, 1.0]; // Blinking Red Alert Beacon
@@ -1216,6 +1246,7 @@ function render(now) {
       const pRealtime = new Path2D();
       const pQueries = new Path2D();
       const pViolation = new Path2D();
+      const pWarning = new Path2D();
       const pRenders = new Path2D();
       const pInherits = new Path2D();
       const pDocs = new Path2D();
@@ -1225,7 +1256,7 @@ function render(now) {
       const samplePhotons = [];
 
       let hasContains = false, countCalls = 0, hasInterModule = false, hasImports = false;
-      let hasSubmits = false, hasNetwork = false, hasRealtime = false, hasQueries = false, hasViolation = false;
+      let hasSubmits = false, hasNetwork = false, hasRealtime = false, hasQueries = false, hasViolation = false, hasWarning = false;
       let hasRenders = false, hasInherits = false, hasDocs = false, hasBinds = false;
       let hasXrayUp = false, hasXrayDown = false;
 
@@ -1306,7 +1337,18 @@ function render(now) {
           }
         };
 
-        if (filterBit === 16 || normRel === 'violates') {
+        const isMaxLinesEdge = normRel === 'warns' || (
+          (filterBit === 16 || normRel === 'violates') && (
+            e.rule_id === 'RULE_MAX_LINES' ||
+            (e.cve_id && e.cve_id.includes('ARCH-BUDGET-EXCEEDED')) ||
+            (e.severity && e.severity.toUpperCase() === 'WARNING')
+          )
+        );
+
+        if (isMaxLinesEdge) {
+          appendLine(pWarning);
+          hasWarning = true;
+        } else if (filterBit === 16 || normRel === 'violates') {
           appendLine(pViolation);
           hasViolation = true;
           if (samplePhotons.length < 30) samplePhotons.push({ s, t, rel: 'violation', isConn: true, idx: i });
@@ -1359,8 +1401,8 @@ function render(now) {
 
       batch = {
         key: cacheKey,
-        pContains, pCalls, pInterModule, pImports, pSubmits, pNetwork, pRealtime, pQueries, pViolation, pRenders, pInherits, pDocs, pBinds, pXrayUp, pXrayDown,
-        hasContains, countCalls, hasInterModule, hasImports, hasSubmits, hasNetwork, hasRealtime, hasQueries, hasViolation, hasRenders, hasInherits, hasDocs, hasBinds, hasXrayUp, hasXrayDown,
+        pContains, pCalls, pInterModule, pImports, pSubmits, pNetwork, pRealtime, pQueries, pViolation, pWarning, pRenders, pInherits, pDocs, pBinds, pXrayUp, pXrayDown,
+        hasContains, countCalls, hasInterModule, hasImports, hasSubmits, hasNetwork, hasRealtime, hasQueries, hasViolation, hasWarning, hasRenders, hasInherits, hasDocs, hasBinds, hasXrayUp, hasXrayDown,
         samplePhotons
       };
       if (state.physicsSleeping) {
@@ -1503,6 +1545,18 @@ function render(now) {
       ctx.restore();
     }
 
+    // Draw Batch 4f: Architectural Line Budget Warnings (Fil ambré calme, continu, sans clignotement)
+    if (batch.hasWarning) {
+      ctx.save();
+      ctx.globalAlpha = nonPipelineHighwayAlpha * 0.6;
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
+      ctx.lineWidth = Math.min(3.0, Math.max(1.0, 1.4 / c.zoom));
+      ctx.setLineDash([4 / c.zoom, 4 / c.zoom]);
+      ctx.stroke(batch.pWarning);
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     // Draw Batch 5: Renders
     if (batch.hasRenders) {
       ctx.save();
@@ -1557,9 +1611,15 @@ function render(now) {
         if (!s || !t) continue;
         ctx.beginPath();
         const eRel = e.relation || 'calls';
-        if (eRel === 'security_violation' || eRel === 'security_violates' || eRel === 'violates' || eRel === 'violation' || e.filter_bits === 16) {
-          ctx.strokeStyle = '#f87171';
-          ctx.lineWidth = 3.2 / c.zoom;
+        if (eRel === 'security_violation' || eRel === 'security_violates' || eRel === 'violates' || eRel === 'violation' || eRel === 'warns' || e.filter_bits === 16) {
+          const isWarnRel = eRel === 'warns' || e.rule_id === 'RULE_MAX_LINES' || (e.cve_id && e.cve_id.includes('ARCH-BUDGET-EXCEEDED')) || (e.severity && e.severity.toUpperCase() === 'WARNING');
+          if (isWarnRel) {
+            ctx.strokeStyle = 'rgba(245, 158, 11, 0.65)';
+            ctx.lineWidth = 1.6 / c.zoom;
+          } else {
+            ctx.strokeStyle = '#f87171';
+            ctx.lineWidth = 3.2 / c.zoom;
+          }
         } else if (eRel === 'realtime_ws' || eRel === 'realtime' || eRel === 'realtimews' || e.filter_bits === 4) {
           ctx.strokeStyle = '#00f0ff';
           ctx.lineWidth = 2.8 / c.zoom;
@@ -1671,6 +1731,10 @@ function render(now) {
 
         const cveId = e.cve_id || 'CWE-SAST';
         const ruleId = e.rule_id || '';
+        // Pas de badge flottant ni clignotement ou nom affiché pour le dépassement de budget de lignes
+        if (ruleId === 'RULE_MAX_LINES' || (cveId && cveId.includes('ARCH-BUDGET-EXCEEDED')) || (e.severity && e.severity.toUpperCase() === 'WARNING') || e.relation === 'warns') {
+          return;
+        }
         const taintedData = e.transmitted_data || 'payload';
         const taintedType = e.transmitted_type || 'Untyped';
         let labelText = `⚠️ [${cveId}] ${taintedData}: ${taintedType} ➔ ${t.name || 'target'}`;
@@ -1881,7 +1945,7 @@ function render(now) {
     if (((state.filterBits !== undefined ? state.filterBits : 31) & 16) !== 0 || state.selectedAnomalyNodeId) {
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i];
-        if (!n.has_security_violation) continue;
+        if (!n.has_security_violation || !isSecurityVulnNode(n)) continue;
         if (n.x < vLeft || n.x > vRight || n.y < vTop || n.y > vBottom) continue;
 
         const alertR = (n.is_file ? 24 : 16) / c.zoom;
@@ -1948,7 +2012,7 @@ function render(now) {
       }
 
       if (state.securityVisionMode) {
-        const hasVuln = (n.violations && n.violations.length > 0) || (n.metadata && n.metadata.cve) || n.has_security_violation;
+        const hasVuln = isSecurityVulnNode(n);
         if (!hasVuln && !isSelected && !isHovered) {
           continue;
         }
@@ -1975,7 +2039,7 @@ function render(now) {
                              (!isDenseBubble || isPriorityLabel);
 
       const isHmHotspot = !!(state.heatmapMode && state.heatmapScores && state.heatmapScores.get && ((state.heatmapScores.get(n.id)?.score || 0) > 0.45));
-      const isSecurityVuln = !!(state.securityVisionMode && ((n.violations && n.violations.length > 0) || (n.metadata && n.metadata.cve) || n.has_security_violation));
+      const isSecurityVuln = !!(state.securityVisionMode && isSecurityVulnNode(n));
       const shouldShowLabel = state.deadCodeMode 
         || isHmHotspot 
         || isPriorityLabel

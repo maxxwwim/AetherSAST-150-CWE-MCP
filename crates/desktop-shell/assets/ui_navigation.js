@@ -471,6 +471,14 @@ function switchDepth(d) {
   const el = document.getElementById('depth-title');
   if (el) el.innerText = DEPTH_TITLES[d] || '4D Depth Continuum';
 
+  const depthSelect = document.getElementById('serverbar-depth-select');
+  if (depthSelect) depthSelect.value = String(d);
+
+  [1, 2, 3, 4].forEach(level => {
+    const btn = document.getElementById(`btn-vision-depth-${level}`);
+    if (btn) btn.classList.toggle('active-depth-item', level === d);
+  });
+
   // Smoothly reframe camera to encompass the full new geometric structure
   setTimeout(() => {
     if (typeof fitView === 'function') fitView();
@@ -484,6 +492,11 @@ document.querySelectorAll('.depth-btn').forEach(btn => {
     const d = parseInt(btn.getAttribute('data-depth'));
     switchDepth(d);
   });
+});
+
+document.getElementById('serverbar-depth-select')?.addEventListener('change', (e) => {
+  const d = parseInt(e.target.value, 10);
+  if (!isNaN(d)) switchDepth(d);
 });
 
 // Fit View

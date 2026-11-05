@@ -36,24 +36,15 @@
 
     <!-- LoD Selector -->
     <div class="hidden md:flex items-center p-0.5 bg-white/[0.03] border border-white/10 rounded-md gap-0.5 text-[11px] font-mono">
-      <button
-        onclick={() => (cockpitState.lodLevel = 1)}
-        class="px-2 py-0.5 rounded transition-all {cockpitState.lodLevel === 1 ? 'bg-sky-500/20 text-sky-300 font-semibold shadow-xs' : 'text-slate-400 hover:text-white'}"
+      <select
+        onchange={(e) => (cockpitState.lodLevel = parseInt(e.currentTarget.value, 10))}
+        class="bg-transparent border-none text-sky-300 font-medium text-[11px] focus:outline-none cursor-pointer py-0.5 px-1"
+        value={cockpitState.lodLevel}
       >
-        Macro
-      </button>
-      <button
-        onclick={() => (cockpitState.lodLevel = 2)}
-        class="px-2 py-0.5 rounded transition-all {cockpitState.lodLevel === 2 ? 'bg-sky-500/20 text-sky-300 font-semibold shadow-xs' : 'text-slate-400 hover:text-white'}"
-      >
-        Module
-      </button>
-      <button
-        onclick={() => (cockpitState.lodLevel = 3)}
-        class="px-2 py-0.5 rounded transition-all {cockpitState.lodLevel === 3 ? 'bg-sky-500/20 text-sky-300 font-semibold shadow-xs' : 'text-slate-400 hover:text-white'}"
-      >
-        Micro
-      </button>
+        <option value={1} class="bg-[#0b0e17] text-white">🌌 Galaxie Fichiers</option>
+        <option value={2} class="bg-[#0b0e17] text-white">🌐 Système Multi-Couches</option>
+        <option value={3} class="bg-[#0b0e17] text-white">⚙️ Flux DAG</option>
+      </select>
     </div>
   </div>
 
@@ -132,14 +123,6 @@
       <FileText class="w-3.5 h-3.5" />
     </button>
 
-    <!-- Minecraft Game Servers Modal Trigger -->
-    <button
-      onclick={() => (cockpitState.isGameServersModalOpen = true)}
-      class="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-colors border border-white/5"
-      title="Serveurs de Jeu (Aether Minecraft)"
-    >
-      <Server class="w-3.5 h-3.5" />
-    </button>
 
     <!-- Settings Modal Trigger -->
     <button

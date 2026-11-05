@@ -470,11 +470,19 @@ function renderNodeDebrief(n, incoming, outgoing) {
   const anomaliesList = (meta.cve_anomalies || []).filter(a => !(typeof isCweOrRuleIgnored === 'function' && isCweOrRuleIgnored(a.rule_id, a.cve_id)));
   if ((meta.violations && meta.violations.length > 0) || anomaliesList.length > 0) {
     const totalV = Math.max(meta.violations ? meta.violations.length : 0, anomaliesList.length);
+    const hasRealVuln = anomaliesList.some(a => (a.severity || '').toUpperCase() !== 'WARNING' && a.rule_id !== 'RULE_MAX_LINES' && !(a.cve_id && a.cve_id.includes('ARCH-BUDGET-EXCEEDED')));
+    const titleText = hasRealVuln ? `🚨 ANOMALIES SAST & CVE DÉTECTÉES (${totalV}) :` : `⚠️ AVERTISSEMENTS D'ARCHITECTURE (${totalV}) :`;
+    const tagText = hasRealVuln ? `CRITICAL RISK` : `WARNING / BUDGET`;
+    const tagBg = hasRealVuln ? `rgba(239,68,68,0.25)` : `rgba(245,158,11,0.25)`;
+    const tagColor = hasRealVuln ? `#fca5a5` : `#fcd34d`;
+    const boxBorder = hasRealVuln ? `rgba(239,68,68,0.45)` : `rgba(245,158,11,0.45)`;
+    const boxBg = hasRealVuln ? `rgba(239,68,68,0.12)` : `rgba(245,158,11,0.12)`;
+    const titleColor = hasRealVuln ? `#f87171` : `#fbbf24`;
     violationsHtml = `
-      <div style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.45); border-radius:6px; padding:8px 10px; margin:6px 0;">
+      <div style="background:${boxBg}; border:1px solid ${boxBorder}; border-radius:6px; padding:8px 10px; margin:6px 0;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <div style="color:#f87171; font-weight:800; font-size:0.68rem;">🚨 ANOMALIES SAST & CVE DÉTECTÉES (${totalV}) :</div>
-          <span style="font-size:0.58rem; background:rgba(239,68,68,0.25); color:#fca5a5; padding:1px 5px; border-radius:3px; font-weight:800;">CRITICAL RISK</span>
+          <div style="color:${titleColor}; font-weight:800; font-size:0.68rem;">${titleText}</div>
+          <span style="font-size:0.58rem; background:${tagBg}; color:${tagColor}; padding:1px 5px; border-radius:3px; font-weight:800;">${tagText}</span>
         </div>
         <div style="display:flex; flex-direction:column; gap:6px;">
           ${anomaliesList.length > 0 ? anomaliesList.map(a => {
