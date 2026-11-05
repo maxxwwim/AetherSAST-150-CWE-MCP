@@ -446,6 +446,7 @@
         } catch(e) {}
       }
     };
+    window.AudioSys = AudioSys;
 
     document.getElementById('btn-audio')?.addEventListener('click', () => {
       AudioSys.init();

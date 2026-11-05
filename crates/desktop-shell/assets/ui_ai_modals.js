@@ -3079,6 +3079,7 @@ window.addEventListener('keydown', (e) => {
     else document.getElementById('inspector')?.classList.add('hidden');
     if (typeof toggleDocReader === 'function') toggleDocReader(false);
     else document.getElementById('doc-reader-panel')?.classList.add('hidden');
+    if (typeof closeSynthesisMenu === 'function') closeSynthesisMenu();
     document.getElementById('search-modal')?.classList.remove('open');
     closeTopbarSearchDropdown();
     document.getElementById('ai-modal')?.classList.remove('open');

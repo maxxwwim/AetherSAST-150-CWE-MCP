@@ -3335,8 +3335,14 @@ function toggleSynthesisMenu() {
   if (trigger) {
     trigger.classList.toggle('active', !isCollapsed);
   }
-  AudioSys.playTone(isCollapsed ? 320 : 640, 'sine', 0.10, 0.03);
-  showToast(isCollapsed ? '📁 Panneau Synthèse replié (B)' : '🪐 Panneau Synthèse ouvert (B)');
+  if (window.AudioSys?.playTone) {
+    try {
+      window.AudioSys.playTone(isCollapsed ? 320 : 640, 'sine', 0.10, 0.03);
+    } catch(e) {}
+  }
+  if (typeof showToast === 'function') {
+    showToast(isCollapsed ? '📁 Panneau Synthèse replié (B)' : '🪐 Panneau Synthèse ouvert (B)');
+  }
 }
 window.toggleSynthesisMenu = toggleSynthesisMenu;
 

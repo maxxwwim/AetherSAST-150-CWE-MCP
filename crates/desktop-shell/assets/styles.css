@@ -1324,11 +1324,21 @@
     /* Floating Multi-Layer Synthesis & Legend Card (Collapsible Drawer) */
 
     #synthesis-card {
-      position: absolute; top: 88px; left: 14px;
+      position: absolute; top: 86px; left: 14px;
       background: rgba(9, 12, 21, 0.96); backdrop-filter: blur(24px) saturate(150%);
-      border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 14px; padding: 14px 16px;
+      -webkit-backdrop-filter: blur(24px) saturate(150%);
+      border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px; padding: 14px 16px;
       box-shadow: 0 20px 48px -8px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.04);
       width: 350px; max-width: calc(100vw - 32px);
+      max-height: calc(100vh - 100px); overflow-y: auto;
+      z-index: 55;
+      transform-origin: top left;
+      transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, visibility 0.2s;
+    }
+
+    .synthesis-burger-trigger.active {
+      opacity: 0;
+      pointer-events: none;
     }
 
     #synthesis-card.collapsed {
