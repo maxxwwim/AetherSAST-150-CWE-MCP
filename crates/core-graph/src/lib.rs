@@ -3,6 +3,7 @@ pub mod edge;
 pub mod graph;
 pub mod layout;
 pub mod manifest;
+pub mod reachability;
 
 pub use bubble::{
     AstAttribute, AstMethod, GalaxyNode, LayoutPositions, Point2D, SymbolBubble, SymbolKind,
@@ -12,3 +13,4 @@ pub use edge::{AffiliationEdge, CategorizedLiaisons, EdgeType, FilterAffiliation
 pub use graph::{AetherGraph, GraphStats};
 pub use layout::compute_all_layouts;
 pub use manifest::{GalaxyManifest, GuardrailSettings, ProjectManifest, StackType, TopologyMode};
+pub use reachability::compute_reachability;

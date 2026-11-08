@@ -1,0 +1,55 @@
+name: "AetherScope SAST Security Scan"
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master", "develop" ]
+  schedule:
+    - cron: '0 4 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aetherscope-sast:
+    name: "AetherScope Real-time SAST & Contract Audit"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache AetherScope binary
+        id: cache-aetherscope
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/aether-engine
+          key: ${{ runner.os }}-aether-engine-v2.0.9
+
+      - name: Install Rust toolchain
+        if: steps.cache-aetherscope.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build and install AetherScope binary
+        if: steps.cache-aetherscope.outputs.cache-hit != 'true'
+        run: |
+          cargo install --path crates/desktop-shell --bin aether-engine --locked
+
+      - name: Execute AetherScope SAST (< 1s)
+        run: |
+          aether-engine --path . --audit-only --format sarif --output results.sarif --fail-on HIGH
+
+      - name: Upload SARIF Report to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+          category: aetherscope-sast

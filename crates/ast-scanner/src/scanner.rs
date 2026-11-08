@@ -639,6 +639,7 @@ impl ProjectScanner {
                             transmitted_data: Some("contract_readme_hash".to_string()),
                             transmitted_type: Some("BLAKE3 (Tampered Hash Mismatch)".to_string()),
                             remediation: "Re-sign contract with AetherScope or revert unauthorized modifications.".to_string(),
+                            ..Default::default()
                         };
                         node.metadata.violations.push(msg.clone());
                         node.metadata.cve_anomalies.push(anomaly);
@@ -715,6 +716,7 @@ impl ProjectScanner {
                     transmitted_data: v.transmitted_data.clone(),
                     transmitted_type: v.transmitted_type.clone(),
                     remediation: v.remediation.clone(),
+                    ..Default::default()
                 };
 
                 // Mark file node and closest symbol node in that file (RULE_MAX_LINES is strictly file-level, never attached to a symbol)

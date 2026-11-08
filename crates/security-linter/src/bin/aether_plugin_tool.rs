@@ -1,7 +1,13 @@
+pub use security_linter::lexer;
+pub use security_linter::plugin;
 use security_linter::plugin::{PluginEngine, PluginManifest, PluginRule, RuleConditions, RuleTestCase};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+#[path = "../semgrep_importer.rs"]
+pub mod semgrep_importer;
+use semgrep_importer::SemgrepImporter;
 
 fn print_banner() {
     println!("╔═══════════════════════════════════════════════════════════════╗");
@@ -15,12 +21,14 @@ fn print_usage() {
     println!("USAGE:");
     println!("  aether-plugin-tool <COMMAND> [OPTIONS]\n");
     println!("COMMANDS:");
+    println!("  import-semgrep --input <path> [--output <dir>]  Importe des règles Semgrep YAML en plugins AetherScope");
     println!("  test <plugins_dir>                 Exécute la suite de tests unitaires intégrée aux plugins");
     println!("  scan <plugins_dir> <target_path>   Audite un fichier ou un dossier complet avec les plugins");
     println!("  list <plugins_dir>                 Liste tous les plugins et règles CWE détectés");
     println!("  init <plugin_name> [output_dir]    Génère un squelette de plugin prêt à l'emploi");
     println!("  export <plugins_dir> [out.md]      Exporte le catalogue des règles en Markdown\n");
     println!("EXEMPLES:");
+    println!("  aether-plugin-tool import-semgrep --input ./semgrep-rules --output .aether/plugins/imported");
     println!("  aether-plugin-tool test .aether/plugins");
     println!("  aether-plugin-tool scan .aether/plugins ./crates/core-graph");
     println!("  aether-plugin-tool init my-custom-rules .aether/plugins\n");
@@ -229,6 +237,151 @@ fn main() {
             }
             println!("✅ Catalogue Markdown exporté dans : {}", out_path);
         }
+        "import-semgrep" => {
+            if args.iter().any(|a| a == "--help" || a == "-h" || a == "help") {
+                print_banner();
+                println!("USAGE:");
+                println!("  aether-plugin-tool import-semgrep --input <dir_or_file> [--output <dir>]\n");
+                println!("OPTIONS:");
+                println!("  -i, --input <PATH>    Fichier Semgrep (*.yaml, *.yml) ou dossier à importer");
+                println!("  -o, --output <DIR>    Dossier de destination (défaut: .aether/plugins/imported)\n");
+                println!("EXEMPLE:");
+                println!("  aether-plugin-tool import-semgrep --input ./semgrep-rules --output .aether/plugins/imported\n");
+                std::process::exit(0);
+            }
+
+            print_banner();
+            let mut input_path: Option<String> = None;
+            let mut output_dir: String = ".aether/plugins/imported".to_string();
+
+            let mut idx = 2;
+            while idx < args.len() {
+                match args[idx].as_str() {
+                    "--input" | "-i" => {
+                        if idx + 1 < args.len() {
+                            input_path = Some(args[idx + 1].clone());
+                            idx += 2;
+                        } else {
+                            idx += 1;
+                        }
+                    }
+                    "--output" | "-o" => {
+                        if idx + 1 < args.len() {
+                            output_dir = args[idx + 1].clone();
+                            idx += 2;
+                        } else {
+                            idx += 1;
+                        }
+                    }
+                    val if !val.starts_with('-') && input_path.is_none() => {
+                        input_path = Some(val.to_string());
+                        idx += 1;
+                    }
+                    _ => {
+                        idx += 1;
+                    }
+                }
+            }
+
+            let input_str = match input_path {
+                Some(p) => p,
+                None => {
+                    eprintln!("❌ Paramètre requis manquant : --input <dir_or_file>");
+                    eprintln!("Usage: aether-plugin-tool import-semgrep --input <path> [--output <dir>]");
+                    std::process::exit(1);
+                }
+            };
+
+            let in_path = PathBuf::from(&input_str);
+            if !in_path.exists() {
+                eprintln!("❌ Fichier ou dossier introuvable : {}", in_path.display());
+                std::process::exit(1);
+            }
+
+            let mut semgrep_files = Vec::new();
+            if in_path.is_file() {
+                semgrep_files.push(in_path.clone());
+            } else {
+                collect_yaml_files_recursive(&in_path, &mut semgrep_files);
+            }
+
+            if semgrep_files.is_empty() {
+                eprintln!("⚠️ Aucun fichier YAML trouvé dans : {}", in_path.display());
+                std::process::exit(0);
+            }
+
+            println!("🔍 Conversion de {} fichier(s) Semgrep vers '{}'...", semgrep_files.len(), output_dir);
+            let mut total_rules = 0;
+            let mut imported_plugins = 0;
+
+            for file in semgrep_files {
+                let content = match fs::read_to_string(&file) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("⚠️ Impossible de lire {} : {}", file.display(), e);
+                        continue;
+                    }
+                };
+
+                let rule_file = match SemgrepImporter::parse_yaml(&content) {
+                    Ok(rf) => rf,
+                    Err(e) => {
+                        eprintln!("⚠️ Échec du parsing Semgrep sur {} : {}", file.display(), e);
+                        continue;
+                    }
+                };
+
+                let plugin_name = file
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("imported-semgrep")
+                    .to_lowercase()
+                    .replace('_', "-");
+
+                let manifest = match SemgrepImporter::to_plugin_manifest(&rule_file, &plugin_name) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("⚠️ Erreur de conversion du plugin {} : {}", plugin_name, e);
+                        continue;
+                    }
+                };
+
+                let target_dir = Path::new(&output_dir).join(&plugin_name);
+                if let Err(e) = fs::create_dir_all(&target_dir) {
+                    eprintln!("❌ Impossible de créer le dossier {} : {}", target_dir.display(), e);
+                    continue;
+                }
+
+                let out_file = target_dir.join("plugin.yaml");
+                let yaml_str = match serde_yaml::to_string(&manifest) {
+                    Ok(y) => y,
+                    Err(e) => {
+                        eprintln!("❌ Sérialisation YAML échouée : {}", e);
+                        continue;
+                    }
+                };
+
+                if let Err(e) = fs::write(&out_file, yaml_str) {
+                    eprintln!("❌ Écriture échouée sur {} : {}", out_file.display(), e);
+                    continue;
+                }
+
+                total_rules += manifest.rules.len();
+                imported_plugins += 1;
+                println!(
+                    "  ✅ Plugin créé : {} ({} règles) -> {}",
+                    plugin_name,
+                    manifest.rules.len(),
+                    out_file.display()
+                );
+            }
+
+            println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            println!("🎉 IMPORT TERMINÉ : {} plugin(s) généré(s), {} règle(s) active(s)", imported_plugins, total_rules);
+            println!("💡 Pour tester ces plugins :");
+            println!("   aether-plugin-tool test {}", output_dir);
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        }
         other => {
             eprintln!("❌ Commande inconnue : {}", other);
             print_usage();
@@ -277,5 +430,27 @@ fn print_violations(file: &str, violations: &[security_linter::LinterViolation])
             println!("  │  Snippet: {}", snippet);
         }
         println!("  └─ Remédiation : {}\n", v.remediation);
+    }
+}
+
+fn collect_yaml_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if name == "target" || name == ".git" || name == "node_modules" {
+                    continue;
+                }
+                collect_yaml_files_recursive(&path, out);
+            } else if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                    let ext_lower = ext.to_lowercase();
+                    if ext_lower == "yaml" || ext_lower == "yml" {
+                        out.push(path);
+                    }
+                }
+            }
+        }
     }
 }

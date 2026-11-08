@@ -1129,6 +1129,33 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                             "idempotentHint": true,
                             "openWorldHint": false
                         }
+                    },
+                    {
+                        "name": "aetherscope_verify_patch",
+                        "description": "Pare-Feu IA Temps Réel (< 50 ms) : analyse incrémentale d'un ensemble de fichiers modifiés par l'agent IA. Exécute l'audit SAST (150+ CWE), le contrôle d'atteignabilité Source-to-Sink (R2), et la conformité stricte au contrat README.md parent (RULE_FORBIDDEN_IMPORT, RULE_MAX_LINES, SAST_DIRECT_ENV_ACCESS, BLAKE3_TAMPERED). Retourne un verdict [PATCH_APPROVED] ou [PATCH_REJECTED] et téléporte la caméra cockpit vers la première bulle en infraction.",
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "files_modified": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Chemins relatifs ou absolus des fichiers modifiés ou générés par l'IA"
+                                }
+                            },
+                            "required": ["files_modified"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Pare-Feu IA Temps Réel (Verify Patch)",
+                            "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
                     }
                 ]
             })),
@@ -1783,6 +1810,43 @@ async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path:
                                 }
                             }
                         }
+                    }
+                }
+
+                "aetherscope_verify_patch" => {
+                    let files = arguments
+                        .get("files_modified")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                                .collect::<Vec<String>>()
+                        })
+                        .unwrap_or_default();
+
+                    if files.is_empty() {
+                        (
+                            json!([{
+                                "type": "text",
+                                "text": "⚠️ Erreur: Le paramètre 'files_modified' ne peut pas être une liste vide."
+                            }]),
+                            true,
+                        )
+                    } else {
+                        let root = Path::new(default_path);
+                        let result = ai_file_bridge::patch_verifier::PatchVerifier::verify_patch(
+                            root,
+                            &files,
+                            Some(server_port),
+                        );
+                        let is_rejected = result.verdict == ai_file_bridge::patch_verifier::PatchVerdict::Rejected;
+                        (
+                            json!([{
+                                "type": "text",
+                                "text": result.formatted_output
+                            }]),
+                            is_rejected,
+                        )
                     }
                 }
 
@@ -2456,7 +2520,7 @@ mod tests {
         let resp = handle_mcp_request(req, 3030, ".").await.expect("tools/list response");
         let res = resp.result.expect("tools/list result");
         let tools = res["tools"].as_array().expect("tools array");
-        assert_eq!(tools.len(), 16);
+        assert_eq!(tools.len(), 17);
 
         let expected_tools = [
             ("aetherscope_teleport_camera", true, false, true, false),
@@ -2475,6 +2539,7 @@ mod tests {
             ("aetherscope_test_plugins", true, false, true, false),
             ("aetherscope_scan_with_plugins", true, false, true, false),
             ("aetherscope_upsert_plugin_rule", false, false, true, false),
+            ("aetherscope_verify_patch", true, false, true, false),
         ];
 
         for (name, ro, dest, idemp, ow) in expected_tools {
@@ -2493,6 +2558,24 @@ mod tests {
             assert_eq!(ann["idempotentHint"].as_bool(), Some(idemp), "annotations idempotentHint on {}", name);
             assert_eq!(ann["openWorldHint"].as_bool(), Some(ow), "annotations openWorldHint on {}", name);
         }
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_verify_patch() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(17)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_verify_patch",
+                "arguments": {
+                    "files_modified": ["Cargo.toml"]
+                }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("aetherscope_verify_patch response");
+        let res = resp.result.expect("aetherscope_verify_patch result");
+        assert!(!res["content"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

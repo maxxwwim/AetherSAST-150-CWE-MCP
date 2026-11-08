@@ -1,0 +1,47 @@
+name: sample-semgrep
+version: 1.0.0
+author: AetherScope Semgrep Importer
+description: 'Imported from Semgrep rule set: sample-semgrep'
+enabled: true
+rules:
+- id: python-deserialization-pickle
+  cwe_id: CWE-502 / DESERIALIZATION-OF-UNTRUSTED-DATA
+  name: '[Semgrep] python-deserialization-pickle'
+  category: security
+  severity: CRITICAL
+  description: Avoid using pickle.loads() with untrusted data as it can lead to arbitrary code execution.
+  remediation: Review code matching rule 'python-deserialization-pickle'. Avoid insecure patterns and validate all inputs.
+  file_extensions:
+  - .py
+  match_mode: line_by_line
+  conditions:
+    must_contain: []
+    must_not_contain:
+    - safe_loader
+    regex_patterns:
+    - pickle\.loads\s*\(\s*([^,;\)\s]+?)\s*\)
+    forbidden_tokens: []
+    check_literals: false
+  test_cases: []
+- id: jwt-none-algorithm
+  cwe_id: CWE-327 / USE-OF-A-BROKEN-OR-RISKY-CRYPTOGRAPHIC-ALGORITHM
+  name: '[Semgrep] jwt-none-algorithm'
+  category: security
+  severity: HIGH
+  description: JWT algorithm 'none' should not be permitted in production.
+  remediation: Review code matching rule 'jwt-none-algorithm'. Avoid insecure patterns and validate all inputs.
+  file_extensions:
+  - .cjs
+  - .js
+  - .jsx
+  - .mjs
+  - .py
+  match_mode: line_by_line
+  conditions:
+    must_contain: []
+    must_not_contain: []
+    regex_patterns:
+    - jwt\.decode\s*\(\s*(?:.*?\s*,\s*)?\s+algorithms\s*=\s*\s*\[\s*'none'\s*\](?:\s*,\s*.*?)?\s*\)
+    forbidden_tokens: []
+    check_literals: true
+  test_cases: []

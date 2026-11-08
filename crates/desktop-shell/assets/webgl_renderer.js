@@ -642,7 +642,9 @@ function render(now) {
 
     const selId = state.selectedNode ? state.selectedNode.id : null;
     const hovId = state.hoveredNode ? state.hoveredNode.id : null;
-    const isAnimatedMode = state.deadCodeMode || (state.aiTelemetry && state.aiTelemetry.target);
+    const isAnimatedMode = state.deadCodeMode 
+      || (state.aiTelemetry && state.aiTelemetry.target)
+      || !!(state.activeExploitPath && state.activeExploitPath.length > 0);
     const isSpawning = !!(state.spawnAnimationEndTime && now < state.spawnAnimationEndTime);
     const isDirty = state.instanceDataDirty 
                  || !state.physicsSleeping 
@@ -1979,6 +1981,110 @@ function render(now) {
           ctx.textBaseline = 'middle';
           ctx.fillText('🚨', n.x, n.y - alertR - 6 / c.zoom);
         }
+        ctx.restore();
+      }
+    }
+
+    // =========================================================================
+    // 3f. EXPLOIT PATH: Continuous Pulsing Red Laser along Source-to-Sink Chain
+    // =========================================================================
+    if (state.activeExploitPath && state.activeExploitPath.length > 0) {
+      const pathIds = state.activeExploitPath;
+      const pathNodes = [];
+      for (let i = 0; i < pathIds.length; i++) {
+        const id = pathIds[i];
+        const n = nodeMap.get(id) || nodes.find(x => x.id === id);
+        if (n) pathNodes.push(n);
+      }
+
+      if (pathNodes.length >= 2) {
+        ctx.save();
+        const pulseAlpha = Math.sin(now * 0.008) * 0.25 + 0.75;
+        const laserWidth = Math.min(8.0, Math.max(2.4, 4.0 / c.zoom));
+
+        // Pass 1: Diffuse Glowing Red Halo
+        ctx.shadowColor = '#ff0033';
+        ctx.shadowBlur = 18;
+        ctx.strokeStyle = `rgba(239, 68, 68, ${0.9 * pulseAlpha})`;
+        ctx.lineWidth = laserWidth * 1.8;
+        ctx.beginPath();
+        ctx.moveTo(pathNodes[0].x, pathNodes[0].y);
+        for (let i = 1; i < pathNodes.length; i++) {
+          ctx.lineTo(pathNodes[i].x, pathNodes[i].y);
+        }
+        ctx.stroke();
+
+        // Pass 2: Hot Core Beam (White/Pink)
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = '#ffffff';
+        ctx.strokeStyle = `rgba(255, 230, 230, ${0.95 * pulseAlpha})`;
+        ctx.lineWidth = Math.max(1.2, laserWidth * 0.5);
+        ctx.stroke();
+
+        // Pass 3: Traveling Energy Photons (Source -> Sink Flow)
+        const segmentCount = pathNodes.length - 1;
+        const speed = 0.0025;
+        const photonCount = 5;
+        for (let p = 0; p < photonCount; p++) {
+          const tGlobal = ((now * speed + p / photonCount) % 1.0);
+          const segFloat = tGlobal * segmentCount;
+          const segIdx = Math.min(Math.floor(segFloat), segmentCount - 1);
+          const segT = segFloat - segIdx;
+          const nA = pathNodes[segIdx];
+          const nB = pathNodes[segIdx + 1];
+          const px = nA.x + (nB.x - nA.x) * segT;
+          const py = nA.y + (nB.y - nA.y) * segT;
+
+          ctx.shadowColor = '#ff2255';
+          ctx.shadowBlur = 14;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(px, py, 4.5 / c.zoom, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Pass 4: Node Markers on Exploit Hops
+        for (let i = 0; i < pathNodes.length; i++) {
+          const pn = pathNodes[i];
+          const isSource = (i === 0);
+          const isSink = (i === pathNodes.length - 1);
+
+          ctx.beginPath();
+          if (isSource) {
+            ctx.strokeStyle = '#f59e0b';
+            ctx.fillStyle = 'rgba(245, 158, 11, 0.4)';
+            ctx.lineWidth = 2.5 / c.zoom;
+            ctx.arc(pn.x, pn.y, (pn.radius || 10) + 6 / c.zoom, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          } else if (isSink) {
+            ctx.strokeStyle = '#ef4444';
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
+            ctx.lineWidth = 3.0 / c.zoom;
+            const pulseR = (pn.radius || 10) + (8 + Math.sin(now * 0.015) * 4) / c.zoom;
+            ctx.arc(pn.x, pn.y, pulseR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            ctx.strokeStyle = '#f43f5e';
+            ctx.lineWidth = 1.8 / c.zoom;
+            ctx.arc(pn.x, pn.y, (pn.radius || 8) + 3 / c.zoom, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+
+        ctx.restore();
+      } else if (pathNodes.length === 1) {
+        const pn = pathNodes[0];
+        ctx.save();
+        ctx.strokeStyle = '#ef4444';
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+        ctx.lineWidth = 3.0 / c.zoom;
+        const pulseR = (pn.radius || 10) + (8 + Math.sin(now * 0.015) * 4) / c.zoom;
+        ctx.beginPath();
+        ctx.arc(pn.x, pn.y, pulseR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
         ctx.restore();
       }
     }

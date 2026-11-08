@@ -2,6 +2,7 @@
 #![recursion_limit = "512"]
 
 mod api_routes;
+pub mod benchmark;
 mod local_guard;
 mod mcp;
 mod surface_scanner;
@@ -43,9 +44,33 @@ pub struct Args {
 
     #[arg(long, default_value_t = false)]
     pub mcp: bool,
+
+    /// Output format for SAST audit: "text", "markdown", or "sarif"
+    #[arg(long, default_value = "text")]
+    pub format: String,
+
+    /// Path to export report file (e.g. "report.sarif")
+    #[arg(short, long)]
+    pub output: Option<String>,
+
+    /// Block and exit with code 1 if findings meet or exceed severity ("CRITICAL" or "HIGH")
+    #[arg(long)]
+    pub fail_on: Option<String>,
+
+    #[arg(long, help = "Run benchmark measuring lexing, AST, SAST evaluation, peak RSS and LOC/s throughput")]
+    pub benchmark: bool,
+}
+
+#[cfg(windows)]
+extern "system" {
+    fn AttachConsole(dw_process_id: u32) -> i32;
 }
 
 fn main() {
+    #[cfg(windows)]
+    unsafe {
+        AttachConsole(0xFFFF_FFFF);
+    }
     std::panic::set_hook(Box::new(|info| {
         let _ = std::fs::write("desktop-shell-panic.log", format!("PANIC: {:?}", info));
     }));
@@ -56,6 +81,12 @@ fn main() {
 
 fn real_main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    if args.benchmark {
+        benchmark::run_benchmark(&args.path)?;
+        return Ok(());
+    }
+
     let port = args.port;
     let audit_only = args.audit_only;
     let no_gui = args.no_gui;
@@ -66,7 +97,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
         return rt.block_on(mcp::run_mcp_server(args));
     }
 
-    if audit_only {
+    if audit_only || args.format.eq_ignore_ascii_case("sarif") || args.fail_on.is_some() {
         let rt = tokio::runtime::Runtime::new()?;
         return rt.block_on(run_audit_cli(args));
     }
@@ -150,6 +181,7 @@ fn extract_live_audit_from_graph(
 }
 
 async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let start_instant = std::time::Instant::now();
     let raw = args.path.trim().trim_matches('"').trim_matches('\'');
     let clean = raw.strip_prefix(r"\\?\").unwrap_or(raw);
     let project_root = if clean.is_empty() || clean == "." {
@@ -163,16 +195,106 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let graph = scanner.scan_project(&project_root);
 
     let (all_violations, file_count) = extract_live_audit_from_graph(&graph);
-    AuditWriter::write_live_audit(&project_root, &all_violations, file_count)?;
+    let mut all_anomalies: Vec<core_graph::bubble::CveAnomalyRecord> = Vec::new();
+    for node in &graph.nodes {
+        all_anomalies.extend(node.metadata.cve_anomalies.clone());
+    }
 
-    println!(
-        "✅ [SAST] Audit terminé sur `{}` : {} nœuds, {} flux, {} violations dans .aether/LIVE_AUDIT.md ({} fichiers audités)",
-        project_root.display(),
-        graph.nodes.len(),
-        graph.edges.len(),
-        all_violations.len(),
-        file_count
-    );
+    let is_sarif = args.format.eq_ignore_ascii_case("sarif");
+
+    if is_sarif {
+        let sarif_report = security_linter::sarif::SarifReport::from_anomalies(&all_anomalies, None);
+        let sarif_json = sarif_report.to_json_string_pretty()?;
+
+        if let Some(ref out_path) = args.output {
+            let out_file = Path::new(out_path);
+            if let Some(parent) = out_file.parent() {
+                if !parent.as_os_str().is_empty() {
+                    let _ = fs::create_dir_all(parent);
+                }
+            }
+            fs::write(out_file, &sarif_json)?;
+            println!(
+                "✅ [SARIF] Rapport SARIF v2.1.0 écrit dans `{}` ({} résultats)",
+                out_file.display(),
+                all_anomalies.len()
+            );
+        } else {
+            println!("{}", sarif_json);
+        }
+    } else {
+        AuditWriter::write_live_audit(&project_root, &all_violations, file_count)?;
+        println!(
+            "✅ [SAST] Audit terminé sur `{}` : {} nœuds, {} flux, {} violations dans .aether/LIVE_AUDIT.md ({} fichiers audités)",
+            project_root.display(),
+            graph.nodes.len(),
+            graph.edges.len(),
+            all_violations.len(),
+            file_count
+        );
+        if let Some(ref out_path) = args.output {
+            let live_audit_path = project_root.join(".aether").join("LIVE_AUDIT.md");
+            if live_audit_path.exists() {
+                let out_file = Path::new(out_path);
+                if let Some(parent) = out_file.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                }
+                let _ = fs::copy(&live_audit_path, out_file);
+            }
+        }
+    }
+
+    // CI/CD Failure gate: evaluate --fail-on
+    if let Some(ref fail_threshold) = args.fail_on {
+        let threshold = fail_threshold.trim().to_uppercase();
+        let mut failed_violations = Vec::new();
+
+        for a in &all_anomalies {
+            let sev = a.severity.trim().to_uppercase();
+            let triggered = match threshold.as_str() {
+                "CRITICAL" => sev == "CRITICAL",
+                "HIGH" => sev == "CRITICAL" || sev == "HIGH",
+                "MEDIUM" => sev == "CRITICAL" || sev == "HIGH" || sev == "MEDIUM",
+                "LOW" | "WARNING" => {
+                    sev == "CRITICAL"
+                        || sev == "HIGH"
+                        || sev == "MEDIUM"
+                        || sev == "LOW"
+                        || sev == "WARNING"
+                }
+                _ => sev == threshold,
+            };
+            if triggered {
+                failed_violations.push(a);
+            }
+        }
+
+        if !failed_violations.is_empty() {
+            let elapsed = start_instant.elapsed();
+            eprintln!(
+                "❌ [FAIL-ON: {}] {} infraction(s) bloquante(s) détectée(s) en {:?} (seuil: {}). Blocage de la PR.",
+                threshold,
+                failed_violations.len(),
+                elapsed,
+                threshold
+            );
+            for fv in failed_violations.iter().take(5) {
+                eprintln!(
+                    "   • [{}] L{}: {} ({})",
+                    fv.rule_id, fv.line_number, fv.file_path, fv.message
+                );
+            }
+            if failed_violations.len() > 5 {
+                eprintln!(
+                    "   ... et {} autre(s) violation(s).",
+                    failed_violations.len() - 5
+                );
+            }
+            std::process::exit(1);
+        }
+    }
 
     if mcp::check_server_listening(args.port) {
         println!(

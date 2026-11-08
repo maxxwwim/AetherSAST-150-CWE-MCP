@@ -5,6 +5,7 @@ pub mod linter;
 pub mod php_rules;
 pub mod plugin;
 pub mod rules;
+pub mod sarif;
 
 pub use contract::{EarsRequirement, ReadmeContract, ReadmeFrontmatter, SecurityRules};
 pub use deep_rules::DeepSecurityRules;
@@ -15,3 +16,4 @@ pub use plugin::{
     RuleTestCase,
 };
 pub use rules::AdvancedDefiRules;
+pub use sarif::SarifReport;

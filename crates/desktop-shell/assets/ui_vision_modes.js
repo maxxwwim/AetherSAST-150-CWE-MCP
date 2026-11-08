@@ -863,6 +863,8 @@ function renderCveAnomaliesPanel(lang = null) {
             transmitted_data: a.transmitted_data,
             transmitted_type: a.transmitted_type,
             remediation: a.remediation,
+            is_reachable: a.is_reachable || false,
+            exploit_path: a.exploit_path || [],
             lang: getLanguageForAnomaly(a.file_path || n.file_path, a.rule_id)
           });
         }
@@ -906,6 +908,8 @@ function renderCveAnomaliesPanel(lang = null) {
           transmitted_data: e.transmitted_data || (tgtNode ? tgtNode.name : null),
           transmitted_type: e.transmitted_type || 'Illegal Boundary Crossing',
           remediation: 'Corriger la règle de contrat ou sécuriser la transmission de données.',
+          is_reachable: false,
+          exploit_path: [],
           lang: getLanguageForAnomaly(filePath, ruleId)
         });
       }
@@ -1089,6 +1093,39 @@ function renderCveAnomaliesPanel(lang = null) {
       defiPatchBtn = `<button class="cve-action-btn patch defi-patch" onclick="event.stopPropagation(); if (window.copyDefiPatchPrompt) window.copyDefiPatchPrompt('${escapeFn(a.file_path)}', ${a.line_number}, 'DEFI-TWAP-SHORT-WINDOW');">🛡️ Patch TWAP Window</button>`;
     }
 
+    let exploitableBadge = '';
+    if (a.is_reachable) {
+      const pathPreview = (a.exploit_path && a.exploit_path.length > 0)
+        ? a.exploit_path.map(id => {
+            const found = nodes.find(n => n.id === id);
+            return found ? (found.name || id) : id.split('::').pop();
+          }).join(' ➔ ')
+        : 'Direct';
+
+      exploitableBadge = `
+        <div class="cve-exploitable-badge" style="
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin: 4px 0 6px 0;
+          padding: 3px 8px;
+          background: linear-gradient(90deg, rgba(239, 68, 68, 0.28), rgba(249, 115, 22, 0.22));
+          border: 1px solid #ef4444;
+          border-radius: 4px;
+          color: #fee2e2;
+          font-size: 0.68rem;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+        ">
+          <span>🔥 EXPLOITABLE (Source-to-Sink)</span>
+        </div>
+        <div style="font-size:0.62rem; font-family:var(--font-mono); color:#fca5a5; margin-bottom:5px; opacity:0.92; word-break:break-all;">
+          ⛓️ ${escapeFn(pathPreview)}
+        </div>
+      `;
+    }
+
     return `
       <div class="cve-card ${sevClass}" onclick="teleportToCveAnomaly(${cacheIdx})">
         <div class="cve-card-header">
@@ -1100,6 +1137,7 @@ function renderCveAnomaliesPanel(lang = null) {
           </div>
           <span class="cve-line-tag">L${a.line_number}</span>
         </div>
+        ${exploitableBadge}
         ${defiLaserBadge}
         <div class="cve-target-path" title="${escapeFn(a.file_path)}">
           <span class="cve-file-icon">📄</span>
@@ -1982,6 +2020,9 @@ window.filterCveAnomalies = filterCveAnomalies;
 function teleportToCveAnomaly(idx) {
   const a = currentCveAnomaliesCache[idx];
   if (!a) return;
+
+  state.activeExploitPath = a.exploit_path || [];
+  state.activeExploitPathStart = performance.now();
 
   const nodes = state.data?.nodes || [];
   let targetNode = null;

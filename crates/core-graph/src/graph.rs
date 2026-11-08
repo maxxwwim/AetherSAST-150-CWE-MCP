@@ -61,7 +61,13 @@ impl AetherGraph {
         self.edges.push(edge);
     }
 
+    pub fn compute_reachability(&mut self) {
+        crate::reachability::compute_reachability(self);
+    }
+
     pub fn compute_stats(&mut self) {
+        self.compute_reachability();
+
         let mut rpc = 0;
         let mut realtime = 0;
         let mut violations = 0;
