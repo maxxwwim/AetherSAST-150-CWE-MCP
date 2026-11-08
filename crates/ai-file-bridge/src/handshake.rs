@@ -86,11 +86,27 @@ impl HandshakePacker {
             xml.push_str("  </contract_rules>\n");
         }
 
+        xml.push_str("  <mcp_commands>\n");
+        xml.push_str(&format!(
+            "    <inspect_and_teleport>aetherscope_get_active_target({{\"symbol_id\": \"{}\", \"action\": \"{}\", \"details\": \"Analyse EARS + flux amont/aval\", \"trace_direction\": \"both\"}})</inspect_and_teleport>\n",
+            symbol.name, action_type
+        ));
+        xml.push_str(&format!(
+            "    <manage_task>aetherscope_manage_tasks({{\"action\": \"create\", \"title\": \"{} sur {}\", \"kind\": \"function\", \"target_symbol\": \"{}\", \"target_file\": \"{}\"}})</manage_task>\n",
+            action_type, symbol.name, symbol.name, symbol.file_path
+        ));
+        xml.push_str(&format!(
+            "    <verify_and_close>aetherscope_verify_patch({{\"files_modified\": [\"{}\"], \"task_id\": \"&lt;task_id&gt;\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Modification certifiée sur {}\"}})</verify_and_close>\n",
+            symbol.file_path, symbol.name
+        ));
+        xml.push_str("  </mcp_commands>\n");
+
         xml.push_str("  <instruction>\n");
         xml.push_str("    Avant d'écrire le code, réponds obligatoirement avec ce bloc de confirmation :\n");
         xml.push_str("    [AETHER_ACK]\n");
         xml.push_str(&format!("    Cible : {}\n", symbol.name));
         xml.push_str("    Imports interdits pris en compte : OUI\n");
+        xml.push_str("    Commandes MCP combinées : aetherscope_get_active_target -> aetherscope_manage_tasks -> aetherscope_verify_patch\n");
         xml.push_str("    Audit live surveillé dans .aether/LIVE_AUDIT.md : OUI\n");
         xml.push_str("    [/AETHER_ACK]\n");
         xml.push_str("  </instruction>\n");

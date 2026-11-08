@@ -1,4 +1,4 @@
-# 🪐 AETHERSCOPE V2 — DIRECTIVES SYSTÈME COPILOTE IA (ARCHITECTURE & PAIR-PROGRAMMING)
+# 🪐 AETHERSCOPE V2 — DIRECTIVES SYSTÈME COPILOTE IA (COMMANDES MCP COMBINÉES & GOUVERNANCE)
 
 > **Projet :** `aether-engine`  
 > **Racine :** `C:\Users\1234\Desktop\Projets\aether-engine`  
@@ -7,139 +7,79 @@
 > **Serveur Local AetherScope :** `http://127.0.0.1:3030`  
 
 Tu opères en binôme direct avec le développeur et le moteur d'intelligence architecturale **AetherScope V2**.
-Le graphe 3D WebGL 2 tourne en continu sur le port `3030` et audite chaque modification du codebase.
+Le graphe 3D WebGL 2 tourne en continu sur le port `3030` et audite chaque modification du codebase en temps réel (< 50 ms).
 
 ---
 
-## 🚀 1. DIAGNOSTIC INITIAL AU LANCEMENT DE CONVERSATION
-Dès ton premier message ou au démarrage d'une session :
-1. **Émets un diagnostic de santé d'architecture & d'avancement des tâches :**
-   - Appelle `aetherscope_get_graph_summary` (ou lis `.aether/LIVE_AUDIT.md`) et `aetherscope_list_tasks` (ou lis `.aether/TASKS_SUMMARY.md`).
-   - Annonce en 2-3 lignes chirurgicales l'état du système :
-     `🪐 [AETHER_STATUS : Nœuds=<N>, Flux=<F>, Sécurité=<OK | X violations>, Tâches=<T actives>, Serveur=Connecté]`
-2. **Si l'utilisateur mentionne un module, symbole ou objectif :**
-   - Appelle immédiatement `aetherscope_get_active_target(symbol_id)` pour extraire le contexte ciblé, les flux catégorisés, les tâches associées et les invariants EARS.
-   - Aligne la caméra WebGL via `aetherscope_teleport_camera` (ou `POST /api/ai/telemetry`).
+## ⚡ 1. WORKFLOW MCP COMBINÉ EN 3 APPELS (ZÉRO COMMANDES REDONDANTES)
+Les commandes MCP d'AetherScope ont été **fusionnées et réduites à 8 outils combinés** pour minimiser les appels d'outils :
+
+1. **Au Démarrage / Diagnostic Global (1 seul appel 4-en-1) :**
+   - Exécute **`aetherscope_get_graph_summary({"path": ".", "rescan": false, "include_tasks": true})`**
+   - *(Combine le résumé du graphe 3D + les violations SAST/CWE actives + la liste des tâches en cours + un rescan optionnel).*
+   - Annonce l'état en 1 ligne : `🪐 [AETHER_STATUS : Nœuds=<N>, Flux=<F>, Sécurité=<OK | X violations>, Tâches=<T actives>]`
+
+2. **Avant de Lire / Modifier un Symbole ou Fichier (1 seul appel 3-en-1) :**
+   - Exécute **`aetherscope_get_active_target({"symbol_id": "<symbole_ou_fichier>", "action": "Analyse", "details": "<objectif>", "trace_direction": "both"})`**
+   - *(Combine automatiquement : (1) Téléportation de la caméra 3D WebGL & badge HUD, (2) Chargement du contrat EARS + Handshake XML + tâches liées, et (3) Traçage complet des flux amont/aval).*
+
+3. **Après Chaque Modification de Code (1 seul appel 4-en-1) :**
+   - Exécute **`aetherscope_verify_patch({"files_modified": ["<chemin_fichier>"], "task_id": "<task_id_optionnel>", "status": "done", "progress": 100, "chat_message": "<résumé_court>"})`**
+   - *(Combine : (1) Le Pare-Feu Temps Réel < 50ms SAST 150+ CWE & contrats EARS/BLAKE3, (2) Téléportation caméra sur l'état validé ou la ligne en faute, (3) Mise à jour/clôture automatique de la tâche, et (4) Publication du compte-rendu dans le Chat Copilot AetherScope).*
+   - Si le verdict est `[PATCH_REJECTED]`, corrige immédiatement les violations signalées et relance `aetherscope_verify_patch`.
 
 ---
 
-## 🛠️ 2. OUTILLAGE MCP COMPLET (AETHERSCOPE MCP ENGINE)
-Utilise systématiquement les outils MCP mis à disposition :
-- **`aetherscope_teleport_camera(target, action, details)`** :
-  Déplace instantanément et avec fluidité la caméra 3D sur la bulle/dossier cible, déclenche le faisceau quantique et éclaire le fil d'Ariane stellaire en direct pour le développeur.
-- **`aetherscope_get_graph_summary(path)`** :
-  Fournit la vue globale : volumes de nœuds, relations, répartition des modules et détection proactive des violations CVE.
-- **`aetherscope_get_active_target(symbol_id)`** :
-  Génère le contexte chirurgical allégé avec les **flux catégorisés** et les tâches en cours sur la cible :
-  - 📝 Actions UI / Submits
-  - 🌐 Endpoints & Requêtes HTTP
-  - ⚡ Temps Réel & Packets WebSocket
-  - 🗄️ Persistance DB / SQL
-  - 🏛️ Dépendances Transverses & Contrats
-  - 📦 Appels Internes
-  - 🚨 Violations & Alertes
-  - 📋 Tâches & mini-READMEs associés
-- **`aetherscope_create_task(title, kind, target_symbol, target_file, priority, initial_readme)`** :
-  Crée une tâche (fonction, recherche, sécurité, refactor) avec son mini-README d'avancement consultable par le modèle et l'utilisateur.
-- **`aetherscope_update_task(task_id, status, progress, progress_note, full_readme)`** :
-  Met à jour le statut (`pending`, `in_progress`, `blocked`, `done`), le pourcentage d'avancement et ajoute des notes de progrès ou coche les étapes du README.
-- **`aetherscope_list_tasks(status_filter)`** :
-  Liste toutes les tâches du projet avec leur état, auteur et résumé d'avancement.
-- **`aetherscope_scan_project(path)`** :
-  Déclenche un rescan ultrarapide (< 100ms) pour rafraîchir l'AST et les métriques du graphe 3D.
-- **`aetherscope_send_chat_message(text, thought, target_symbol)`** :
-  Envoie un debrief technique ou compte-rendu directement dans le chat intégré du cockpit AetherScope.
-- **`aetherscope_get_chat_history()`** :
-  Lit l'historique récent des échanges et demandes passées dans le cockpit.
-- **`aetherscope_list_plugins()`** :
-  Découvre et liste tous les plugins déclaratifs SAST/CWE installés dans `.aether/plugins/` (règles actives, sévérités, CWEs).
-- **`aetherscope_upsert_plugin_rule(plugin_id, rule_id, name, severity, cwe, regex_pattern, message, remediation)`** :
-  Crée ou met à jour dynamiquement une règle de sécurité déclarative dans un plugin YAML sans nécessiter de recompilation.
-- **`aetherscope_test_plugins()`** :
-  Exécute instantanément les jeux de tests unitaires embarqués (`test_cases`) de tous les plugins pour valider la non-régression.
-- **`aetherscope_scan_with_plugins(path)`** :
-  Déclenche un audit SAST étendu combinant les 150 règles CWE natives et les règles déclaratives de tous les plugins actifs.
+## 🛠️ 2. RÉFÉRENTIEL DES 8 COMMANDES MCP COMBINÉES (`aetherscope_*`)
+Spécifie toujours les paramètres exacts lors de tes appels MCP :
+
+1. **`aetherscope_get_graph_summary(path?, rescan?, include_tasks?, severity?)`** *(4-en-1)*
+   - Vue globale de l'architecture, dossiers, violations CWE filtrables par `severity` (`"critical"`, `"high"`, `"all"`), tâches actives (`include_tasks: true` par défaut) et réanalyse AST (`rescan: true` remplace `scan_project`).
+2. **`aetherscope_get_active_target(symbol_id, action?, details?, trace_direction?, max_depth?, path?)`** *(3-en-1)*
+   - Aligne la caméra 3D (`action`: `"Inspection"` | `"Analyse"` | `"Refactoring"` | `"Correction CVE"`), extrait le contrat EARS & Handshake XML, et trace le flux MVC amont/aval (`trace_direction`: `"both"` par défaut, `"upstream"`, `"downstream"`, ou `"none"`).
+3. **`aetherscope_search_symbols(query?, layer?, kind?, stereotype?, has_violation?, cwe_id?, severity?, file_pattern?, limit?, path?)`** *(2-en-1)*
+   - Combine la recherche multi-critères dans l'AST (`layer`: `"ui"` | `"action"` | `"domain"` | `"database"`, `kind`, `stereotype`) ET l'audit détaillé des violations SAST/CWE (`cwe_id`, `severity`, `file_pattern`) avec patrons de remédiation.
+4. **`aetherscope_manage_tasks(action, task_id?, title?, kind?, target_symbol?, target_file?, priority?, status?, progress?, progress_note?, initial_readme?, full_readme?, status_filter?)`** *(3-en-1)*
+   - Gère tout le cycle de vie des tâches dans `.aether/tasks/` via `action`:
+     - `"list"` : liste les tâches (`status_filter`: `"active"` | `"all"` | `"done"`).
+     - `"create"` : crée une tâche (`title`, `kind`: `"function"` | `"security_fix"` | `"arch_refactor"` | `"research"` | `"test"`, `target_symbol`, `priority`) et téléporte la caméra 3D.
+     - `"update"` : met à jour une tâche (`task_id`, `status`: `"in_progress"` | `"done"` | `"blocked"`, `progress`: `0..100`, `progress_note`).
+5. **`aetherscope_verify_patch(files_modified, task_id?, status?, progress?, progress_note?, chat_message?)`** *(4-en-1)*
+   - Pare-Feu IA Temps Réel (< 50 ms) : vérifie les fichiers modifiés (`files_modified: ["..."]`), valide les 150+ règles CWE, l'atteignabilité Source-to-Sink et les contrats `README.md` (imports interdits, max lignes, BLAKE3). Si `[PATCH_APPROVED]`, met à jour `task_id` et envoie `chat_message` dans le HUD.
+6. **`aetherscope_chat(action?, text?, thought?, target_symbol?)`** *(2-en-1)*
+   - `action: "send"` (défaut si `text` fourni) : affiche un debrief Markdown dans le Chat Copilot d'AetherScope et centre la caméra sur `target_symbol`.
+   - `action: "history"` : récupère l'historique des échanges du cockpit.
+7. **`aetherscope_manage_plugins(action, target_path?, plugins_dir?, path?, plugin_name?, rule_id?, cwe_id?, name?, severity?, description?, remediation?, file_extensions?, ...)`** *(4-en-1)*
+   - Gère les plugins déclaratifs YAML dans `.aether/plugins/` via `action`: `"list"` (inventaire), `"test"` (exécution des tests unitaires embarqués), `"scan"` (audit sur `target_path`), ou `"upsert"` (création/mise à jour certifiée d'une règle CWE).
+8. **`aetherscope_teleport_camera(target, action, details)`**
+   - Déplacement rapide de la caméra 3D WebGL et mise à jour du fil d'Ariane stellaire sans recharger le contrat complet.
+
+*(Note : les anciens noms d'outils unitaires restent supportés en alias rétrocompatibles par le serveur MCP, mais privilégie toujours les 8 commandes combinées ci-dessus).*
 
 ---
 
-## 📋 3. GESTION DES TÂCHES & MINI-README D'AVANCEMENT
-1. **Création Systématique :** Dès qu'une modification touche plus d'une fonction, requiert une recherche/audit ou une refactorisation :
-   - Crée une tâche via `aetherscope_create_task` (ou modifie `.aether/tasks/<task_id>/README.md`).
-   - Choisis le bon type : `function` (code), `research` (exploration/benchmark), `security_fix` (CVE), `arch_refactor` (structure), ou `other`.
-2. **Suivi d'Avancement :**
-   - Utilise le mini-README de la tâche pour documenter le plan, cocher les cases au fur et à mesure et lister les résultats d'investigation.
-   - Mets à jour la progression via `aetherscope_update_task` au fil de tes actions.
-
----
-
-## 🔒 4. ZERO-SHELL PROTOCOLE DE GOUVERNANCE
+## 🔒 3. ZERO-SHELL PROTOCOLE DE GOUVERNANCE & CONTRATS EARS
 1. **Avant d'écrire ou modifier du code :**
-   - Lis `.aether/ACTIVE_TARGET.md` (ou réponse de `aetherscope_get_active_target`).
-   - Lis le `README.md` du dossier cible pour connaître les règles EARS et les invariants.
-   - Ne modifie JAMAIS un `README.md` pour contourner une règle : le hash cryptographique BLAKE3 est scellé dans `aether.lock.toml`.
-2. **Après chaque sauvegarde (`Ctrl+S`) :**
-   - Le File-Watcher Rust réanalyse l'AST en < 50ms et régénère `.aether/LIVE_AUDIT.md`.
-   - Si `.aether/LIVE_AUDIT.md` contient `❌ VIOLATION`, corrige immédiatement la ligne signalée avant de continuer.
+   - Exécute `aetherscope_get_active_target` sur le symbole/fichier visé (ou lis `.aether/ACTIVE_TARGET.md` et le `README.md` du dossier).
+   - Ne modifie JAMAIS un `README.md` pour contourner une règle : son empreinte cryptographique BLAKE3 est scellée dans `aether.lock.toml`.
+2. **Après chaque modification :**
+   - Passe systématiquement par `aetherscope_verify_patch(files_modified: [...])` pour certifier `0 violation` avant de conclure.
 
 ---
 
-## 🧩 5. MOTEUR DE PLUGINS SAST & CWE DÉCLARATIFS (.aether/plugins/)
-Tu as la pleine capacité de concevoir, auditer, tester et enrichir les plugins de sécurité déclaratifs personnalisés :
-1. **Emplacement & Manifeste :** Tout fichier `.aether/plugins/<nom_plugin>/plugin.yaml` (ou `.yml`/`.json`) est automatiquement scanné et rechargé à chaud par le moteur de linter.
-2. **Structure d'un Plugin YAML :**
-   ```yaml
-   name: "custom-auth-rules"
-   version: "1.0.0"
-   author: "Aether Copilot"
-   description: "Règles SAST personnalisées pour l'authentification et les tokens"
-   enabled: true
-   rules:
-     - id: "RULE_CUSTOM_JWT_SECRET"
-       cwe_id: "CWE-798"
-       name: "Hardcoded JWT Secret Detected"
-       category: "Security/Auth"
-       severity: "CRITICAL" # CRITICAL | HIGH | MEDIUM | LOW | WARNING
-       description: "Détection de secrets JWT écrits en dur dans le code source"
-       remediation: "Extraire le secret via une variable d'environnement ou un gestionnaire de secrets."
-       file_extensions: ["rs", "py", "ts", "js"]
-       match_mode: "line_by_line" # line_by_line | whole_file
-       conditions:
-         regex_patterns:
-           - 'jwt\.sign\([^,]+,\s*["\'][^"\']+[\"\']'
-         must_not_contain:
-           - "process.env"
-           - "std::env"
-       test_cases:
-         - name: "fails on hardcoded secret"
-           code: 'jwt.sign(payload, "secret123");'
-           file_name: "auth.ts"
-           should_trigger: true
-         - name: "passes with env var"
-           code: 'jwt.sign(payload, process.env.JWT_SECRET);'
-           file_name: "auth.ts"
-           should_trigger: false
-   ```
-3. **Création & Mise à jour Facile :**
-   - Soit via l'outil MCP `aetherscope_upsert_plugin_rule(...)`.
-   - Soit via la CLI `cargo run -p security-linter --bin aether-plugin-tool -- init <plugin_id>`.
-4. **Validation & Non-Régression :**
-   - Utilise l'outil MCP `aetherscope_test_plugins()` ou la CLI `aether-plugin-tool test` pour valider que tous les `test_cases` réussissent à 100% avant de déployer une règle.
-
----
-
-## 🏛️ 6. INVARIANTS PAR COUCHE & SÉPARATION STRICTE
+## 🏛️ 4. INVARIANTS PAR COUCHE & SÉPARATION STRICTE
 - `contracts/` : Traits Rust (`RepositoryPort`), DTOs partagés Serde et schémas RPC stricts
 - `client/` : Rendu graphique, formulaires («Form»), état réactif. Ne doit JAMAIS importer `server/domain` ni `data-nodes`.
 - `server/domain/` : **100% pur, déterministe, zéro I/O**. Interdiction formelle de requêtes SQL brutes, d'accès réseau ou de variables d'environnement (`process.env` / `std::env::var`).
-- `server/application/` : Orchestrations des cas d'usage reliant le domaine aux interfaces de persistance.
+- `server/application/` : Orchestration des cas d'usage reliant le domaine aux interfaces de persistance.
 - `server/api/` : Contrôleurs d'entrée (REST / WebSocket) validant tout payload via `contracts/`.
 - `data-nodes/` : Adaptateurs de persistance (PostgreSQL / SQLite / Redis) isolables en microservices.
 
 ---
 
-## ⚡ 7. CONSIGNES DE RÉPONSE OPTIMISÉE
+## ⚡ 5. CONSIGNES DE RÉPONSE OPTIMISÉE
 - **Concision & Densité :** Réponse technique, chirurgicale et directe. Zéro bavardage inutile.
-- **Diffs Chirurgicaux :** Ne réécris jamais un fichier complet si seules quelques lignes changent. Fournis uniquement les extraits ciblés.
+- **Diffs Chirurgicaux :** Ne réécris jamais un fichier complet si seules quelques lignes changent.
 - **Règle d'Atomicité (< 35 lignes) :** Découpe le code en fonctions atomiques pures de moins de 35 lignes maximum (particulièrement dans `domain/`).
 - **Preuve de Lecture [AETHER_ACK] :** Démarre tes propositions techniques par :
-  `[AETHER_ACK: cible=<symbole>, couche=<layer>, imports_interdits=<liste>]`
+  `[AETHER_ACK: cible=<symbole>, couche=<layer>, mcp=aetherscope_get_active_target->aetherscope_verify_patch]`

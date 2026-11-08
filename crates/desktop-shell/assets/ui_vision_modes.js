@@ -237,9 +237,13 @@ ${orphans.map(o => `- [${o.stereotype || 'Symbol'}] ${o.name} (${o.file_path}) [
 </instructions_ia>
 
 <aetherscope_api_and_research>
-1. Documentation & Contrats Modulaires : Consulter impérativement AETHER_AI_RULES.md à la racine et les README.md des sous-dossiers concernés.
-2. Télémétrie Spatiale Temps Réel : Émettre POST ${origin}/api/ai/telemetry à chaque symbole inspecté.
-3. Exploration du Graphe : Consulter l'API locale AetherScope sur ${origin}.
+1. Inspection + Caméra 3D + Trace MVC (3-en-1) :
+   Outil MCP : aetherscope_get_active_target({"symbol_id": "<symbole_orphelin>", "action": "DeadCode Audit", "trace_direction": "upstream"})
+2. Création Tâche Nettoyage + Caméra 3D (3-en-1) :
+   Outil MCP : aetherscope_manage_tasks({"action": "create", "title": "Nettoyage Code Mort (${orphans.length} cibles)", "kind": "arch_refactor"})
+3. Validation Pare-Feu < 50ms + Tâche + Chat (4-en-1 après nettoyage) :
+   Outil MCP : aetherscope_verify_patch({"files_modified": ["<fichiers_nettoyés>"], "status": "done", "progress": 100, "chat_message": "Nettoyage du code mort validé sans régression"})
+4. Documentation & Fallback HTTP : Consulter AETHER_AI_RULES.md et les README.md des sous-dossiers concernés (ou POST ${origin}/api/ai/telemetry).
 </aetherscope_api_and_research>
 
 <response_format_rules>
@@ -374,9 +378,13 @@ ${topHotspots.map(h => `- ${h.node.name} (${h.node.file_path}) [${h.loc} LOC] : 
 </mission_refactorisation>
 
 <aetherscope_api_and_research>
-1. Documentation & Contrats Modulaires : Consulter impérativement AETHER_AI_RULES.md à la racine et les README.md des dossiers des composants identifiés.
-2. Télémétrie Spatiale Temps Réel : Émettre POST ${origin}/api/ai/telemetry à chaque hotspot inspecté.
-3. Exploration du Graphe : Consulter l'API locale AetherScope sur ${origin}.
+1. Inspection Hotspot + Caméra 3D + Trace MVC (3-en-1) :
+   Outil MCP : aetherscope_get_active_target({"symbol_id": "${topHotspots[0] ? topHotspots[0].node.name : 'Hotspot'}", "action": "Heatmap Refactor", "trace_direction": "both", "max_depth": 4})
+2. Création Tâche Refactorisation + Caméra 3D (3-en-1) :
+   Outil MCP : aetherscope_manage_tasks({"action": "create", "title": "Réduction Couplage Heatmap (Santé ${healthScore}/100)", "kind": "arch_refactor", "target_symbol": "${topHotspots[0] ? topHotspots[0].node.name : 'Hotspot'}"})
+3. Validation Pare-Feu < 50ms + Tâche + Chat (4-en-1 après découpe SRP) :
+   Outil MCP : aetherscope_verify_patch({"files_modified": [${topHotspots.slice(0, 3).map(h => `"${h.node.file_path}"`).join(', ')}], "status": "done", "progress": 100, "chat_message": "Refactorisation SRP Heatmap validée"})
+4. Documentation & Fallback HTTP : Consulter AETHER_AI_RULES.md et les README.md des dossiers des composants identifiés (ou POST ${origin}/api/ai/telemetry).
 </aetherscope_api_and_research>
 
 <response_format_rules>
@@ -3175,6 +3183,11 @@ ${detailBlock}
     <tainted_flow data="${a.transmitted_data || ''}" type="${a.transmitted_type || ''}"/>
     <diagnostic>${a.message}</diagnostic>
   </security_target>
+  <mcp_commands>
+    <inspect_and_trace>aetherscope_get_active_target({"symbol_id": "${a.symbol_name || a.file_path}", "action": "Audit PoC ${a.cve_id}", "trace_direction": "upstream", "max_depth": 5})</inspect_and_trace>
+    <track_bounty_task>aetherscope_manage_tasks({"action": "create", "title": "PoC Bug Bounty ${a.cve_id} (${a.symbol_name || a.file_path})", "kind": "research", "target_symbol": "${a.symbol_name || a.file_path}", "target_file": "${a.file_path}", "priority": "critical"})</track_bounty_task>
+    <report_in_cockpit>aetherscope_chat({"action": "send", "target_symbol": "${a.symbol_name || a.file_path}", "text": "Triage & PoC ${a.cve_id} terminés sur ${a.file_path}:${a.line_number}"})</report_in_cockpit>
+  </mcp_commands>
   <task objective="Générer un Proof of Concept (PoC) reproductible et un rapport Bug Bounty pour ${a.cve_id} sans modifier le code source">
     Analyse \`${a.file_path}:${a.line_number}\`, valide le chemin Source-to-Sink In-Scope et rédige le test PoC exécutable + rapport Bug Bounty complet.
   </task>
@@ -3207,8 +3220,12 @@ ${detailBlock}
     <diagnostic>${a.message}</diagnostic>
     <remediation>${a.remediation}</remediation>
   </security_target>
+  <mcp_commands>
+    <inspect_and_trace>aetherscope_get_active_target({"symbol_id": "${a.symbol_name || a.file_path}", "action": "Patch ${a.cve_id}", "trace_direction": "both"})</inspect_and_trace>
+    <verify_and_close>aetherscope_verify_patch({"files_modified": ["${a.file_path}"], "status": "done", "progress": 100, "chat_message": "Patch minimal ${a.cve_id} validé sur ${a.file_path}:${a.line_number}"})</verify_and_close>
+  </mcp_commands>
   <task objective="Patch minimal sans régression de ${a.rule_id}">
-    Applique uniquement le correctif minimal sur \`${a.file_path}:${a.line_number}\` sans modifier les signatures publiques.
+    Applique uniquement le correctif minimal sur \`${a.file_path}:${a.line_number}\` sans modifier les signatures publiques, puis exécute \`aetherscope_verify_patch\`.
   </task>
 </aether_handshake>
 `;
@@ -3263,6 +3280,11 @@ function copyAllCveHandshakes() {
   prompt += `3. **Rapport Bug Bounty Prêt à Soumettre :** Titre, Sévérité CVSS, Root Cause, Scénario d'attaque Source-to-Sink et PoC.\n\n`;
 
   prompt += `<aether_handshake version="2.0">\n`;
+  prompt += `  <mcp_commands>\n`;
+  prompt += `    <search_and_filter>aetherscope_search_symbols({"has_violation": true, "severity": "CRITICAL"})</search_and_filter>\n`;
+  prompt += `    <inspect_and_trace>aetherscope_get_active_target({"symbol_id": "<symbole_cible>", "action": "Triage Bug Bounty", "trace_direction": "upstream", "max_depth": 5})</inspect_and_trace>\n`;
+  prompt += `    <track_task>aetherscope_manage_tasks({"action": "create", "title": "Triage & PoC Bug Bounty (${securityAnomalies.length} cibles)", "kind": "research", "priority": "critical"})</track_task>\n`;
+  prompt += `  </mcp_commands>\n`;
   prompt += `  <task objective="Triage Bug Bounty et génération de Proofs of Concept (PoC) sur ${securityAnomalies.length} alertes In-Scope">\n`;
   prompt += `    Trie les ${securityAnomalies.length} alertes ci-dessus, écarte les faux positifs et génère les Proofs of Concept (PoC) reproductibles.\n`;
   prompt += `  </task>\n`;
@@ -3949,7 +3971,16 @@ function updateBountyPromptPreview() {
   }
 
   p += `<aether_bounty_scope version="2.0" mode="${currentBountyMode}" in_scope_cve_count="${targetList.length}">\n`;
-  p += `  <instruction>Respecte strictement les frontières In-Scope et Out-of-Scope ci-dessus. Produis un Proof of Concept (PoC) reproductible et le rapport Bug Bounty sans modifier les fichiers sources du projet.</instruction>\n`;
+  p += `  <mcp_commands>\n`;
+  p += `    <search_cwe>aetherscope_search_symbols({"has_violation": true, "severity": "HIGH"})</search_cwe>\n`;
+  p += `    <inspect_and_trace>aetherscope_get_active_target({"symbol_id": "${singleTarget ? (singleTarget.symbol_name || singleTarget.file_path) : '<symbole_cible>'}", "action": "Bounty ${currentBountyMode}", "trace_direction": "upstream", "max_depth": 5})</inspect_and_trace>\n`;
+  if (includePatch) {
+    p += `    <verify_and_close>aetherscope_verify_patch({"files_modified": ["${singleTarget ? singleTarget.file_path : '<fichier_modifié>'}"], "status": "done", "progress": 100, "chat_message": "Patch chirurgical In-Scope validé"})</verify_and_close>\n`;
+  } else {
+    p += `    <track_bounty>aetherscope_manage_tasks({"action": "create", "title": "Bug Bounty PoC (${targetList.length} cibles)", "kind": "research", "priority": "critical"})</track_bounty>\n`;
+  }
+  p += `  </mcp_commands>\n`;
+  p += `  <instruction>Respecte strictement les frontières In-Scope et Out-of-Scope ci-dessus. Utilise les commandes MCP combinées pour tracer les flux Source-to-Sink et synchroniser la caméra 3D.</instruction>\n`;
   p += `</aether_bounty_scope>\n`;
 
   const area = document.getElementById('bounty-prompt-textarea');

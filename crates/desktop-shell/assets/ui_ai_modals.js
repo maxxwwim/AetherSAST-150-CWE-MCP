@@ -521,13 +521,16 @@ Analyser la cohésion interne du module, le couplage avec les autres parties du 
 </task>
 
 <aetherscope_api_and_research>
-[RÉCUPÉRATION D'INFORMATIONS & RECHERCHE AVEC L'API AETHERSCOPE V2]
-1. Documentation & Contrats Modulaires : Consulter impérativement AETHER_AI_RULES.md et aether.lock.toml à la racine, ainsi que le README.md de ce dossier (${folder}) pour connaître les spécifications, contrats BLAKE3/EARS et flux.
-2. Télémétrie Spatiale Temps Réel (OBLIGATOIRE) : Pour chaque symbole, fichier ou module inspecté ou modifié, émettre la télémétrie HTTP locale :
-   POST ${apiOrigin}/api/ai/telemetry
-   Body JSON: {"target": "${folder}", "action": "${t.title}", "details": "Inspection / modification du module ${folder}"}
-   (Téléporte instantanément la caméra WebGL et allume la balise quantique en direct dans AetherScope).
-3. Exploration du Graphe : Consulter l'API locale AetherScope sur ${apiOrigin} si nécessaire (POST /api/analyze).
+[COMMANDES MCP COMBINÉES AETHERSCOPE V2 & TÉLÉMÉTRIE]
+1. Inspection + Caméra 3D + Flux MVC (3-en-1) :
+   Outil MCP : aetherscope_get_active_target({"symbol_id": "${folder}", "action": "${t.title}", "details": "Inspection du module ${folder}", "trace_direction": "both", "max_depth": 3})
+2. Création / Suivi de Tâche + Caméra 3D (3-en-1) :
+   Outil MCP : aetherscope_manage_tasks({"action": "create", "title": "${t.title} (${folder})", "kind": "arch_refactor", "target_symbol": "${folder}"})
+3. Validation Pare-Feu < 50ms + Clôture Tâche + Chat Copilot (4-en-1 après modification) :
+   Outil MCP : aetherscope_verify_patch({"files_modified": [${files.slice(0, 3).map(f => `"${f.file_path}"`).join(', ') || `"${folder}"`}], "status": "done", "progress": 100, "chat_message": "${t.title} terminé sur ${folder}"})
+4. Fallback HTTP Local (si hors MCP) :
+   POST ${apiOrigin}/api/ai/telemetry — Body JSON: {"target": "${folder}", "action": "${t.title}", "details": "Inspection / modification du module ${folder}"}
+5. Documentation & Contrats Modulaires : Consulter AETHER_AI_RULES.md et aether.lock.toml à la racine, ainsi que le README.md du dossier (${folder}).
 </aetherscope_api_and_research>
 
 <response_format_rules>
@@ -573,13 +576,16 @@ ${t.prompt}
 </task>
 
 <aetherscope_api_and_research>
-[RÉCUPÉRATION D'INFORMATIONS & RECHERCHE AVEC L'API AETHERSCOPE V2]
-1. Documentation & Contrats Modulaires : Consulter impérativement AETHER_AI_RULES.md et aether.lock.toml à la racine, ainsi que le README.md du dossier de ce symbole (${n.file_path}) pour valider les contrats d'interface BLAKE3/EARS.
-2. Télémétrie Spatiale Temps Réel (OBLIGATOIRE) : Pour chaque symbole ou fichier inspecté / modifié, émettre la télémétrie HTTP locale :
-   POST ${apiOrigin}/api/ai/telemetry
-   Body JSON: {"target": "${n.name}", "action": "${t.title}", "details": "Inspection / modification de ${n.name} (${n.file_path})" }
-   (Téléporte instantanément la caméra WebGL et allume la balise quantique en direct dans AetherScope).
-3. Exploration du Graphe : Consulter l'API locale AetherScope sur ${apiOrigin} si nécessaire (POST /api/analyze).
+[COMMANDES MCP COMBINÉES AETHERSCOPE V2 & TÉLÉMÉTRIE]
+1. Inspection + Caméra 3D + Trace MVC (3-en-1) :
+   Outil MCP : aetherscope_get_active_target({"symbol_id": "${n.name}", "action": "${t.title}", "details": "Inspection de ${n.name} (${n.file_path})", "trace_direction": "both", "max_depth": 4})
+2. Création / Suivi de Tâche + Caméra 3D (3-en-1) :
+   Outil MCP : aetherscope_manage_tasks({"action": "create", "title": "${t.title} : ${n.name}", "kind": "function", "target_symbol": "${n.name}", "target_file": "${n.file_path}"})
+3. Validation Pare-Feu < 50ms + Clôture Tâche + Chat Copilot (4-en-1 après modification) :
+   Outil MCP : aetherscope_verify_patch({"files_modified": ["${n.file_path}"], "status": "done", "progress": 100, "chat_message": "${t.title} validé sur ${n.name}"})
+4. Fallback HTTP Local (si hors MCP) :
+   POST ${apiOrigin}/api/ai/telemetry — Body JSON: {"target": "${n.name}", "action": "${t.title}", "details": "Inspection / modification de ${n.name} (${n.file_path})"}
+5. Documentation & Contrats Modulaires : Consulter AETHER_AI_RULES.md et aether.lock.toml à la racine, ainsi que le README.md du dossier de ce symbole (${n.file_path}).
 </aetherscope_api_and_research>
 
 <response_format_rules>
@@ -711,6 +717,18 @@ Dans notre visualiseur AetherScope, chaque fichier est une planète céleste et 
    - Bit 3 (4) : Canaux WS Temps Réel (RealtimeWS - lasers Cyan)
    - Bit 4 (8) : Sémantique (imports/calls)
    - Bit 5 (16) : Violations de Sécurité (SECURITY_VIOLATES - lasers Rouges clignotants)
+
+---
+
+### 🛠️ 4. PROTOCOLE MCP UNIFIÉ (8 COMMANDES COMBINÉES AETHERSCOPE)
+1. \`aetherscope_get_graph_summary({"rescan": false, "include_tasks": true, "severity": "HIGH"})\` : Vue globale + Tâches + Alertes SAST (4-en-1).
+2. \`aetherscope_get_active_target({"symbol_id": "<symbole>", "action": "Analyse", "trace_direction": "both"})\` : Caméra 3D + Contrat EARS + Trace MVC (3-en-1).
+3. \`aetherscope_search_symbols({"query": "...", "layer": "...", "has_violation": true, "cwe_id": "CWE-89"})\` : Recherche AST + Filtre CWE (2-en-1).
+4. \`aetherscope_manage_tasks({"action": "list|create|update", "title": "...", "target_symbol": "..."})\` : Tâches + Mini-README + Caméra 3D (3-en-1).
+5. \`aetherscope_verify_patch({"files_modified": ["..."], "task_id": "...", "status": "done", "chat_message": "..."})\` : Pare-Feu < 50ms + Tâche + Chat (4-en-1).
+6. \`aetherscope_chat({"action": "send|history", "text": "...", "target_symbol": "..."})\` : Chat Copilot + Caméra 3D (2-en-1).
+7. \`aetherscope_manage_plugins({"action": "list|test|scan|upsert", ...})\` : Gestion des règles YAML SAST (4-en-1).
+8. \`aetherscope_teleport_camera({"target": "<symbole>", "action": "Focus", "details": "..."})\` : Téléportation directe de la caméra 3D.
 `;
 }
 window.generateMasterBlueprintPrompt = generateMasterBlueprintPrompt;
@@ -796,10 +814,13 @@ document.getElementById('btn-init-skeleton')?.addEventListener('click', async ()
 // --- Draggable AI Copilot Chat & History Engine ---
 window.copyUserPromptForAntigravity = function(target, userText) {
   const projPath = state.data?.project_path || '';
+  const sym = target || 'Codebase';
   const prompt = `Dans le visualiseur AetherScope (${projPath}) :
 ${target ? `[Cible: ${target}] ` : ''}${userText}
 
-Vérifie l'historique et aligne la caméra si nécessaire.`;
+Commandes MCP combinées à exécuter :
+1. \`aetherscope_chat({"action": "history"})\` + \`aetherscope_get_active_target({"symbol_id": "${sym}", "action": "Analyse", "trace_direction": "both"})\` (aligne la caméra 3D et extrait le contrat EARS + flux MVC).
+2. Après modification, valide en 1 appel : \`aetherscope_verify_patch({"files_modified": ["<fichier_modifié>"], "chat_message": "Réponse et correctif appliqués sur ${sym}"})\`.`;
 
   navigator.clipboard.writeText(prompt).then(() => {
     if (window.AudioSys?.playTone) AudioSys.playTone(880, 'sine', 0.12, 0.04);
@@ -1992,63 +2013,61 @@ Le graphe 3D WebGL 2 tourne en continu sur le port \`3030\` et audite chaque mod
 
 ---
 
-## 🚀 1. DIAGNOSTIC INITIAL AU LANCEMENT DE CONVERSATION
-Dès ton premier message ou au démarrage d'une session :
-1. **Émets un diagnostic de santé d'architecture & d'avancement des tâches :**
-   - Appelle \`aetherscope_get_graph_summary\` (ou lis \`.aether/LIVE_AUDIT.md\`) et \`aetherscope_list_tasks\` (ou lis \`.aether/TASKS_SUMMARY.md\`).
-   - Annonce en 2-3 lignes chirurgicales l'état du système :
+## 🚀 1. WORKFLOW MCP ULTRA-COMPACT EN 3 APPELS (COMMANDES COMBINÉES)
+Les commandes MCP d'AetherScope sont **combinées** pour réduire de 70% les allers-retours d'outils :
+
+1. **Diagnostic Initial (1 seul appel au lancement de session) :**
+   - **Commande MCP :** \`aetherscope_get_graph_summary({"rescan": false, "include_tasks": true, "severity": "HIGH"})\`
+   - *Effet combiné :* Retourne en 1 appel la santé globale du graphe, la liste des tâches actives et les violations CWE filtrées.
+   - Annonce immédiatement en 2 lignes :
      \`🪐 [AETHER_STATUS : Nœuds=<N>, Flux=<F>, Sécurité=<OK | X violations>, Tâches=<T actives>, Serveur=Connecté]\`
-2. **Si l'utilisateur mentionne un module, symbole ou objectif :**
-   - Appelle immédiatement \`aetherscope_get_active_target(symbol_id)\` pour extraire le contexte ciblé, les flux catégorisés, les tâches associées et les invariants EARS.
-   - Aligne la caméra WebGL via \`aetherscope_teleport_camera\` (ou \`POST /api/ai/telemetry\`).
+
+2. **Inspection Chirurgicale + Caméra 3D + Trace MVC (1 seul appel avant de coder) :**
+   - **Commande MCP :** \`aetherscope_get_active_target({"symbol_id": "<symbole_ou_fichier>", "action": "Analyse", "details": "Inspection des contrats EARS", "trace_direction": "both", "max_depth": 4})\`
+   - *Effet combiné :* Téléporte la caméra 3D WebGL + extrait le Handshake XML, les contrats EARS et les tâches liées + trace la chaîne d'appels amont/aval.
+
+3. **Validation Pare-Feu < 50ms + Clôture de Tâche + Debrief Chat (1 seul appel après modification) :**
+   - **Commande MCP :** \`aetherscope_verify_patch({"files_modified": ["chemin/relatif/fichier.rs"], "task_id": "<id_optionnel>", "status": "done", "progress": 100, "progress_note": "Patch validé", "chat_message": "Correctif appliqué et vérifié sans régression."})\`
+   - *Effet combiné :* Rescanne l'AST en < 50ms, vérifie l'absence de nouvelles violations CWE/EARS/BLAKE3, téléporte la caméra 3D, met à jour/clôture la tâche et publie le debrief dans le chat AetherScope.
 
 ---
 
-## 🛠️ 2. OUTILLAGE MCP COMPLET (AETHERSCOPE MCP ENGINE)
-Utilise systématiquement les outils MCP mis à disposition :
-- **\`aetherscope_teleport_camera(target, action, details)\`** :
-  Déplace instantanément et avec fluidité la caméra 3D sur la bulle/dossier cible, déclenche le faisceau quantique et éclaire le fil d'Ariane stellaire en direct pour le développeur.
-- **\`aetherscope_get_graph_summary(path)\`** :
-  Fournit la vue globale : volumes de nœuds, relations, répartition des modules et détection proactive des violations CVE.
-- **\`aetherscope_get_active_target(symbol_id)\`** :
-  Génère le contexte chirurgical allégé avec les **flux catégorisés** et les tâches en cours sur la cible (UI, HTTP, WebSocket, DB/SQL, Contrats, Violations).
-- **\`aetherscope_create_task(title, kind, target_symbol, target_file, priority, initial_readme)\`** :
-  Crée une tâche (fonction, recherche, sécurité, refactor) avec son mini-README d'avancement consultable par le modèle et l'utilisateur.
-- **\`aetherscope_update_task(task_id, status, progress, progress_note, full_readme)\`** :
-  Met à jour le statut (\`pending\`, \`in_progress\`, \`blocked\`, \`done\`), le pourcentage d'avancement et ajoute des notes de progrès ou coche les étapes du README.
-- **\`aetherscope_list_tasks(status_filter)\`** :
-  Liste toutes les tâches du projet avec leur état, auteur et résumé d'avancement.
-- **\`aetherscope_scan_project(path)\`** :
-  Déclenche un rescan ultrarapide (< 100ms) pour rafraîchir l'AST et les métriques du graphe 3D.
-- **\`aetherscope_send_chat_message(text, thought, target_symbol)\`** :
-  Envoie un debrief technique ou compte-rendu directement dans le chat intégré du cockpit AetherScope.
-- **\`aetherscope_get_chat_history()\`** :
-  Lit l'historique récent des échanges et demandes passées dans le cockpit.
+## 🛠️ 2. RÉFÉRENTIEL DES 8 COMMANDES MCP COMBINÉES (AETHERSCOPE MCP ENGINE)
+Spécifie toujours les paramètres exacts lors de tes appels MCP :
+
+1. **\`aetherscope_get_graph_summary({path?, rescan?, include_tasks?, severity?})\`** *(4-en-1)* :
+   - Vue globale du graphe + rescan AST optionnel (\`rescan: true\`) + liste des tâches (\`include_tasks: true\`) + violations CWE (\`severity: "CRITICAL" | "HIGH" | "MEDIUM"\`).
+2. **\`aetherscope_get_active_target({symbol_id, action?, details?, trace_direction?, max_depth?, path?})\`** *(3-en-1)* :
+   - Téléportation caméra 3D (\`action\`, \`details\`) + extraction du contexte chirurgical EARS/Handshake + traçage de flux MVC (\`trace_direction: "upstream" | "downstream" | "both"\`).
+3. **\`aetherscope_search_symbols({query?, layer?, kind?, stereotype?, has_violation?, cwe_id?, severity?, file_pattern?, limit?})\`** *(2-en-1)* :
+   - Recherche multi-critères de symboles AST (\`layer: "domain" | "application" | "infrastructure" | "ui"\`, \`stereotype: "«Form»" | "«Controller»" | "«Service»" | "«Repository»"\`) + recherche détaillée des failles CWE (\`cwe_id: "CWE-89"\`, \`severity: "CRITICAL"\`).
+4. **\`aetherscope_manage_tasks({action, task_id?, title?, kind?, target_symbol?, target_file?, priority?, status?, progress?, progress_note?, initial_readme?, full_readme?, status_filter?})\`** *(3-en-1)* :
+   - \`action: "list"\` (filtre \`status_filter\`), \`action: "create"\` (\`title\`, \`kind: "function" | "research" | "security_fix" | "arch_refactor"\`, \`target_symbol\`), ou \`action: "update"\` (\`task_id\`, \`status\`, \`progress\`, \`progress_note\`) + téléportation auto de la caméra 3D sur \`target_symbol\`.
+5. **\`aetherscope_verify_patch({files_modified, task_id?, status?, progress?, progress_note?, chat_message?})\`** *(4-en-1)* :
+   - Pare-feu temps réel (< 50ms) sur les fichiers modifiés + téléportation caméra 3D + mise à jour/clôture automatique de la tâche + envoi du résumé dans le chat Copilot.
+6. **\`aetherscope_chat({action?, text?, thought?, target_symbol?})\`** *(2-en-1)* :
+   - \`action: "send"\` (publie un message/debrief dans le cockpit et téléporte la caméra sur \`target_symbol\`) ou \`action: "history"\` (lit l'historique des échanges).
+7. **\`aetherscope_manage_plugins({action, target_path?, plugins_dir?, id?, name?, severity?, cwe?, regex_pattern?, message?, remediation?})\`** *(4-en-1)* :
+   - \`action: "list" | "test" | "scan" | "upsert"\` pour gérer, tester et exécuter les règles SAST YAML personnalisées (\`.aether/plugins/*.yaml\`).
+8. **\`aetherscope_teleport_camera({target, action, details})\`** :
+   - Déplacement direct de la caméra 3D WebGL et illumination de la balise quantique sans extraction de contexte.
+
+*(Note : Les anciens noms d'outils unitaires restent supportés en alias rétrocompatibles, mais privilégie toujours les 8 commandes combinées ci-dessus).*
 
 ---
 
-## 📋 3. GESTION DES TÂCHES & MINI-README D'AVANCEMENT
-1. **Création Systématique :** Dès qu'une modification touche plus d'une fonction, requiert une recherche/audit ou une refactorisation :
-   - Crée une tâche via \`aetherscope_create_task\` (ou modifie \`.aether/tasks/<task_id>/README.md\`).
-   - Choisis le bon type : \`function\`, \`research\`, \`security_fix\`, \`arch_refactor\`, ou \`other\`.
-2. **Suivi d'Avancement :**
-   - Utilise le mini-README de la tâche pour documenter le plan, cocher les cases au fur et à mesure et lister les résultats d'investigation.
-   - Mets à jour la progression via \`aetherscope_update_task\` au fil de tes actions.
-
----
-
-## 🔒 4. ZERO-SHELL PROTOCOLE DE GOUVERNANCE
+## 🔒 3. ZERO-SHELL PROTOCOLE DE GOUVERNANCE
 1. **Avant d'écrire ou modifier du code :**
-   - Lis \`.aether/ACTIVE_TARGET.md\` (ou réponse de \`aetherscope_get_active_target\`).
+   - Appelle \`aetherscope_get_active_target\` (ou lis \`.aether/ACTIVE_TARGET.md\`).
    - Lis le \`README.md\` du dossier cible pour connaître les règles EARS et les invariants.
    - Ne modifie JAMAIS un \`README.md\` pour contourner une règle : le hash cryptographique BLAKE3 est scellé dans \`aether.lock.toml\`.
-2. **Après chaque sauvegarde (\`Ctrl+S\`) :**
-   - Le File-Watcher Rust réanalyse l'AST en < 50ms et régénère \`.aether/LIVE_AUDIT.md\`.
-   - Si \`.aether/LIVE_AUDIT.md\` contient \`❌ VIOLATION\`, corrige immédiatement la ligne signalée avant de continuer.
+2. **Après chaque modification de fichier :**
+   - Appelle systématiquement \`aetherscope_verify_patch({"files_modified": [...], "chat_message": "..."})\`.
+   - Si le statut est \`REJECTED\`, corrige immédiatement la ligne signalée avant de continuer.
 
 ---
 
-## 🏛️ 5. INVARIANTS PAR COUCHE & SÉPARATION STRICTE
+## 🏛️ 4. INVARIANTS PAR COUCHE & SÉPARATION STRICTE
 - \`contracts/\` : Traits Rust (\`RepositoryPort\`), DTOs partagés Serde et schémas RPC stricts
 - \`client/\` : Rendu graphique, formulaires («Form»), état réactif. Ne doit JAMAIS importer \`server/domain\` ni \`data-nodes\`.
 - \`server/domain/\` : **100% pur, déterministe, zéro I/O**. Interdiction formelle de requêtes SQL brutes, d'accès réseau ou de variables d'environnement (\`process.env\` / \`std::env::var\`).
@@ -2058,7 +2077,7 @@ Utilise systématiquement les outils MCP mis à disposition :
 
 ---
 
-## ⚡ 6. CONSIGNES DE RÉPONSE OPTIMISÉE
+## ⚡ 5. CONSIGNES DE RÉPONSE OPTIMISÉE
 - **Concision & Densité :** Réponse technique, chirurgicale et directe. Zéro bavardage inutile.
 - **Diffs Chirurgicaux :** Ne réécris jamais un fichier complet si seules quelques lignes changent. Fournis uniquement les extraits ciblés.
 - **Règle d'Atomicité (< 35 lignes) :** Découpe le code en fonctions atomiques pures de moins de 35 lignes maximum (particulièrement dans \`domain/\`).
@@ -4625,6 +4644,11 @@ function buildSurfaceScanMarkdownPrompt(rep, mode = currentSurfacePromptMode) {
   const sideTwoSuite = buildSideTwoWeaknessSuite(rep);
   const sideTwoMd = sideTwoSuite.map(s => `- **Test Unitaire Négatif \`${s.negativeTestFn}\` (${s.cwe})**\n  - Entrée Externe Côté 1 : \`${s.sideOneVector}\`\n  - Cible Interne Code/AST Côté 2 : \`${s.astNodeLabel}\` (${s.isAstMapped ? 'Mappé dans l\'AST local' : 'Cible fonctionnelle'})\n  - Spécification du Test Négatif : ${s.negativeTestSpec}`).join('\n') || '- Aucun test Côté 2 généré.';
 
+  const mcpFooter = `\n\n## 🛠️ Commandes MCP Combinées AetherScope à Exécuter
+1. **Recherche AST + Violations CWE (2-en-1) :** \`aetherscope_search_symbols({"stereotype": "«Controller»", "has_violation": true})\`
+2. **Inspection Cible + Caméra 3D + Trace MVC (3-en-1) :** \`aetherscope_get_active_target({"symbol_id": "<handler_cible>", "action": "Surface Audit", "trace_direction": "both"})\`
+3. **Validation Pare-Feu < 50ms + Tâche + Chat (4-en-1) :** \`aetherscope_verify_patch({"files_modified": ["<fichier_modifié>"], "status": "done", "chat_message": "Durcissement de surface validé (Grade A+)"})\``;
+
   if (mode === 'weakness') {
     return `# ⚖️ PROMPT BINÔME IA — MODE 4 BOOSTED : SUITE DE TESTS DE FAIBLESSE BILATÉRALE (CÔTÉ 1 BLACK-BOX ↔ CÔTÉ 2 WHITE-BOX AST)
 - **Cible auditée :** \`${rep.target_raw}\` (\`${rep.scheme}://${rep.host}:${rep.primary_port}\`)
@@ -4644,7 +4668,7 @@ ${bridgeMd}
 
 ## 🎯 Instructions pour le Binôme IA (Génération des Suites de Tests des Deux Côtés)
 1. **Suite Côté 1 (Tests de Frontière HTTP / Intégration Externe)** : Génère les tests automatisés non-destructifs qui vérifient le rejet des origines CORS non autorisées (\`Origin: https://untrusted.invalid\`), le rejet des verbes HTTP inattendus (\`405 Method Not Allowed\`), l'absence de Directory Listing (\`403/404\`) et le rejet des soumissions sans jeton CSRF ou avec un \`Content-Type\` invalide (\`415/422\`).
-2. **Suite Côté 2 (Tests Unitaires Négatifs Côté Code / AST Interne)** : Écris le code complet des fonctions de test \`test_reject_*_boundary()\` ci-dessus (en Rust \`#[test]\` / TypeScript \`vitest\` selon les fichiers AST mappés) en passant des valeurs limites inoffensives (types invalides, chaînes vides, arguments préfixés par \`--\`, chemins relatifs simulés) et en vérifiant que le validateur retourne systématiquement \`Err(...)\` ou \`StatusCode::BAD_REQUEST / UNPROCESSABLE_ENTITY\` **avant** d'atteindre le sink interne.`;
+2. **Suite Côté 2 (Tests Unitaires Négatifs Côté Code / AST Interne)** : Écris le code complet des fonctions de test \`test_reject_*_boundary()\` ci-dessus (en Rust \`#[test]\` / TypeScript \`vitest\` selon les fichiers AST mappés) en passant des valeurs limites inoffensives (types invalides, chaînes vides, arguments préfixés par \`--\`, chemins relatifs simulés) et en vérifiant que le validateur retourne systématiquement \`Err(...)\` ou \`StatusCode::BAD_REQUEST / UNPROCESSABLE_ENTITY\` **avant** d'atteindre le sink interne.${mcpFooter}`;
   }
 
   if (mode === 'hardening') {
@@ -4667,7 +4691,7 @@ ${sensMd}
 ## 🎯 Instructions pour le Binôme IA (Génération des Correctifs)
 1. **Middlewares & En-têtes HTTP** : Fournis le code exact (Rust/Axum/Tower, Node/Express ou Nginx selon la stack détectée) pour injecter \`Content-Security-Policy\`, \`X-Frame-Options: DENY\`, \`X-Content-Type-Options: nosniff\` et \`Referrer-Policy\`.
 2. **Protection des Formulaires & Routes API** : Si des formulaires ou routes API manquent de jeton anti-CSRF ou de validation de schéma sur les clés JSON extraites, écris le validateur côté serveur correspondant aux fichiers AST mappés ci-dessus.
-3. **Blocage CWE-538** : Ajoute une règle explicite interdisant l'accès HTTP aux dotfiles (\`.env\`, \`.git/*\`, \`docker-compose.yml\`).`;
+3. **Blocage CWE-538** : Ajoute une règle explicite interdisant l'accès HTTP aux dotfiles (\`.env\`, \`.git/*\`, \`docker-compose.yml\`).${mcpFooter}`;
   }
 
   if (mode === 'tests') {
@@ -4687,7 +4711,7 @@ ${bridgeMd}
 
 ## 🎯 Instructions pour le Binôme IA (Génération des Tests Automatisés)
 1. Génère un script de vérification défensif exécutable en CI (PowerShell / Bash \`curl -sSI\` ou test d'intégration Rust/Playwright) qui valide chacune des assertions ci-dessus sans aucun payload offensif.
-2. Ajoute un test unitaire/intégration pour chaque route mappée dans l'AST local afin de garantir le maintien du **Grade A+ (100/100)**.`;
+2. Ajoute un test unitaire/intégration pour chaque route mappée dans l'AST local afin de garantir le maintien du **Grade A+ (100/100)**.${mcpFooter}`;
   }
 
   return `# 📐 PROMPT BINÔME IA — MODE 1 : REVUE D'ARCHITECTURE, 4 FRONTIÈRES DE CONFIANCE & PONT AST
@@ -4720,7 +4744,7 @@ ${sensMd}
 ${findingsMd}
 
 ## 🎯 Instructions pour le Binôme IA
-Analyse cette topologie complète (du fichier \`.html\`/\`.js\` externe jusqu'au contrôleur AST local), identifie les routes fantômes non mappées dans l'AST, et propose une architecture de défense en profondeur pour atteindre **100/100 (Grade A+)**.`;
+Analyse cette topologie complète (du fichier \`.html\`/\`.js\` externe jusqu'au contrôleur AST local), identifie les routes fantômes non mappées dans l'AST, et propose une architecture de défense en profondeur pour atteindre **100/100 (Grade A+)**.${mcpFooter}`;
 }
 
 function copyTextWithFallback(text, successMsg) {
