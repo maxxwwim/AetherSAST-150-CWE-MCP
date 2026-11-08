@@ -218,7 +218,7 @@ La liste détaillée des règles, classées en 11 familles (Rust/LLVM, Consensus
 
 ### Architecture JSON-RPC 2.0 & Multi-Primitives (Tools, Resources, Prompts)
 
-AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`aetherscope-mcp.exe`**, conforme au standard officiel **Model Context Protocol (JSON-RPC 2.0 sur `stdio` — version `2024-11-05`)** et audité selon les critères **M8ven Protocol Compliance (Score 95+/100)**.
+AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`aetherscope-mcp.exe`**, conforme au standard officiel **Model Context Protocol (JSON-RPC 2.0 sur `stdio` — version `2024-11-05`)** et audité selon les critères **M8ven Protocol Compliance (Score 85+/100)**.
 
 ```mermaid
 flowchart TD
