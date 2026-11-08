@@ -1,13 +1,14 @@
 name: "AetherScope SAST Security Scan"
 
 on:
-  workflow_dispatch: # Permet de lancer le scan manuellement depuis l'onglet Actions
-  push:
-    branches: [ "main", "master", "develop" ]
-  pull_request:
-    branches: [ "main", "master", "develop" ]
-  schedule:
-    - cron: '0 4 * * 1'
+  workflow_dispatch: # Déclenchement manuel uniquement depuis l'onglet Actions (évite les erreurs de billing sur git push)
+  # Pour réactiver le scan automatique à chaque push après déblocage de votre facturation GitHub :
+  # push:
+  #   branches: [ "main", "master", "develop" ]
+  # pull_request:
+  #   branches: [ "main", "master", "develop" ]
+  # schedule:
+  #   - cron: '0 4 * * 1'
 
 permissions:
   contents: read
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   aetherscope-sast:
     name: "AetherScope Real-time SAST & Contract Audit"
-    runs-on: ubuntu-24.04 # Évite la notice de migration ubuntu-latest vers Ubuntu 26
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
