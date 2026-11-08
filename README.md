@@ -38,68 +38,85 @@
 
 ## 📌 Sommaire Exécutif
 
-1. [Moteur SAST, Chasse Zero-Day & Catalogue des 150+ Règles CWE](#️-moteur-sast-chasse-zero-day--catalogue-des-150-règles-cwe)
-   - [Masquage Lexical Anti-Faux-Positifs, Routage Typé CWE & Préparateur de Scope Bug Bounty](#masquage-lexical-anti-faux-positifs-routage-typé-cwe--préparateur-de-scope-bug-bounty)
-   - [Démarrage Rapide & Options en Ligne de Commande (CLI)](#-démarrage-rapide--utilitaires-windows-1-clic)
-   - [Endpoints Root & API REST Locale (24 Routes)](#-endpoints-root--api-rest-locale-24-routes--http1270013030)
-   - [1. Rust Bas-Niveau, LLVM Codegen, ABI, Unwind & OS Kernel (24 règles)](#1-rust-bas-niveau-llvm-codegen-abi-unwind--os-kernel)
-   - [2. Consensus L1, Runtimes Wasm & Réseaux P2P (6 règles)](#2-consensus-l1-runtimes-wasm--réseaux-p2p)
-   - [3. Smart Contracts EVM, Account Abstraction & Cross-Chain (30 règles)](#3-smart-contracts-evm-account-abstraction--cross-chain)
-   - [4. Protocoles DeFi, Invariants de Vaults & Oracles (7 règles)](#4-protocoles-defi-invariants-de-vaults--oracles)
-   - [5. Preuves ZK-SNARKs & Machines Virtuelles Alternatives (7 règles)](#5-preuves-zk-snarks--machines-virtuelles-alternatives)
-   - [6. MMO, Concurrence & Boucle de Jeu Temps Réel (5 règles)](#6-mmo-concurrence--boucle-de-jeu-temps-réel)
-   - [7. SAST Fondamental, RCE & Injections Multi-Langages (18 règles)](#7-sast-fondamental-rce--injections-multi-langages)
-   - [8. Front-End, DOM & Écosystème Node.js / V8 Internals (13 règles)](#8-front-end-dom--écosystème-nodejs--v8-internals)
-   - [9. Architecture, Intégrité & Contrats EARS (4 règles)](#9-architecture-intégrité--contrats-ears)
-   - [10. C / C++ & Modules Natifs FFI / Network Bas-Niveau (11 règles)](#10-c--c--modules-natifs-ffi--network-bas-niveau-11-règles)
-   - [11. PHP Web & API Backend : Injections, RCE, Désérialisation & Sécurité Critique (25 règles)](#11-php-web--api-backend--injections-rce-désérialisation--sécurité-critique-25-règles)
-2. [Architecture Globale & Structure du Workspace Cargo](#-architecture-globale--structure-du-workspace-cargo)
-3. [Cockpit GPU WebGL 2 : Membranes, Bulles, Lasers & Layouts](#-cockpit-gpu-webgl-2--membranes-bulles-lasers--layouts)
-   - [Architecture Graphique Dual-Layer & Plateau Cybernétique 3D](#architecture-graphique-dual-layer--plateau-cybernétique-3d)
-   - [Nuages & Membranes Cellulaires Biologiques à 12 Lobes](#nuages--membranes-cellulaires-biologiques-à-12-lobes)
-   - [Taxonomie des Bulles de Symboles & 3 Niveaux de Détail (LoD)](#taxonomie-des-bulles-de-symboles--3-niveaux-de-détail-lod)
-   - [Les 6 Filtres d'Affiliation Lasers (`bitflags`) & Pipeline E2E](#les-6-filtres-daffiliation-lasers-bitflags--pipeline-e2e)
-   - [Les 4 Algorithmes Mathématiques de Layout (`Z-1` à `Z-4`)](#les-4-algorithmes-mathématiques-de-layout-z-1-à-z-4)
-   - [Modes de Vision Analytique (X-Ray, Dead Code, Heatmap), Physique & Audio](#modes-de-vision-analytique-x-ray-dead-code-heatmap-physique--audio)
-4. [Outillage IDE Intégré, Scaffolding Multi-Stack & Export](#-outillage-ide-intégré-scaffolding-multi-stack--export)
-   - [Omnibox Deep Search (`Ctrl+K`) & Inspecteur à 4 Onglets](#omnibox-deep-search-ctrlk--inspecteur-à-4-onglets)
-   - [Lecteur / Éditeur Markdown & Hub de Scaffolding Multi-Architecture](#lecteur--éditeur-markdown--hub-de-scaffolding-multi-architecture)
-5. [Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
-   - [Architecture JSON-RPC 2.0 & Double Mode Opérationnel Résilient](#architecture-json-rpc-20--double-mode-opérationnel-résilient)
-   - [Catalogue Exhaustif des 17 Outils MCP](#catalogue-exhaustif-des-9-outils-mcp)
-   - [Sous-Système de Tâches & Quêtes Hybride (`.aether/tasks/`)](#sous-système-de-tâches--quêtes-hybride-aethertasks)
-   - [Console Chat Copilot (`<thought>`), Télémétrie Spatiale & `<aether_handshake>`](#console-chat-copilot-thought-télémétrie-spatiale--aether_handshake)
-   - [Configuration Universelle (Antigravity, Claude Desktop, Cursor)](#configuration-universelle-antigravity-claude-desktop-cursor)
-6. [Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3](#-gouvernance-spec-driven-contrats-ears--sceau-blake3)
-7. [Raccourcis Clavier, Compilation & Licence](#-raccourcis-clavier-compilation--licence)
+1. [⚡ Qu'est-ce qu'AetherScope V2 ?](#-quest-ce-quaetherscope-v2-)
+2. [🧬 Nouveautés V2.2 : Semgrep Communautaire, SSA Dataflow & SCA Reachable](#-nouveautés-v22--semgrep-communautaire-ssa-dataflow--sca-reachable)
+3. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
+4. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
+5. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 150+ Règles CWE](#-moteur-sast-chasse-zero-day--catalogue-des-150-règles-cwe)
+6. [🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
+7. [🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3](#-gouvernance-spec-driven-contrats-ears--sceau-blake3)
+8. [🏛️ Architecture Globale & Structure du Workspace Cargo](#-architecture-globale--structure-du-workspace-cargo)
+9. [🎨 Cockpit GPU WebGL 2 : Membranes, Bulles, Lasers & Layouts](#-cockpit-gpu-webgl-2--membranes-bulles-lasers--layouts)
+10. [🛠️ Outillage IDE Intégré, Scaffolding Multi-Stack & Export](#-outillage-ide-intégré-scaffolding-multi-stack--export)
+11. [🕹️ Raccourcis Clavier, Compilation & Licence](#-raccourcis-clavier-compilation--licence)
+12. [📄 Licence](#-licence)
+13. [📚 Liste détaillée des règles CWE (répertoire dédié)](./cwe/)
 
 ---
 
-## 🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 150+ Règles CWE
+## 🧬 Nouveautés V2.2 : Semgrep Communautaire, SSA Dataflow & SCA Reachable
 
-### Masquage Lexical Anti-Faux-Positifs, Routage Typé CWE & Préparateur de Scope Bug Bounty
+### 1. Règles Semgrep Communautaires (hors-ligne, sans compte Cloud)
+- **22 règles OWASP Top 10 / CWE Top 25** embarquées dans le binaire (`community_owasp_cwe.yaml`, `community_bundle.rs`), actives dès le premier lancement.
+- **Synchronisation à la demande** et rechargement à chaud (hot-reload) dans `.aether/plugins/` :
+  ```bash
+  aether-plugin-tool.exe download-semgrep-rules --output .aether/plugins
+  aether-plugin-tool.exe download-semgrep-rules --offline
+  aether-plugin-tool.exe import-semgrep --input ./semgrep-rules --output .aether/plugins/imported
+  ```
 
-Contrairement aux scanners par expressions régulières classiques qui génèrent des centaines de faux positifs sur les commentaires ou les fichiers de tests, le moteur SAST d'AetherScope V2 intègre :
+### 2. True Dataflow / SSA Taint Tracking Inter-Procédural
+- Module `crates/core-graph/src/dataflow/` : versioning exact des variables (`SsaVar`), chaînes def-use, propagation à travers les appels, parcours résistant aux cycles.
+- **Catalogue de sanitizers par CWE** (`sanitizer_catalog.rs`) : une donnée passée par `sanitize(x)` ne déclenche plus d'alerte au Sink. Trace exacte de propagation sur les flux non assainis.
 
-1. **Un Lexer Multi-Langages (`lexer.rs`) à Double Passe :** Masque automatiquement les commentaires (`//`, `/* */`, `#`, docstrings PHP/Python/Rust) et les littéraux de chaînes non pertinents avant d'évaluer les règles syntaxiques, tout en tronquant automatiquement les modules de tests unitaires Rust inline (`#[cfg(test)]`, `mod tests`).
-2. **Un Routage Typé des Fichiers par Famille de CWE (`matches_file` & `get_file_types_for_cwe`) :** Élimine 100% des interférences inter-langages grâce à la détection native par extension. Chaque règle de sécurité déclare son périmètre (`target_file_types()`). Les 25 règles PHP (CWE-89, CWE-78, etc.) ne s'exécutent que sur les extensions valides (`.php`, `.phtml`, `.php3`..), les règles Rust sur le Rust (`.rs`), et le C/C++ sur ses extensions propres (`.c`, `.cpp`, `.h`, `.hpp`). L'AST Scanner (`ast-scanner`) extrait en amont les classes, traits, interfaces, méthodes, fonctions, routes (`#[Route]`, `$app->get`, `Route::*`) et docstrings PHPDoc.
-3. **Un Préparateur de Scope Bug Bounty & Générateur de PoC (`🎯 Scope / PoC Bug Bounty`) :**
-   - Permet de filtrer visuellement les dossiers **✅ IN-SCOPE** et **🚫 OUT-OF-SCOPE** (avec presets *🐘 PHP Web & API*, *L1 Consensus*, *Web3 DeFi*, *Rust Low-Level*) et de synchroniser ces exclusions avec le scanner.
-   - Sélecteur de langages par badges dans l'inspecteur : bascule instantanée entre *Rust*, *Solidity*, *Go*, *JS/TS*, *Python*, *C/C++* et *🐘 PHP*.
-   - **3 Modes de Génération de Prompts d'Audit :**
-     - 🧪 **Mode 1 — Triage & Proof of Concept (PoC) Exécutable (Sans modifier le code) :** Impose la règle *"Zéro correction barbare"*, demande à l'IA de vérifier l'atteignabilité *Source-to-Sink*, d'écrire un test d'exploitation autonome (`#[test]` Rust, script exploit Python/curl, `cargo miri`, ou Foundry `test_poc`) et de rédiger le rapport final au format **Immunefi / HackerOne / Cantina**.
-     - 🔬 **Mode 2 — Chasse Zero-Day Bas-Niveau :** Oriente l'audit sur les bugs subtils de compilateur LLVM, d'unwind de pile, d'ABI FFI et de désynchronisation d'état.
-     - 🛡️ **Mode 3 — Patch Chirurgical Minimal :** Fournit le patron de remédiation certifié (*Gold Pattern*) pour corriger la ligne vulnérable sans effet de bord.
-4. **Gestion Flexible des Règles CWE & Tolérance Haute Verbosité (Java) :**
-   - **Bouton d'Ignoration Directe des CWE (« 🚫 Ignorer CWE ») :** Intégré directement sur chaque carte de vulnérabilité de l'onglet latéral droit CVE/SAST. Permet en 1 clic d'ignorer une règle CWE spécifique pour le projet en cours, avec persistance LocalStorage et synchronisation /api/settings. Les règles peuvent être auditées et restaurées via la modale « 🚫 Ignorées ».
-   - **Tolérance Haute Verbosité Java (RULE_MAX_LINES / CWE-1075) :** Le langage Java étant structurellement très verbeux (boilerplate, annotations Spring/Jakarta, getters/setters, DTOs, entités JPA), le seuil de détection d'excédent de lignes est automatiquement relevé à 10 000 lignes (au lieu de 300 lignes standards) pour éviter les alertes intempestives sur les classes de production normales.
-5. **Système de Plugins Déclaratifs Hot-Reload & Outil CLI (`aether-plugin-tool`) :**
-   - **Zéro Recompilation :** Permet d'importer et de définir des règles de sécurité CWE et Zero-Day sur-mesure via de simples manifestes déclaratifs YAML ou JSON sous `.aether/plugins/<plugin_name>/plugin.yaml`.
-   - **Suite de Tests Unitaires Intégrée :** Chaque règle peut inclure ses propres exemples de code sains et vulnérables (`test_cases`) pour garantir 0 faux positif avant d'être déployée.
-   - **Outil CLI Dédié (`aether-plugin-tool`) :** Commandes `init`, `test`, `scan`, `list` et `export` pour gérer vos catalogues de plugins en toute simplicité.
-   - **Pilotage Autonome par IA (4 Outils MCP Dédiés) :** Les assistants IA peuvent lister les plugins (`aetherscope_list_plugins`), exécuter les tests unitaires (`aetherscope_test_plugins`), scanner du code (`aetherscope_scan_with_plugins`) et rédiger ou certifier de nouvelles règles à chaud (`aetherscope_upsert_plugin_rule`).
+### 3. SCA Reachable Dependencies (OSV.dev)
+- Parseurs `Cargo.lock`, `package-lock.json`, `composer.lock` (`crates/security-linter/src/sca/`).
+- Requêtes OSV.dev avec **cache disque persistant signé BLAKE3** : scans hors-ligne après la première synchronisation.
+- Croisement avec le graphe d'appels : seules les dépendances vulnérables dont la fonction est **réellement appelée depuis un Endpoint** sont marquées atteignables.
 
 ---
+
+## 🚀 Nouveautés Majeures SAST V2.1 (Production Ready)
+
+### 1. Sérialiseur Standard SARIF v2.1.0 (OASIS & GitHub Code Scanning)
+- **Génération native SARIF 2.1.0 :** Intégration dans `crates/security-linter/src/sarif.rs` compatible à 100% avec l'onglet **GitHub Security / Code Scanning Alerts**.
+- **CLI CI/CD Ultra-Rapide :**
+  ```bash
+  # Générer un rapport standard SARIF
+  aether-engine.exe --path . --audit-only --format sarif --output results.sarif
+
+  # Bloquer les Pull Requests en < 100 ms si une faille critique ou haute est détectée
+  aether-engine.exe --path . --audit-only --format sarif --output results.sarif --fail-on HIGH
+  ```
+- **Workflow GitHub Action Clé en Main :** Fichier `.github/workflows/aetherscope-sarif.yml` prêt à l'emploi.
+
+### 2. Reachability Taint-Graph 3D (Source-to-Sink)
+- **Algorithme Inverse BFS :** Analyse instantanée dans `crates/core-graph/src/reachability.rs` reliant chaque Sink CVE aux points d'entrée publics (`SymbolKind::FormOrEndpoint`) via les canaux réseau RPC, WebSocket et sémantiques.
+- **Visualisation 3D WebGL 2 :** Badge `🔥 EXPLOITABLE (Source-to-Sink)` dans l'inspecteur CVE et **laser rouge pulsant en continu** sur l'intégralité du chemin `Endpoint -> Handler -> Service -> Sink` lors du clic.
+
+### 3. Convertisseur Universel Semgrep & Nuclei vers Plugins AetherScope
+- **Traduction Automatique des Règles YAML :** Module `crates/security-linter/src/semgrep_importer.rs` convertissant les métavariables `$X` et ellipses `...` en expressions régulières Rust natives ultra-performantes.
+- **Commande CLI d'Importation :**
+  ```bash
+  aether-plugin-tool.exe import-semgrep --input ./semgrep-rules/ --output .aether/plugins/imported/
+  ```
+
+### 4. Pare-Feu IA Temps Réel (17ème Outil MCP `aetherscope_verify_patch`)
+- Permet aux agents autonomes (Claude, Cursor, Antigravity) de vérifier leurs modifications en **< 50 ms** avant d'altérer les fichiers de production :
+  - Scan SAST incrémental + vérification d'atteignabilité Source-to-Sink
+  - Contrôle strict des contrats EARS du dossier parent (`RULE_FORBIDDEN_IMPORT`, `RULE_MAX_LINES`, `BLAKE3_TAMPERED`)
+  - Verdict certifié `[PATCH_APPROVED]` ou `[PATCH_REJECTED]` avec centrage de caméra 3D.
+
+### 5. Harnais de Benchmark Reproductible & Haute Fréquence
+- **Mode CLI `--benchmark` :** Mesure le temps de lexing, la construction parallèle AST (Rayon), l'évaluation des 150+ CWE, le pic RSS en mémoire vive et le débit en LOC/s.
+  ```bash
+  aether-engine.exe --benchmark
+  ```
+- Rapport comparatif généré automatiquement dans [`BENCHMARK.md`](./BENCHMARK.md) (Débit mesuré : **4 446 LOC/seconde**, pic RAM : **27.5 MB**).
+
+---
+
+## 🚀 Démarrage Rapide, CLI & API Locale
 
 ### 🚀 Démarrage Rapide & Utilitaires Windows 1-Clic
 
@@ -165,301 +182,211 @@ Le serveur Axum embarqué sert le cockpit spatial directement sur la route racin
 
 ---
 
-### 📋 Catalogue des 150+ Zero-Day Patterns & CWE Rules par Famille
+## 🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 150+ Règles CWE
 
-> 📖 *L'ensemble des règles est documenté de manière exhaustive avec leurs mécanismes d'audit dans le [Catalogue Officiel CWE_CATALOG.md](./CWE_CATALOG.md).*
+### Masquage Lexical Anti-Faux-Positifs, Routage Typé CWE & Préparateur de Scope Bug Bounty
 
-### 1. Rust Bas-Niveau, LLVM Codegen, ABI, Unwind & OS Kernel
+Contrairement aux scanners par expressions régulières classiques qui génèrent des centaines de faux positifs sur les commentaires ou les fichiers de tests, le moteur SAST d'AetherScope V2 intègre :
 
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-RUST-LLVM-DEAD-STORE-SECRET-LEAK` | CWE-14 / LLVM DSE Secret Leak | **CRITICAL** | Effacement manuel d'une clé privée/seed via `.fill(0)` ou `write_bytes(..., 0)` sans `zeroize` ni `write_volatile` : la passe *Dead Store Elimination* de LLVM supprime l'écriture en `--release`, laissant le secret en RAM. | Utiliser `zeroize::Zeroize` (`Zeroizing<T>`) ou `ptr::write_volatile` suivi d'un `atomic::compiler_fence(SeqCst)`. |
-| `CVE-RUST-UNWIND-PANIC-DOUBLE-DROP-UB` | CWE-415 / Unwind Double-Free | **CRITICAL** | Appel à `Vec::set_len(n)` avant remplissage faillible ou `ptr::read()` sans `ManuallyDrop` : un `panic!` ou `?` intermédiaire déclenche `Drop` sur de la mémoire non initialisée ou libère deux fois le pointeur (Double-Free ➔ RCE). | Mettre à jour `set_len` après le remplissage complet ou encapsuler dans un garde RAII / `ManuallyDrop`. |
-| `CVE-RUST-MAYBEUNINIT-PADDING-AND-POISON-UB` | CWE-908 / LLVM Poison & Padding | **CRITICAL** | `MaybeUninit::uninit().assume_init()` (poison LLVM immédiat) ou exposition d'une struct en `&[u8]` via `slice::from_raw_parts` sans `#[repr(C)]` + `bytemuck::NoUninit` : divulgue les octets de padding (adresses ASLR/clés) sur le réseau. | Initialiser via `MaybeUninit::zeroed()` ou dériver `bytemuck::NoUninit` / `Pod` sans octets de padding. |
-| `CVE-RUST-ALLOC-LAYOUT-ZERO-OR-ISIZE-OVERFLOW`| CWE-680 / GlobalAlloc UB | **CRITICAL** | Appel à `std::alloc::alloc` sans garantir `layout.size() > 0` (UB immédiat en Rust) ou `Layout::from_size_align_unchecked` sans vérifier `size <= isize::MAX - (align - 1)` (Heap Buffer Overflow). | Utiliser `Layout::from_size_align` vérifié et court-circuiter toute allocation de taille `0`. |
-| `CVE-RUST-FFI-PANIC-ACROSS-ABI-BOUNDARY` | CWE-248 / FFI Unwind UB | **CRITICAL** | Fonction `extern "C" fn` contenant des opérations paniquantes (`.unwrap()`, indexation) sans `std::panic::catch_unwind` : un déroulement de pile à travers une frontière FFI C/C++/Wasm provoque un UB ou crashe le nœud. | Envelopper le corps de toute fonction `extern "C"` dans `std::panic::catch_unwind`. |
-| `CVE-RUST-UNSAFECELL-CONCURRENT-MUT-NOALIAS-UB`| CWE-362 / LLVM `noalias` UB | **CRITICAL** | Création de `&mut *cell.get()` depuis un `UnsafeCell` dans une méthode `&self` sans verrou exclusif : viole l'attribut `noalias` émis par `rustc` vers LLVM `-O3`, corrompant l'état concurrent. | Synchroniser par `Mutex`/`RwLock`/`Atomic` ou manipuler des pointeurs bruts `*mut T` sans créer de `&mut T` aliasing. |
-| `CVE-RUST-MMAP-EXTERNAL-TRUNCATION-SIGBUS` | CWE-367 / Mmap `SIGBUS` Crash | **HIGH** | Projection d'un fichier via `memmap2::Mmap::map` exposée en `&[u8]` sans verrouillage OS exclusif : une troncature externe du fichier déclenche un signal matériel `SIGBUS` fatal non rattrapable par `catch_unwind`. | Verrouiller exclusivement le descripteur (`flock`) ou privilégier des lectures paginées en mémoire. |
-| `CVE-RUST-PIN-STRUCTURAL-UNPIN-SOUNDNESS-UB` | RUST-CRITICAL / Pin Soundness | **CRITICAL** | Projection manuelle `Pin::get_unchecked_mut` ou `Pin::new_unchecked` sans `pin_project!` sur une Future auto-référentielle : un `mem::swap` invalide les pointeurs internes entre deux `.await` (Use-After-Free). | Utiliser systématiquement `#[pin_project::pin_project]` ou `pin_project_lite!`. |
-| `CVE-RUST-UNSOUND-TRANSMUTE-ALIGNMENT` | CWE-843 / Alignment UB | **HIGH** | `mem::transmute` ou `slice::from_raw_parts` vers un type d'alignement supérieur sans assertion `align_offset` / `align_of::<T>()` : provoque un UB ou un crash SIMD. | Utiliser `bytemuck::try_cast_slice` ou vérifier formellement l'alignement du pointeur. |
-| `CVE-RUST-UNSOUND-SLICE-FROM-RAW-PARTS` | CWE-119 / Raw Slice UB | **CRITICAL** | `slice::from_raw_parts` ou `Vec::from_raw_parts` sur un pointeur non vérifié (potentiellement nul, non aligné ou hors bornes). | Valider via `NonNull`, vérifier l'alignement et borner strictement la longueur. |
-| `CVE-RUST-DESER-BOMB-OOM` | CWE-789 / Length-Prefix OOM | **CRITICAL** | `Vec::with_capacity(wire_len)` ou désérialisation binaire (`bincode`, `rmp_serde`) sans `.with_limit()` : un préfixe forgé de 8 octets déclenche un `abort()` OOM immédiat. | Imposer `bincode::options().with_limit(MAX_BYTES)` et plafonner `with_capacity(len.min(MAX_CAP))`. |
-| `CVE-RUST-UNBOUNDED-BCS-DESERIALIZE` | CWE-502 / BCS Recursion DoS | **HIGH** | Désérialisation directe `bcs::from_bytes` sans plafond d'octets ni limite de profondeur récursive. | Utiliser `bcs::from_bytes_with_limit` et borner la taille du payload entrant. |
-| `CVE-RUST-CANCEL-SAFETY-LOSS` | CWE-662 / Tokio Select Loss | **HIGH** | Utilisation de futures non *cancel-safe* (`read_exact`, `write_all`, `read_to_end`) dans une branche `tokio::select!` : si une autre branche gagne, les octets partiellement lus/écrits sont perdus. | Utiliser un `tokio_util::codec::Framed` persistant hors du `select!`. |
-| `CVE-RUST-ASYNC-SELECT-CANCELLATION-CORRUPTION`| CWE-662 / Async State Corrupt | **CRITICAL** | Séquence réseau multi-étapes non atomique interrompue au milieu d'un `tokio::select!`, laissant le protocole désynchronisé. | Isoler le flux dans une tâche dédiée communicant par canal `mpsc`. |
-| `CVE-RUST-BLOCKING-IN-ASYNC` | CWE-400 / Executor Starvation | **CRITICAL** | Appel synchrone bloquant (`std::fs`, `std::thread::sleep`, `std::net`) dans une `async fn`, paralysant les threads workers Tokio. | Utiliser `tokio::fs`, `tokio::time::sleep` ou déporter sur `tokio::task::spawn_blocking`. |
-| `CVE-RUST-TIMING-SIDECHANNEL` | CWE-208 / Timing Side-Channel | **HIGH** | Comparaison de HMAC, tokens ou signatures via `==` ou `!=` (court-circuité au premier octet par `memcmp` SIMD). | Comparer en temps constant avec `subtle::ConstantTimeEq::ct_eq()`. |
-| `CVE-NET-SLOWLORIS-KEEPALIVE-DOS` | CWE-400 / Socket Exhaustion | **HIGH** | Acceptation de flux TCP/WebSocket (`accept_async`, `TcpListener::accept`) sans `tokio::time::timeout` sur le handshake. | Envelopper l'acceptation dans `tokio::time::timeout(Duration::from_secs(5), ...)`. |
-| `CVE-NET-SSRF-DNS-REBIND` | CWE-918 / SSRF DNS Rebinding | **CRITICAL** | Connexion sortante (`reqwest`, `TcpStream::connect`) vers une URL dynamique sans filtrage de l'IP résolue (`127.0.0.1`, RFC 1918, `169.254.169.254`). | Résoudre le DNS une seule fois, rejeter les plages privées/loopback et désactiver les redirections. |
-| `CVE-RUST-INTEGER-OVERFLOW-CAST` | CWE-190 / `as`-Cast Truncation| **HIGH** | Conversion entière 64-bit vers `u32`/`u16`/`u8` via `as` sans contrôle de bornes, tronquant silencieusement les bits de poids fort en `--release`. | Utiliser `u32::try_from(val)?` avec gestion d'erreur explicite. |
-| `CVE-RUST-TRANSMUTE-SIZE-MISMATCH` | CWE-843 / Type Confusion | **CRITICAL** | Appel aveugle à `std::mem::transmute()` entre types de tailles ou layouts potentiellement divergents. | Utiliser `from_le_bytes`, `TryFrom` ou `bytemuck::cast`. |
-| `CVE-RUST-FORGOTTEN-MEM-LEAK` | CWE-775 / `mem::forget` Lock | **HIGH** | Appel à `std::mem::forget()` sur un `MutexGuard`, `RwLockGuard` ou socket, empêchant l'exécution de `Drop` et causant un deadlock permanent. | Laisser le destructeur RAII s'exécuter ou appeler `drop(guard)`. |
-| `CVE-RUST-UNCHECKED-INDEX-SLICING` | CWE-125 / Slice Panic DoS | **HIGH** | Indexation directe `packet[offset..offset + len]` sur un buffer réseau brut, provoquant un panic serveur sur paquet tronqué. | Valider systématiquement via `packet.get(offset..offset + len).ok_or(...)?`. |
-| `CVE-RUST-THREAD-POISON-IGNORED` | CWE-391 / Swallowed Poison | **HIGH** | Récupération aveugle d'un Mutex empoisonné via `.unwrap_or_else(|e| e.into_inner())`, poursuivant l'exécution sur un état corrompu. | Propager l'erreur ou restaurer formellement les invariants de l'état partagé. |
-| `CVE-RUST-FFI-UNCHECKED-NULL-PTR` | CWE-476 / FFI Null Deref | **CRITICAL** | Déréférencement direct de pointeur brut `*const T` / `*mut T` en bloc `unsafe` sans test `.is_null()`. | Convertir via `std::ptr::NonNull::new(ptr).ok_or(...)?`. |
+1. **Un Lexer Multi-Langages (`lexer.rs`) à Double Passe :** Masque automatiquement les commentaires (`//`, `/* */`, `#`, docstrings PHP/Python/Rust) et les littéraux de chaînes non pertinents avant d'évaluer les règles syntaxiques, tout en tronquant automatiquement les modules de tests unitaires Rust inline (`#[cfg(test)]`, `mod tests`).
+2. **Un Routage Typé des Fichiers par Famille de CWE (`matches_file` & `get_file_types_for_cwe`) :** Élimine 100% des interférences inter-langages grâce à la détection native par extension. Chaque règle de sécurité déclare son périmètre (`target_file_types()`). Les 25 règles PHP (CWE-89, CWE-78, etc.) ne s'exécutent que sur les extensions valides (`.php`, `.phtml`, `.php3`..), les règles Rust sur le Rust (`.rs`), et le C/C++ sur ses extensions propres (`.c`, `.cpp`, `.h`, `.hpp`). L'AST Scanner (`ast-scanner`) extrait en amont les classes, traits, interfaces, méthodes, fonctions, routes (`#[Route]`, `$app->get`, `Route::*`) et docstrings PHPDoc.
+3. **Un Préparateur de Scope Bug Bounty & Générateur de PoC (`🎯 Scope / PoC Bug Bounty`) :**
+   - Permet de filtrer visuellement les dossiers **✅ IN-SCOPE** et **🚫 OUT-OF-SCOPE** (avec presets *🐘 PHP Web & API*, *L1 Consensus*, *Web3 DeFi*, *Rust Low-Level*) et de synchroniser ces exclusions avec le scanner.
+   - Sélecteur de langages par badges dans l'inspecteur : bascule instantanée entre *Rust*, *Solidity*, *Go*, *JS/TS*, *Python*, *C/C++* et *🐘 PHP*.
+   - **3 Modes de Génération de Prompts d'Audit :**
+     - 🧪 **Mode 1 — Triage & Proof of Concept (PoC) Exécutable (Sans modifier le code) :** Impose la règle *"Zéro correction barbare"*, demande à l'IA de vérifier l'atteignabilité *Source-to-Sink*, d'écrire un test d'exploitation autonome (`#[test]` Rust, script exploit Python/curl, `cargo miri`, ou Foundry `test_poc`) et de rédiger le rapport final au format **Immunefi / HackerOne / Cantina**.
+     - 🔬 **Mode 2 — Chasse Zero-Day Bas-Niveau :** Oriente l'audit sur les bugs subtils de compilateur LLVM, d'unwind de pile, d'ABI FFI et de désynchronisation d'état.
+     - 🛡️ **Mode 3 — Patch Chirurgical Minimal :** Fournit le patron de remédiation certifié (*Gold Pattern*) pour corriger la ligne vulnérable sans effet de bord.
+4. **Gestion Flexible des Règles CWE & Tolérance Haute Verbosité (Java) :**
+   - **Bouton d'Ignoration Directe des CWE (« 🚫 Ignorer CWE ») :** Intégré directement sur chaque carte de vulnérabilité de l'onglet latéral droit CVE/SAST. Permet en 1 clic d'ignorer une règle CWE spécifique pour le projet en cours, avec persistance LocalStorage et synchronisation /api/settings. Les règles peuvent être auditées et restaurées via la modale « 🚫 Ignorées ».
+   - **Tolérance Haute Verbosité Java (RULE_MAX_LINES / CWE-1075) :** Le langage Java étant structurellement très verbeux (boilerplate, annotations Spring/Jakarta, getters/setters, DTOs, entités JPA), le seuil de détection d'excédent de lignes est automatiquement relevé à 10 000 lignes (au lieu de 300 lignes standards) pour éviter les alertes intempestives sur les classes de production normales.
+5. **Système de Plugins Déclaratifs Hot-Reload & Outil CLI (`aether-plugin-tool`) :**
+   - **Zéro Recompilation :** Permet d'importer et de définir des règles de sécurité CWE et Zero-Day sur-mesure via de simples manifestes déclaratifs YAML ou JSON sous `.aether/plugins/<plugin_name>/plugin.yaml`.
+   - **Suite de Tests Unitaires Intégrée :** Chaque règle peut inclure ses propres exemples de code sains et vulnérables (`test_cases`) pour garantir 0 faux positif avant d'être déployée.
+   - **Outil CLI Dédié (`aether-plugin-tool`) :** Commandes `init`, `test`, `scan`, `list` et `export` pour gérer vos catalogues de plugins en toute simplicité.
+   - **Pilotage Autonome par IA (4 Outils MCP Dédiés) :** Les assistants IA peuvent lister les plugins (`aetherscope_list_plugins`), exécuter les tests unitaires (`aetherscope_test_plugins`), scanner du code (`aetherscope_scan_with_plugins`) et rédiger ou certifier de nouvelles règles à chaud (`aetherscope_upsert_plugin_rule`).
+
+### 📚 Catalogue des 150+ Règles CWE & Zero-Day Patterns
+
+La liste détaillée des règles, classées en 11 familles (Rust/LLVM, Consensus & Wasm, Smart Contracts EVM, DeFi, ZK, MMO, injections multi-langages, Front-End/Node, Architecture EARS, C/C++, PHP), est dans le répertoire dédié :
+
+👉 **[`cwe/`](./cwe/)** : détail par famille · **[`CWE_CATALOG.md`](./CWE_CATALOG.md)** : catalogue officiel récapitulatif.
 
 ---
 
-### 2. Consensus L1, Runtimes Wasm & Réseaux P2P
+## 🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"
 
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-L1-BORSH-UNBOUNDED-DESER-OOM` | L1-P2P / Wire Deser Bomb | **CRITICAL** | Désérialisation binaire (`try_from_slice`) ou décompression `zstd::decode_all` sur trame P2P ou témoin d'état non borné : crash OOM des nœuds validateurs. | Vérifier la signature du pair et plafonner la décompression via `.take(MAX_WITNESS_BYTES)`. |
-| `CVE-L1-RUNTIME-GAS-PREPAY-BYPASS` | L1-FEE / Host-Fn Gas Bypass | **CRITICAL** | Allocation mémoire dynamique (`vec![0; len]`) ou lecture d'arbre d'état (Trie) dans une Host Function Wasm avant facturation proportionnelle du gaz (`burn_gas`). | Facturer le gaz de base et linéaire par octet avant toute allocation sur le tas hôte. |
-| `CVE-L1-BALANCE-STORAGE-STAKING-DESYNC`| L1-STATE / Storage Desync | **CRITICAL** | Mutation directe de solde (`set_amount`, `saturating_sub`) sans `checked_sub` ni vérification finale de la réserve de stockage liée au compte. | Utiliser une arithmétique vérifiée et contrôler l'invariant de réserve après chaque débit. |
-| `CVE-L1-CONSENSUS-UNVERIFIED-WITNESS-CHUNK`| L1-CONSENSUS / Witness | **CRITICAL** | Décompression, mise en cache ou application d'un témoin de bloc/chunk avant vérification cryptographique de la signature du producteur. | Authentifier formellement la signature du validateur avant tout traitement coûteux. |
-| `CVE-L1-CROSS-SHARD-RECEIPT-NONCE-REPLAY`| L1-TX / Meta-Tx Replay | **CRITICAL** | Exécution d'une transaction déléguée sans vérifier sa hauteur d'expiration (`max_block_height`) ou sans incrémenter atomiquement le nonce en amont. | Vérifier l'expiration et incrémenter atomiquement le nonce avant émission du reçu asynchrone. |
-| `CVE-L1-CRYPTO-BLIND-SCALAR-MERKLE-MALLEABILITY`| L1-CRYPTO / Torsion Split | **CRITICAL** | Décompression de point elliptique (BLS12-381 / Ed25519) via `_unchecked` sans test d'appartenance au sous-groupe d'ordre premier (`is_torsion_free`). | Rejeter les points d'ordre faible et valider l'appartenance au sous-groupe canonique. |
+### Architecture JSON-RPC 2.0 & Multi-Primitives (Tools, Resources, Prompts)
 
----
+AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`aetherscope-mcp.exe`**, conforme au standard officiel **Model Context Protocol (JSON-RPC 2.0 sur `stdio` — version `2024-11-05`)** et audité selon les critères **M8ven Protocol Compliance (Score 95+/100)**.
 
-### 3. Smart Contracts EVM, Account Abstraction & Cross-Chain
+```mermaid
+flowchart TD
+    AI["🤖 Agent IA (Antigravity / Claude / Cursor)"] <-->|"JSON-RPC 2.0 (stdio)"| MCP["⚙️ aetherscope-mcp.exe"]
+    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 9 Outils avec Safety Hints & isError Canonique"]
+    MCP -->|"Capabilities: Resources"| RES["📑 4 Ressources URI 'aether://' (Graph, Audit, Manifest, Tasks)"]
+    MCP -->|"Capabilities: Prompts"| PROMPTS["💬 3 Prompts Prêts à l'Emploi (CWE, Game Server, Contracts)"]
+    MCP -->|"Cockpit Actif (Port 3030)"| LIVE["🌐 Serveur Axum Temps Réel"]
+    MCP -->|"Cockpit Fermé (Fallback Auto)"| DISK["💾 Accès Disque Direct (.aether/ & Scanner AST)"]
+    LIVE --> CAM["🎥 Téléportation Caméra 3D & Fil d'Ariane IA"]
+    LIVE --> CHAT["💬 Console Chat HUD & Blocs &lt;thought&gt;"]
+    DISK --> TASKS["📋 Gestionnaire de Tâches (.aether/tasks/)"]
+```
 
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-WEB3-EIP1153-TRANSIENT-COMPOSABILITY-LEAK` | EVM-TRANSIENT / Dirty `TSTORE` | **CRITICAL** | Écriture dans le stockage transitoire (`tstore` / `transient`) sans remise à zéro à la sortie : l'appel suivant d'un multicall/batch hérite de l'état authentifié. | Nettoyer systématiquement les slots `tstore(slot, 0)` en fin de modificateur ou d'exécution. |
-| `CVE-WEB3-EIP7702-EOA-CODE-BYPASS-COLLISION` | EVM-EOA / Code Delegation Bypass | **CRITICAL** | Vérification d'EOA via `extcodesize == 0` / `msg.sender.code.length == 0` (contournable par délégation de code EOA) ou absence de stockage isolé ERC-7201. | Supprimer les contrôles `extcodesize` et isoler le stockage avec les namespaces ERC-7201. |
-| `CVE-WEB3-ERC4337-PAYMASTER-GAS-SIPHON` | AA-ERC4337 / Gas Siphon | **CRITICAL** | Paymaster ERC-4337 ne plafonnant pas `maxCost` ou prélevant le jeton uniquement dans `_postOp` : l'utilisateur révoque son allowance pendant l'appel et vide le Paymaster. | Pré-séquestrer les jetons dans `_validatePaymasterUserOp` et rembourser l'excédent dans `_postOp`. |
-| `CVE-ERC4337-PAYMASTER-STORAGE-POISONING` | CWE-667 / AA Bundler Slash | **HIGH** | Accès à du stockage global non associé à l'expéditeur dans `validatePaymasterUserOp`, entraînant la révocation du Paymaster par les bundlers. | Restreindre les lectures de validation au stockage associé à `userOp.sender`. |
-| `CVE-WEB3-OMNICHAIN-LZ-CHANNEL-BRICKING` | CROSS-CHAIN / Channel Blocking | **CRITICAL** | Réception inter-chaînes exécutant un transfert externe sans `try/catch` : un revert bloque le canal de messagerie ou verrouille les fonds à la source. | Isoler le traitement dans un sous-appel `try/catch` avec mise en quarantaine `failedMessages`. |
-| `CVE-WEB3-EIP150-63-64-GAS-STIPEND-GRIEFING` | EVM-INTERNALS / 63/64th Gas | **CRITICAL** | Sous-appel externe suivi de la validation d'un nonce sans vérifier `gasleft()` : un relayer calibre le gaz pour faire échouer le sous-appel (63/64) tout en validant le nonce avec le 1/64 restant. | Exiger `gasleft() >= (innerGas * 64) / 63 + 15000` avant d'exécuter le sous-appel. |
-| `CVE-WEB3-ZK-SNARK-FIELD-OVERFLOW-ALIASING` | ZK-CRYPTO / Scalar Field Aliasing | **CRITICAL** | Vérificateur ZK acceptant des entrées `uint256` sans vérifier `< SNARK_SCALAR_FIELD` ($r \approx 2^{254}$) : `nullifier + k*r` permet de rejouer plusieurs fois la même preuve ZK. | Imposer `require(input[i] < SNARK_SCALAR_FIELD)` sur toutes les entrées publiques ZK. |
-| `CVE-WEB3-MERKLE-SECOND-PREIMAGE-LEAF-NODE-COLLISION`| CRYPTO / Merkle 64-Byte Spoof| **CRITICAL** | Feuille de Merkle hachée sur 64 octets (`keccak256(abi.encode(addr, amount))`) sans double hachage : un nœud interne (32+32 octets) peut être soumis comme feuille valide. | Appliquer le double hachage standard `keccak256(bytes.concat(keccak256(abi.encode(...))))`. |
-| `CVE-WEB3-CREATE2-METAMORPHIC-REINIT-RUG` | EVM-BYTECODE / `CREATE2` | **CRITICAL** | Déploiement `CREATE2` avec un `salt` utilisateur ne contenant pas `msg.sender` (front-running d'adresse) ou utilisant un `initCode` dynamique métamorphique. | Dériver le salt via `keccak256(abi.encode(msg.sender, block.chainid, userSalt))`. |
-| `CVE-EVM-L2-DATA-GAS-UNDERESTIMATION` | CWE-682 / L2 Data-Fee | **HIGH** | Remboursement de gaz sur Rollup L2 calculé uniquement via `gasleft() * tx.gasprice` sans inclure le coût de publication des données L1 via l'oracle de frais. | Interroger l'oracle de frais de données L1 du Rollup en plus du gaz d'exécution L2. |
-| `CVE-WEB3-REENTRANCY-UNCHECKED` | CWE-841 / Reentrancy Drain | **CRITICAL** | Appel externe ou transfert d'actifs (`.call{value: ...}`) exécuté avant la mise à jour des soldes internes. | Appliquer le patron *Checks-Effects-Interactions* et le modificateur `nonReentrant`. |
-| `CVE-WEB3-READONLY-REENTRANCY` | CWE-841 / Read-Only Reentrancy| **CRITICAL** | Lecture de `get_virtual_price()` ou des réserves d'un pool LP pendant un retrait en cours sans vérifier le verrou de réentrance du pool. | Vérifier le verrou du pool externe avant de consommer son prix spot ou virtuel. |
-| `CVE-WEB3-ERC4626-INFLATION-ATTACK` | CWE-682 / Vault First Deposit | **CRITICAL** | Vault ERC-4626 sans décalage de décimales virtuelles (`_decimalsOffset`) : le premier déposant émet 1 unité de part puis fait une donation pour diluer à 0 les suivants. | Surcharger `_decimalsOffset()` ou immobiliser des parts minimales (*dead shares*) à l'initialisation. |
-| `CVE-WEB3-VAULT-ROUNDING-DIRECTION` | CWE-682 / Vault Rounding | **CRITICAL** | Conversion `convertToShares` / `convertToAssets` utilisant une division favorable à l'utilisateur au lieu du protocole. | Arrondir vers le bas (`Floor`) aux dépôts/émissions et vers le haut (`Ceil`) aux retraits. |
-| `CVE-WEB3-SIG-MALLEABILITY` | CWE-347 / ECDSA Malleability | **CRITICAL** | Vérification `ecrecover` sans contraindre la borne inférieure $s \le n / 2$, permettant le rejeu par symétrie $(r, -s \bmod n)$. | Utiliser une bibliothèque `ECDSA` standard qui rejette les signatures High-$s$. |
-| `CVE-WEB3-UNVALIDATED-CHAINID` | CWE-294 / Cross-Chain Replay | **CRITICAL** | Signature EIP-191/712 ne liant pas formellement `block.chainid` et l'adresse du contrat vérificateur. | Inclure `chainId` et `verifyingContract` dans le séparateur de domaine EIP-712. |
-| `CVE-WEB3-SIGNATURE-DEADLINE-MISSING` | CWE-613 / Missing Deadline | **HIGH** | Signature cryptographique dépourvue de date d'expiration (`block.timestamp <= deadline`), permettant sa rétention prolongée dans le mempool. | Exiger et signer un horodatage `deadline` strict sur toute autorisation hors-chaîne. |
-| `CVE-WEB3-NONCE-RACE` | CWE-362 / Nonce TOCTOU | **HIGH** | Invalidation ou incrémentation d'un nonce effectuée après l'appel externe au lieu d'avant. | Consommer atomiquement le nonce dès la première ligne de la fonction. |
-| `CVE-WEB3-AUTH-BYPASS-MOCK` | CWE-287 / Zero-Address Bypass| **CRITICAL** | Acceptation de signatures factices (`0xmock`) ou omission de vérifier `recovered != address(0)` après `ecrecover`. | Rejeter formellement `address(0)` et bannir tout code mock de la production. |
-| `CVE-WEB3-ORACLE-SPOT-MANIPULATION` | CWE-682 / Flash Loan Spot | **CRITICAL** | Valorisation d'un collatéral par lecture directe des réserves instantanées d'un pool AMM (`getReserves`, `slot0`). | Utiliser un oracle décentralisé vérifié ou un TWAP protégé sur fenêtre longue. |
-| `CVE-WEB3-STALE-ORACLE-HEARTBEAT` | CWE-682 / Stale Oracle Price | **HIGH** | Appel à `latestRoundData()` sans vérifier `updatedAt > 0` ni `block.timestamp - updatedAt <= MAX_HEARTBEAT`. | Rejeter tout prix dont l'horodatage dépasse le heartbeat maximal configuré. |
-| `CVE-WEB3-DECIMAL-SCALING-TRUNCATION` | CWE-682 / Decimal Truncation | **HIGH** | Normalisation statique `10**(18 - decimals)` paniquant sur les jetons $> 18$ décimales ou tronquant les actifs à 6 ou 8 décimales. | Gérer symétriquement les cas `decimals < 18` et `decimals > 18` via `Math.mulDiv`. |
-| `CVE-WEB3-TX-ORIGIN-PHISHING` | CWE-302 / `tx.origin` Auth | **CRITICAL** | Contrôle d'accès basé sur `tx.origin == owner`, permettant l'usurpation par contrat d'hameçonnage intermédiaire. | Identifier l'appelant exclusivement via `msg.sender`. |
-| `CVE-WEB3-UNCHECKED-TRANSFER-RETURN` | CWE-252 / Silent Transfer Fail| **CRITICAL** | Appel direct à `token.transfer()` / `transferFrom()` sans wrapper sécurisé (échec silencieux sur certains jetons ERC-20 non standards). | Utiliser `SafeERC20` (`safeTransfer`, `safeTransferFrom`). |
-| `CVE-WEB3-PERMIT-FRONT-RUNNING` | CWE-362 / Permit Griefing | **HIGH** | Appel direct à `token.permit()` sans `try/catch` dans un dépôt : un tiers exécute le permit en avance et fait réverter la transaction de l'utilisateur. | Encapsuler `permit()` dans un bloc `try/catch` avant le `safeTransferFrom`. |
-| `CVE-WEB3-HOOK-REENTRANCY` | CWE-841 / Token Callback Hook | **CRITICAL** | Transfert de jetons déclenchant un callback récepteur (`tokensReceived`, `onTransferReceived`) sans `nonReentrant`. | Protéger toutes les fonctions de transfert par `ReentrancyGuard`. |
-| `CVE-WEB3-DIRTY-MEMORY-ASSEMBLY` | CWE-682 / Assembly Dirty Bits| **CRITICAL** | Manipulation `mload`/`mstore` de types courts (`address`, `bool`, `uint8`) sans nettoyage des bits de poids fort. | Masquer explicitement les bits supérieurs (`and(val, 0xff)` ou masque 160 bits). |
-| `CVE-WEB3-UNPROTECTED-CALLBACK-SELECTOR` | CWE-284 / Flashloan Callback | **CRITICAL** | Callback de prêt flash externe sans vérifier `msg.sender == authorizedPool` et `initiator == address(this)`. | Verrouiller strictement l'appelant et l'initiateur du prêt flash. |
-| `CVE-WEB3-HOOK-DEFERRED-CHECKS-DESYNC` | CWE-841 / Vault Deferred Check| **CRITICAL** | Hook de Vault lisant l'état ou transférant des actifs sans vérifier si les contrôles de solvabilité sont différés. | Vérifier l'état du contrôleur de solvabilité avant toute lecture critique en hook. |
-| `CVE-WEB3-FORK-REWARD-STAKING-DILUTION` | CWE-682 / Yield Dilution | **CRITICAL** | Distribution de récompenses de staking sans actualiser l'accumulateur `accRewardPerShare` au préalable. | Appeler `updatePool()` avant toute modification de balance ou récolte. |
+- **Mode 1 — Live Axum Bridge (Cockpit ouvert) :** Chaque appel d'outil MCP par l'IA anime le cockpit sous les yeux du développeur (téléportation caméra 3D, allumage de balise quantique, mise à jour du chat et des barres de progression de tâches).
+- **Mode 2 — Direct File Fallback (Cockpit fermé) :** Si l'interface graphique n'est pas lancée, `aetherscope-mcp.exe` exécute directement le scanner AST/SAST et manipule les fichiers `.aether/` sur disque. **Aucun appel MCP n'échoue jamais.**
 
 ---
 
-### 4. Protocoles DeFi, Invariants de Vaults & Oracles
+### Catalogue Exhaustif des 17 Outils MCP & Conformité M8ven (Score 98+/100)
 
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `DEFI-ASYMMETRIC-ROUNDING` | CWE-682 / Asymmetric Rounding| **HIGH** | Division entière brute dans un calcul de parts ou de taxe économique sans fonction d'arrondi dirigée ni plancher `.max(1)`. | Utiliser `Math.mulDiv` avec `Rounding.Floor`/`Ceil` ou `.max(1)` sur les frais. |
-| `DEFI-STALE-CACHE-AFTER-CALL` | CWE-362 / Stale Cache TOCTOU | **CRITICAL** | *Taint tracking* : réutilisation d'un snapshot local (`VaultCache`, `local_balance`) après un appel externe (`.call`, `.await`) sans rafraîchissement. | Recharger impérativement le cache d'état immédiatement après tout appel externe. |
-| `EVC-HOOK-BYPASS` | CWE-841 / Vault Hook Bypass | **CRITICAL** | Exécution de mutations d'état dans un hook sans vérifier le statut du connecteur de solvabilité ni poser de garde de réentrance. | Combiner `nonReentrant` et la vérification d'état du contrôleur de Vault. |
-| `DEFI-ORACLE-MIN-MAX-CIRCUIT-BREAKER` | LOGIC-CRITICAL / Oracle Bounds| **CRITICAL** | Lecture d'un flux d'oracle sans vérifier s'il touche les bornes matérielles `minAnswer` ou `maxAnswer` lors d'une volatilité extrême. | Interroger `minAnswer`/`maxAnswer` et déclencher un circuit breaker en cas d'atteinte. |
-| `DEFI-ORACLE-L2-SEQUENCER-RACE` | LOGIC-CRITICAL / Sequencer | **CRITICAL** | Exécution de liquidations sur Rollup L2 sans interroger `sequencerUptimeFeed` ni imposer de période de grâce après redémarrage du séquenceur. | Vérifier `answer == 0` et `block.timestamp - startedAt > GRACE_PERIOD_TIME`. |
-| `DEFI-TWAP-SHORT-WINDOW` | LOGIC-CRITICAL / Short TWAP | **CRITICAL** | Fenêtre d'observation d'un oracle TWAP inférieure à $1800\text{ s}$ ($30\text{ min}$), manipulable sur quelques blocs. | Imposer une fenêtre minimale `MIN_TWAP_WINDOW >= 1800` secondes. |
-| `CVE-DEFI-READ-ONLY-REENTRANCY` | CWE-841 / View Reentrancy | **CRITICAL** | Consommation d'un flux de prix `view` (`getRate()`, `getPoolTokens()`) pendant un état intermédiaire non verrouillé. | Déclencher une vérification de verrou d'état sur le pool cible avant lecture. |
+> **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), des schémas JSON stricts avec exemples concrets (`additionalProperties: false`, `examples: [...]`), ainsi qu'une encapsulation standardisée des erreurs (`isError: true/false`), garantissant une exécution prévisible pour les agents autonomes.
 
----
-
-### 5. Preuves ZK-SNARKs & Machines Virtuelles Alternatives
-
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-ZK-WEAK-FIAT-SHAMIR` | CWE-347 / Frozen Heart ZK | **CRITICAL** | Échantillonnage d'un challenge Fiat-Shamir dans un prouveur/vérificateur ZK sans absorber les entrées publiques dans la transcription (forge de preuve). | Absorber tous les paramètres publics et engagements dans le transcript avant `squeeze_challenge`. |
-| `CVE-ZK-UNDERCONSTRAINED-SIGNAL` | CWE-682 / Circuit `<--` Bug | **CRITICAL** | Assignation de témoin ZK via `<--` ou `-->` sans contrainte quadratique R1CS `===` correspondante (empoisonnement arbitraire du witness). | Remplacer par `<==` ou ajouter explicitement la contrainte algébrique `===`. |
-| `CVE-VM-ACCOUNT-MISSING-OWNER` | CWE-284 / Account Owner Check | **CRITICAL** | Programme de VM à modèle de comptes acceptant un `AccountInfo` sans vérifier `account.owner == program_id`. | Vérifier formellement `account.owner` ou utiliser des wrappers de comptes typés et validés. |
-| `CVE-VM-ACCOUNT-CONFUSION-DISCRIMINATOR`| CWE-843 / Account Cosplay | **CRITICAL** | Désérialisation manuelle d'un compte (`try_from_slice`) sans vérifier le discriminateur de type de 8 octets. | Vérifier l'en-tête discriminateur de 8 octets avant la désérialisation binaire. |
-| `CVE-VM-MISSING-SIGNER-CHECK` | CWE-287 / Missing `is_signer` | **CRITICAL** | Comparaison d'une clé publique d'autorité (`authority.key == ...`) sans vérifier le booléen de signature `authority.is_signer`. | Exiger `if !authority.is_signer { return Err(MissingRequiredSignature); }`. |
-| `CVE-VM-NATIVE-UNSAFE-BUFFER-BOUNDS` | CWE-787 / Native VM Escape | **CRITICAL** | Extension native de machine virtuelle en Rust manipulant des pointeurs bruts (`copy_nonoverlapping`, `.offset()`) avec des indices issus d'une transaction sans bornage. | Valider toutes les bornes via `.get()` et éliminer l'arithmétique de pointeurs bruts. |
-| `CVE-WASM-UNBOUNDED-STORAGE-ITERATION` | CWE-400 / Storage Gas Bomb | **HIGH** | Itération sur une `Map` de stockage Wasm via `.range()` ou `.prefix()` sans `.take(LIMIT)` : le spam d'état gèle définitivement le contrat par Out-Of-Gas. | Imposer systématiquement une pagination bornée `.take(MAX_PAGE_SIZE)`. |
+| Outil MCP | Hints M8ven & Sécurité | Paramètres Clés | Impact Opérationnel & Synchronisation Cockpit |
+| :--- | :--- | :--- | :--- |
+| **`aetherscope_get_graph_summary`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `path?` | Retourne l'architecture globale du projet : nombre de nœuds, flux, répartition des dossiers, score de santé et décompte des violations CVE. |
+| **`aetherscope_get_active_target`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `symbol_id` | Extrait le contexte chirurgical d'un symbole : code, docstring, **flux entrants/sortants classés en 6 catégories** (UI, HTTP, WS, DB, Contrats, Appels), règles EARS et tâches liées. |
+| **`aetherscope_teleport_camera`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `target`, `action`, `details` | **Téléporte la caméra 3D du cockpit** sur le symbole ou dossier ciblé par l'IA, trace le fil d'Ariane stellaire et affiche l'action en cours dans le bandeau de télémétrie. |
+| **`aetherscope_scan_project`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `path?` | Déclenche à chaud une ré-analyse AST multithread et un audit SAST complet (< 100 ms) et rafraîchit le graphe WebGL 2. |
+| **`aetherscope_create_task`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: false`<br>`openWorldHint: false` | `title`, `kind?`, `target_symbol?`, `target_file?`, `priority?`, `initial_readme?` | Crée une tâche persistante (`function`, `research`, `security_fix`, `arch_refactor`, `documentation`, `test`) avec son dossier `.aether/tasks/<id>/`, son `task.json` et son mini-`README.md`. |
+| **`aetherscope_update_task`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `task_id`, `status?`, `progress?`, `progress_note?`, `full_readme?` | Met à jour le statut (`pending`, `in_progress`, `blocked`, `done`), le pourcentage `0-100%` et enrichit le journal technique Markdown de la tâche. |
+| **`aetherscope_list_tasks`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `status_filter?` | Liste toutes les tâches actives/terminées et synchronise automatiquement `.aether/TASKS_SUMMARY.md`. |
+| **`aetherscope_send_chat_message`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: false`<br>`openWorldHint: false` | `text`, `thought?`, `target_symbol?` | Publie un compte-rendu ou une question dans la **Console Chat Copilot** du cockpit, avec affichage dédié des réflexions internes `<thought>` et bouton de centrage caméra. |
+| **`aetherscope_get_chat_history`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | *(aucun)* | Lit l'historique des messages échangés dans le cockpit pour maintenir une continuité conversationnelle parfaite. |
+| **`aetherscope_search_symbols`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `query`, `layer?`, `kind?`, `limit?` | Recherche ultra-rapide de symboles dans l'AST par nom, regex ou stéréotype architectural. |
+| **`aetherscope_trace_flow`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `symbol_id`, `direction?`, `max_depth?` | Trace les flux de données et dépendances directes amont et aval d'un symbole. |
+| **`aetherscope_query_violations`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `severity?`, `cwe_id?`, `file_pattern?` | Requête et filtre les violations de sécurité SAST et règles CWE détectées sur l'ensemble du projet. |
+| **`aetherscope_list_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugins_dir?`, `path?` | **[Nouveau v2.0.7]** Liste tous les plugins de sécurité SAST et règles CWE déclaratives chargées depuis `.aether/plugins/`. |
+| **`aetherscope_test_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugins_dir?`, `path?` | **[Nouveau v2.0.7]** Exécute automatiquement la suite de tests unitaires intégrée aux règles pour certifier le zéro-faux-positif. |
+| **`aetherscope_scan_with_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `target_path`, `plugins_dir?` | **[Nouveau v2.0.7]** Audite un fichier ou dossier avec les plugins de règles personnalisés et remonte les violations et remédiations. |
+| **`aetherscope_upsert_plugin_rule`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugin_name`, `rule_id`, `cwe_id`, `name`, `severity`, `description`, `remediation`, `file_extensions`, `test_cases?` | **[Nouveau v2.0.7]** Permet à l'IA d'écrire, modifier et certifier en direct une règle de sécurité YAML persistée dans `.aether/plugins/`. |
+| **`aetherscope_verify_patch`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `files_modified` | **[Nouveau v2.1.0]** Pare-feu IA temps réel (< 50 ms) : valide la conformité des patchs avant commit (contrats EARS, `RULE_FORBIDDEN_IMPORT`, `RULE_MAX_LINES`, SAST incrémental 150+ CWEs, Reachability Source-to-Sink et signatures BLAKE3). Retourne `[PATCH_APPROVED]` ou `[PATCH_REJECTED]` avec caméra 3D. |
 
 ---
 
-### 6. MMO, Concurrence & Boucle de Jeu Temps Réel
+### 📑 Ressources MCP Passives (`resources/list` & `resources/read`)
 
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-RUST-ASYNC-MUTEX` | CWE-667 / Async Deadlock | **CRITICAL** | Garde de `std::sync::Mutex` conservé à travers un point `.await`, bloquant le thread worker Tokio et causant des deadlocks. | Libérer le garde dans un bloc `{ ... }` avant le `.await` ou utiliser `tokio::sync::Mutex`. |
-| `CVE-RUST-UNBOUNDED-CHANNEL` | CWE-400 / Backpressure OOM | **HIGH** | Utilisation de `unbounded_channel()` sur des flux réseau/WebSocket, permettant à un client de saturer la RAM du serveur. | Utiliser un canal borné `tokio::sync::mpsc::channel(CAPACITY)` avec backpressure. |
-| `CVE-MMO-UNCHECKED-SPEEDHACK` | CWE-20 / Speedhack Teleport | **HIGH** | Application directe des coordonnées de déplacement client sans plafonner la distance parcourue par tick ($\Delta_{\max} = v_{\max} \times \Delta t$). | Clamper le vecteur de déplacement côté serveur avant mise à jour de l'état monde. |
-| `CVE-MATH-UNCHECKED-BALANCE` | CWE-190 / Balance Underflow | **CRITICAL** | Décrémentation d'un solde ou inventaire (`balance -= cost`) sans contrôle, causant un wrapping vers $2^{64}-1$. | Utiliser exclusivement `checked_sub(cost)` ou `saturating_sub(cost)`. |
-| `CVE-MMO-IDOR-TRUSTED-USERID` | CWE-639 / Client IDOR Spoof | **CRITICAL** | Extraction de `user_id` directement depuis le payload JSON/binaire client au lieu de le résoudre depuis la session authentifiée. | Extraire l'identité du joueur exclusivement depuis le token/session serveur. |
+Permet aux modèles et assistants de lire passivement le contexte sans invoquer d'appel d'outil ni dépenser d'étapes d'exécution :
 
----
-
-### 7. SAST Fondamental, RCE & Injections Multi-Langages
-
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-RUST-ARBITRARY-FILE-WRITE-TRAVERSAL` | CWE-22 / Arbitrary File Write | **CRITICAL** | `fs::write` ou `File::create` sur un chemin issu du réseau sans `.canonicalize()` ni vérification `.starts_with(BASE_DIR)` (écrasement système ➔ RCE). | Canonicaliser le chemin et vérifier strictement son appartenance au répertoire racine. |
-| `CVE-RUST-COMMAND-INJECTION-SHELL` | CWE-78 / Shell Interpreter RCE| **CRITICAL** | `Command::new("sh" / "cmd" / "powershell")` invoqué avec `-c` ou `/C` et des variables dynamiques non filtrées. | Invoquer directement le binaire cible sans shell et passer chaque argument via `.arg()`. |
-| `CVE-RUST-DYNAMIC-LIB-HIJACK` | CWE-427 / DLL & `.so` Hijack | **CRITICAL** | Chargement de bibliothèque dynamique (`libloading::Library::new`, `dlopen`) via un chemin relatif ou contrôlé par l'environnement. | Exiger un chemin absolu canonique vérifié et vérifier la signature cryptographique du binaire. |
-| `SAST_RAW_SQL_INJECTION` | CWE-89 / SQL Injection | **CRITICAL** | Concaténation dynamique (`format!`, f-string, `+`) de requêtes SQL au lieu de requêtes préparées. | Utiliser des requêtes paramétrées (`sqlx::query!`, `$1`, `?`). |
-| `SAST_HARDCODED_SECRET` | CWE-798 / Hardcoded Secret | **CRITICAL** | Clé privée, jeton JWT ou secret d'API stocké en clair dans le code source. | Injecter les secrets via un coffre-fort (Vault) ou variables d'environnement hors domaine. |
-| `CVE-DB-REDIS-UNAUTH-KEYS-DOS` | CWE-400 / Redis `KEYS *` DoS | **CRITICAL** | Exécution de la commande bloquante $O(N)$ `KEYS *` en production sur Redis. | Remplacer par une itération incrémentale non bloquante `SCAN`. |
-| `CVE-RUST-UNSAFE-MEM` | CWE-119 / Unaudited Unsafe | **CRITICAL** | Utilisation de blocs `unsafe` ou déréférencement de pointeurs bruts non encapsulés. | Remplacer par des abstractions sûres ou documenter formellement les invariants `// SAFETY:`. |
-| `CVE-RUST-PANIC-DOS` | CWE-248 / Server Panic DoS | **HIGH** | `.unwrap()` ou `.expect()` sur des entrées réseau/utilisateurs dans la couche serveur, permettant de crasher le worker à distance. | Propager l'erreur proprement via `?` et renvoyer un code d'erreur 4xx. |
-| `CVE-RUST-CMD-INJ` | CWE-78 / OS Command Inj | **CRITICAL** | Exécution de processus système avec concaténation d'arguments non validés. | Valider les arguments contre une liste blanche stricte. |
-| `CVE-PY-DESERIALIZE-RCE` | CWE-502 / Pickle RCE | **CRITICAL** | Désérialisation d'objets Python via `pickle.loads()` sur des flux non fiables (exécution de code immédiate). | Utiliser `json.loads()` et valider via un modèle Pydantic v2. |
-| `CVE-PY-YAML-UNSAFE-LOAD` | CWE-502 / PyYAML RCE | **CRITICAL** | Appel à `yaml.load()` sans `Loader=SafeLoader` ou `yaml.unsafe_load()`. | Utiliser systématiquement `yaml.safe_load()`. |
-| `CVE-PY-SHELL-INJ` | CWE-78 / Python `shell=True` | **CRITICAL** | `subprocess.Popen(..., shell=True)` ou `os.system(...)` avec entrées dynamiques. | Passer `shell=False` et une liste d'arguments tokenisés `["cmd", arg]`. |
-| `CVE-PY-JINJA2-SSTI-INJECTION` | CWE-1336 / Jinja2 SSTI RCE | **CRITICAL** | Concaténation de f-strings dans `render_template_string()`, permettant l'évasion MRO `__subclasses__`. | Passer un template statique et transmettre les variables en arguments nommés. |
-| `CVE-PY-SQL-ALCHEMY-TEXT-INJECTION` | CWE-89 / SQLAlchemy `text()` | **CRITICAL** | f-string injectée dans `sqlalchemy.text()`, contournant la protection de l'ORM. | Utiliser `text("... :param").bindparams(param=val)`. |
-| `CVE-PY-JWT-NONE-ALGORITHM` | CWE-327 / JWT `alg: none` | **CRITICAL** | `jwt.decode()` avec `verify=False` ou acceptant l'algorithme `'none'`. | Forcer `algorithms=["HS256"]` et `options={"verify_signature": True}`. |
-| `CVE-PY-PATH-TRAVERSAL-ARCHIVE` | CWE-22 / ZipSlip Traversal | **CRITICAL** | Ouverture de fichier dynamique ou `extractall()` sans vérifier `Path.resolve().is_relative_to(BASE_DIR)`. | Valider le chemin canonique de chaque entrée avant extraction ou lecture. |
-| `CVE-PY-SSRF-UNVALIDATED` | CWE-918 / Python Outbound SSRF| **HIGH** | Requête `requests`/`httpx` vers une URL utilisateur sans filtrage des IP privées et métadonnées cloud. | Valider le domaine sur liste blanche et bloquer les IP RFC 1918 / `169.254.169.254`. |
-| `CVE-PY-UNTYPED-PAYLOAD` | CWE-20 / Untyped API Dict | **HIGH** | Route API Python acceptant un `dict` brut au lieu d'un schéma Pydantic v2 strict. | Typer l'entrée avec une classe héritant de `pydantic.BaseModel`. |
-| `CVE-PY-PARAMIKO-MISSING-HOST-KEY` | CWE-295 / SSH MITM Policy | **HIGH** | Configuration SSH Paramiko avec `AutoAddPolicy()`, acceptant toute clé d'hôte inconnue. | Utiliser `RejectPolicy()` avec `load_system_host_keys()`. |
-| `CVE-PY-XML-XXE-ENTITY-EXPANSION` | CWE-611 / XML XXE Injection | **HIGH** | Parsing XML via `xml.etree` / `minidom` sans désactiver la résolution des entités externes. | Utiliser `defusedxml.ElementTree`. |
+| URI Ressource (`uri`) | MIME Type | Description & Contenu Exposé |
+| :--- | :--- | :--- |
+| **`aether://graph/summary`** | `application/json` | Synthèse temps réel du graphe AST 3D (nœuds, arêtes, clusters, santé globale). |
+| **`aether://audit/live`** | `text/markdown` | Rapport SAST en direct (`.aether/LIVE_AUDIT.md`) répertoriant les 150+ violations CWE. |
+| **`aether://contracts/manifest`** | `application/json` | Spécification architecturale et contrats EARS (`aether.manifest.json` / `aether.lock.toml`). |
+| **`aether://tasks/active`** | `application/json` | Registre JSON de toutes les tâches d'ingénierie actives du projet (`.aether/tasks/`). |
 
 ---
 
-### 8. Front-End, DOM & Écosystème Node.js / V8 Internals
+### 💬 Prompts MCP Interactifs (`prompts/list` & `prompts/get`)
 
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-JS-V8-TYPEDARRAY-SHARED-AB-RACE-OOB` | V8-CRITICAL / Nodebleed & SAB| **CRITICAL** | Allocation `Buffer.allocUnsafe()` sans `.fill(0)` (fuite de clés de la heap V8 sur le réseau) ou lecture concurrente d'un `SharedArrayBuffer` sans `Atomics.load` (TOCTOU). | Utiliser `Buffer.alloc()` et copier localement via `Atomics.load` avant validation. |
-| `CVE-JS-VM-SANDBOX-ESCAPE` | CWE-94 / Node `vm` RCE | **CRITICAL** | Exécution de code non fiable via le module natif `vm` (`vm.runInContext`), permettant de remonter à `process` et `child_process`. | Utiliser `isolated-vm` ou un runtime WebAssembly isolé. |
-| `CVE-JS-EVENTLOOP-REDOS-JSON` | CWE-1333 / EventLoop DoS | **CRITICAL** | Accumulation de flux `req.on('data')` sans plafond `MAX_BODY_SIZE`, saturant la heap V8. | Détruire le flux dès que `Buffer.byteLength` dépasse le quota autorisé. |
-| `CVE-JS-SSRF-DYNAMIC-AXIOS-FETCH` | CWE-918 / Node Outbound SSRF| **CRITICAL** | Requête sortante `axios`/`fetch` vers une URL dynamique non filtrée. | Valider le protocole `https:` et le hostname contre une liste blanche stricte. |
-| `CVE-JS-PATH-TRAVERSAL-SENDFILE` | CWE-22 / `sendFile` Traversal | **CRITICAL** | Appel à `res.sendFile()` ou `fs.readFile()` sur un paramètre utilisateur sans confinement de racine. | Spécifier `{ root: PUBLIC_DIR, dotfiles: 'deny' }` dans `res.sendFile`. |
-| `CVE-JS-CMD-INJ` | CWE-78 / Node Shell Inj | **CRITICAL** | Appel à `child_process.exec` ou `execSync` avec concaténation de chaînes. | Utiliser `child_process.execFile` ou `spawn` avec `shell: false`. |
-| `CVE-JS-CODE-INJ` | CWE-94 / `eval()` Injection | **CRITICAL** | Évaluation dynamique via `eval()` ou `new Function()`. | Remplacer par `JSON.parse()` et un traitement déclaratif. |
-| `CVE-JS-XSS-DOM` | CWE-79 / DOM XSS | **HIGH** | Assignation directe à `innerHTML`, `dangerouslySetInnerHTML` ou `document.write()`. | Utiliser `textContent` ou assainir avec `DOMPurify`. |
-| `CVE-JS-PROTO-POLLUTION` | CWE-1321 / Prototype Pollution| **HIGH** | Fusion d'objets ou ingestion de `req.body` sans validation de schéma (Zod) ni protection contre `__proto__`. | Valider chaque payload entrant avec un schéma `zod` strict. |
-| `CVE-JS-REGEX-DOS-DYNAMIC-INPUT` | CWE-1333 / Dynamic ReDoS | **HIGH** | Instanciation de `new RegExp(userInput)` sans échappement préalable. | Échapper l'entrée avec `escapeRegExp` ou utiliser `re2`. |
-| `CVE-JS-CORS-WILDCARD-CREDENTIALS` | CWE-942 / CORS Session Theft | **HIGH** | Configuration CORS combinant `credentials: true` et `origin: true` (origine réfléchie). | Vérifier l'origine contre une liste blanche de domaines de confiance. |
-| `CVE-JS-UNHANDLED-PROMISE-CRASH` | CWE-755 / Async Route Crash | **HIGH** | Handler de route Express/Koa `async` sans `try/catch` ni transfert `next(err)`, tuant le processus Node.js. | Encapsuler dans `try/catch` ou utiliser `express-async-errors`. |
-| `CVE-CLIENT-UNSAFE-ASSETS` | CWE-829 / WebGL Asset Poison | **MEDIUM** | Chargement dynamique de textures PixiJS/Three.js (`Assets.load`) depuis une URL externe non vérifiée. | Restreindre le chargement aux domaines CDN approuvés. |
+Workflows prêts à l'emploi directement intégrés au protocole pour guider les agents IA :
+
+| Nom du Prompt | Arguments | Workflow & Directives Générées |
+| :--- | :--- | :--- |
+| **`audit_security_cwe`** | `symbol_name` *(requis)*,<br>`cwe_id` *(optionnel)* | Guide l'IA pour cibler la caméra, auditer le symbole, vérifier les contrats EARS et proposer une remédiation chirurgicale sans régression. |
+| **`scaffold_game_server`** | `engine` *(roblox \| minecraft)*,<br>`package_name` *(requis)* | Guide la génération d'une architecture serveur de jeu haute performance (Roblox Luau ou Minecraft Paper/Purpur) conforme aux stéréotypes AetherScope. |
+| **`refactor_contract_violation`** | `contract_name` *(requis)*,<br>`violation_details` *(optionnel)* | Fournit les consignes de correction d'une rupture de contrat d'interface ou de frontière de couche. |
 
 ---
 
-### 9. Architecture, Intégrité & Contrats EARS
+### 📦 Registres & Intégration 1-Clic (`smithery.yaml` & `mcp.json`)
 
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `BLAKE3_TAMPERED` | CWE-353 / Contract Tampering | **CRITICAL** | Contrat `README.md` modifié sur disque sans correspondance avec l'empreinte BLAKE3 scellée dans `aether.lock.toml`. | Auditer la modification et cliquer sur **« 🔒 Signer Contrat »** dans l'inspecteur. |
-| `RULE_FORBIDDEN_IMPORT` | CWE-1075 / Boundary Crossing | **CRITICAL** | Franchissement illégal de couche (ex: module `client/ui` important directement `data-nodes` ou `server/domain`). | Supprimer l'import interdit et transiter par les interfaces de `contracts/`. |
-| `SAST_DIRECT_ENV_ACCESS` | CWE-15 / Impure Domain Env | **HIGH** | Lecture directe de `std::env::var` ou `process.env` au sein d'un module de domaine pur (`deterministic_only: true`). | Injecter la configuration typée depuis la couche d'orchestration au démarrage. |
-| `RULE_MAX_LINES` | CWE-1075 / LOC Budget Exceeded| **WARNING** | Fichier source dépassant le budget `max_lines_per_file` défini dans le contrat du dossier (seuil standard : 300 lignes, Solidity : 600 lignes, Java : calibré à 10 000 lignes pour tolérer la haute verbosité naturelle du langage, frameworks Spring/Jakarta et getters/setters). | Découper le fichier en sous-modules atomiques à responsabilité unique. |
+AetherScope intègre nativement les descripteurs de registres pour une installation immédiate sans configuration manuelle :
+- **`smithery.yaml`** : Conforme au registre [Smithery.ai](https://smithery.ai) pour l'orchestration multi-plateforme (Windows & Linux).
+- **`mcp.json`** : Configuration standard pour Claude Desktop, Cursor, Antigravity, Goose et Zed.
 
 ---
 
-### 10. C / C++ & Modules Natifs FFI / Network Bas-Niveau (11 règles)
+### Sous-Système de Tâches & Quêtes Hybride (`.aether/tasks/`)
 
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-CPP-UNBOUNDED-COPY-UAF` | CWE-120 / C/C++ Buffer Overflow | **CRITICAL** | Utilisation de primitives C non bornées (`strcpy`, `strcat`, `sprintf`, `gets`, `memcpy` sans contrôle de capacité). | Utiliser `snprintf(dest, sizeof(dest), ...)` ou des conteneurs bornés (`std::span`, `std::string`). |
-| `CVE-CPP-NET-INTEGER-OVERFLOW-ALLOC` | CWE-190 / Integer Overflow Alloc | **CRITICAL** | Calcul arithmétique sur la taille de paquet (`len + sizeof(Header)`) sans vérification d'overflow (`UINT32_MAX`) allouant un buffer tronqué suivi d'un Heap Buffer Overflow. | Valider `len < MAX_PACKET_SIZE - sizeof(Header)` ou utiliser `__builtin_add_overflow`. |
-| `CVE-CPP-NET-TYPE-PUNNING-STRICT-ALIASING` | CWE-843 / Strict Aliasing UB | **HIGH** | `reinterpret_cast<Header*>(buf)` ou cast brut d'un buffer d'octets vers une structure violant le Strict Aliasing C++ et risquant des `SIGBUS` sur CPU ARM64. | Copier dans une struct alignée via `std::memcpy` ou `std::bit_cast` (C++20). |
-| `CVE-CPP-NET-ASYNC-CALLBACK-UAF` | CWE-416 / Async Callback UAF | **CRITICAL** | Capture de `[this]` ou `[&]` dans un handler asynchrone (`async_read`/`async_write`) sans `shared_from_this()`, déclenchant un Use-After-Free si la session se déconnecte. | Hériter de `std::enable_shared_from_this` et capturer `shared_from_this()` dans la lambda. |
-| `CVE-CPP-NET-PARTIAL-READ-SHORT-FRAME` | CWE-252 / Unchecked Short Read | **HIGH** | Appel unique `recv()` supposant l'arrivée atomique d'une trame complète sur flux TCP streaming, menant à la désynchronisation du protocole en cas de fragmentation. | Boucler jusqu'à réception de la trame (`while (total < expected)`) ou utiliser `boost::asio::read`. |
-| `CVE-CPP-NET-SOCKET-FD-LEAK-EXCEPTION` | CWE-775 / Socket FD Leak | **HIGH** | Descripteur `int sock = socket(...)` sans gestionnaire RAII dans une fonction avec `throw` ou sorties anticipées, causant la saturation des descripteurs (`EMFILE`). | Encapsuler dans un guard RAII `SocketGuard` ou `std::unique_ptr` avec deleter. |
-| `CVE-CPP-NET-HOST-BYTE-ORDER-CONFUSION` | CWE-1385 / Endianness Confusion | **HIGH** | Lecture de `header.length` sans `ntohs()` ou `ntohl()`, inversant les octets sur architecture Little-Endian et contournant les vérifications de bornes. | Convertir systématiquement les champs multi-octets réseau via `ntohs()` ou `ntohl()`. |
-| `CVE-CPP-NET-STRING-NULL-TERMINATION-OFF-BY-ONE` | CWE-170 / Missing Null-Terminator | **CRITICAL** | Buffer réseau `char buf[]` transmis à `strlen()` ou `std::string()` sans forcer `buf[n] = '\0'`, provoquant une fuite d'informations mémoires adjacentes (Heartbleed-like). | Allouer `N + 1` octets et positionner explicitement `buf[n] = '\0'`. |
-| `CVE-CPP-NET-FORMAT-STRING-LOGGING` | CWE-134 / Format String Injection | **CRITICAL** | Données réseau transmises comme format à `syslog()` ou `printf()` sans `"%s"`, conférant lecture (`%x`) et écriture arbitraire (`%n`) en mémoire (RCE). | Toujours fournir un format littéral statique : `printf("%s", net_data)`. |
-| `CVE-CPP-NET-SOCKET-RACE-DOUBLE-CLOSE` | CWE-415 / Socket Double Close Race | **HIGH** | Fermeture `close(fd)` sans opération atomique ni verrou en multi-thread, pouvant fermer un nouveau socket réattribué à une autre connexion cliente. | Utiliser `std::atomic<int>` avec `m_fd.exchange(-1)` ou un verrou `std::lock_guard`. |
-| `CVE-CPP-NET-UNBOUNDED-RECURSION-TLV-PARSER` | CWE-674 / Unbounded Recursion DoS | **HIGH** | Parseur récursif (TLV/JSON/BSON) s'appelant sans compteur ni plafond de profondeur, provoquant un épuisement de pile (`SIGSEGV`) sur trame profondément imbriquée. | Transmettre `size_t depth = 0` et rejeter la trame si `depth >= MAX_RECURSION_DEPTH`. |
+Accessible via la touche <kbd>T</kbd> dans le cockpit ou via MCP par l'agent IA, le gestionnaire de tâches permet un suivi d'ingénierie partagé entre l'humain et le modèle :
 
----
+```text
+.aether/
+├── TASKS_SUMMARY.md                            # Synthèse Markdown auto-générée de toutes les missions
+└── tasks/
+    └── task_975123_audit_securite/
+        ├── task.json                           # Métadonnées (id, kind, status, progress: 75%, target_symbol, author)
+        └── README.md                           # Plan d'investigation, checklists [x] et journal d'avancement IA
+```
 
-### 11. PHP Web & API Backend : Injections, RCE, Désérialisation & Sécurité Critique (25 règles)
-
-| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
-| :--- | :--- | :---: | :--- | :--- |
-| `CVE-PHP-SQL-INJECTION` | CWE-89 / SQL-INJECTION | **CRITICAL** | Concaténation directe d'entrées utilisateur (`$_GET`, `$_POST`, `$_REQUEST`, `$_COOKIE`) dans des requêtes SQL (`PDO::query`, `mysqli_query`) sans requête préparée : permet l'exfiltration ou la destruction de la base de données. | Utiliser impérativement des requêtes préparées avec paramètres liés (`$pdo->prepare()` puis `$stmt->execute([$param])` ou `bindParam`). |
-| `CVE-PHP-COMMAND-INJECTION` | CWE-78 / OS-COMMAND-INJECTION | **CRITICAL** | Exécution de commandes système OS (`system`, `exec`, `passthru`, `shell_exec`, `proc_open`, backticks) recevant des variables externes non assainies : prise de contrôle du serveur hôte via des métacaractères shell (`;`, `\|`, `&`, `$`...). | Échapper chaque argument individuellement via `escapeshellarg()` / `escapeshellcmd()`, ou remplacer par des APIs natives PHP sans passerelle shell. |
-| `CVE-PHP-EVAL-CODE-INJECTION` | CWE-94 / EVAL-CODE-INJECTION | **CRITICAL** | Évaluation dynamique de chaînes arbitraires via `eval()`, `create_function()`, `assert()` dynamique ou `preg_replace` avec modificateur `/e` : exécution de code PHP arbitraire à distance (RCE) avec les privilèges du processus serveur. | Bannir tout appel à `eval()`, `create_function()` ou `preg_replace('/.../e')`. Privilégier `preg_replace_callback()` et des parseurs déclaratifs sécurisés. |
-| `CVE-PHP-UNSERIALIZE-RCE` | CWE-502 / OBJECT-INJECTION-RCE | **CRITICAL** | Désérialisation de flux externes via `unserialize()` sans restriction de classes : instanciation malveillante d'objets et déclenchement automatique de méthodes magiques (`__destruct`, `__wakeup`) via des chaînes de gadgets POP. | Utiliser `json_decode($json, true)` ou contraindre explicitement la désérialisation via `unserialize($data, ['allowed_classes' => false])`. |
-| `CVE-PHP-FILE-INCLUSION-RFI-LFI` | CWE-98 / DYNAMIC-FILE-INCLUSION | **CRITICAL** | Inclusion dynamique de scripts via `include`, `require`, `include_once`, `require_once` recevant des données non filtrées : lecture de fichiers arbitraires (`/etc/passwd`), exécution de webshells locaux ou distants via les wrappers `php://filter`. | Restreindre strictement les fichiers inclus à une liste blanche fermée et immuable : `in_array($module, ALLOWED_MODULES, true)`. |
-| `CVE-PHP-PATH-TRAVERSAL` | CWE-22 / ARBITRARY-FILE-ACCESS | **HIGH** | Manipulation de chemins de fichiers via `file_get_contents`, `readfile`, `file_put_contents`, `unlink`, `fopen` avec entrées client : séquences `../` permettant de lire ou écraser des fichiers système hors de la racine web. | Nettoyer avec `basename($filename)` pour isoler le nom de fichier ou vérifier formellement le confinement via `str_starts_with(realpath($path), realpath($base_dir))`. |
-| `CVE-PHP-XSS-UNESCAPED-OUTPUT` | CWE-79 / REFLECTED-STORED-XSS | **HIGH** | Émission directe dans la réponse HTTP (`echo`, `print`, `<?=`) de superglobales (`$_GET`, `$_POST`, `$_SERVER['PHP_SELF']`) sans échappement contextuel : injection de scripts tiers, vol de sessions et défacement. | Neutraliser systématiquement la sortie HTML avec `htmlspecialchars($input, ENT_QUOTES \| ENT_SUBSTITUTE, 'UTF-8')`. |
-| `CVE-PHP-SSRF-CURL-STREAM` | CWE-918 / SERVER-SIDE-REQUEST-FORGERY | **HIGH** | Requêtes HTTP sortantes via `curl_exec()`, `file_get_contents($url)` ou `fopen($url)` vers une URL fournie par le client sans filtrage : accès aux services internes (127.0.0.1, RFC 1918) et métadonnées cloud AWS/GCP (169.254.169.254). | Résoudre le DNS et valider l'adresse IP avec `filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE \| FILTER_FLAG_NO_RES_RANGE)` avant l'appel curl. |
-| `CVE-PHP-UNRESTRICTED-FILE-UPLOAD` | CWE-434 / UNRESTRICTED-FILE-UPLOAD | **CRITICAL** | Déplacement de fichiers téléversés (`move_uploaded_file`) en conservant le nom client d'origine (`$_FILES['...']['name']`) sans contrôle strict de type MIME/extension : dépôt direct de webshells `.php` exécutables sur le serveur. | Valider l'extension contre une liste blanche stricte (`.jpg`, `.png`, `.pdf`) et régénérer un nom aléatoire cryptographique : `bin2hex(random_bytes(16)) . '.' . $ext`. |
-| `CVE-PHP-XXE-LIBXML-INJECTION` | CWE-611 / XML-EXTERNAL-ENTITY-INJECTION | **HIGH** | Analyse XML via `simplexml_load_string()`, `simplexml_load_file()` ou `DOMDocument::loadXML()` avec entités externes actives : inclusion d'entités `SYSTEM` menant à l'exfiltration de fichiers locaux ou au déni de service (Billion Laughs). | Désactiver le chargement des entités externes via `libxml_disable_entity_loader(true)` ou configurer le flag `LIBXML_NONET` lors du parsing. |
-| `CVE-PHP-SESSION-FIXATION-NO-REGEN` | CWE-384 / SESSION-FIXATION | **HIGH** | Affectation d'un état authentifié dans `$_SESSION['user_id']` ou `$_SESSION['auth']` sans régénération d'identifiant : un attaquant force l'ID de session au préalable et s'approprie les droits de la victime dès sa connexion. | Invoquer impérativement `session_regenerate_id(true)` immédiatement après une authentification réussie ou un changement de privilèges. |
-| `CVE-PHP-COOKIE-SENSITIVE-PLAINTEXT` | CWE-312 / INSECURE-COOKIE-TRANSMISSION | **HIGH** | Définition de cookies sensibles (`setcookie`, `session_set_cookie_params`) avec les drapeaux `secure` ou `httponly` à `false` ou omis : cookie de session accessible via JavaScript (vol par XSS) ou interceptable en clair sur HTTP. | Définir systématiquement les attributs de sécurité recommandés : `['secure' => true, 'httponly' => true, 'samesite' => 'Strict']`. |
-| `CVE-PHP-FILE-LOCKING-TOCTOU` | CWE-362 / TOCTOU-FILE-RACE-CONDITION | **HIGH** | Vérification préalable d'existence (`file_exists`, `is_file`) immédiatement suivie d'une écriture sans verrouillage atomique : condition de course temporelle menant à la corruption ou l'écrasement concurrent de données. | Verrouiller le descripteur de fichier de manière exclusive via `flock($fp, LOCK_EX)` ou utiliser le flag de création atomique exclusive `fopen($path, 'x')`. |
-| `CVE-PHP-BROKEN-CRYPTO-MD5-SHA1` | CWE-327 / BROKEN-CRYPTOGRAPHIC-HASH | **HIGH** | Hachage de mots de passe ou secrets avec des algorithmes obsolètes et rapides (`md5()`, `sha1()`, `crypt()`) vulnérables aux attaques par dictionnaire et collisions GPU massives. | Employer l'API native de hachage de mots de passe avec algorithmes adaptatifs modernes : `password_hash($pass, PASSWORD_ARGON2ID)` ou `PASSWORD_BCRYPT`. |
-| `CVE-PHP-HEADER-INJECTION-CRLF` | CWE-113 / HTTP-RESPONSE-SPLITTING | **HIGH** | Émission d'en-têtes HTTP via `header()` contenant des entrées utilisateur brutes sans assainissement des sauts de ligne (`\r`, `\n`) ni validation d'hôte : découpage de réponse HTTP (Response Splitting) et redirections ouvertes (phishing). | Éliminer les caractères CRLF via `str_replace(["\r", "\n"], '', $dest)` et valider rigoureusement l'URL de redirection avec `filter_var($dest, FILTER_VALIDATE_URL)`. |
-| `CVE-PHP-VARIABLE-OVERWRITE-EXTRACT` | CWE-621 / VARIABLE-OVERWRITE-EXTRACT | **CRITICAL** | Importation non sécurisée via `extract($_GET/$_POST)` sans `EXTR_SKIP` ou assignation dynamique `$$` : écrasement de variables locales critiques (`$is_admin`, `$role`). | Bannir `extract()` sur entrées externes ou imposer `extract($_POST, EXTR_SKIP)`. |
-| `CVE-PHP-MAIL-PARAM-INJECTION` | CWE-88 / MAIL-PARAMETER-INJECTION | **CRITICAL** | Fonction `mail()` recevant un 5ème argument dynamique non échappé : injection de drapeaux Sendmail (`-X /tmp/shell.php`) menant à un Remote Code Execution (RCE). | Échapper impérativement le 5ème argument avec `escapeshellcmd($extra)` ou employer Symfony Mailer. |
-| `CVE-PHP-TEMPLATE-INJECTION-SSTI` | CWE-1336 / SERVER-SIDE-TEMPLATE-INJECTION | **CRITICAL** | Rendu dynamique de templates Twig (`createTemplate`), Blade (`Blade::render`) ou Smarty alimentés par des chaînes utilisateur : exécution de code PHP arbitraire (RCE). | Ne jamais compiler de chaînes utilisateur ; passer les données comme variables de contexte du template. |
-| `CVE-PHP-DISABLED-SSL-VERIFY` | CWE-295 / DISABLED-SSL-VERIFICATION | **HIGH** | Désactivation de la vérification SSL/TLS (`CURLOPT_SSL_VERIFYPEER` à `false` ou `verify_peer` à `false`) : expose les appels APIs et webhooks aux attaques Man-in-the-Middle (MitM). | Conserver `CURLOPT_SSL_VERIFYPEER => true` et référencer un magasin d'autorités de certification valide via `CURLOPT_CAINFO`. |
-| `CVE-PHP-TYPE-JUGGLING-AUTH` | CWE-697 / LOOSE-COMPARISON-TYPE-JUGGLING | **HIGH** | Comparaison non stricte (`==`, `strcmp() == 0`) sur un mot de passe, token HMAC ou secret : contournement d'authentification via Type Juggling ("magic hashes" `0e...`) et timing attacks. | Utiliser la comparaison à temps constant `hash_equals($secret, $input)` ou l'égalité stricte `===`. |
-| `CVE-PHP-WEAK-PRNG-SECRETS` | CWE-338 / CRYPTOGRAPHICALLY-WEAK-PRNG | **HIGH** | Génération de jetons de sécurité (reset password, CSRF, API keys) via des PRNG prévisibles (`rand()`, `mt_rand()`, `uniqid()`) : prévisibilité de la graine et falsification de jetons. | Utiliser les générateurs CSPRNG cryptographiquement sûrs : `bin2hex(random_bytes(32))` ou `random_int()`. |
-| `CVE-PHP-LDAP-INJECTION` | CWE-90 / LDAP-INJECTION | **HIGH** | Concaténation directe de données utilisateur dans des filtres LDAP (`ldap_search`, `ldap_list`) : contournement d'authentification et exfiltration d'annuaires d'entreprise. | Échapper systématiquement les données injectées avec `ldap_escape($input, null, LDAP_ESCAPE_FILTER)`. |
-| `CVE-PHP-NOSQL-INJECTION` | CWE-943 / NOSQL-INJECTION-MONGODB | **HIGH** | Passage direct de superglobales (`$_POST`, `$_GET`) dans des requêtes MongoDB sans transtypage : injection d'opérateurs BSON (`[$ne] => null`) court-circuitant l'authentification. | Transtyper obligatoirement en scalaires stricts (`['password' => (string)$_POST['password']]`). |
-| `CVE-PHP-ZIP-SLIP-EXTRACTION` | CWE-770 / ZIP-SLIP-ARBITRARY-EXTRACTION | **HIGH** | Décompression d'archive `ZipArchive::extractTo()` sans contrôle de confinement des chemins : séquences `../` écrasant des fichiers de code système hors du répertoire cible. | Vérifier pour chaque entrée que `realpath()` commence strictement par le répertoire de destination autorisé. |
-| `CVE-PHP-EXPOSED-DEBUG-CONFIG` | CWE-209 / SENSITIVE-INFO-DEBUG-EXPOSURE | **HIGH** | Activation de `ini_set('display_errors', '1')` ou présence de `phpinfo()` dans des scripts exposés : fuite de variables d'environnement (`$_ENV`), identifiants DB et configuration serveur. | Forcer `display_errors = 0` en production, consigner les erreurs dans `error_log()` et supprimer tout appel à `phpinfo()`. |
+Depuis la modale **Tâches & Quêtes (<kbd>T</kbd>)**, vous pouvez créer des missions, modifier leur statut ou leur jauge de progression, éditer leur mini-`README.md` et **téléporter la caméra en 1 clic** sur le symbole associé à la tâche.
 
 ---
 
+### Console Chat Copilot (`<thought>`), Télémétrie Spatiale & `<aether_handshake>`
+
+- **Console Chat Copilot Draggable (<kbd>C</kbd>) :**
+  - Fenêtre de dialogue flottante et déplaçable avec indicateur d'état en direct (`🟢 En écoute`, `🧠 Gemini réfléchit...`, `✅ Réponse reçue`), bouton d'interruption (`🛑 Annuler`) et gestion de sessions.
+  - **Encapsulation native des blocs `<thought>...</thought>` :** Les raisonnements internes de l'IA sont automatiquement extraits dans un accordéon rétractable pour garder les réponses techniques limpides.
+  - Cliquer sur n'importe quel message de l'IA aligne instantanément la caméra 3D sur la bulle concernée.
+- **Bandeau de Télémétrie Spatiale (<kbd>A</kbd>) & Auto-Cam :**
+  - Affiche en temps réel la cible et l'action de l'IA. Lorsque **🎥 Auto-Cam** est activé, la caméra suit automatiquement l'agent IA de bulle en bulle au fil de son exploration du code.
+- **Protocole `<aether_handshake version="2.0">` & Preuve `[AETHER_ACK]` :**
+  - Cliquer sur un bouton d'action rapide dans l'inspecteur génère un paquet XML ultra-compact (~300 tokens) contenant la topologie exacte du symbole ciblé :
+
+```xml
+<aether_handshake version="2.0">
+  <target_symbol id="crates::security_linter::SecurityLinter" kind="ClassOrStruct" file="crates/security-linter/src/linter.rs" line="59">
+    <metrics lines="890" cyclomatic_complexity="12" in_degree="8" out_degree="4" />
+  </target_symbol>
+  <contract_status folder="crates/security-linter" verified="true" blake3_hash="8f4a2c..." max_lines="300" />
+  <categorized_flows>
+    <incoming_callers count="8">ProjectScanner::scan_project_with_exclusions, ...</incoming_callers>
+    <outgoing_dependencies count="4">ReadmeContract::parse, AdvancedDefiRules::audit_file, ...</outgoing_dependencies>
+  </categorized_flows>
+  <task objective="Refactorisation & Performance">
+    Respecter les invariants du module et répondre avec l'en-tête [AETHER_ACK].
+  </task>
+</aether_handshake>
+```
 
 ---
 
-## 🚀 Nouveautés Majeures SAST V2.1 (Production Ready)
+### Configuration Universelle (Antigravity, Claude Desktop, Cursor)
 
-### 1. Sérialiseur Standard SARIF v2.1.0 (OASIS & GitHub Code Scanning)
-- **Génération native SARIF 2.1.0 :** Intégration dans `crates/security-linter/src/sarif.rs` compatible à 100% avec l'onglet **GitHub Security / Code Scanning Alerts**.
-- **CLI CI/CD Ultra-Rapide :**
-  ```bash
-  # Générer un rapport standard SARIF
-  aether-engine.exe --path . --audit-only --format sarif --output results.sarif
+Ouvrez la modale **🔌 Connecter MCP** dans le cockpit pour copier la configuration prête à l'emploi, ou ajoutez ce bloc dans votre fichier de configuration MCP (`~/.gemini/config/mcp_config.json`, `.cursor/mcp.json` ou `claude_desktop_config.json`) :
 
-  # Bloquer les Pull Requests en < 100 ms si une faille critique ou haute est détectée
-  aether-engine.exe --path . --audit-only --format sarif --output results.sarif --fail-on HIGH
-  ```
-- **Workflow GitHub Action Clé en Main :** Fichier `.github/workflows/aetherscope-sarif.yml` prêt à l'emploi.
-
-### 2. Reachability Taint-Graph 3D (Source-to-Sink)
-- **Algorithme Inverse BFS :** Analyse instantanée dans `crates/core-graph/src/reachability.rs` reliant chaque Sink CVE aux points d'entrée publics (`SymbolKind::FormOrEndpoint`) via les canaux réseau RPC, WebSocket et sémantiques.
-- **Visualisation 3D WebGL 2 :** Badge `🔥 EXPLOITABLE (Source-to-Sink)` dans l'inspecteur CVE et **laser rouge pulsant en continu** sur l'intégralité du chemin `Endpoint -> Handler -> Service -> Sink` lors du clic.
-
-### 3. Convertisseur Universel Semgrep & Nuclei vers Plugins AetherScope
-- **Traduction Automatique des Règles YAML :** Module `crates/security-linter/src/semgrep_importer.rs` convertissant les métavariables `$X` et ellipses `...` en expressions régulières Rust natives ultra-performantes.
-- **Commande CLI d'Importation :**
-  ```bash
-  aether-plugin-tool.exe import-semgrep --input ./semgrep-rules/ --output .aether/plugins/imported/
-  ```
-
-### 4. Pare-Feu IA Temps Réel (17ème Outil MCP `aetherscope_verify_patch`)
-- Permet aux agents autonomes (Claude, Cursor, Antigravity) de vérifier leurs modifications en **< 50 ms** avant d'altérer les fichiers de production :
-  - Scan SAST incrémental + vérification d'atteignabilité Source-to-Sink
-  - Contrôle strict des contrats EARS du dossier parent (`RULE_FORBIDDEN_IMPORT`, `RULE_MAX_LINES`, `BLAKE3_TAMPERED`)
-  - Verdict certifié `[PATCH_APPROVED]` ou `[PATCH_REJECTED]` avec centrage de caméra 3D.
-
-### 5. Harnais de Benchmark Reproductible & Haute Fréquence
-- **Mode CLI `--benchmark` :** Mesure le temps de lexing, la construction parallèle AST (Rayon), l'évaluation des 150+ CWE, le pic RSS en mémoire vive et le débit en LOC/s.
-  ```bash
-  aether-engine.exe --benchmark
-  ```
-- Rapport comparatif généré automatiquement dans [`BENCHMARK.md`](./BENCHMARK.md) (Débit mesuré : **4 446 LOC/seconde**, pic RAM : **27.5 MB**).
+```json
+{
+  "mcpServers": {
+    "aetherscope": {
+      "command": "C:\\Chemin\\Vers\\aether-engine\\target\\release\\aetherscope-mcp.exe",
+      "args": ["--port", "3030"]
+    }
+  }
+}
+```
 
 ---
 
-## 🧬 Nouveautés V2.2 : Semgrep Communautaire, SSA Dataflow & SCA Reachable
+## 🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3
 
-### 1. Règles Semgrep Communautaires (hors-ligne, sans compte Cloud)
-- **22 règles OWASP Top 10 / CWE Top 25** embarquées dans le binaire (`community_owasp_cwe.yaml`, `community_bundle.rs`), actives dès le premier lancement.
-- **Synchronisation à la demande** et rechargement à chaud (hot-reload) dans `.aether/plugins/` :
-  ```bash
-  aether-plugin-tool.exe download-semgrep-rules --output .aether/plugins
-  aether-plugin-tool.exe download-semgrep-rules --offline
-  aether-plugin-tool.exe import-semgrep --input ./semgrep-rules --output .aether/plugins/imported
-  ```
+Pour empêcher les agents IA ou les développeurs de dégrader l'architecture (imports circulaires, logique I/O dans le domaine pur, fichiers monolithiques de 3000 lignes), chaque dossier peut contenir un contrat `README.md` doté d'un en-tête YAML et de règles **EARS** (*Easy Approach to Requirements Syntax*) :
 
-### 2. True Dataflow / SSA Taint Tracking Inter-Procédural
-- Module `crates/core-graph/src/dataflow/` : versioning exact des variables (`SsaVar`), chaînes def-use, propagation à travers les appels, parcours résistant aux cycles.
-- **Catalogue de sanitizers par CWE** (`sanitizer_catalog.rs`) : une donnée passée par `sanitize(x)` ne déclenche plus d'alerte au Sink. Trace exacte de propagation sur les flux non assainis.
+```markdown
+---
+id: server-domain
+layer: domain
+max_lines_per_file: 200
+allowed_imports: ["contracts::*"]
+forbidden_imports: ["server/api::*", "client::*", "data-nodes::*"]
+security_rules:
+  no_raw_sql: true
+  no_env_access: true
+  deterministic_only: true
+---
+# 🏛️ Logique Métier Pure (Domain)
 
-### 3. SCA Reachable Dependencies (OSV.dev)
-- Parseurs `Cargo.lock`, `package-lock.json`, `composer.lock` (`crates/security-linter/src/sca/`).
-- Requêtes OSV.dev avec **cache disque persistant signé BLAKE3** : scans hors-ligne après la première synchronisation.
-- Croisement avec le graphe d'appels : seules les dépendances vulnérables dont la fonction est **réellement appelée depuis un Endpoint** sont marquées atteignables.
+## 🛡️ Règles EARS
+- WHEN domain rule is evaluated THE SYSTEM SHALL execute deterministically without I/O.
+- IF input nights exceed 90 THEN THE SYSTEM SHALL return a domain validation error.
+```
+
+1. **Vérification Continue (< 50 ms) :** À chaque sauvegarde, `security-linter` vérifie que nul fichier du dossier ne dépasse `max_lines_per_file` (`RULE_MAX_LINES`), n'importe un module de `forbidden_imports` (`RULE_FORBIDDEN_IMPORT`), ni n'accède aux variables d'environnement ou au réseau si `deterministic_only: true` (`SAST_DIRECT_ENV_ACCESS`).
+2. **Sceau Cryptographique BLAKE3 (`aether.lock.toml`) :** L'empreinte BLAKE3 de chaque `README.md` est enregistrée dans `aether.lock.toml`. Si un agent IA modifie le `README.md` pour assouplir une règle sans que l'ingénieur humain ne clique sur **« 🔒 Signer Contrat »**, la violation critique `BLAKE3_TAMPERED` illumine le graphe en rouge.
+
+---
 
 ## 🏛️ Architecture Globale & Structure du Workspace Cargo
 
@@ -711,180 +638,6 @@ Basculez instantanément entre 4 topologies géométriques interpolées à 120 F
   - Créez de nouveaux modules directement depuis l'interface avec prévisualisation instantanée de leur naissance stellaire dans le graphe.
   - **Export HTML Standalone (`💾 Export Viewer`) :** Compile l'intégralité du graphe actuel et du moteur WebGL 2 en un fichier unique autonome `aetherscope_viewer.html` partageable avec un client ou une équipe d'audit sans installer AetherScope.
   - **Snapshot PNG HD (<kbd>S</kbd>) :** Capture haute définition du graphe avec filigrane contextuel.
-
----
-
-## 🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"
-
-### Architecture JSON-RPC 2.0 & Multi-Primitives (Tools, Resources, Prompts)
-
-AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`aetherscope-mcp.exe`**, conforme au standard officiel **Model Context Protocol (JSON-RPC 2.0 sur `stdio` — version `2024-11-05`)** et audité selon les critères **M8ven Protocol Compliance (Score 95+/100)**.
-
-```mermaid
-flowchart TD
-    AI["🤖 Agent IA (Antigravity / Claude / Cursor)"] <-->|"JSON-RPC 2.0 (stdio)"| MCP["⚙️ aetherscope-mcp.exe"]
-    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 9 Outils avec Safety Hints & isError Canonique"]
-    MCP -->|"Capabilities: Resources"| RES["📑 4 Ressources URI 'aether://' (Graph, Audit, Manifest, Tasks)"]
-    MCP -->|"Capabilities: Prompts"| PROMPTS["💬 3 Prompts Prêts à l'Emploi (CWE, Game Server, Contracts)"]
-    MCP -->|"Cockpit Actif (Port 3030)"| LIVE["🌐 Serveur Axum Temps Réel"]
-    MCP -->|"Cockpit Fermé (Fallback Auto)"| DISK["💾 Accès Disque Direct (.aether/ & Scanner AST)"]
-    LIVE --> CAM["🎥 Téléportation Caméra 3D & Fil d'Ariane IA"]
-    LIVE --> CHAT["💬 Console Chat HUD & Blocs &lt;thought&gt;"]
-    DISK --> TASKS["📋 Gestionnaire de Tâches (.aether/tasks/)"]
-```
-
-- **Mode 1 — Live Axum Bridge (Cockpit ouvert) :** Chaque appel d'outil MCP par l'IA anime le cockpit sous les yeux du développeur (téléportation caméra 3D, allumage de balise quantique, mise à jour du chat et des barres de progression de tâches).
-- **Mode 2 — Direct File Fallback (Cockpit fermé) :** Si l'interface graphique n'est pas lancée, `aetherscope-mcp.exe` exécute directement le scanner AST/SAST et manipule les fichiers `.aether/` sur disque. **Aucun appel MCP n'échoue jamais.**
-
----
-
-### Catalogue Exhaustif des 17 Outils MCP & Conformité M8ven (Score 98+/100)
-
-> **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), des schémas JSON stricts avec exemples concrets (`additionalProperties: false`, `examples: [...]`), ainsi qu'une encapsulation standardisée des erreurs (`isError: true/false`), garantissant une exécution prévisible pour les agents autonomes.
-
-| Outil MCP | Hints M8ven & Sécurité | Paramètres Clés | Impact Opérationnel & Synchronisation Cockpit |
-| :--- | :--- | :--- | :--- |
-| **`aetherscope_get_graph_summary`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `path?` | Retourne l'architecture globale du projet : nombre de nœuds, flux, répartition des dossiers, score de santé et décompte des violations CVE. |
-| **`aetherscope_get_active_target`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `symbol_id` | Extrait le contexte chirurgical d'un symbole : code, docstring, **flux entrants/sortants classés en 6 catégories** (UI, HTTP, WS, DB, Contrats, Appels), règles EARS et tâches liées. |
-| **`aetherscope_teleport_camera`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `target`, `action`, `details` | **Téléporte la caméra 3D du cockpit** sur le symbole ou dossier ciblé par l'IA, trace le fil d'Ariane stellaire et affiche l'action en cours dans le bandeau de télémétrie. |
-| **`aetherscope_scan_project`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `path?` | Déclenche à chaud une ré-analyse AST multithread et un audit SAST complet (< 100 ms) et rafraîchit le graphe WebGL 2. |
-| **`aetherscope_create_task`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: false`<br>`openWorldHint: false` | `title`, `kind?`, `target_symbol?`, `target_file?`, `priority?`, `initial_readme?` | Crée une tâche persistante (`function`, `research`, `security_fix`, `arch_refactor`, `documentation`, `test`) avec son dossier `.aether/tasks/<id>/`, son `task.json` et son mini-`README.md`. |
-| **`aetherscope_update_task`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `task_id`, `status?`, `progress?`, `progress_note?`, `full_readme?` | Met à jour le statut (`pending`, `in_progress`, `blocked`, `done`), le pourcentage `0-100%` et enrichit le journal technique Markdown de la tâche. |
-| **`aetherscope_list_tasks`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `status_filter?` | Liste toutes les tâches actives/terminées et synchronise automatiquement `.aether/TASKS_SUMMARY.md`. |
-| **`aetherscope_send_chat_message`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: false`<br>`openWorldHint: false` | `text`, `thought?`, `target_symbol?` | Publie un compte-rendu ou une question dans la **Console Chat Copilot** du cockpit, avec affichage dédié des réflexions internes `<thought>` et bouton de centrage caméra. |
-| **`aetherscope_get_chat_history`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | *(aucun)* | Lit l'historique des messages échangés dans le cockpit pour maintenir une continuité conversationnelle parfaite. |
-| **`aetherscope_search_symbols`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `query`, `layer?`, `kind?`, `limit?` | Recherche ultra-rapide de symboles dans l'AST par nom, regex ou stéréotype architectural. |
-| **`aetherscope_trace_flow`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `symbol_id`, `direction?`, `max_depth?` | Trace les flux de données et dépendances directes amont et aval d'un symbole. |
-| **`aetherscope_query_violations`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `severity?`, `cwe_id?`, `file_pattern?` | Requête et filtre les violations de sécurité SAST et règles CWE détectées sur l'ensemble du projet. |
-| **`aetherscope_list_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugins_dir?`, `path?` | **[Nouveau v2.0.7]** Liste tous les plugins de sécurité SAST et règles CWE déclaratives chargées depuis `.aether/plugins/`. |
-| **`aetherscope_test_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugins_dir?`, `path?` | **[Nouveau v2.0.7]** Exécute automatiquement la suite de tests unitaires intégrée aux règles pour certifier le zéro-faux-positif. |
-| **`aetherscope_scan_with_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `target_path`, `plugins_dir?` | **[Nouveau v2.0.7]** Audite un fichier ou dossier avec les plugins de règles personnalisés et remonte les violations et remédiations. |
-| **`aetherscope_upsert_plugin_rule`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugin_name`, `rule_id`, `cwe_id`, `name`, `severity`, `description`, `remediation`, `file_extensions`, `test_cases?` | **[Nouveau v2.0.7]** Permet à l'IA d'écrire, modifier et certifier en direct une règle de sécurité YAML persistée dans `.aether/plugins/`. |
-| **`aetherscope_verify_patch`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `files_modified` | **[Nouveau v2.1.0]** Pare-feu IA temps réel (< 50 ms) : valide la conformité des patchs avant commit (contrats EARS, `RULE_FORBIDDEN_IMPORT`, `RULE_MAX_LINES`, SAST incrémental 150+ CWEs, Reachability Source-to-Sink et signatures BLAKE3). Retourne `[PATCH_APPROVED]` ou `[PATCH_REJECTED]` avec caméra 3D. |
-
----
-
-### 📑 Ressources MCP Passives (`resources/list` & `resources/read`)
-
-Permet aux modèles et assistants de lire passivement le contexte sans invoquer d'appel d'outil ni dépenser d'étapes d'exécution :
-
-| URI Ressource (`uri`) | MIME Type | Description & Contenu Exposé |
-| :--- | :--- | :--- |
-| **`aether://graph/summary`** | `application/json` | Synthèse temps réel du graphe AST 3D (nœuds, arêtes, clusters, santé globale). |
-| **`aether://audit/live`** | `text/markdown` | Rapport SAST en direct (`.aether/LIVE_AUDIT.md`) répertoriant les 150+ violations CWE. |
-| **`aether://contracts/manifest`** | `application/json` | Spécification architecturale et contrats EARS (`aether.manifest.json` / `aether.lock.toml`). |
-| **`aether://tasks/active`** | `application/json` | Registre JSON de toutes les tâches d'ingénierie actives du projet (`.aether/tasks/`). |
-
----
-
-### 💬 Prompts MCP Interactifs (`prompts/list` & `prompts/get`)
-
-Workflows prêts à l'emploi directement intégrés au protocole pour guider les agents IA :
-
-| Nom du Prompt | Arguments | Workflow & Directives Générées |
-| :--- | :--- | :--- |
-| **`audit_security_cwe`** | `symbol_name` *(requis)*,<br>`cwe_id` *(optionnel)* | Guide l'IA pour cibler la caméra, auditer le symbole, vérifier les contrats EARS et proposer une remédiation chirurgicale sans régression. |
-| **`scaffold_game_server`** | `engine` *(roblox \| minecraft)*,<br>`package_name` *(requis)* | Guide la génération d'une architecture serveur de jeu haute performance (Roblox Luau ou Minecraft Paper/Purpur) conforme aux stéréotypes AetherScope. |
-| **`refactor_contract_violation`** | `contract_name` *(requis)*,<br>`violation_details` *(optionnel)* | Fournit les consignes de correction d'une rupture de contrat d'interface ou de frontière de couche. |
-
----
-
-### 📦 Registres & Intégration 1-Clic (`smithery.yaml` & `mcp.json`)
-
-AetherScope intègre nativement les descripteurs de registres pour une installation immédiate sans configuration manuelle :
-- **`smithery.yaml`** : Conforme au registre [Smithery.ai](https://smithery.ai) pour l'orchestration multi-plateforme (Windows & Linux).
-- **`mcp.json`** : Configuration standard pour Claude Desktop, Cursor, Antigravity, Goose et Zed.
-
----
-
-### Sous-Système de Tâches & Quêtes Hybride (`.aether/tasks/`)
-
-Accessible via la touche <kbd>T</kbd> dans le cockpit ou via MCP par l'agent IA, le gestionnaire de tâches permet un suivi d'ingénierie partagé entre l'humain et le modèle :
-
-```text
-.aether/
-├── TASKS_SUMMARY.md                            # Synthèse Markdown auto-générée de toutes les missions
-└── tasks/
-    └── task_975123_audit_securite/
-        ├── task.json                           # Métadonnées (id, kind, status, progress: 75%, target_symbol, author)
-        └── README.md                           # Plan d'investigation, checklists [x] et journal d'avancement IA
-```
-
-Depuis la modale **Tâches & Quêtes (<kbd>T</kbd>)**, vous pouvez créer des missions, modifier leur statut ou leur jauge de progression, éditer leur mini-`README.md` et **téléporter la caméra en 1 clic** sur le symbole associé à la tâche.
-
----
-
-### Console Chat Copilot (`<thought>`), Télémétrie Spatiale & `<aether_handshake>`
-
-- **Console Chat Copilot Draggable (<kbd>C</kbd>) :**
-  - Fenêtre de dialogue flottante et déplaçable avec indicateur d'état en direct (`🟢 En écoute`, `🧠 Gemini réfléchit...`, `✅ Réponse reçue`), bouton d'interruption (`🛑 Annuler`) et gestion de sessions.
-  - **Encapsulation native des blocs `<thought>...</thought>` :** Les raisonnements internes de l'IA sont automatiquement extraits dans un accordéon rétractable pour garder les réponses techniques limpides.
-  - Cliquer sur n'importe quel message de l'IA aligne instantanément la caméra 3D sur la bulle concernée.
-- **Bandeau de Télémétrie Spatiale (<kbd>A</kbd>) & Auto-Cam :**
-  - Affiche en temps réel la cible et l'action de l'IA. Lorsque **🎥 Auto-Cam** est activé, la caméra suit automatiquement l'agent IA de bulle en bulle au fil de son exploration du code.
-- **Protocole `<aether_handshake version="2.0">` & Preuve `[AETHER_ACK]` :**
-  - Cliquer sur un bouton d'action rapide dans l'inspecteur génère un paquet XML ultra-compact (~300 tokens) contenant la topologie exacte du symbole ciblé :
-
-```xml
-<aether_handshake version="2.0">
-  <target_symbol id="crates::security_linter::SecurityLinter" kind="ClassOrStruct" file="crates/security-linter/src/linter.rs" line="59">
-    <metrics lines="890" cyclomatic_complexity="12" in_degree="8" out_degree="4" />
-  </target_symbol>
-  <contract_status folder="crates/security-linter" verified="true" blake3_hash="8f4a2c..." max_lines="300" />
-  <categorized_flows>
-    <incoming_callers count="8">ProjectScanner::scan_project_with_exclusions, ...</incoming_callers>
-    <outgoing_dependencies count="4">ReadmeContract::parse, AdvancedDefiRules::audit_file, ...</outgoing_dependencies>
-  </categorized_flows>
-  <task objective="Refactorisation & Performance">
-    Respecter les invariants du module et répondre avec l'en-tête [AETHER_ACK].
-  </task>
-</aether_handshake>
-```
-
----
-
-### Configuration Universelle (Antigravity, Claude Desktop, Cursor)
-
-Ouvrez la modale **🔌 Connecter MCP** dans le cockpit pour copier la configuration prête à l'emploi, ou ajoutez ce bloc dans votre fichier de configuration MCP (`~/.gemini/config/mcp_config.json`, `.cursor/mcp.json` ou `claude_desktop_config.json`) :
-
-```json
-{
-  "mcpServers": {
-    "aetherscope": {
-      "command": "C:\\Chemin\\Vers\\aether-engine\\target\\release\\aetherscope-mcp.exe",
-      "args": ["--port", "3030"]
-    }
-  }
-}
-```
-
----
-
-## 🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3
-
-Pour empêcher les agents IA ou les développeurs de dégrader l'architecture (imports circulaires, logique I/O dans le domaine pur, fichiers monolithiques de 3000 lignes), chaque dossier peut contenir un contrat `README.md` doté d'un en-tête YAML et de règles **EARS** (*Easy Approach to Requirements Syntax*) :
-
-```markdown
----
-id: server-domain
-layer: domain
-max_lines_per_file: 200
-allowed_imports: ["contracts::*"]
-forbidden_imports: ["server/api::*", "client::*", "data-nodes::*"]
-security_rules:
-  no_raw_sql: true
-  no_env_access: true
-  deterministic_only: true
----
-# 🏛️ Logique Métier Pure (Domain)
-
-## 🛡️ Règles EARS
-- WHEN domain rule is evaluated THE SYSTEM SHALL execute deterministically without I/O.
-- IF input nights exceed 90 THEN THE SYSTEM SHALL return a domain validation error.
-```
-
-1. **Vérification Continue (< 50 ms) :** À chaque sauvegarde, `security-linter` vérifie que nul fichier du dossier ne dépasse `max_lines_per_file` (`RULE_MAX_LINES`), n'importe un module de `forbidden_imports` (`RULE_FORBIDDEN_IMPORT`), ni n'accède aux variables d'environnement ou au réseau si `deterministic_only: true` (`SAST_DIRECT_ENV_ACCESS`).
-2. **Sceau Cryptographique BLAKE3 (`aether.lock.toml`) :** L'empreinte BLAKE3 de chaque `README.md` est enregistrée dans `aether.lock.toml`. Si un agent IA modifie le `README.md` pour assouplir une règle sans que l'ingénieur humain ne clique sur **« 🔒 Signer Contrat »**, la violation critique `BLAKE3_TAMPERED` illumine le graphe en rouge.
 
 ---
 
