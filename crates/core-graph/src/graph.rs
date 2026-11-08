@@ -35,6 +35,8 @@ pub struct AetherGraph {
     pub nodes: Vec<SymbolBubble>,
     pub edges: Vec<AffiliationEdge>,
     pub stats: GraphStats,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataflow_graph: Option<crate::dataflow::DataflowGraph>,
 }
 
 impl AetherGraph {
@@ -50,6 +52,7 @@ impl AetherGraph {
             nodes: Vec::new(),
             edges: Vec::new(),
             stats: GraphStats::default(),
+            dataflow_graph: None,
         }
     }
 
@@ -63,6 +66,51 @@ impl AetherGraph {
 
     pub fn compute_reachability(&mut self) {
         crate::reachability::compute_reachability(self);
+    }
+
+    /// Evaluates SSA dataflow taint propagation across sources and sinks.
+    /// Neutralizes anomalies when is_sanitized == true, or equips them with exact TaintFlowTrace when unsanitized.
+    pub fn compute_dataflow_taint(&mut self, custom_sanitizers: &[crate::dataflow::SanitizerRule]) -> Vec<crate::dataflow::TaintFlowTrace> {
+        let traces = if let Some(ref mut dfg) = self.dataflow_graph {
+            for s in custom_sanitizers {
+                dfg.add_sanitizer(s.clone());
+            }
+            dfg.track_dataflow()
+        } else {
+            Vec::new()
+        };
+
+        for trace in &traces {
+            let sink_file = &trace.sink.file_path;
+            let sink_line = trace.sink.line;
+            let sink_var = &trace.sink.var.name;
+
+            for node in &mut self.nodes {
+                for anom in &mut node.metadata.cve_anomalies {
+                    let matches_loc = (anom.file_path == *sink_file && anom.line_number == sink_line)
+                        || (anom.line_number == sink_line && (anom.file_path.ends_with(sink_file) || sink_file.ends_with(&anom.file_path)))
+                        || (anom.cve_id.contains(&trace.sink.cwe) && anom.line_number == sink_line)
+                        || (anom.transmitted_data.as_deref() == Some(sink_var) && anom.cve_id.contains(&trace.sink.cwe));
+
+                    if matches_loc {
+                        anom.taint_trace = Some(trace.clone());
+                        if trace.is_sanitized {
+                            anom.is_reachable = false;
+                        } else {
+                            anom.is_reachable = true;
+                        }
+                    }
+                }
+
+                if !node.metadata.cve_anomalies.is_empty()
+                    && node.metadata.cve_anomalies.iter().all(|a| !a.is_reachable)
+                {
+                    node.has_security_violation = false;
+                }
+            }
+        }
+
+        traces
     }
 
     pub fn compute_stats(&mut self) {

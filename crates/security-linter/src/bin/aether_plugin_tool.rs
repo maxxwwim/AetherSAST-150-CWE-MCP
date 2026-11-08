@@ -1,6 +1,7 @@
 pub use security_linter::lexer;
 pub use security_linter::plugin;
 use security_linter::plugin::{PluginEngine, PluginManifest, PluginRule, RuleConditions, RuleTestCase};
+use security_linter::CommunityBundle;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,6 +22,8 @@ fn print_usage() {
     println!("USAGE:");
     println!("  aether-plugin-tool <COMMAND> [OPTIONS]\n");
     println!("COMMANDS:");
+    println!("  download-semgrep-rules [--output <dir>] [--url <url>] [--offline]  Télécharge / synchronise les règles communautaires Semgrep");
+    println!("  init-bundle [output_dir]           Déploie immédiatement le bundle communautaire embarqué (100% hors-ligne)");
     println!("  import-semgrep --input <path> [--output <dir>]  Importe des règles Semgrep YAML en plugins AetherScope");
     println!("  test <plugins_dir>                 Exécute la suite de tests unitaires intégrée aux plugins");
     println!("  scan <plugins_dir> <target_path>   Audite un fichier ou un dossier complet avec les plugins");
@@ -28,6 +31,9 @@ fn print_usage() {
     println!("  init <plugin_name> [output_dir]    Génère un squelette de plugin prêt à l'emploi");
     println!("  export <plugins_dir> [out.md]      Exporte le catalogue des règles en Markdown\n");
     println!("EXEMPLES:");
+    println!("  aether-plugin-tool download-semgrep-rules --output .aether/plugins");
+    println!("  aether-plugin-tool download-semgrep-rules --offline");
+    println!("  aether-plugin-tool init-bundle .aether/plugins");
     println!("  aether-plugin-tool import-semgrep --input ./semgrep-rules --output .aether/plugins/imported");
     println!("  aether-plugin-tool test .aether/plugins");
     println!("  aether-plugin-tool scan .aether/plugins ./crates/core-graph");
@@ -382,6 +388,76 @@ fn main() {
             println!("   aether-plugin-tool test {}", output_dir);
             println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         }
+        "download-semgrep-rules" | "update-rules" => {
+            if args.iter().any(|a| a == "--help" || a == "-h" || a == "help") {
+                print_banner();
+                println!("USAGE:");
+                println!("  aether-plugin-tool download-semgrep-rules [OPTIONS]\n");
+                println!("OPTIONS:");
+                println!("  -o, --output <DIR>    Dossier de destination (défaut: .aether/plugins)");
+                println!("  -u, --url <URL>       URL source des règles Semgrep communautaires");
+                println!("      --offline         Mode hors-ligne immédiat (utilise le bundle embarqué)\n");
+                println!("EXEMPLE:");
+                println!("  aether-plugin-tool download-semgrep-rules --output .aether/plugins");
+                println!("  aether-plugin-tool download-semgrep-rules --offline\n");
+                std::process::exit(0);
+            }
+
+            print_banner();
+            let mut output_dir = ".aether/plugins".to_string();
+            let mut url: Option<String> = None;
+            let mut offline = false;
+
+            let mut idx = 2;
+            while idx < args.len() {
+                match args[idx].as_str() {
+                    "--output" | "-o" => {
+                        if idx + 1 < args.len() {
+                            output_dir = args[idx + 1].clone();
+                            idx += 2;
+                        } else {
+                            idx += 1;
+                        }
+                    }
+                    "--url" | "-u" => {
+                        if idx + 1 < args.len() {
+                            url = Some(args[idx + 1].clone());
+                            idx += 2;
+                        } else {
+                            idx += 1;
+                        }
+                    }
+                    "--offline" => {
+                        offline = true;
+                        idx += 1;
+                    }
+                    val if !val.starts_with('-') => {
+                        output_dir = val.to_string();
+                        idx += 1;
+                    }
+                    _ => {
+                        idx += 1;
+                    }
+                }
+            }
+
+            println!("🌐 Synchronisation des règles communautaires Semgrep vers '{}'...", output_dir);
+            sync_or_download_rules(&output_dir, url.as_deref(), offline);
+        }
+        "init-bundle" => {
+            print_banner();
+            let output_dir = args.get(2).map(|s| s.as_str()).unwrap_or(".aether/plugins");
+            println!("📦 Déballage du bundle communautaire embarqué dans '{}'...", output_dir);
+            match CommunityBundle::unpack_to_directory(output_dir) {
+                Ok(path) => {
+                    println!("✅ Bundle communautaire installé avec succès : {}", path.display());
+                }
+                Err(e) => {
+                    eprintln!("❌ Erreur lors du déballage : {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
         other => {
             eprintln!("❌ Commande inconnue : {}", other);
             print_usage();
@@ -451,6 +527,69 @@ fn collect_yaml_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
                     }
                 }
             }
+        }
+    }
+}
+
+fn sync_or_download_rules(output_dir: &str, url_opt: Option<&str>, force_offline: bool) {
+    if force_offline {
+        println!("🔒 Mode hors-ligne demandé : utilisation du bundle communautaire embarqué.");
+        unpack_embedded_bundle(output_dir);
+        return;
+    }
+
+    let target_url = url_opt.unwrap_or("https://raw.githubusercontent.com/semgrep/semgrep-rules/develop/template.yaml");
+    println!("📡 Téléchargement depuis : {}", target_url);
+
+    // Tentative de téléchargement via curl système avec timeout court (5s)
+    let download_result = std::process::Command::new("curl")
+        .args(["-sSL", "--max-time", "5", target_url])
+        .output();
+
+    let mut successfully_downloaded = false;
+    if let Ok(output) = download_result {
+        if output.status.success() {
+            if let Ok(body) = String::from_utf8(output.stdout) {
+                if let Ok(rule_file) = SemgrepImporter::parse_yaml(&body) {
+                    if !rule_file.rules.is_empty() {
+                        if let Ok(manifest) = SemgrepImporter::to_plugin_manifest(&rule_file, "community") {
+                            let out_path = Path::new(output_dir).join("community");
+                            if fs::create_dir_all(&out_path).is_ok() {
+                                let plugin_file = out_path.join("plugin.yaml");
+                                if let Ok(yaml_str) = serde_yaml::to_string(&manifest) {
+                                    if fs::write(&plugin_file, yaml_str).is_ok() {
+                                        println!(
+                                            "✅ {} règles téléchargées et converties vers {}",
+                                            manifest.rules.len(),
+                                            plugin_file.display()
+                                        );
+                                        successfully_downloaded = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !successfully_downloaded {
+        println!("⚠️ Impossible de joindre le dépôt distant ou contenu non valide (hors-ligne / réseau restreint).");
+        println!("🔄 Basculement automatique vers le bundle communautaire pré-embarqué...");
+        unpack_embedded_bundle(output_dir);
+    }
+}
+
+fn unpack_embedded_bundle(output_dir: &str) {
+    match CommunityBundle::unpack_to_directory(output_dir) {
+        Ok(path) => {
+            println!("✅ Bundle communautaire pré-embarqué déployé : {}", path.display());
+            println!("   Prêt pour l'exécution et le rechargement à chaud (hot-reload).");
+        }
+        Err(e) => {
+            eprintln!("❌ Erreur lors de l'installation du bundle : {}", e);
+            std::process::exit(1);
         }
     }
 }

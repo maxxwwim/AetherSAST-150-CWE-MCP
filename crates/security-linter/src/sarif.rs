@@ -355,6 +355,7 @@ impl SarifReport {
                 remediation: v.remediation.clone(),
                 is_reachable: false,
                 exploit_path: Vec::new(),
+                ..Default::default()
             })
             .collect();
         Self::from_anomalies_with_root(&anomalies, custom_rules, project_root)
@@ -443,6 +444,7 @@ mod tests {
                 "packet_handler".to_string(),
                 "deserialize".to_string(),
             ],
+            ..Default::default()
         };
 
         let report = SarifReport::from_anomalies(&[anomaly], None);
@@ -527,6 +529,7 @@ mod tests {
             remediation: "Test remediation".to_string(),
             is_reachable: false,
             exploit_path: Vec::new(),
+            ..Default::default()
         };
 
         let report = SarifReport::from_anomalies(&[anomaly], None);

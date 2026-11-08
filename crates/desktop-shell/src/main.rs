@@ -59,7 +59,24 @@ pub struct Args {
 
     #[arg(long, help = "Run benchmark measuring lexing, AST, SAST evaluation, peak RSS and LOC/s throughput")]
     pub benchmark: bool,
+
+    /// Update and hydrate Semgrep community rules bundle into .aether/plugins/
+    #[arg(long, default_value_t = false)]
+    pub update_rules: bool,
+
+    /// Enable Software Composition Analysis (SCA) dependency vulnerability scanning
+    #[arg(long, default_value_t = false)]
+    pub sca: bool,
+
+    /// Force 100% offline SCA scanning (use local disk cache only)
+    #[arg(long, default_value_t = false)]
+    pub offline_sca: bool,
+
+    /// Run only SCA audit and output results
+    #[arg(long, default_value_t = false)]
+    pub sca_only: bool,
 }
+
 
 #[cfg(windows)]
 extern "system" {
@@ -82,6 +99,23 @@ fn main() {
 fn real_main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
+    if args.update_rules {
+        let plugins_dir = Path::new(&args.path).join(".aether").join("plugins");
+        println!("🔄 Synchronizing Semgrep community rules bundle to {}", plugins_dir.display());
+        match security_linter::CommunityBundle::unpack_to_directory(&plugins_dir) {
+            Ok(p) => {
+                println!("✅ Successfully hydrated Semgrep community bundle at {}", p.display());
+            }
+            Err(e) => {
+                eprintln!("❌ Failed to hydrate Semgrep community rules: {}", e);
+                return Err(Box::new(e));
+            }
+        }
+        if args.no_gui || (!args.audit_only && !std::env::args().any(|a| a == "--port" || a == "--mcp")) {
+            return Ok(());
+        }
+    }
+
     if args.benchmark {
         benchmark::run_benchmark(&args.path)?;
         return Ok(());
@@ -97,7 +131,12 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
         return rt.block_on(mcp::run_mcp_server(args));
     }
 
-    if audit_only || args.format.eq_ignore_ascii_case("sarif") || args.fail_on.is_some() {
+    if args.sca_only {
+        let rt = tokio::runtime::Runtime::new()?;
+        return rt.block_on(run_sca_only_cli(args));
+    }
+
+    if audit_only || args.format.eq_ignore_ascii_case("sarif") || args.fail_on.is_some() || args.sca || args.offline_sca {
         let rt = tokio::runtime::Runtime::new()?;
         return rt.block_on(run_audit_cli(args));
     }
@@ -180,6 +219,79 @@ fn extract_live_audit_from_graph(
     (violations, file_count)
 }
 
+async fn run_sca_only_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let raw = args.path.trim().trim_matches('"').trim_matches('\'');
+    let clean = raw.strip_prefix(r"\\?\").unwrap_or(raw);
+    let project_root = if clean.is_empty() || clean == "." {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    } else {
+        fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
+    };
+
+    println!("📦 [SCA] Scanning dependencies in `{}` (offline: {})...", project_root.display(), args.offline_sca);
+    let mut sca_report = security_linter::sca::ScaEngine::scan_project(&project_root, args.offline_sca)?;
+    println!("   Discovered {} dependencies across lockfiles.", sca_report.dependencies.len());
+
+    let scanner = ProjectScanner::default();
+    let mut graph = scanner.scan_project(&project_root);
+    security_linter::sca::ScaEngine::cross_reference_reachability(&mut graph, &mut sca_report);
+
+    println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("📊 AETHERSCOPE SOFTWARE COMPOSITION ANALYSIS (SCA) REPORT");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("   • Total Dependencies      : {}", sca_report.dependencies.len());
+    println!("   • Total Vulnerabilities   : {}", sca_report.total_vulnerabilities);
+    println!("   • 🔴 REACHABLE (High Risk): {}", sca_report.reachable_count);
+    println!("   • ⚪ Unreachable (Low Risk): {}", sca_report.unreachable_count);
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+    if sca_report.reachable_count > 0 {
+        println!("🚨 REACHABLE VULNERABILITIES (Called from Entrypoints / Endpoints) :");
+        for v in sca_report.vulnerabilities.iter().filter(|v| v.is_reachable) {
+            println!("  🔴 [{}] {} v{} — {}", v.cve_id, v.dependency.name, v.dependency.version, v.severity);
+            println!("     Summary     : {}", v.summary);
+            println!("     Exploit Path: {}", v.exploit_path.join(" -> "));
+            println!("     Remediation : {}\n", v.remediation);
+        }
+    }
+
+    if sca_report.unreachable_count > 0 {
+        println!("🛡️ UNREACHABLE VULNERABILITIES (Dead Code / Unexposed Dependencies) :");
+        for v in sca_report.vulnerabilities.iter().filter(|v| !v.is_reachable) {
+            println!("  ⚪ [{}] {} v{} — {}", v.cve_id, v.dependency.name, v.dependency.version, v.severity);
+            println!("     Summary     : {}", v.summary);
+            println!("     Remediation : {}\n", v.remediation);
+        }
+    }
+
+    // CI/CD Failure gate: evaluate --fail-on
+    if let Some(ref fail_threshold) = args.fail_on {
+        let threshold = fail_threshold.trim().to_uppercase();
+        let mut failed = false;
+        for v in sca_report.vulnerabilities.iter().filter(|v| v.is_reachable) {
+            let sev = v.severity.trim().to_uppercase();
+            let triggered = match threshold.as_str() {
+                "CRITICAL" => sev == "CRITICAL",
+                "HIGH" => sev == "CRITICAL" || sev == "HIGH",
+                "MEDIUM" => sev == "CRITICAL" || sev == "HIGH" || sev == "MEDIUM",
+                _ => false,
+            };
+            if triggered {
+                eprintln!(
+                    "❌ [GATE] Reachable SCA vulnerability {} ({}) exceeds failure threshold `{}`",
+                    v.cve_id, sev, threshold
+                );
+                failed = true;
+            }
+        }
+        if failed {
+            std::process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
 async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let start_instant = std::time::Instant::now();
     let raw = args.path.trim().trim_matches('"').trim_matches('\'');
@@ -192,7 +304,27 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     AuditWriter::ensure_master_rules_file(&project_root)?;
     let scanner = ProjectScanner::default();
-    let graph = scanner.scan_project(&project_root);
+    let mut graph = scanner.scan_project(&project_root);
+
+    if args.sca || args.offline_sca {
+        println!("📦 [SCA] Analyzing software dependencies (offline: {})...", args.offline_sca);
+        match security_linter::sca::ScaEngine::scan_project(&project_root, args.offline_sca) {
+            Ok(mut sca_report) => {
+                security_linter::sca::ScaEngine::cross_reference_reachability(&mut graph, &mut sca_report);
+                println!(
+                    "   SCA: {} dependencies, {} vulnerabilities ({} reachable, {} unreachable)",
+                    sca_report.dependencies.len(),
+                    sca_report.total_vulnerabilities,
+                    sca_report.reachable_count,
+                    sca_report.unreachable_count
+                );
+            }
+            Err(e) => {
+                eprintln!("⚠️ [SCA] Error scanning dependencies: {}", e);
+            }
+        }
+    }
+
 
     let (all_violations, file_count) = extract_live_audit_from_graph(&graph);
     let mut all_anomalies: Vec<core_graph::bubble::CveAnomalyRecord> = Vec::new();

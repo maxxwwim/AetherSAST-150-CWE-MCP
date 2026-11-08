@@ -1,0 +1,290 @@
+# AetherScope Semgrep Community Bundle - OWASP Top 10 & CWE Top 25
+# Pre-embedded rule catalog for 100% offline air-gapped readiness.
+rules:
+  - id: semgrep-owasp-sqli-format
+    languages: [python, php, javascript, typescript]
+    severity: ERROR
+    message: "Untrusted string formatted or concatenated in SQL query execution (CWE-89)."
+    metadata:
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "cursor.execute($QUERY)"
+      - pattern: "db.query($QUERY)"
+      - pattern: "mysqli_query($CONN, $SQL)"
+
+  - id: semgrep-owasp-command-injection
+    languages: [python, javascript, typescript, rust, php]
+    severity: CRITICAL
+    message: "Execution of OS command with unvalidated arguments can lead to Remote Code Execution (CWE-78)."
+    metadata:
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "os.system($CMD)"
+      - pattern: "os.system(...)"
+      - pattern: "child_process.exec($CMD, ...)"
+      - pattern: "child_process.exec(...)"
+      - pattern: "exec($CMD)"
+      - pattern: "system($CMD)"
+      - pattern: "Command::new(\"sh\").arg(\"-c\").arg($CMD)"
+
+  - id: semgrep-owasp-xss-innerhtml
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Direct assignment of raw data to innerHTML or document.write can introduce Cross-Site Scripting (CWE-79)."
+    metadata:
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "$ELEM.innerHTML = $INPUT"
+      - pattern: "$ELEM.outerHTML = $INPUT"
+      - pattern: "document.write($INPUT)"
+      - pattern: "document.write(...)"
+      - pattern-regex: "(?:innerHTML|outerHTML)\\s*="
+
+  - id: semgrep-owasp-path-traversal
+    languages: [python, javascript, typescript, php]
+    severity: ERROR
+    message: "Unsanitized path used in file system read/write operations (CWE-22)."
+    metadata:
+      cwe: "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "open($PATH, ...)"
+      - pattern: "fs.readFile($PATH, ...)"
+      - pattern: "fs.readFileSync($PATH, ...)"
+      - pattern: "include($PATH)"
+      - pattern: "require($PATH)"
+
+  - id: semgrep-owasp-deserialization-pickle
+    languages: [python, php]
+    severity: CRITICAL
+    message: "Deserialization of untrusted payloads via pickle.loads or unserialize leads to arbitrary code execution (CWE-502)."
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "pickle.loads($PAYLOAD)"
+      - pattern: "pickle.load($PAYLOAD)"
+      - pattern: "unserialize($PAYLOAD)"
+
+  - id: semgrep-owasp-deserialization-yaml
+    languages: [python]
+    severity: ERROR
+    message: "Use of unsafe yaml.load without SafeLoader allows arbitrary object instantiation (CWE-502)."
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      category: security
+      confidence: HIGH
+    pattern: "yaml.load($INPUT, Loader=yaml.Loader)"
+
+  - id: semgrep-owasp-hardcoded-secret
+    languages: [python, javascript, typescript, rust, php, go]
+    severity: CRITICAL
+    message: "Hardcoded secret, API token, or private credential detected in source code (CWE-798)."
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "api_key = \"$SECRET\""
+      - pattern: "password = \"$SECRET\""
+      - pattern: "jwt_secret = \"$SECRET\""
+      - pattern: "bearer_token = \"$SECRET\""
+
+  - id: semgrep-owasp-broken-crypto-jwt-none
+    languages: [python, javascript, typescript]
+    severity: CRITICAL
+    message: "JWT signature verification disabled or configured with algorithm 'none' (CWE-327)."
+    metadata:
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "jwt.decode(..., algorithms=['none'], ...)"
+      - pattern: "jwt.verify(..., { algorithms: [\"none\"] }, ...)"
+
+  - id: semgrep-owasp-weak-hash-md5-sha1
+    languages: [python, javascript, typescript, rust, php]
+    severity: WARNING
+    message: "Collision-prone cryptographic hash algorithm (MD5/SHA1) used in security context (CWE-328)."
+    metadata:
+      cwe: "CWE-328: Use of Weak Hash"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "hashlib.md5(...)"
+      - pattern: "hashlib.sha1(...)"
+      - pattern: "crypto.createHash(\"md5\")"
+      - pattern: "crypto.createHash(\"sha1\")"
+      - pattern: "md5($INPUT)"
+
+  - id: semgrep-owasp-ssrf-unvalidated-url
+    languages: [python, javascript, typescript, rust, php, go]
+    severity: ERROR
+    message: "Network request sent to unvalidated target URL may enable Server-Side Request Forgery (CWE-918)."
+    metadata:
+      cwe: "CWE-918: Server-Side Request Forgery (SSRF)"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "requests.get($URL, ...)"
+      - pattern: "requests.post($URL, ...)"
+      - pattern: "axios.get($URL, ...)"
+      - pattern: "axios.post($URL, ...)"
+      - pattern: "fetch($URL, ...)"
+      - pattern: "file_get_contents($URL)"
+
+  - id: semgrep-owasp-code-injection-eval
+    languages: [python, javascript, typescript, php]
+    severity: CRITICAL
+    message: "Dynamic evaluation of code via eval, exec, or new Function (CWE-94)."
+    metadata:
+      cwe: "CWE-94: Improper Control of Generation of Code ('Code Injection')"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "eval($CODE)"
+      - pattern: "exec($CODE)"
+      - pattern: "new Function($CODE)"
+
+  - id: semgrep-owasp-auth-bypass-mock
+    languages: [python, javascript, typescript, rust, go]
+    severity: CRITICAL
+    message: "Hardcoded authorization bypass or mock authentication flag enabled (CWE-287)."
+    metadata:
+      cwe: "CWE-287: Improper Authentication"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "is_authenticated = True"
+      - pattern: "skip_auth = true"
+      - pattern: "bypass_auth = true"
+
+  - id: semgrep-owasp-xxe-xml-external-entity
+    languages: [python, php]
+    severity: ERROR
+    message: "XML parser configured to resolve external entities leading to XXE injection (CWE-611)."
+    metadata:
+      cwe: "CWE-611: Improper Restriction of XML External Entity Reference"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "etree.XMLParser(resolve_entities=True, ...)"
+      - pattern: "xml.sax.make_parser(...)"
+
+  - id: semgrep-owasp-log-injection-crlf
+    languages: [python, javascript, typescript, java]
+    severity: WARNING
+    message: "Direct logging of unsanitized input can facilitate log forging and CRLF injection (CWE-117)."
+    metadata:
+      cwe: "CWE-117: Improper Output Neutralization for Logs"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: "logger.info($MSG)"
+      - pattern: "logging.info($MSG)"
+      - pattern: "console.log($MSG)"
+
+  - id: semgrep-owasp-stacktrace-exposure
+    languages: [python, javascript, typescript, php]
+    severity: WARNING
+    message: "Direct print or transmission of raw stacktrace or internal debug error (CWE-209)."
+    metadata:
+      cwe: "CWE-209: Generation of Error Message Containing Sensitive Information"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: "traceback.print_exc()"
+      - pattern: "res.send(err.stack)"
+
+  - id: semgrep-owasp-cookie-missing-httponly
+    languages: [javascript, typescript, python, php]
+    severity: WARNING
+    message: "Sensitive cookie created without HttpOnly flag, exposing it to client-side script theft (CWE-1004)."
+    metadata:
+      cwe: "CWE-1004: Sensitive Cookie Without 'HttpOnly' Flag"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "res.cookie($NAME, $VAL, { httpOnly: false })"
+      - pattern: "setcookie($NAME, $VAL, 0, \"\", \"\", false, false)"
+
+  - id: semgrep-owasp-insecure-curl-pipe-bash
+    languages: [python, javascript, rust]
+    severity: ERROR
+    message: "Download of remote code piped directly to execution shell without integrity check (CWE-494)."
+    metadata:
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "curl ... | bash"
+      - pattern: "wget ... | sh"
+
+  - id: semgrep-cwe-integer-overflow-truncation
+    languages: [rust, c, cpp]
+    severity: WARNING
+    message: "Unchecked narrowing integer cast can truncate large numbers causing integer wraparound (CWE-190)."
+    metadata:
+      cwe: "CWE-190: Integer Overflow or Wraparound"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: "($X as u16)"
+      - pattern: "($X as u8)"
+
+  - id: semgrep-cwe-use-after-free-pointer
+    languages: [c, cpp, rust]
+    severity: CRITICAL
+    message: "Potential Use After Free condition when pointer is referenced after deallocation (CWE-416)."
+    metadata:
+      cwe: "CWE-416: Use After Free"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "free($PTR)"
+      - pattern: "drop($PTR)"
+
+  - id: semgrep-cwe-null-pointer-deref
+    languages: [c, cpp, rust]
+    severity: ERROR
+    message: "Direct dereference of raw pointer without null guard (CWE-476)."
+    metadata:
+      cwe: "CWE-476: NULL Pointer Dereference"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: "*$PTR"
+      - pattern: "unsafe { *$PTR }"
+
+  - id: semgrep-cwe-race-condition-toctou
+    languages: [python, php, c, cpp]
+    severity: WARNING
+    message: "Time-of-Check to Time-of-Use (TOCTOU) file race condition (CWE-362)."
+    metadata:
+      cwe: "CWE-362: Concurrent Execution using Shared Resource with Improper Synchronization ('Race Condition')"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: "os.path.exists($PATH)"
+      - pattern: "file_exists($PATH)"
+
+  - id: semgrep-cwe-buffer-overflow-strcpy
+    languages: [c, cpp]
+    severity: CRITICAL
+    message: "Unbounded buffer copy function prone to memory corruption and buffer overflow (CWE-787)."
+    metadata:
+      cwe: "CWE-787: Out-of-bounds Write"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "strcpy($DEST, $SRC)"
+      - pattern: "strcat($DEST, $SRC)"
+      - pattern: "sprintf($BUF, ...)"

@@ -72,6 +72,8 @@ pub struct CveAnomalyRecord {
     pub is_reachable: bool,
     #[serde(default)]
     pub exploit_path: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taint_trace: Option<crate::dataflow::TaintFlowTrace>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

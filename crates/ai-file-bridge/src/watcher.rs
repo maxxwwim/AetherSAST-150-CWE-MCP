@@ -37,6 +37,9 @@ const EXCLUDED_WATCH_DIRS: &[&str] = &[
 ];
 
 fn is_excluded_dir_name(name: &str) -> bool {
+    if name == ".aether" {
+        return false;
+    }
     name.starts_with('.')
         || name.contains("WebView2")
         || EXCLUDED_WATCH_DIRS
@@ -58,10 +61,14 @@ fn watch_filtered_tree(
     }
     let _ = watcher.watch(dir, RecursiveMode::NonRecursive);
     if let Ok(entries) = std::fs::read_dir(dir) {
+        let is_in_dot_aether = dir.file_name().map(|n| n == ".aether").unwrap_or(false);
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
+                if is_in_dot_aether && name != "plugins" {
+                    continue;
+                }
                 if !is_excluded_dir_name(&name) {
                     let _ = watch_filtered_tree(watcher, &path, depth + 1);
                 }
@@ -89,6 +96,9 @@ impl FileWatcherBridge {
             Config::default().with_poll_interval(Duration::from_millis(200)),
         )?;
 
+        let aether_plugins = root_buf.join(".aether").join("plugins");
+        let _ = std::fs::create_dir_all(&aether_plugins);
+
         watch_filtered_tree(&mut watcher, root.as_ref(), 0)?;
 
         Ok(Self {
@@ -102,6 +112,8 @@ impl FileWatcherBridge {
     pub fn switch_root<P: AsRef<Path>>(&mut self, new_root: P) -> Result<(), notify::Error> {
         let new_buf = new_root.as_ref().to_path_buf();
         if self.project_root != new_buf && new_buf.is_dir() {
+            let aether_plugins = new_buf.join(".aether").join("plugins");
+            let _ = std::fs::create_dir_all(&aether_plugins);
             let _ = self.watcher.unwatch(&self.project_root);
             watch_filtered_tree(&mut self.watcher, &new_buf, 0)?;
             self.project_root = new_buf;
@@ -123,6 +135,9 @@ impl FileWatcherBridge {
                         if p_str.ends_with(".log")
                             || p_str.ends_with("aetherscope_viewer.html")
                             || p_str.ends_with("AETHER_AI_RULES.md")
+                            || (p_str.contains(".aether")
+                                && !p_str.contains(".aether/plugins")
+                                && !p_str.contains(r".aether\plugins"))
                         {
                             continue;
                         }
@@ -140,7 +155,7 @@ impl FileWatcherBridge {
                             .to_lowercase();
                         if [
                             "rs", "ts", "tsx", "js", "jsx", "py", "md", "cpp", "hpp", "cc", "hh",
-                            "c", "h", "java", "sol", "php", "json", "toml",
+                            "c", "h", "java", "sol", "php", "json", "toml", "yaml", "yml",
                         ]
                         .contains(&ext.as_str())
                         {

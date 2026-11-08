@@ -666,6 +666,23 @@ impl ProjectScanner {
             node_idx_by_id.insert(n.id.clone(), idx);
         }
 
+        // Initialize PluginEngine if .aether/plugins exists
+        let plugins_dir = root_path.join(".aether").join("plugins");
+        let plugin_engine = if plugins_dir.is_dir() {
+            let mut engine = security_linter::PluginEngine::new();
+            if let Ok(count) = engine.load_from_directory(&plugins_dir) {
+                if count > 0 {
+                    Some(std::sync::Mutex::new(engine))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Execute SecurityLinter::audit_file in parallel via Rayon across all non-markdown files
         let parallel_violations: Vec<(String, Option<String>, Vec<security_linter::linter::LinterViolation>)> = file_contents
             .par_iter()
@@ -674,7 +691,12 @@ impl ProjectScanner {
                     return None;
                 }
                 let contract = find_contract_for_folder(folder);
-                let violations = SecurityLinter::audit_file(rel_path, raw_content, contract);
+                let mut violations = SecurityLinter::audit_file(rel_path, raw_content, contract);
+                if let Some(ref engine_mutex) = plugin_engine {
+                    if let Ok(mut engine) = engine_mutex.lock() {
+                        violations.extend(engine.audit_file(rel_path, raw_content));
+                    }
+                }
                 if violations.is_empty() {
                     None
                 } else {
@@ -3889,6 +3911,43 @@ pub fn validate_nights(n: u32) -> bool {
         assert!(!found_files.contains(&"ui.spec.ts".to_string()), "ui.spec.ts should be excluded");
         assert!(!found_files.contains(&"integration.rs".to_string()), "integration.rs should be excluded");
         assert!(!found_files.contains(&"db.rs".to_string()), "db.rs should be excluded");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_scanner_evaluates_plugins_from_aether_directory() {
+        let temp_dir = std::env::temp_dir().join(format!("aether_test_plugins_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+        let src_dir = temp_dir.join("src");
+        let _ = std::fs::create_dir_all(&src_dir);
+
+        let vuln_py = r#"
+def fetch_user_data(cursor, user_id):
+    query = "SELECT * FROM users WHERE id = " + user_id
+    cursor.execute(query)
+"#;
+        let _ = std::fs::write(src_dir.join("service.py"), vuln_py);
+
+        // Before plugins are installed: scan runs normally
+        let scanner = ProjectScanner::default();
+        let graph_before = scanner.scan_project_with_exclusions(&temp_dir, &[]);
+        let had_sqli_before = graph_before.nodes.iter().any(|n| {
+            n.metadata.cve_anomalies.iter().any(|a| a.rule_id == "semgrep-owasp-sqli-format")
+        });
+        assert!(!had_sqli_before, "Community plugin rule should not be active before unpacking");
+
+        // Hydrate community bundle into .aether/plugins
+        let plugins_dir = temp_dir.join(".aether").join("plugins");
+        let unpacked = security_linter::CommunityBundle::unpack_to_directory(&plugins_dir)
+            .expect("Unpack community bundle should succeed");
+        assert!(unpacked.exists());
+
+        // After plugins are installed: scanner must detect the plugin violation!
+        let graph_after = scanner.scan_project_with_exclusions(&temp_dir, &[]);
+        let found_sqli = graph_after.nodes.iter().any(|n| {
+            n.metadata.cve_anomalies.iter().any(|a| a.rule_id == "semgrep-owasp-sqli-format")
+        });
+        assert!(found_sqli, "ProjectScanner must evaluate rules from .aether/plugins and attach anomalies");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

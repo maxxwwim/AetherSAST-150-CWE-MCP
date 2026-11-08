@@ -5,7 +5,7 @@
 ### **Cockpit Spatial d'Architecture WebGL 2  • Linter SAST Zero-Day (150+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.1.0_SARIF_Reachability_MCP_Firewall-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.2.0_SSA_Taint_SCA_Semgrep_Rules-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -438,6 +438,28 @@ Le serveur Axum embarqué sert le cockpit spatial directement sur la route racin
   aether-engine.exe --benchmark
   ```
 - Rapport comparatif généré automatiquement dans [`BENCHMARK.md`](./BENCHMARK.md) (Débit mesuré : **4 446 LOC/seconde**, pic RAM : **27.5 MB**).
+
+---
+
+## 🧬 Nouveautés V2.2 : Semgrep Communautaire, SSA Dataflow & SCA Reachable
+
+### 1. Règles Semgrep Communautaires (hors-ligne, sans compte Cloud)
+- **22 règles OWASP Top 10 / CWE Top 25** embarquées dans le binaire (`community_owasp_cwe.yaml`, `community_bundle.rs`), actives dès le premier lancement.
+- **Synchronisation à la demande** et rechargement à chaud (hot-reload) dans `.aether/plugins/` :
+  ```bash
+  aether-plugin-tool.exe download-semgrep-rules --output .aether/plugins
+  aether-plugin-tool.exe download-semgrep-rules --offline
+  aether-plugin-tool.exe import-semgrep --input ./semgrep-rules --output .aether/plugins/imported
+  ```
+
+### 2. True Dataflow / SSA Taint Tracking Inter-Procédural
+- Module `crates/core-graph/src/dataflow/` : versioning exact des variables (`SsaVar`), chaînes def-use, propagation à travers les appels, parcours résistant aux cycles.
+- **Catalogue de sanitizers par CWE** (`sanitizer_catalog.rs`) : une donnée passée par `sanitize(x)` ne déclenche plus d'alerte au Sink. Trace exacte de propagation sur les flux non assainis.
+
+### 3. SCA Reachable Dependencies (OSV.dev)
+- Parseurs `Cargo.lock`, `package-lock.json`, `composer.lock` (`crates/security-linter/src/sca/`).
+- Requêtes OSV.dev avec **cache disque persistant signé BLAKE3** : scans hors-ligne après la première synchronisation.
+- Croisement avec le graphe d'appels : seules les dépendances vulnérables dont la fonction est **réellement appelée depuis un Endpoint** sont marquées atteignables.
 
 ## 🏛️ Architecture Globale & Structure du Workspace Cargo
 
