@@ -22,12 +22,17 @@ pub fn compute_all_layouts(nodes: &mut [SymbolBubble]) {
     }
 }
 
-/// 1. Z-1 : Obsidian Galaxy (Clusters nébuleux organiques en spirale dorée de Fermat)
+/// 1. Z-1 : Obsidian Galaxy (Clusters nébuleux arborescents mass-aware)
+/// Structure les dossiers selon l'arborescence réelle des fichiers sur disque,
+/// garantit un espacement proportionnel à la masse des amas et élimine l'empilement au cœur.
 pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
     let mut dir_groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (idx, n) in nodes.iter().enumerate() {
-        let parts: Vec<&str> = n.file_path.split('/').collect();
-        let dir = if parts.len() > 1 {
+        let clean_path = n.file_path.replace('\\', "/");
+        let parts: Vec<&str> = clean_path.split('/').filter(|s| !s.is_empty()).collect();
+        let dir = if !n.folder.is_empty() {
+            n.folder.replace('\\', "/").trim_matches('/').to_string()
+        } else if parts.len() > 1 {
             parts[..parts.len() - 1].join("/")
         } else {
             "root".to_string()
@@ -35,31 +40,155 @@ pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
         dir_groups.entry(dir).or_default().push(idx);
     }
 
-    let mut sorted_dirs: Vec<(String, Vec<usize>)> = dir_groups.into_iter().collect();
-    sorted_dirs.sort_by(|a, b| a.0.cmp(&b.0));
+    // Helper: extrait la branche architecturale parente (ex: crates/desktop-shell, apps/aethercraft)
+    let get_branch = |dir: &str| -> (String, String) {
+        let clean = dir.trim_matches('/');
+        if clean.is_empty() || clean == "root" {
+            return ("root".to_string(), String::new());
+        }
+        let parts: Vec<&str> = clean.split('/').collect();
+        if parts.len() >= 2 && (parts[0] == "crates" || parts[0] == "apps" || parts[0] == "packages") {
+            let branch = format!("{}/{}", parts[0], parts[1]);
+            let sub = if parts.len() > 2 { parts[2..].join("/") } else { String::new() };
+            (branch, sub)
+        } else if !parts.is_empty() {
+            let branch = parts[0].to_string();
+            let sub = if parts.len() > 1 { parts[1..].join("/") } else { String::new() };
+            (branch, sub)
+        } else {
+            ("root".to_string(), String::new())
+        }
+    };
 
-    let num_dirs = sorted_dirs.len();
-    // Vastly increased spacing between directory nebulas so each cell has its own clear celestial territory
-    let cluster_spacing = if num_dirs > 30 { 440.0 } else { 520.0 };
+    struct FolderInfo {
+        _name: String,
+        sub: String,
+        indices: Vec<usize>,
+        radius: f64,
+    }
 
-    for (dir_idx, (_d_name, indices)) in sorted_dirs.into_iter().enumerate() {
-        let dir_dist = (dir_idx as f64 + 0.6).sqrt() * cluster_spacing;
-        let dir_angle = dir_idx as f64 * GOLDEN_ANGLE;
-        let dir_cx = dir_angle.cos() * dir_dist;
-        let dir_cy = dir_angle.sin() * dir_dist;
+    struct BranchInfo {
+        name: String,
+        folders: Vec<FolderInfo>,
+        _total_nodes: usize,
+        envelope_r: f64,
+    }
 
+    let mut branch_map: HashMap<String, Vec<FolderInfo>> = HashMap::new();
+    for (dir_name, indices) in dir_groups {
+        let (branch, sub) = get_branch(&dir_name);
         let n_len = indices.len();
-        // Wider intra-cellular radius so functions and files breathe freely without stacking
-        let cluster_radius = ((n_len as f64).sqrt() * 62.0 + 55.0).clamp(90.0, 580.0);
+        // Rayon cellulaire dynamique généreux proportionnel au nombre de symboles
+        let radius = ((n_len as f64).sqrt() * 78.0 + 75.0).clamp(120.0, 780.0);
+        branch_map.entry(branch).or_default().push(FolderInfo {
+            _name: dir_name,
+            sub,
+            indices,
+            radius,
+        });
+    }
 
-        for (i, &n_idx) in indices.iter().enumerate() {
-            let node_dist = ((i as f64 + 0.5) / n_len.max(1) as f64).sqrt() * cluster_radius;
-            let node_angle = i as f64 * GOLDEN_ANGLE;
+    let mut branches: Vec<BranchInfo> = branch_map
+        .into_iter()
+        .map(|(name, mut folders)| {
+            // Tri des sous-dossiers : le dossier racine du module en premier, puis alphabétique
+            folders.sort_by(|a, b| {
+                if a.sub.is_empty() && !b.sub.is_empty() {
+                    std::cmp::Ordering::Less
+                } else if !a.sub.is_empty() && b.sub.is_empty() {
+                    std::cmp::Ordering::Greater
+                } else {
+                    a.sub.cmp(&b.sub)
+                }
+            });
+            let total_nodes: usize = folders.iter().map(|f| f.indices.len()).sum();
+            let sum_r: f64 = folders.iter().map(|f| f.radius).sum();
+            let envelope_r = if folders.len() == 1 {
+                folders[0].radius + 80.0
+            } else {
+                (sum_r * 0.62 + 200.0).max(folders[0].radius + 150.0)
+            };
+            BranchInfo {
+                name,
+                folders,
+                _total_nodes: total_nodes,
+                envelope_r,
+            }
+        })
+        .collect();
 
-            nodes[n_idx].layouts.obsidian = Some(Point2D::new(
-                (dir_cx + node_angle.cos() * node_dist).round(),
-                (dir_cy + node_angle.sin() * node_dist).round(),
-            ));
+    // Tri déterministe des branches principales
+    branches.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let num_branches = branches.len();
+    if num_branches == 0 {
+        return;
+    }
+
+    // Calcul de la distance orbitale globale pour garantir un espacement net entre les grands amas
+    let max_envelope = branches.iter().map(|b| b.envelope_r).fold(0.0, f64::max);
+    let avg_envelope: f64 = branches.iter().map(|b| b.envelope_r).sum::<f64>() / num_branches as f64;
+    let base_orbit = if num_branches <= 2 {
+        max_envelope + 450.0
+    } else {
+        let angle_step = std::f64::consts::TAU / num_branches as f64;
+        let chord_needed = avg_envelope * 2.0 + 480.0;
+        let min_d = chord_needed / (2.0 * (angle_step * 0.5).sin()).max(0.15);
+        min_d.max(1050.0)
+    };
+
+    for (b_idx, branch) in branches.into_iter().enumerate() {
+        let (branch_cx, branch_cy, branch_angle) = if num_branches == 1 {
+            (0.0, 0.0, 0.0)
+        } else {
+            let angle = (b_idx as f64 * std::f64::consts::TAU / num_branches as f64) - std::f64::consts::FRAC_PI_2;
+            // Étalement alterné léger pour les branches volumineuses (staggering)
+            let orbit_dist = if num_branches > 6 && b_idx % 2 == 1 {
+                base_orbit * 1.28
+            } else {
+                base_orbit
+            };
+            (angle.cos() * orbit_dist, angle.sin() * orbit_dist, angle)
+        };
+
+        let num_folders = branch.folders.len();
+        let root_r = branch.folders[0].radius;
+
+        for (f_idx, folder) in branch.folders.into_iter().enumerate() {
+            // Placement arborescent du dossier au sein de sa branche
+            let (fcx, fcy) = if f_idx == 0 {
+                // Dossier primaire du module à l'ancre de la branche
+                (branch_cx, branch_cy)
+            } else {
+                // Sous-dossiers déployés en satellites rayonnants autour du dossier parent
+                let sub_offset_idx = f_idx as f64;
+                let sub_angle_spread = 0.68;
+                let sub_angle = branch_angle
+                    + (sub_offset_idx - (num_folders as f64 * 0.5)) * sub_angle_spread;
+                let sub_dist = root_r + folder.radius + 140.0 + (sub_offset_idx - 1.0) * 80.0;
+                (
+                    branch_cx + sub_angle.cos() * sub_dist,
+                    branch_cy + sub_angle.sin() * sub_dist,
+                )
+            };
+
+            let n_len = folder.indices.len();
+            for (i, &n_idx) in folder.indices.iter().enumerate() {
+                let (node_dist, node_angle) = if n_len <= 1 {
+                    (0.0, 0.0)
+                } else {
+                    // Dégagement central ferme (r0 = 38px) : aucune bulle ne se superpose au barycentre
+                    let t = (i as f64 + 0.6) / n_len as f64;
+                    let dist = 38.0 + t.sqrt() * (folder.radius - 42.0);
+                    let angle = i as f64 * GOLDEN_ANGLE;
+                    (dist, angle)
+                };
+
+                nodes[n_idx].layouts.obsidian = Some(Point2D::new(
+                    (fcx + node_angle.cos() * node_dist).round(),
+                    (fcy + node_angle.sin() * node_dist).round(),
+                ));
+            }
         }
     }
 }

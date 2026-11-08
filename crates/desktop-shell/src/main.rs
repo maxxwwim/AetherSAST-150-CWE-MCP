@@ -4,6 +4,7 @@
 mod api_routes;
 mod local_guard;
 mod mcp;
+mod surface_scanner;
 mod viewer;
 
 use api_routes::*;
@@ -1255,6 +1256,38 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         "total_nodes": new_graph.nodes.len(),
                         "total_edges": new_graph.edges.len()
                     }))
+                }
+            }),
+        )
+        .route(
+            "/api/surface_scan",
+            axum::routing::post({
+                let state = shared_state.clone();
+                move |axum::extract::Json(req): axum::extract::Json<surface_scanner::SurfaceScanRequest>| {
+                    let state = state.clone();
+                    async move {
+                        let report = surface_scanner::run_surface_scan(req).await;
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        {
+                            let mut t_guard = state.telemetry.write().await;
+                            *t_guard = Some(AiTelemetryEvent {
+                                target: report.host.clone(),
+                                action: format!("Scan Surface ({})", report.grade),
+                                details: format!(
+                                    "Score {}/100 | {} IP(s) | {} port(s) ouverts | {} alerte(s)",
+                                    report.security_score,
+                                    report.resolved_ips.len(),
+                                    report.open_ports.iter().filter(|p| p.open).count(),
+                                    report.findings.len()
+                                ),
+                                timestamp: now_ms,
+                            });
+                        }
+                        axum::Json(report)
+                    }
                 }
             }),
         )

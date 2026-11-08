@@ -3031,6 +3031,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'h' || e.key === 'H') { if (typeof toggleHeatmapMode === 'function') toggleHeatmapMode(); }
   else if (e.key === 'v' || e.key === 'V') { if (typeof toggleSecurityVisionMode === 'function') toggleSecurityVisionMode(); }
   else if (e.key === 'p' || e.key === 'P') toggleSettingsModal();
+  else if (e.key === 'n' || e.key === 'N') { if (typeof openSurfaceScannerModal === 'function') openSurfaceScannerModal(); }
   else if (e.key === 's' || e.key === 'S') { if (typeof takeSnapshot === 'function') takeSnapshot(); }
   else if (e.key === 'a' || e.key === 'A') document.getElementById('btn-ai-telemetry')?.click();
   else if (e.key === 'c' || e.key === 'C') toggleAiChatPopup();
@@ -3089,6 +3090,7 @@ window.addEventListener('keydown', (e) => {
     document.getElementById('ai-sysprompt-modal')?.classList.remove('open');
     document.getElementById('ai-create-file-modal')?.classList.remove('open');
     document.getElementById('ai-mcp-modal')?.classList.remove('open');
+    document.getElementById('surface-scanner-modal')?.classList.remove('open');
     document.getElementById('ai-telemetry-hud')?.classList.add('hidden');
   } else if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
@@ -3409,6 +3411,1415 @@ document.querySelectorAll('#tasks-filter-tabs .task-btn').forEach(btn => {
   });
 });
 
+
+// =========================================================================
+// SURFACE & DOMAIN / IP POSTURE SCANNER CONTROLLER (Options -> Scanner)
+// =========================================================================
+let lastSurfaceScanReport = null;
+let baselineSurfaceSnapshot = null;
+let currentSurfaceScanLevel = 4;
+let currentSurfacePromptMode = 'arch';
+let selectedSurfaceFileFilter = 'ALL';
+let surfaceProgressTimer = null;
+
+function saveSurfaceBaselineSnapshot() {
+  if (!lastSurfaceScanReport) {
+    showToast('⚠️ Lancez d\'abord un audit pour figer une Baseline.');
+    return;
+  }
+  baselineSurfaceSnapshot = JSON.parse(JSON.stringify(lastSurfaceScanReport));
+  const btn = document.getElementById('btn-surface-snapshot');
+  if (btn) {
+    btn.innerText = `📸 Baseline (${baselineSurfaceSnapshot.security_score}/100)`;
+    btn.style.borderColor = '#34d399';
+    btn.style.color = '#34d399';
+  }
+  renderSurfaceDeltaBanner(lastSurfaceScanReport);
+  showToast(`📸 Baseline figée à ${baselineSurfaceSnapshot.security_score}/100 (Grade ${baselineSurfaceSnapshot.grade}). Relancez un scan après vos correctifs pour voir le différentiel !`);
+}
+window.saveSurfaceBaselineSnapshot = saveSurfaceBaselineSnapshot;
+
+function renderSurfaceDeltaBanner(rep) {
+  const banner = document.getElementById('surface-delta-banner');
+  if (!banner) return;
+  banner.replaceChildren();
+  if (!baselineSurfaceSnapshot || !rep) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'flex';
+  const scoreDiff = (rep.security_score || 0) - (baselineSurfaceSnapshot.security_score || 0);
+  const baseIds = new Set((baselineSurfaceSnapshot.findings || []).map(f => f.id));
+  const curIds = new Set((rep.findings || []).map(f => f.id));
+  let resolvedCount = 0;
+  baseIds.forEach(id => { if (!curIds.has(id)) resolvedCount++; });
+  let newCount = 0;
+  curIds.forEach(id => { if (!baseIds.has(id)) newCount++; });
+
+  const left = document.createElement('div');
+  left.style.cssText = 'display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-family:var(--font-mono); font-size:0.66rem;';
+
+  const title = document.createElement('strong');
+  title.style.color = scoreDiff >= 0 ? '#34d399' : '#f87171';
+  const sign = scoreDiff > 0 ? `+${scoreDiff}` : `${scoreDiff}`;
+  title.innerText = `⚖️ COMPARAISON AVANT / APRÈS : ${baselineSurfaceSnapshot.security_score}/100 (${baselineSurfaceSnapshot.grade}) ➔ ${rep.security_score}/100 (${rep.grade}) [${sign} pts]`;
+
+  const meta = document.createElement('span');
+  meta.style.color = '#cbd5e1';
+  meta.innerText = `• ✅ ${resolvedCount} alerte(s) corrigée(s) • ⚠️ ${newCount} nouvelle(s) alerte(s) • Cible Baseline : ${baselineSurfaceSnapshot.host}:${baselineSurfaceSnapshot.primary_port}`;
+
+  left.appendChild(title);
+  left.appendChild(meta);
+
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'cat-pill';
+  clearBtn.style.cssText = 'font-size:0.59rem; padding:2px 8px; background:#090d16; border-color:rgba(148,163,184,0.3); color:#94a3b8; cursor:pointer;';
+  clearBtn.innerText = '✕ Effacer Baseline';
+  clearBtn.onclick = () => {
+    baselineSurfaceSnapshot = null;
+    banner.style.display = 'none';
+    const snapBtn = document.getElementById('btn-surface-snapshot');
+    if (snapBtn) {
+      snapBtn.innerText = '📸 Figer Baseline';
+      snapBtn.style.borderColor = 'rgba(56, 189, 248, 0.35)';
+      snapBtn.style.color = '#38bdf8';
+    }
+  };
+
+  banner.appendChild(left);
+  banner.appendChild(clearBtn);
+}
+
+function correlateSurfaceWithLocalAst(rep) {
+  const nodes = (window.state && window.state.data && Array.isArray(window.state.data.nodes))
+    ? window.state.data.nodes
+    : [];
+  const results = [];
+  const wd = rep?.web_discovery;
+  if (!wd) return results;
+
+  const seenRefs = new Set();
+
+  (wd.web_files || []).forEach(wf => {
+    const cleanPath = (wf.path || '').split('?')[0];
+    if (!cleanPath || seenRefs.has(cleanPath)) return;
+    seenRefs.add(cleanPath);
+    const baseName = cleanPath.split('/').filter(Boolean).pop() || '';
+    const stem = baseName.replace(/\.[a-z0-9]+$/i, '').toLowerCase();
+
+    const matched = nodes.find(n => {
+      const lbl = (n.label || n.id || '').toLowerCase();
+      return (baseName.length > 2 && lbl.includes(baseName.toLowerCase())) ||
+             (stem.length > 3 && lbl.includes(stem));
+    });
+
+    results.push({
+      externalRef: cleanPath,
+      refType: `Fichier ${wf.file_type}`,
+      isMapped: Boolean(matched),
+      matchedLabel: matched ? (matched.label || matched.id) : 'Asset externe / statique non indexé dans l\'AST',
+      matchedLayer: matched ? (matched.layer || 'Code Local') : 'Externe'
+    });
+  });
+
+  (wd.routes || []).forEach(r => {
+    const cleanRoute = (r.path || '').split('?')[0];
+    if (!cleanRoute || seenRefs.has(cleanRoute)) return;
+    seenRefs.add(cleanRoute);
+    const segments = cleanRoute.split('/').filter(s => s && s !== 'api' && s !== 'v1' && s.length > 2);
+    const lastSeg = (segments[segments.length - 1] || '').replace(/[^a-z0-9_]/gi, '').toLowerCase();
+
+    const matched = lastSeg.length >= 3 ? nodes.find(n => {
+      const lbl = (n.label || n.id || '').toLowerCase();
+      const sum = (n.summary || '').toLowerCase();
+      return lbl.includes(lastSeg) || sum.includes(lastSeg) || sum.includes(cleanRoute.toLowerCase());
+    }) : null;
+
+    results.push({
+      externalRef: `[${r.method}] ${cleanRoute}`,
+      refType: r.source || 'Route / API',
+      isMapped: Boolean(matched),
+      matchedLabel: matched ? (matched.label || matched.id) : 'Route non résolue dans l\'AST local (Vérifier contrôleur)',
+      matchedLayer: matched ? (matched.layer || 'Backend AST') : 'Shadow / Externe'
+    });
+  });
+
+  return results;
+}
+
+function setSurfaceFileFilter(filePath) {
+  selectedSurfaceFileFilter = filePath || 'ALL';
+  if (lastSurfaceScanReport) {
+    renderSurfaceScanResults(lastSurfaceScanReport);
+  }
+}
+window.setSurfaceFileFilter = setSurfaceFileFilter;
+
+function buildSideTwoWeaknessSuite(rep) {
+  if (!rep) return [];
+  const nodes = (window.state && window.state.data && Array.isArray(window.state.data.nodes))
+    ? window.state.data.nodes
+    : [];
+  const probes = rep.boundary_weaknesses || [];
+  return probes.map((p, idx) => {
+    const tokens = `${p.side_one_vector} ${p.side_two_ast_target}`
+      .toLowerCase()
+      .split(/[^a-z0-9_]+/)
+      .filter(w => w.length >= 4 && !['http', 'https', 'form', 'post', 'test', 'avec', 'dans', 'pour'].includes(w));
+
+    const matchedNode = nodes.find(n => {
+      const lbl = (n.label || n.id || '').toLowerCase();
+      const sum = (n.summary || '').toLowerCase();
+      return tokens.some(tk => lbl.includes(tk) || sum.includes(tk));
+    });
+
+    const fnSlug = (p.id || `weakness_${idx}`)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '');
+
+    return {
+      id: p.id,
+      cwe: p.cwe,
+      status: p.status,
+      sideOneVector: p.side_one_vector,
+      astNodeLabel: matchedNode ? `${matchedNode.label || matchedNode.id} [${matchedNode.layer || 'AST'}]` : p.side_two_ast_target,
+      isAstMapped: Boolean(matchedNode),
+      negativeTestFn: `test_reject_${fnSlug}_boundary()`,
+      negativeTestSpec: p.negative_test_spec
+    };
+  });
+}
+
+function runPostBlackBoxSideTwoAudit() {
+  if (!lastSurfaceScanReport) {
+    showToast('⚠️ Lancez d\'abord le Scan Black-Box (Côté 1) avant de propulser le Côté 2.');
+    return;
+  }
+  const sideTwoList = document.getElementById('surface-side-two-weakness-list');
+  const sideTwoBadge = document.getElementById('surface-side-two-badge');
+  const sumEl = document.getElementById('surface-dual-weakness-summary');
+  const suite = buildSideTwoWeaknessSuite(lastSurfaceScanReport);
+
+  if (sideTwoBadge) {
+    sideTwoBadge.style.color = '#34d399';
+    sideTwoBadge.innerText = `✅ ${suite.length} Test(s) Négatif(s) AST généré(s)`;
+  }
+  if (sumEl) {
+    const mappedCount = suite.filter(s => s.isAstMapped).length;
+    sumEl.innerText = `Miroir Bilatéral Actif : ${suite.length} sonde(s) Côté 1 croisée(s) avec ${mappedCount} nœud(s) AST Côté 2 • Mode 4 prêt à copier`;
+  }
+
+  if (sideTwoList) {
+    sideTwoList.replaceChildren();
+    if (suite.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'font-size:0.63rem; color:#64748b; padding:6px;';
+      empty.innerText = 'Aucune sonde de frontière disponible à corréler.';
+      sideTwoList.appendChild(empty);
+    } else {
+      suite.forEach(item => {
+        const col = item.status === 'ROBUSTE' ? '#c084fc' : (item.status === 'FAIBLESSE' ? '#fbbf24' : '#f87171');
+        const card = document.createElement('div');
+        card.style.cssText = `background:#090d16; border:1px solid ${col}; border-left:3px solid ${col}; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:3px; font-family:var(--font-mono); font-size:0.60rem;`;
+
+        const top = document.createElement('div');
+        top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:4px;';
+        const fnEl = document.createElement('strong');
+        fnEl.style.color = '#f8fafc';
+        fnEl.innerText = `🧪 ${item.negativeTestFn}`;
+        const cweEl = document.createElement('span');
+        cweEl.style.cssText = `color:${col}; font-weight:800; font-size:0.56rem;`;
+        cweEl.innerText = `${item.cwe} • ${item.isAstMapped ? '🔗 AST' : '🎯 Cible'}`;
+        top.appendChild(fnEl);
+        top.appendChild(cweEl);
+        card.appendChild(top);
+
+        const targetEl = document.createElement('div');
+        targetEl.style.cssText = 'color:#7dd3fc; font-size:0.57rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        targetEl.innerText = `Cible Code/AST : ${item.astNodeLabel}`;
+        card.appendChild(targetEl);
+
+        const specEl = document.createElement('div');
+        specEl.style.cssText = 'color:#cbd5e1; font-size:0.57rem; line-height:1.3;';
+        specEl.innerText = item.negativeTestSpec;
+        card.appendChild(specEl);
+
+        sideTwoList.appendChild(card);
+      });
+    }
+  }
+
+  setSurfacePromptMode('weakness');
+  if (window.AudioSys?.nodeSelect) AudioSys.nodeSelect();
+  showToast(`🔬 Côté 2 propulsé : ${suite.length} tests négatifs AST corrélés et chargés dans le Mode 4 !`);
+}
+window.runPostBlackBoxSideTwoAudit = runPostBlackBoxSideTwoAudit;
+
+function setSurfacePromptMode(mode) {
+  currentSurfacePromptMode = ['arch', 'hardening', 'tests', 'weakness'].includes(mode) ? mode : 'arch';
+  const tabs = {
+    arch: document.getElementById('surface-prompt-tab-arch'),
+    hardening: document.getElementById('surface-prompt-tab-hardening'),
+    tests: document.getElementById('surface-prompt-tab-tests'),
+    weakness: document.getElementById('surface-prompt-tab-weakness')
+  };
+  Object.entries(tabs).forEach(([k, btn]) => {
+    if (!btn) return;
+    if (k === currentSurfacePromptMode) {
+      btn.style.background = '#1e293b';
+      btn.style.border = k === 'weakness' ? '1px solid #c084fc' : '1px solid #38bdf8';
+      btn.style.color = '#f8fafc';
+    } else {
+      btn.style.background = '#090d16';
+      btn.style.border = '1px solid rgba(148,163,184,0.2)';
+      btn.style.color = '#cbd5e1';
+    }
+  });
+  const rawArea = document.getElementById('surface-report-raw-textarea');
+  if (rawArea && lastSurfaceScanReport) {
+    rawArea.value = buildSurfaceScanMarkdownPrompt(lastSurfaceScanReport, currentSurfacePromptMode);
+  }
+}
+window.setSurfacePromptMode = setSurfacePromptMode;
+
+function updateSurfaceProgress(pct, stepText) {
+  const wrap = document.getElementById('surface-scan-progress-wrap');
+  const fill = document.getElementById('surface-scan-progress-fill');
+  const step = document.getElementById('surface-scan-progress-step');
+  const pctEl = document.getElementById('surface-scan-progress-pct');
+  if (wrap) wrap.style.display = 'flex';
+  if (fill) fill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+  if (step) step.innerText = stepText;
+  if (pctEl) pctEl.innerText = `${Math.round(pct)}%`;
+}
+
+function setSurfaceScanLevel(lvl) {
+  currentSurfaceScanLevel = [1, 2, 3, 4].includes(Number(lvl)) ? Number(lvl) : 4;
+  const configs = {
+    1: { border: '#10b981', dns: true, ports: false, headers: true, endpoints: false, forms: false, sensitive: false },
+    2: { border: '#f59e0b', dns: true, ports: true, headers: true, endpoints: true, forms: false, sensitive: false },
+    3: { border: '#38bdf8', dns: true, ports: true, headers: true, endpoints: true, forms: true, sensitive: false },
+    4: { border: '#38bdf8', dns: true, ports: true, headers: true, endpoints: true, forms: true, sensitive: true }
+  };
+  [1, 2, 3, 4].forEach(n => {
+    const card = document.getElementById(`surface-lvl-card-${n}`);
+    if (!card) return;
+    if (n === currentSurfaceScanLevel) {
+      card.style.background = '#1e293b';
+      card.style.border = `1px solid ${configs[n].border}`;
+      card.style.boxShadow = 'none';
+    } else {
+      card.style.background = '#090d16';
+      card.style.border = '1px solid rgba(148, 163, 184, 0.16)';
+      card.style.boxShadow = 'none';
+    }
+  });
+
+  const c = configs[currentSurfaceScanLevel];
+  const chkDns = document.getElementById('surface-chk-dns');
+  const chkPorts = document.getElementById('surface-chk-ports');
+  const chkHeaders = document.getElementById('surface-chk-headers');
+  const chkEndpoints = document.getElementById('surface-chk-endpoints');
+  const chkForms = document.getElementById('surface-chk-web-forms');
+  const chkSens = document.getElementById('surface-chk-sensitive');
+  if (chkDns) chkDns.checked = c.dns;
+  if (chkPorts) chkPorts.checked = c.ports;
+  if (chkHeaders) chkHeaders.checked = c.headers;
+  if (chkEndpoints) chkEndpoints.checked = c.endpoints;
+  if (chkForms) chkForms.checked = c.forms;
+  if (chkSens) chkSens.checked = c.sensitive;
+
+  const kpiImpact = document.getElementById('surface-kpi-impact');
+  if (kpiImpact) {
+    const labels = {
+      1: 'Niveau 1 • Furtif (~2 pqts)',
+      2: 'Niveau 2 • Services/Versions',
+      3: 'Niveau 3 • Fichiers/Dossiers/Forms',
+      4: 'Niveau 4 • Complet + CWE-538'
+    };
+    kpiImpact.innerText = labels[currentSurfaceScanLevel];
+  }
+}
+window.setSurfaceScanLevel = setSurfaceScanLevel;
+
+function openSurfaceScannerModal(prefillTarget = null) {
+  const modal = document.getElementById('surface-scanner-modal');
+  if (!modal) return;
+  document.querySelectorAll('.aether-dropdown.open').forEach(d => d.classList.remove('open'));
+  if (prefillTarget) {
+    const inp = document.getElementById('surface-scan-target-input');
+    if (inp) inp.value = prefillTarget;
+  }
+  modal.classList.add('open');
+  if (window.AudioSys?.nodeSelect) AudioSys.nodeSelect();
+  const inp = document.getElementById('surface-scan-target-input');
+  if (inp) setTimeout(() => inp.focus(), 60);
+}
+window.openSurfaceScannerModal = openSurfaceScannerModal;
+
+function closeSurfaceScannerModal() {
+  document.getElementById('surface-scanner-modal')?.classList.remove('open');
+}
+window.closeSurfaceScannerModal = closeSurfaceScannerModal;
+
+function setSurfacePreset(targetStr) {
+  const inp = document.getElementById('surface-scan-target-input');
+  if (inp) {
+    inp.value = targetStr;
+    runSurfaceScanner();
+  }
+}
+window.setSurfacePreset = setSurfacePreset;
+
+async function runSurfaceScanner() {
+  const targetInput = document.getElementById('surface-scan-target-input');
+  const target = targetInput ? targetInput.value.trim() : '';
+  if (!target) {
+    showToast('⚠️ Veuillez saisir un domaine, une adresse IP ou une URL.');
+    return;
+  }
+
+  const checkDns = document.getElementById('surface-chk-dns')?.checked !== false;
+  const checkPorts = document.getElementById('surface-chk-ports')?.checked !== false;
+  const checkHeaders = document.getElementById('surface-chk-headers')?.checked !== false;
+  const checkEndpoints = document.getElementById('surface-chk-endpoints')?.checked !== false;
+  const checkWebForms = document.getElementById('surface-chk-web-forms')?.checked !== false;
+  const checkSensitive = document.getElementById('surface-chk-sensitive')?.checked !== false;
+  const customPorts = document.getElementById('surface-custom-ports-input')?.value?.trim() || null;
+
+  const btn = document.getElementById('btn-run-surface-scan');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = `Audit Niv.${currentSurfaceScanLevel}...`;
+  }
+  const gradeBadge = document.getElementById('surface-scan-grade-badge');
+  if (gradeBadge) gradeBadge.innerText = 'Audit en cours...';
+
+  if (surfaceProgressTimer) clearInterval(surfaceProgressTimer);
+  const progressSteps = [
+    { pct: 18, msg: `Résolution DNS & classification IP sur ${target}...` },
+    { pct: 42, msg: 'Sonde TCP multi-ports & lecture des bannières de services...' },
+    { pct: 68, msg: 'Scan architectural par fichier (.html, .js, .css), dossiers & formulaires «Form»...' },
+    { pct: 88, msg: 'Contrôle CWE-538 (.env / .git masqués) & calcul du score de posture...' }
+  ];
+  let stepIdx = 0;
+  updateSurfaceProgress(10, `Initialisation de l'audit Niveau ${currentSurfaceScanLevel} sur ${target}...`);
+  surfaceProgressTimer = setInterval(() => {
+    if (stepIdx < progressSteps.length) {
+      updateSurfaceProgress(progressSteps[stepIdx].pct, progressSteps[stepIdx].msg);
+      stepIdx++;
+    }
+  }, 380);
+
+  if (window.AudioSys?.xraySweep) AudioSys.xraySweep();
+
+  try {
+    const rep = await window.AetherAPI.surfaceScan({
+      target,
+      scan_level: currentSurfaceScanLevel,
+      check_dns: checkDns,
+      check_ports: checkPorts,
+      check_headers: checkHeaders,
+      check_endpoints: checkEndpoints,
+      check_web_forms: checkWebForms,
+      check_sensitive_files: checkSensitive,
+      custom_ports: customPorts
+    });
+    if (surfaceProgressTimer) clearInterval(surfaceProgressTimer);
+    updateSurfaceProgress(100, `Audit complété en ${rep.scan_duration_ms} ms — Score ${rep.security_score}/100 (Grade ${rep.grade})`);
+    lastSurfaceScanReport = rep;
+    renderSurfaceScanResults(rep);
+    showToast(`✅ Audit terminé : ${rep.security_score}/100 (Grade ${rep.grade}) en ${rep.scan_duration_ms} ms`);
+  } catch (err) {
+    if (surfaceProgressTimer) clearInterval(surfaceProgressTimer);
+    updateSurfaceProgress(0, 'Erreur de connexion au moteur local.');
+    console.error('Surface scan error:', err);
+    showToast('❌ Erreur lors du scan de surface (vérifiez le serveur local).');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Lancer l\'Audit';
+    }
+  }
+}
+window.runSurfaceScanner = runSurfaceScanner;
+
+function renderSurfaceScanResults(rep) {
+  if (!rep) return;
+
+  renderSurfaceDeltaBanner(rep);
+
+  const scoreColor = rep.security_score >= 85 ? '#34d399' : (rep.security_score >= 65 ? '#fbbf24' : '#f87171');
+  const kpiScore = document.getElementById('surface-kpi-score');
+  if (kpiScore) {
+    kpiScore.style.color = scoreColor;
+    kpiScore.innerText = `${rep.security_score}/100 (${rep.grade})`;
+  }
+
+  const gradeBadge = document.getElementById('surface-scan-grade-badge');
+  if (gradeBadge) {
+    gradeBadge.innerText = `Grade ${rep.grade} • ${rep.security_score}/100`;
+    gradeBadge.style.color = scoreColor;
+    gradeBadge.style.borderColor = scoreColor;
+  }
+
+  const im = rep.impact_matrix || {};
+  const kpiImpact = document.getElementById('surface-kpi-impact');
+  if (kpiImpact) {
+    kpiImpact.innerText = `${im.level_name || `Niveau ${currentSurfaceScanLevel}`} (${im.packets_sent_estimate || ''})`;
+    kpiImpact.title = `${im.visibility_footprint || ''} — ${im.impact_rating || ''}`;
+  }
+
+  const kpiDns = document.getElementById('surface-kpi-dns');
+  if (kpiDns) {
+    const ipList = (rep.resolved_ips && rep.resolved_ips.length > 0) ? rep.resolved_ips.join(', ') : 'Non résolu';
+    kpiDns.innerText = `${ipList} (${rep.dns_latency_ms || 0} ms) • ${rep.target_classification || ''}`;
+  }
+
+  const openList = (rep.open_ports || []).filter(p => p.open);
+  const kpiPorts = document.getElementById('surface-kpi-ports');
+  if (kpiPorts) {
+    const verCnt = im.detected_versions_count ?? 0;
+    kpiPorts.innerText = `${openList.length} service(s) actif(s) • ${verCnt} version(s)`;
+  }
+
+  const kpiHttp = document.getElementById('surface-kpi-http');
+  if (kpiHttp) {
+    const fCnt = im.detected_forms_count ?? 0;
+    const iCnt = im.detected_inputs_count ?? 0;
+    kpiHttp.innerText = `${rep.http_status || 'Pas de HTTP'} • ${fCnt} Form(s) / ${iCnt} Champ(s)`;
+  }
+
+  const footerMeta = document.getElementById('surface-scan-footer-meta');
+  if (footerMeta) {
+    footerMeta.innerText = `${im.visibility_footprint || ''} • Cible : ${rep.host}:${rep.primary_port} • Durée : ${rep.scan_duration_ms} ms`;
+  }
+
+  // 1. Render Tech Stack, Services & Versions
+  const techList = document.getElementById('surface-tech-stack-list');
+  const techCount = document.getElementById('surface-tech-count');
+  const stack = rep.tech_stack || [];
+  if (techCount) {
+    techCount.innerText = `${stack.length} composant(s) / version(s) identifié(s)`;
+  }
+  if (techList) {
+    techList.replaceChildren();
+    if (stack.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'font-size:0.68rem; color:#64748b;';
+      empty.innerText = 'Aucune bannière logicielle ou version exposée (posture furtive ou Niveau 1).';
+      techList.appendChild(empty);
+    } else {
+      stack.forEach(t => {
+        const pill = document.createElement('div');
+        pill.style.cssText = 'background:rgba(30, 27, 75, 0.65); border:1px solid rgba(192, 132, 252, 0.45); border-radius:6px; padding:5px 9px; display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.66rem;';
+        const catSpan = document.createElement('span');
+        catSpan.style.cssText = 'color:#c084fc; font-weight:800; font-size:0.60rem; text-transform:uppercase;';
+        catSpan.innerText = `[${t.category}]`;
+
+        const nameSpan = document.createElement('strong');
+        nameSpan.style.color = '#f8fafc';
+        nameSpan.innerText = t.name;
+
+        pill.appendChild(catSpan);
+        pill.appendChild(nameSpan);
+
+        if (t.version) {
+          const verSpan = document.createElement('span');
+          verSpan.style.cssText = 'background:rgba(16, 185, 129, 0.2); border:1px solid rgba(16, 185, 129, 0.45); color:#6ee7b7; padding:1px 5px; border-radius:4px; font-size:0.60rem; font-weight:700;';
+          verSpan.innerText = `v: ${t.version}`;
+          pill.appendChild(verSpan);
+        }
+
+        const srcSpan = document.createElement('span');
+        srcSpan.style.cssText = 'color:#94a3b8; font-size:0.58rem;';
+        srcSpan.innerText = `(${t.source} • ${t.confidence})`;
+        pill.appendChild(srcSpan);
+
+        techList.appendChild(pill);
+      });
+    }
+  }
+
+  // 1b. Render 4 Trust Boundary Swimlanes (#surface-trust-swimlanes)
+  const swimlanesEl = document.getElementById('surface-trust-swimlanes');
+  const trustZones = rep.trust_zones || [];
+  if (swimlanesEl) {
+    swimlanesEl.replaceChildren();
+    if (trustZones.length > 0) {
+      trustZones.forEach(tz => {
+        const col = tz.posture === 'PASS' ? '#34d399' : (tz.posture === 'WARN' ? '#fbbf24' : '#ef4444');
+        const box = document.createElement('div');
+        box.style.cssText = `background:#090d16; border:1px solid rgba(148,163,184,0.18); border-top:3px solid ${col}; border-radius:7px; padding:7px 9px; display:flex; flex-direction:column; gap:3px; font-family:var(--font-mono);`;
+
+        const head = document.createElement('div');
+        head.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:4px; font-size:0.61rem;';
+        const title = document.createElement('strong');
+        title.style.color = '#f8fafc';
+        title.innerText = tz.title || tz.zone_name || `Zone ${tz.zone_id || ''}`;
+        const badge = document.createElement('span');
+        badge.style.cssText = `color:${col}; font-weight:800; font-size:0.56rem;`;
+        badge.innerText = `[${tz.posture}]`;
+        head.appendChild(title);
+        head.appendChild(badge);
+        box.appendChild(head);
+
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:0.57rem; color:#94a3b8;';
+        sub.innerText = tz.subtitle || '';
+        box.appendChild(sub);
+
+        const ctrls = tz.controls || tz.key_items || [];
+        if (ctrls.length > 0) {
+          const itemsEl = document.createElement('div');
+          itemsEl.style.cssText = 'font-size:0.56rem; color:#7dd3fc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px;';
+          itemsEl.innerText = ctrls.join(' • ');
+          itemsEl.title = ctrls.join('\n');
+          box.appendChild(itemsEl);
+        }
+        swimlanesEl.appendChild(box);
+      });
+    }
+  }
+
+  // 2. Render Visual Web Architecture & Forms («Form» / Infos Reçues)
+  const webMap = document.getElementById('surface-web-visual-map');
+  const formsList = document.getElementById('surface-forms-list');
+  const routesList = document.getElementById('surface-routes-list');
+  const webSummary = document.getElementById('surface-web-arch-summary');
+  const wd = rep.web_discovery;
+
+  if (webMap && formsList && routesList) {
+    webMap.replaceChildren();
+    formsList.replaceChildren();
+    routesList.replaceChildren();
+
+    if (!wd) {
+      if (webSummary) webSummary.innerText = 'Découverte Web désactivée (Activez le Niveau 3 ou la case Archi Web & «Form»)';
+      const msg = document.createElement('div');
+      msg.style.cssText = 'font-size:0.70rem; color:#64748b; text-align:center; padding:8px;';
+      msg.innerText = 'Passez en Niveau 3 (Black-Box Complet) pour activer la découverte visuelle de l\'architecture Web et des formulaires «Form».';
+      webMap.appendChild(msg);
+    } else {
+      const forms = wd.forms || [];
+      const routes = wd.routes || [];
+      const scripts = wd.external_scripts || [];
+      const robots = wd.robots_entries || [];
+      const webFiles = wd.web_files || [];
+      const dirs = wd.directories || [];
+      const totalInputs = forms.reduce((acc, f) => acc + ((f.inputs || []).length), 0);
+
+      if (selectedSurfaceFileFilter !== 'ALL' && !webFiles.some(w => w.path === selectedSurfaceFileFilter)) {
+        selectedSurfaceFileFilter = 'ALL';
+      }
+
+      if (webSummary) {
+        webSummary.innerText = `${wd.is_web_arch ? '🌐 Architecture Web Détectée' : '⚡ Service Réseau/API'} • ${webFiles.length} Fichier(s) • ${dirs.length} Dossier(s) • ${forms.length} Form(s) (${totalInputs} Champ(s))`;
+      }
+
+      // 2.0 Interactive File Filter Bar (#surface-file-filter-bar)
+      const filterBar = document.getElementById('surface-file-filter-bar');
+      if (filterBar) {
+        filterBar.replaceChildren();
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:0.61rem; font-weight:700; color:#38bdf8; font-family:var(--font-mono);';
+        lbl.innerText = '🧬 Cascade X-Ray par Fichier :';
+        filterBar.appendChild(lbl);
+
+        const makeFilterBtn = (label, val) => {
+          const b = document.createElement('button');
+          const active = selectedSurfaceFileFilter === val;
+          b.className = 'cat-pill';
+          b.style.cssText = `font-size:0.59rem; padding:2px 8px; cursor:pointer; font-family:var(--font-mono); background:${active ? '#0284c7' : '#0f172a'}; border:1px solid ${active ? '#38bdf8' : 'rgba(148,163,184,0.25)'}; color:${active ? '#f8fafc' : '#cbd5e1'};`;
+          b.innerText = label;
+          b.onclick = () => setSurfaceFileFilter(val);
+          return b;
+        };
+
+        filterBar.appendChild(makeFilterBtn(`Tous (${webFiles.length})`, 'ALL'));
+        webFiles.forEach(wf => {
+          filterBar.appendChild(makeFilterBtn(`${wf.file_type}: ${wf.path}`, wf.path));
+        });
+      }
+
+      // 2a. Graphe Visuel de Topologie Web (4 Nœuds Connectés)
+      const flowRow = document.createElement('div');
+      flowRow.style.cssText = 'display:grid; grid-template-columns: 1fr auto 1.15fr auto 1.15fr auto 1fr; gap:6px; align-items:center;';
+
+      const makeArchNode = (icon, title, subtitle, detail, borderCol) => {
+        const box = document.createElement('div');
+        box.style.cssText = `background:rgba(15, 23, 42, 0.92); border:1px solid ${borderCol}; border-radius:7px; padding:8px; display:flex; flex-direction:column; gap:3px; font-family:var(--font-mono);`;
+        const h = document.createElement('div');
+        h.style.cssText = 'font-size:0.68rem; font-weight:800; color:#f8fafc;';
+        h.innerText = `${icon} ${title}`;
+        const s = document.createElement('div');
+        s.style.cssText = 'font-size:0.62rem; color:#38bdf8; font-weight:700;';
+        s.innerText = subtitle;
+        const d = document.createElement('div');
+        d.style.cssText = 'font-size:0.59rem; color:#94a3b8;';
+        d.innerText = detail;
+        box.appendChild(h);
+        box.appendChild(s);
+        box.appendChild(d);
+        return box;
+      };
+
+      const makeArrow = () => {
+        const arr = document.createElement('div');
+        arr.style.cssText = 'color:#38bdf8; font-weight:900; font-size:0.95rem; padding:0 2px;';
+        arr.innerText = '➔';
+        return arr;
+      };
+
+      flowRow.appendChild(makeArchNode(
+        '🌐',
+        'POINT D\'ENTRÉE & FICHIERS',
+        `${rep.scheme.toUpperCase()}://${rep.host}:${rep.primary_port}`,
+        `${webFiles.length} Fichier(s) (.html/.js/.css) • ${dirs.length} Dossier(s)`,
+        'rgba(56, 189, 248, 0.5)'
+      ));
+      flowRow.appendChild(makeArrow());
+      flowRow.appendChild(makeArchNode(
+        '📝',
+        'SURFACE «FORM» & ENTRÉES',
+        `${forms.length} Formulaire(s) • ${totalInputs} Champ(s) reçu(s)`,
+        forms.length > 0 ? `Méthodes: ${[...new Set(forms.map(f => f.method))].join(', ')}` : 'Aucun <form> HTML direct',
+        forms.some(f => f.security_posture !== 'PASS') ? 'rgba(245, 158, 11, 0.65)' : 'rgba(16, 185, 129, 0.5)'
+      ));
+      flowRow.appendChild(makeArrow());
+      flowRow.appendChild(makeArchNode(
+        '🧭',
+        'CARTOGRAPHIE ROUTES & API',
+        `${routes.length} Route(s) • ${scripts.length} Script(s) JS`,
+        `robots.txt: ${robots.length} entrée(s) • sec.txt: ${wd.security_txt_present ? 'OUI' : 'NON'}`,
+        'rgba(192, 132, 252, 0.5)'
+      ));
+      flowRow.appendChild(makeArrow());
+      flowRow.appendChild(makeArchNode(
+        '🖥️',
+        'SERVICES & STACK BACKEND',
+        `${openList.length} Port(s) TCP • ${stack.length} Tech(s)`,
+        stack.slice(0, 2).map(t => t.name).join(', ') || 'Serveur HTTP',
+        'rgba(16, 185, 129, 0.5)'
+      ));
+
+      webMap.appendChild(flowRow);
+
+      // 2a-bis. Scan Architectural par Fichier (.html, .js, .css, .json) & Arborescence des Dossiers Appelés
+      const webFilesList = document.getElementById('surface-web-files-list');
+      const dirsList = document.getElementById('surface-directories-list');
+      const selectedWfObj = selectedSurfaceFileFilter === 'ALL'
+        ? null
+        : webFiles.find(w => w.path === selectedSurfaceFileFilter);
+
+      if (webFilesList) {
+        webFilesList.replaceChildren();
+        if (webFiles.length === 0) {
+          const emptyWF = document.createElement('div');
+          emptyWF.style.cssText = 'font-size:0.65rem; color:#64748b; padding:6px;';
+          emptyWF.innerText = 'Aucun fichier .html/.js/.css inspecté.';
+          webFilesList.appendChild(emptyWF);
+        } else {
+          webFiles.forEach(wf => {
+            const isSelected = selectedSurfaceFileFilter === wf.path;
+            const wfCard = document.createElement('div');
+            wfCard.style.cssText = `cursor:pointer; background:${isSelected ? '#1e293b' : '#0f172a'}; border:1px solid ${isSelected ? '#38bdf8' : 'rgba(148, 163, 184, 0.16)'}; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:4px; font-family:var(--font-mono);`;
+            wfCard.onclick = () => setSurfaceFileFilter(isSelected ? 'ALL' : wf.path);
+
+            const wfHead = document.createElement('div');
+            wfHead.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:6px; font-size:0.64rem;';
+            const wfName = document.createElement('strong');
+            wfName.style.color = isSelected ? '#38bdf8' : '#f8fafc';
+            wfName.innerText = `[${wf.file_type}] ${wf.path}`;
+            const wfMeta = document.createElement('span');
+            wfMeta.style.cssText = 'color:#94a3b8; font-size:0.58rem;';
+            const kb = (wf.size_bytes / 1024).toFixed(1);
+            wfMeta.innerText = `${kb} Ko • ${(wf.folder_calls || []).length} dossier(s) • ${(wf.api_and_asset_refs || []).length} appel(s)${wf.has_sourcemap ? ' • SourceMap' : ''}`;
+            wfHead.appendChild(wfName);
+            wfHead.appendChild(wfMeta);
+            wfCard.appendChild(wfHead);
+
+            if ((wf.folder_calls && wf.folder_calls.length > 0) || (wf.api_and_asset_refs && wf.api_and_asset_refs.length > 0) || (wf.json_payload_keys && wf.json_payload_keys.length > 0)) {
+              const callsRow = document.createElement('div');
+              callsRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px;';
+              (wf.folder_calls || []).slice(0, 6).forEach(fc => {
+                const badge = document.createElement('span');
+                badge.style.cssText = 'background:rgba(56, 189, 248, 0.12); border:1px solid rgba(56, 189, 248, 0.3); color:#7dd3fc; border-radius:4px; padding:1px 5px; font-size:0.57rem;';
+                badge.innerText = `📁 ${fc}`;
+                callsRow.appendChild(badge);
+              });
+              (wf.api_and_asset_refs || []).slice(0, 6).forEach(ar => {
+                const badge = document.createElement('span');
+                badge.style.cssText = 'background:rgba(30, 41, 59, 0.9); border:1px solid rgba(148, 163, 184, 0.22); color:#cbd5e1; border-radius:4px; padding:1px 5px; font-size:0.57rem;';
+                badge.innerText = `↳ ${ar}`;
+                callsRow.appendChild(badge);
+              });
+              (wf.json_payload_keys || []).slice(0, 8).forEach(jk => {
+                const badge = document.createElement('span');
+                badge.style.cssText = 'background:rgba(16, 185, 129, 0.14); border:1px solid rgba(16, 185, 129, 0.35); color:#6ee7b7; border-radius:4px; padding:1px 5px; font-size:0.57rem;';
+                badge.innerText = `🔑 JSON:${jk}`;
+                callsRow.appendChild(badge);
+              });
+              wfCard.appendChild(callsRow);
+            }
+
+            webFilesList.appendChild(wfCard);
+          });
+        }
+      }
+
+      if (dirsList) {
+        dirsList.replaceChildren();
+        const filteredDirs = selectedWfObj
+          ? dirs.filter(d => (d.source_files || []).includes(selectedWfObj.path) || (selectedWfObj.folder_calls || []).includes(d.folder_path))
+          : dirs;
+        if (filteredDirs.length === 0) {
+          const emptyD = document.createElement('div');
+          emptyD.style.cssText = 'font-size:0.65rem; color:#64748b; padding:6px;';
+          emptyD.innerText = selectedWfObj ? `Aucun sous-dossier appelé par ${selectedWfObj.path}.` : 'Aucun appel de sous-dossier détecté.';
+          dirsList.appendChild(emptyD);
+        } else {
+          filteredDirs.forEach(d => {
+            const dRow = document.createElement('div');
+            dRow.style.cssText = 'background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:6px; padding:5px 8px; display:flex; flex-direction:column; gap:2px; font-family:var(--font-mono);';
+            const top = document.createElement('div');
+            top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; font-size:0.63rem;';
+            const pSpan = document.createElement('strong');
+            pSpan.style.color = '#7dd3fc';
+            pSpan.innerText = `📁 ${d.folder_path}`;
+            const cSpan = document.createElement('span');
+            cSpan.style.cssText = 'color:#94a3b8; font-size:0.57rem;';
+            cSpan.innerText = `${d.classification} (${d.call_count}x)`;
+            top.appendChild(pSpan);
+            top.appendChild(cSpan);
+            dRow.appendChild(top);
+
+            const srcEl = document.createElement('div');
+            srcEl.style.cssText = 'font-size:0.56rem; color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+            srcEl.innerText = `Appelé depuis : ${(d.source_files || []).join(', ')}`;
+            dRow.appendChild(srcEl);
+            dirsList.appendChild(dRow);
+          });
+        }
+      }
+
+      // 2b. Cartes détaillées des Formulaires «Form» et des informations reçues
+      if (forms.length === 0) {
+        const emptyF = document.createElement('div');
+        emptyF.style.cssText = 'font-size:0.68rem; color:#94a3b8; padding:10px;';
+        emptyF.innerText = 'Aucune balise <form> ou champ <input> détecté sur la page d\'entrée.';
+        formsList.appendChild(emptyF);
+      } else {
+        forms.forEach(f => {
+          const fCard = document.createElement('div');
+          const pCol = f.security_posture === 'PASS' ? '#34d399' : (f.security_posture === 'WARN' ? '#fbbf24' : '#f87171');
+          fCard.style.cssText = `background:rgba(15, 23, 42, 0.9); border:1px solid ${pCol}; border-left:4px solid ${pCol}; border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px; font-family:var(--font-mono);`;
+
+          const fHead = document.createElement('div');
+          fHead.style.cssText = 'display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px; font-size:0.67rem;';
+          const fTitle = document.createElement('strong');
+          fTitle.style.color = '#f8fafc';
+          fTitle.innerText = `📝 Form #${f.index} «${f.id_or_name}» [${f.method}] ➔ ${f.action}`;
+
+          const fMeta = document.createElement('span');
+          fMeta.style.cssText = `color:${pCol}; font-weight:800; font-size:0.61rem;`;
+          fMeta.innerText = `${f.has_csrf_token ? '🛡️ CSRF OK' : '⚠️ Sans CSRF'} • [${f.security_posture}]`;
+          fHead.appendChild(fTitle);
+          fHead.appendChild(fMeta);
+          fCard.appendChild(fHead);
+
+          // Liste des champs d'information reçus par ce formulaire
+          const inputsWrap = document.createElement('div');
+          inputsWrap.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px;';
+          const fInputs = f.inputs || [];
+          if (fInputs.length === 0) {
+            const noInp = document.createElement('span');
+            noInp.style.cssText = 'font-size:0.61rem; color:#64748b;';
+            noInp.innerText = 'Aucun champ <input>/<select>/<textarea> interne.';
+            inputsWrap.appendChild(noInp);
+          } else {
+            fInputs.forEach(inp => {
+              const chip = document.createElement('span');
+              const isSens = inp.classification.includes('Secret') || inp.classification.includes('Upload');
+              chip.style.cssText = `background:${isSens ? 'rgba(239, 68, 68, 0.18)' : 'rgba(2, 6, 23, 0.85)'}; border:1px solid ${isSens ? 'rgba(239, 68, 68, 0.5)' : 'rgba(56, 189, 248, 0.35)'}; border-radius:4px; padding:2px 6px; font-size:0.60rem; color:#e2e8f0;`;
+              chip.innerText = `${inp.classification} : ${inp.name} (${inp.input_type}${inp.required ? '*' : ''})`;
+              inputsWrap.appendChild(chip);
+            });
+          }
+          fCard.appendChild(inputsWrap);
+
+          if (f.security_notes && f.security_notes.length > 0) {
+            f.security_notes.forEach(note => {
+              const nEl = document.createElement('div');
+              nEl.style.cssText = `font-size:0.60rem; color:${pCol};`;
+              nEl.innerText = `↳ ${note}`;
+              fCard.appendChild(nEl);
+            });
+          }
+
+          formsList.appendChild(fCard);
+        });
+      }
+
+      // 2c. Liste des Routes, API & Scripts découverts (filtrable par fichier X-Ray)
+      const filteredRoutes = selectedWfObj
+        ? routes.filter(r => (selectedWfObj.api_and_asset_refs || []).includes(r.path) || (r.source || '').includes(selectedWfObj.path))
+        : routes;
+
+      if (filteredRoutes.length === 0 && scripts.length === 0) {
+        const emptyR = document.createElement('div');
+        emptyR.style.cssText = 'font-size:0.68rem; color:#94a3b8; padding:10px;';
+        emptyR.innerText = selectedWfObj ? `Aucune route directe isolée pour ${selectedWfObj.path}.` : 'Aucune route ou script externe référencé.';
+        routesList.appendChild(emptyR);
+      } else {
+        filteredRoutes.forEach(r => {
+          const rRow = document.createElement('div');
+          rRow.style.cssText = 'background:rgba(15, 23, 42, 0.82); border:1px solid rgba(56, 189, 248, 0.25); border-radius:5px; padding:4px 7px; display:flex; justify-content:space-between; align-items:center; font-family:var(--font-mono); font-size:0.62rem;';
+          const left = document.createElement('span');
+          left.style.color = '#e2e8f0';
+          left.innerText = `[${r.method}] ${r.path}`;
+          const right = document.createElement('span');
+          right.style.color = '#7dd3fc';
+          right.style.fontSize = '0.58rem';
+          right.innerText = r.source;
+          rRow.appendChild(left);
+          rRow.appendChild(right);
+          routesList.appendChild(rRow);
+        });
+        if (!selectedWfObj) {
+          scripts.forEach(sc => {
+            const sRow = document.createElement('div');
+            sRow.style.cssText = 'background:rgba(30, 27, 75, 0.45); border:1px solid rgba(192, 132, 252, 0.25); border-radius:5px; padding:4px 7px; display:flex; justify-content:space-between; align-items:center; font-family:var(--font-mono); font-size:0.61rem;';
+            const left = document.createElement('span');
+            left.style.color = '#d8b4fe';
+            left.innerText = `📜 ${sc}`;
+            const right = document.createElement('span');
+            right.style.color = '#94a3b8';
+            right.style.fontSize = '0.57rem';
+            right.innerText = 'Script JS';
+            sRow.appendChild(left);
+            sRow.appendChild(right);
+            routesList.appendChild(sRow);
+          });
+        }
+      }
+
+      // 2c-bis. Pont Hybride « Surface Externe ↔ Code Source AST Local » (#surface-ast-bridge-list)
+      const bridgeListEl = document.getElementById('surface-ast-bridge-list');
+      const bridgeSumEl = document.getElementById('surface-ast-bridge-summary');
+      const bridgeItems = correlateSurfaceWithLocalAst(rep);
+      if (bridgeListEl) {
+        bridgeListEl.replaceChildren();
+        const mappedCnt = bridgeItems.filter(b => b.isMapped).length;
+        if (bridgeSumEl) {
+          bridgeSumEl.innerText = `${mappedCnt}/${bridgeItems.length} élément(s) corrélé(s) avec le graphe AST local`;
+        }
+        if (bridgeItems.length === 0) {
+          const emptyB = document.createElement('div');
+          emptyB.style.cssText = 'font-size:0.64rem; color:#64748b; grid-column:span 2; padding:4px;';
+          emptyB.innerText = 'Aucun fichier ou route à corréler avec l\'AST local.';
+          bridgeListEl.appendChild(emptyB);
+        } else {
+          bridgeItems.slice(0, 18).forEach(item => {
+            const card = document.createElement('div');
+            const bCol = item.isMapped ? 'rgba(16, 185, 129, 0.38)' : 'rgba(245, 158, 11, 0.35)';
+            card.style.cssText = `background:#0f172a; border:1px solid ${bCol}; border-radius:6px; padding:5px 8px; display:flex; flex-direction:column; gap:2px; font-family:var(--font-mono); font-size:0.61rem;`;
+
+            const top = document.createElement('div');
+            top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:4px;';
+            const extSpan = document.createElement('strong');
+            extSpan.style.color = '#f8fafc';
+            extSpan.innerText = `${item.isMapped ? '🔗' : '👻'} ${item.externalRef}`;
+            const statusSpan = document.createElement('span');
+            statusSpan.style.cssText = `font-size:0.55rem; color:${item.isMapped ? '#34d399' : '#fbbf24'}; font-weight:700;`;
+            statusSpan.innerText = item.isMapped ? 'AST MAPPÉ' : 'NON RÉSOLU AST';
+            top.appendChild(extSpan);
+            top.appendChild(statusSpan);
+            card.appendChild(top);
+
+            const bot = document.createElement('div');
+            bot.style.cssText = 'font-size:0.56rem; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+            bot.innerText = `➔ ${item.matchedLabel} [${item.matchedLayer}]`;
+            bot.title = `${item.matchedLabel} (${item.matchedLayer})`;
+            card.appendChild(bot);
+
+            bridgeListEl.appendChild(card);
+          });
+        }
+      }
+    }
+  }
+
+  // 2c-ter. Render Côté 1 (Sondes de Faiblesse de Frontière Black-Box Boosted) & Unlock Côté 2 (Post-Black-Box AST)
+  const sideOneList = document.getElementById('surface-side-one-weakness-list');
+  const sideOneBadge = document.getElementById('surface-side-one-badge');
+  const sideTwoBadge = document.getElementById('surface-side-two-badge');
+  const btnSideTwo = document.getElementById('btn-run-side-two-weakness');
+  const bProbes = rep.boundary_weaknesses || [];
+
+  if (btnSideTwo) {
+    btnSideTwo.disabled = false;
+    btnSideTwo.style.background = '#4c1d95';
+    btnSideTwo.style.borderColor = '#c084fc';
+    btnSideTwo.style.color = '#f8fafc';
+  }
+  if (sideTwoBadge) {
+    sideTwoBadge.style.color = '#c084fc';
+    sideTwoBadge.innerText = '⚡ Scan Black-Box acquis • Prêt à propulser';
+  }
+
+  if (sideOneList) {
+    sideOneList.replaceChildren();
+    const weakCnt = bProbes.filter(p => p.status !== 'ROBUSTE').length;
+    if (sideOneBadge) {
+      sideOneBadge.style.color = weakCnt > 0 ? '#fbbf24' : '#34d399';
+      sideOneBadge.innerText = `${bProbes.length} sonde(s) • ${weakCnt} point(s) d'attention`;
+    }
+    if (bProbes.length === 0) {
+      const emptyP = document.createElement('div');
+      emptyP.style.cssText = 'font-size:0.63rem; color:#64748b; padding:6px;';
+      emptyP.innerText = 'Aucune sonde de frontière exécutée.';
+      sideOneList.appendChild(emptyP);
+    } else {
+      bProbes.forEach(p => {
+        const col = p.status === 'ROBUSTE' ? '#34d399' : (p.status === 'FAIBLESSE' ? '#fbbf24' : '#ef4444');
+        const card = document.createElement('div');
+        card.style.cssText = `background:#090d16; border:1px solid ${col}; border-left:3px solid ${col}; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:3px; font-family:var(--font-mono); font-size:0.60rem;`;
+
+        const top = document.createElement('div');
+        top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:4px;';
+        const catEl = document.createElement('strong');
+        catEl.style.color = '#f8fafc';
+        catEl.innerText = `[${p.cwe}] ${p.category}`;
+        const stEl = document.createElement('span');
+        stEl.style.cssText = `color:${col}; font-weight:800; font-size:0.56rem;`;
+        stEl.innerText = `[${p.status}]`;
+        top.appendChild(catEl);
+        top.appendChild(stEl);
+        card.appendChild(top);
+
+        const vecEl = document.createElement('div');
+        vecEl.style.cssText = 'color:#38bdf8; font-size:0.57rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        vecEl.innerText = `Vecteur : ${p.side_one_vector}`;
+        card.appendChild(vecEl);
+
+        const obsEl = document.createElement('div');
+        obsEl.style.cssText = 'color:#cbd5e1; font-size:0.57rem; line-height:1.3;';
+        obsEl.innerText = p.observed_behavior;
+        card.appendChild(obsEl);
+
+        sideOneList.appendChild(card);
+      });
+    }
+  }
+
+  if (currentSurfacePromptMode === 'weakness') {
+    runPostBlackBoxSideTwoAudit();
+  }
+
+  // 2d. Render Module 4 : Exposed Sensitive Files (.env, .git, Configs — Redacted CWE-538)
+  const sensList = document.getElementById('surface-sensitive-list');
+  const sensSummary = document.getElementById('surface-sensitive-summary');
+  const artifacts = rep.exposed_artifacts || [];
+  if (sensList) {
+    sensList.replaceChildren();
+    if (artifacts.length === 0) {
+      if (sensSummary) sensSummary.innerText = 'Module 4 désactivé (Activez le Niveau 4 ou la case .env / .git)';
+      const emptyS = document.createElement('div');
+      emptyS.style.cssText = 'font-size:0.68rem; color:#64748b; grid-column:span 4; text-align:center; padding:8px;';
+      emptyS.innerText = 'Passez en Niveau 4 pour contrôler l\'exposition des fichiers .env, .git/HEAD et manifestes (avec masquage automatique des valeurs).';
+      sensList.appendChild(emptyS);
+    } else {
+      const exposedCount = artifacts.filter(a => a.exposed).length;
+      if (sensSummary) {
+        sensSummary.innerText = exposedCount > 0
+          ? `🚨 ${exposedCount} fichier(s) sensible(s) exposé(s) sur ${artifacts.length} sondés (Valeurs masquées [MASQUÉ])`
+          : `🛡️ 0 exposition sur ${artifacts.length} fichiers sensibles sondés (Tous protégés / 404 / Soft-404 filtrés)`;
+      }
+      artifacts.forEach(a => {
+        const card = document.createElement('div');
+        const borderCol = a.exposed ? '#ef4444' : 'rgba(16, 185, 129, 0.38)';
+        const bgCol = a.exposed ? 'rgba(127, 29, 29, 0.32)' : 'rgba(2, 6, 23, 0.72)';
+        card.style.cssText = `background:${bgCol}; border:1px solid ${borderCol}; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:3px; font-family:var(--font-mono); font-size:0.63rem;`;
+
+        const top = document.createElement('div');
+        top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:4px;';
+        const pEl = document.createElement('strong');
+        pEl.style.color = a.exposed ? '#fca5a5' : '#e2e8f0';
+        pEl.innerText = `${a.exposed ? '🚨' : '🛡️'} ${a.path}`;
+        const stEl = document.createElement('span');
+        stEl.style.cssText = `font-size:0.57rem; font-weight:800; color:${a.exposed ? '#f87171' : '#34d399'};`;
+        stEl.innerText = a.exposed ? 'EXPOSÉ' : 'PROTÉGÉ';
+        top.appendChild(pEl);
+        top.appendChild(stEl);
+        card.appendChild(top);
+
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:0.58rem; color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        sub.innerText = a.redacted_preview ? a.redacted_preview : `${a.label} (${a.http_status})`;
+        sub.title = a.redacted_preview || a.http_status;
+        card.appendChild(sub);
+
+        sensList.appendChild(card);
+      });
+    }
+  }
+
+  // 3. Render Ports Grid (with Protocol, Banner & Detected Version)
+  const portsGrid = document.getElementById('surface-ports-grid');
+  if (portsGrid) {
+    portsGrid.replaceChildren();
+    const ports = rep.open_ports || [];
+    if (ports.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'font-size:0.70rem; color:#64748b; grid-column:span 2; text-align:center; padding:10px;';
+      empty.innerText = 'Scan des ports désactivé en Niveau 1 (Furtif).';
+      portsGrid.appendChild(empty);
+    } else {
+      ports.forEach(p => {
+        const card = document.createElement('div');
+        const borderCol = p.open
+          ? (p.risk_level === 'CRITICAL' || p.risk_level === 'HIGH' ? 'rgba(239,68,68,0.6)' : 'rgba(16,185,129,0.55)')
+          : 'rgba(51,65,85,0.45)';
+        const bgCol = p.open ? 'rgba(6, 78, 59, 0.25)' : 'rgba(2, 6, 23, 0.55)';
+        card.style.cssText = `background:${bgCol}; border:1px solid ${borderCol}; border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:2px; font-family:var(--font-mono); font-size:0.65rem;`;
+
+        const top = document.createElement('div');
+        top.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
+        const left = document.createElement('span');
+        left.style.color = p.open ? '#f8fafc' : '#64748b';
+        left.style.fontWeight = p.open ? '700' : '400';
+        left.innerText = `${p.open ? '🟢' : '⚫'} :${p.port}/${p.protocol || 'TCP'} ${p.service}`;
+        const right = document.createElement('span');
+        right.style.color = p.open ? '#34d399' : '#475569';
+        right.innerText = p.open ? `${p.latency_ms ?? 0} ms` : 'FERMÉ';
+        top.appendChild(left);
+        top.appendChild(right);
+        card.appendChild(top);
+
+        if (p.open && (p.detected_version || p.banner)) {
+          const bEl = document.createElement('div');
+          bEl.style.cssText = 'font-size:0.59rem; color:#7dd3fc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+          bEl.innerText = `🏷️ ${p.detected_version ? `[${p.detected_version}] ` : ''}${p.banner || ''}`;
+          bEl.title = p.banner || '';
+          card.appendChild(bEl);
+        }
+        portsGrid.appendChild(card);
+      });
+    }
+  }
+
+  // 4. Render Headers Audit
+  const headersList = document.getElementById('surface-headers-list');
+  if (headersList) {
+    headersList.replaceChildren();
+    const hdrs = rep.headers_audit || [];
+    if (hdrs.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'font-size:0.70rem; color:#64748b; text-align:center; padding:10px;';
+      empty.innerText = 'Aucun service HTTP détecté sur les ports sondés.';
+      headersList.appendChild(empty);
+    } else {
+      hdrs.forEach(h => {
+        const row = document.createElement('div');
+        const col = h.status === 'PASS' ? '#34d399' : (h.status === 'WARN' ? '#fbbf24' : '#f87171');
+        row.style.cssText = 'background:rgba(2, 6, 23, 0.72); border:1px solid rgba(51, 65, 85, 0.6); border-radius:6px; padding:6px 9px; display:flex; flex-direction:column; gap:3px;';
+        const top = document.createElement('div');
+        top.style.cssText = 'display:flex; justify-content:space-between; align-items:center; font-family:var(--font-mono); font-size:0.68rem;';
+        const nameEl = document.createElement('strong');
+        nameEl.style.color = '#e2e8f0';
+        nameEl.innerText = h.header;
+        const badgeEl = document.createElement('span');
+        badgeEl.style.cssText = `color:${col}; font-weight:800; font-size:0.62rem;`;
+        badgeEl.innerText = `[${h.status}]`;
+        top.appendChild(nameEl);
+        top.appendChild(badgeEl);
+
+        const recEl = document.createElement('div');
+        recEl.style.cssText = 'font-size:0.64rem; color:#94a3b8;';
+        recEl.innerText = h.value ? `Valeur : ${h.value} — ${h.recommendation}` : h.recommendation;
+        row.appendChild(top);
+        row.appendChild(recEl);
+        headersList.appendChild(row);
+      });
+    }
+  }
+
+  // 5. Render Findings
+  const findingsList = document.getElementById('surface-findings-list');
+  const findingsCount = document.getElementById('surface-findings-count');
+  const findings = rep.findings || [];
+  if (findingsCount) findingsCount.innerText = `${findings.length} alerte(s)`;
+
+  if (findingsList) {
+    findingsList.replaceChildren();
+    if (findings.length === 0) {
+      const okBox = document.createElement('div');
+      okBox.style.cssText = 'background:rgba(6, 78, 59, 0.25); border:1px solid rgba(16, 185, 129, 0.5); border-radius:8px; padding:18px; text-align:center; color:#6ee7b7; font-size:0.76rem; font-weight:700;';
+      okBox.innerText = '🛡️ Aucune anomalie critique de surface, de formulaire ou d\'en-tête détectée sur cette cible !';
+      findingsList.appendChild(okBox);
+    } else {
+      findings.forEach(f => {
+        const sevCol = f.severity === 'CRITICAL' ? '#ef4444' : (f.severity === 'HIGH' ? '#f97316' : (f.severity === 'MEDIUM' ? '#fbbf24' : '#38bdf8'));
+        const card = document.createElement('div');
+        card.style.cssText = `background:rgba(2, 6, 23, 0.85); border:1px solid ${sevCol}; border-left:4px solid ${sevCol}; border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:4px;`;
+
+        const head = document.createElement('div');
+        head.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:6px; font-family:var(--font-mono); font-size:0.65rem;';
+        const cweSpan = document.createElement('span');
+        cweSpan.style.cssText = `color:${sevCol}; font-weight:800;`;
+        cweSpan.innerText = `[${f.severity}] ${f.cwe}`;
+        const catSpan = document.createElement('span');
+        catSpan.style.cssText = 'color:#94a3b8; font-size:0.60rem;';
+        catSpan.innerText = f.category;
+        head.appendChild(cweSpan);
+        head.appendChild(catSpan);
+
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'font-size:0.74rem; font-weight:700; color:#f8fafc;';
+        titleEl.innerText = f.title;
+
+        const descEl = document.createElement('div');
+        descEl.style.cssText = 'font-size:0.67rem; color:#cbd5e1; line-height:1.35;';
+        descEl.innerText = f.description;
+
+        const remEl = document.createElement('div');
+        remEl.style.cssText = 'font-size:0.65rem; color:#34d399; font-family:var(--font-mono); margin-top:2px;';
+        remEl.innerText = `💡 Remédiation : ${f.remediation}`;
+
+        card.appendChild(head);
+        card.appendChild(titleEl);
+        card.appendChild(descEl);
+        card.appendChild(remEl);
+        findingsList.appendChild(card);
+      });
+    }
+  }
+
+  // 6. Populate the Copyable Raw Report Textarea automatically with active Prompt Mode
+  const rawArea = document.getElementById('surface-report-raw-textarea');
+  if (rawArea) {
+    rawArea.value = buildSurfaceScanMarkdownPrompt(rep, currentSurfacePromptMode);
+  }
+}
+
+function buildSurfaceScanMarkdownPrompt(rep, mode = currentSurfacePromptMode) {
+  if (!rep) return '';
+  const im = rep.impact_matrix || {};
+  const openPorts = (rep.open_ports || []).filter(p => p.open).map(p => `- Port :${p.port}/${p.protocol || 'TCP'} (${p.service}) : OUVERT (${p.latency_ms || 0} ms)${p.detected_version ? ` | Version: ${p.detected_version}` : ''}${p.banner ? ` | Bannière: \`${p.banner}\`` : ''}`).join('\n') || '- Aucun port ouvert détecté';
+  const techMd = (rep.tech_stack || []).map(t => `- **[${t.category}] ${t.name}**${t.version ? ` (Version : \`${t.version}\`)` : ''} — Source : ${t.source} (${t.confidence})`).join('\n') || '- Aucune bannière logicielle exposée';
+  const trustMd = (rep.trust_zones || []).map(tz => `- **${tz.title || tz.zone_name}** (${tz.subtitle || ''}) : **[${tz.posture}]** — ${(tz.controls || tz.key_items || []).join(', ')}`).join('\n') || '- Non évalué';
+  const filesMd = (rep.web_discovery?.web_files || []).map(wf => `- **[${wf.file_type}] \`${wf.path}\`** (${(wf.size_bytes / 1024).toFixed(1)} Ko) — Dossiers : ${(wf.folder_calls || []).join(', ') || 'aucun'} | Appels : ${(wf.api_and_asset_refs || []).slice(0, 6).join(', ') || 'aucun'}${(wf.json_payload_keys && wf.json_payload_keys.length > 0) ? ` | Clés JSON : \`${wf.json_payload_keys.join(', ')}\`` : ''}`).join('\n') || '- Aucun fichier inspecté';
+  const dirsMd = (rep.web_discovery?.directories || []).map(d => `- **\`${d.folder_path}\`** (${d.classification}, ${d.call_count} appel(s)) — Sources : ${(d.source_files || []).join(', ')}`).join('\n') || '- Aucun sous-dossier détecté';
+  const formsMd = (rep.web_discovery?.forms || []).map(f => {
+    const inps = (f.inputs || []).map(i => `\`${i.name}\` (${i.input_type} • ${i.classification})`).join(', ') || 'aucun champ';
+    return `- **Form #${f.index} \`${f.id_or_name}\`** [${f.method} ➔ \`${f.action}\`] (CSRF: ${f.has_csrf_token ? 'OUI' : 'NON'}, Posture: ${f.security_posture})\n  - Champs reçus : ${inps}`;
+  }).join('\n') || '- Aucun formulaire HTML détecté';
+  const bridgeItems = correlateSurfaceWithLocalAst(rep);
+  const bridgeMd = bridgeItems.map(b => `- \`${b.externalRef}\` (${b.refType}) ➔ **${b.isMapped ? 'MAPPÉ AST' : 'NON RÉSOLU'}** : \`${b.matchedLabel}\` [${b.matchedLayer}]`).join('\n') || '- Aucun pont AST calculé';
+  const sensMd = (rep.exposed_artifacts || []).map(a => `- \`${a.path}\` (${a.label}) : **${a.exposed ? 'EXPOSÉ' : 'PROTÉGÉ'}** — ${a.redacted_preview || a.http_status}`).join('\n') || '- Non audité';
+  const findingsMd = (rep.findings || []).map(f => `- **[${f.severity}] ${f.id} (${f.cwe})** — ${f.title}\n  - Diagnostic : ${f.description}\n  - Remédiation : ${f.remediation}`).join('\n') || '- Aucune vulnérabilité de surface détectée.';
+  const verifMd = (rep.verification_suite || []).map(v => `- **[${v.id || v.check_id}] (${v.category || ''}) ${v.title}**\n  - Commande non-destructive : \`${v.assertion_cmd || v.non_destructive_cmd}\`\n  - Assertion attendue : ${v.expected_result || v.expected_assertion}\n  - Correctif type : ${v.patch_hint || ''}`).join('\n') || '- Aucune vérification générée.';
+  const sideOneMd = (rep.boundary_weaknesses || []).map(p => `- **[${p.status}] ${p.id} (${p.cwe} • ${p.category})**\n  - Vecteur Externe (Côté 1) : \`${p.side_one_vector}\`\n  - Comportement observé : ${p.observed_behavior}`).join('\n') || '- Aucune sonde de frontière exécutée.';
+  const sideTwoSuite = buildSideTwoWeaknessSuite(rep);
+  const sideTwoMd = sideTwoSuite.map(s => `- **Test Unitaire Négatif \`${s.negativeTestFn}\` (${s.cwe})**\n  - Entrée Externe Côté 1 : \`${s.sideOneVector}\`\n  - Cible Interne Code/AST Côté 2 : \`${s.astNodeLabel}\` (${s.isAstMapped ? 'Mappé dans l\'AST local' : 'Cible fonctionnelle'})\n  - Spécification du Test Négatif : ${s.negativeTestSpec}`).join('\n') || '- Aucun test Côté 2 généré.';
+
+  if (mode === 'weakness') {
+    return `# ⚖️ PROMPT BINÔME IA — MODE 4 BOOSTED : SUITE DE TESTS DE FAIBLESSE BILATÉRALE (CÔTÉ 1 BLACK-BOX ↔ CÔTÉ 2 WHITE-BOX AST)
+- **Cible auditée :** \`${rep.target_raw}\` (\`${rep.scheme}://${rep.host}:${rep.primary_port}\`)
+- **Score de Posture :** **${rep.security_score}/100 (Grade ${rep.grade})**
+- **Approche Miroir Bilatérale :**
+  1. **Côté 1 (Externe / Black-Box Boosted)** : Sondes de perméabilité des frontières HTTP (CORS Origin Reflection, verbes HTTP OPTIONS, indexation des dossiers CWE-548, drapeaux de cookies CWE-1004, contrats des formulaires «Form» CWE-352 et clés JSON CWE-20/CWE-88, dotfiles CWE-538).
+  2. **Côté 2 (Interne / Après Scan Black-Box ➔ Code Source & AST)** : Corrélation de chaque point d'entrée externe avec les handlers/sinks AST locaux et génération des **Tests Unitaires Négatifs (Negative Boundary Tests)** pour prouver que les garde-fous internes rejettent toute entrée malformée.
+
+## 🌐 CÔTÉ 1 : Résultats des Sondes de Faiblesse de Frontière (Externe / Black-Box)
+${sideOneMd}
+
+## 🧬 CÔTÉ 2 : Matrice de Réceptivité AST & Suite de Tests Unitaires Négatifs (Après Scan Black-Box)
+${sideTwoMd}
+
+## 🔗 Pont Hybride Surface Externe ↔ Fichiers Sources AST Locaux
+${bridgeMd}
+
+## 🎯 Instructions pour le Binôme IA (Génération des Suites de Tests des Deux Côtés)
+1. **Suite Côté 1 (Tests de Frontière HTTP / Intégration Externe)** : Génère les tests automatisés non-destructifs qui vérifient le rejet des origines CORS non autorisées (\`Origin: https://untrusted.invalid\`), le rejet des verbes HTTP inattendus (\`405 Method Not Allowed\`), l'absence de Directory Listing (\`403/404\`) et le rejet des soumissions sans jeton CSRF ou avec un \`Content-Type\` invalide (\`415/422\`).
+2. **Suite Côté 2 (Tests Unitaires Négatifs Côté Code / AST Interne)** : Écris le code complet des fonctions de test \`test_reject_*_boundary()\` ci-dessus (en Rust \`#[test]\` / TypeScript \`vitest\` selon les fichiers AST mappés) en passant des valeurs limites inoffensives (types invalides, chaînes vides, arguments préfixés par \`--\`, chemins relatifs simulés) et en vérifiant que le validateur retourne systématiquement \`Err(...)\` ou \`StatusCode::BAD_REQUEST / UNPROCESSABLE_ENTITY\` **avant** d'atteindre le sink interne.`;
+  }
+
+  if (mode === 'hardening') {
+    return `# 🛡️ PROMPT BINÔME IA — MODE 2 : PLAN DE DURCISSEMENT & CORRECTIFS CODE CIBLÉS
+- **Cible auditée :** \`${rep.target_raw}\` (Hôte : \`${rep.host}:${rep.primary_port}\`, Score actuel : **${rep.security_score}/100 — Grade ${rep.grade}**)
+- **Stack identifiée :** ${(rep.tech_stack || []).map(t => `${t.name}${t.version ? ' ' + t.version : ''}`).join(', ') || 'Serveur HTTP / TCP'}
+
+## 1. Pont Hybride Surface Externe ↔ Fichiers Sources AST Locaux
+${bridgeMd}
+
+## 2. Diagnostics de Posture & Failles à Corriger Prioritairement
+${findingsMd}
+
+## 3. Formulaires («Form») & Contrats de Données Détectés
+${formsMd}
+
+## 4. Exposition des Fichiers Sensibles (CWE-538 — Valeurs Masquées)
+${sensMd}
+
+## 🎯 Instructions pour le Binôme IA (Génération des Correctifs)
+1. **Middlewares & En-têtes HTTP** : Fournis le code exact (Rust/Axum/Tower, Node/Express ou Nginx selon la stack détectée) pour injecter \`Content-Security-Policy\`, \`X-Frame-Options: DENY\`, \`X-Content-Type-Options: nosniff\` et \`Referrer-Policy\`.
+2. **Protection des Formulaires & Routes API** : Si des formulaires ou routes API manquent de jeton anti-CSRF ou de validation de schéma sur les clés JSON extraites, écris le validateur côté serveur correspondant aux fichiers AST mappés ci-dessus.
+3. **Blocage CWE-538** : Ajoute une règle explicite interdisant l'accès HTTP aux dotfiles (\`.env\`, \`.git/*\`, \`docker-compose.yml\`).`;
+  }
+
+  if (mode === 'tests') {
+    return `# 🧪 PROMPT BINÔME IA — MODE 3 : SUITE DE TESTS DE CONFORMITÉ DÉFENSIFS & NON-RÉGRESSION CI
+- **Cible auditée :** \`${rep.target_raw}\` (\`${rep.scheme}://${rep.host}:${rep.primary_port}\`)
+- **Score actuel :** **${rep.security_score}/100 (Grade ${rep.grade})**
+- **Contrainte stricte :** Tests 100% défensifs, non-destructifs (assertions d'en-têtes \`curl -sSI\`, codes HTTP 403/404 sur dotfiles, présence de jetons CSRF).
+
+## 1. Assertions de Conformité Générées Automatiquement par AetherScope
+${verifMd}
+
+## 2. Routes, Fichiers (.html/.js) & Clés JSON à Couvrir
+${filesMd}
+
+## 3. Pont AST Local pour les Tests d'Intégration
+${bridgeMd}
+
+## 🎯 Instructions pour le Binôme IA (Génération des Tests Automatisés)
+1. Génère un script de vérification défensif exécutable en CI (PowerShell / Bash \`curl -sSI\` ou test d'intégration Rust/Playwright) qui valide chacune des assertions ci-dessus sans aucun payload offensif.
+2. Ajoute un test unitaire/intégration pour chaque route mappée dans l'AST local afin de garantir le maintien du **Grade A+ (100/100)**.`;
+  }
+
+  return `# 📐 PROMPT BINÔME IA — MODE 1 : REVUE D'ARCHITECTURE, 4 FRONTIÈRES DE CONFIANCE & PONT AST
+- **Cible auditée :** \`${rep.target_raw}\` (Hôte : \`${rep.host}\`, Port primaire : \`${rep.primary_port}\`)
+- **Module d'Impact & Visibilité :** ${im.level_name || 'Niveau 4'} (${im.visibility_footprint || ''})
+- **Classification :** ${rep.target_classification} | **IP(s) :** ${(rep.resolved_ips || []).join(', ') || 'Non résolu'}
+- **Score de Posture :** **${rep.security_score}/100 (Grade ${rep.grade})** | **Statut HTTP :** ${rep.http_status || 'N/A'}
+
+## 1. Carte des 4 Frontières de Confiance (Swimlanes Architecturales)
+${trustMd}
+
+## 2. Pont Hybride « Surface Externe ↔ Graphe AST Local »
+${bridgeMd}
+
+## 3. Cascade X-Ray par Fichier (.html ➔ .js ➔ Appels API & Clés JSON)
+${filesMd}
+
+## 4. Arborescence des Dossiers & Répertoires Appelés
+${dirsMd}
+
+## 5. Formulaires («Form» / Informations Reçues)
+${formsMd}
+
+## 6. Services, Versions, Ports TCP & Fichiers Sensibles (CWE-538 Masqué)
+${techMd}
+${openPorts}
+${sensMd}
+
+## 7. Diagnostics & Remédiations Architecturales
+${findingsMd}
+
+## 🎯 Instructions pour le Binôme IA
+Analyse cette topologie complète (du fichier \`.html\`/\`.js\` externe jusqu'au contrôleur AST local), identifie les routes fantômes non mappées dans l'AST, et propose une architecture de défense en profondeur pour atteindre **100/100 (Grade A+)**.`;
+}
+
+function copyTextWithFallback(text, successMsg) {
+  const rawArea = document.getElementById('surface-report-raw-textarea');
+  if (rawArea) {
+    rawArea.value = text;
+  }
+  const fallbackCopy = () => {
+    try {
+      const targetEl = rawArea || document.createElement('textarea');
+      if (!rawArea) {
+        targetEl.value = text;
+        targetEl.style.cssText = 'position:fixed;left:-9999px;top:0;';
+        document.body.appendChild(targetEl);
+      }
+      targetEl.focus();
+      targetEl.select();
+      document.execCommand('copy');
+      if (!rawArea) document.body.removeChild(targetEl);
+      if (window.AudioSys?.promptCopied) AudioSys.promptCopied();
+      showToast(successMsg);
+    } catch (e) {
+      console.error('Clipboard fallback error:', e);
+      showToast('⚠️ Texte sélectionné dans la zone de rapport : appuyez sur Ctrl+C.');
+    }
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      if (window.AudioSys?.promptCopied) AudioSys.promptCopied();
+      showToast(successMsg);
+    }).catch(() => fallbackCopy());
+  } else {
+    fallbackCopy();
+  }
+}
+
+function selectAllSurfaceReportText() {
+  const rawArea = document.getElementById('surface-report-raw-textarea');
+  if (!rawArea) return;
+  if (!rawArea.value && lastSurfaceScanReport) {
+    rawArea.value = buildSurfaceScanMarkdownPrompt(lastSurfaceScanReport);
+  }
+  rawArea.focus();
+  rawArea.select();
+  try {
+    document.execCommand('copy');
+    showToast('📋 Tout le rapport a été sélectionné et copié (Ctrl+C) !');
+  } catch (_) {
+    showToast('🔍 Rapport sélectionné : appuyez sur Ctrl+C.');
+  }
+}
+window.selectAllSurfaceReportText = selectAllSurfaceReportText;
+
+function copySurfaceScanPrompt() {
+  if (!lastSurfaceScanReport) {
+    showToast('⚠️ Lancez d\'abord un audit avant de copier le rapport.');
+    return;
+  }
+  const md = buildSurfaceScanMarkdownPrompt(lastSurfaceScanReport);
+  copyTextWithFallback(md, '📋 Rapport Markdown complet copié dans le presse-papier !');
+}
+window.copySurfaceScanPrompt = copySurfaceScanPrompt;
+
+function copySurfaceScanJson() {
+  if (!lastSurfaceScanReport) {
+    showToast('⚠️ Lancez d\'abord un audit avant de copier le JSON.');
+    return;
+  }
+  const jsonStr = JSON.stringify(lastSurfaceScanReport, null, 2);
+  copyTextWithFallback(jsonStr, '📦 Rapport JSON brut copié dans le presse-papier !');
+}
+window.copySurfaceScanJson = copySurfaceScanJson;
+
+async function sendSurfaceReportToCopilot() {
+  if (!lastSurfaceScanReport) {
+    showToast('⚠️ Lancez d\'abord un scan de surface.');
+    return;
+  }
+  const md = buildSurfaceScanMarkdownPrompt(lastSurfaceScanReport);
+  closeSurfaceScannerModal();
+  const popup = document.getElementById('ai-chat-popup');
+  if (popup && popup.classList.contains('hidden')) {
+    toggleAiChatPopup();
+  }
+  const input = document.getElementById('ai-chat-user-input');
+  if (input) {
+    input.value = md;
+    await sendUserChatMessage();
+  }
+}
+window.sendSurfaceReportToCopilot = sendSurfaceReportToCopilot;
+
+document.getElementById('surface-scan-target-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    runSurfaceScanner();
+  }
+});
 
 // Initial sync & Render Loop Bootstrap
 syncSettingsToMenuShortcuts();

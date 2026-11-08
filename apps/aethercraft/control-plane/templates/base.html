@@ -154,6 +154,66 @@
     .spotlight-card:hover::before {
       opacity: 1;
     }
+
+    /* ============ Refonte visuelle globale ============ */
+    ::selection { background: rgba(139, 92, 246, .55); color: #fff; }
+    ::-webkit-scrollbar-thumb { background: linear-gradient(to bottom, #7c3aed, #0891b2); }
+
+    /* Image Hero (index) : rendu net, cadrée en haut */
+    .hero-art {
+      background-size: cover;
+      background-position: center top;
+      background-repeat: no-repeat;
+      transform-origin: center top;
+    }
+
+    /* Bandeau d'image fondu en haut des autres pages */
+    .page-banner {
+      position: absolute; top: 0; left: 0; right: 0; height: 460px; z-index: -10; pointer-events: none;
+      background-image:
+        linear-gradient(to bottom, rgba(6,7,20,.35) 0%, rgba(6,7,11,.55) 55%, #06070b 100%),
+        url('/static/images/hero-bg.jpg');
+      background-size: cover; background-position: center top;
+      opacity: .55;
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%);
+    }
+
+    /* Aurore ambiante animée */
+    body::before, body::after {
+      content: ''; position: fixed; z-index: -20; pointer-events: none; border-radius: 9999px; filter: blur(140px);
+    }
+    body::before { top: 10%; left: -10%; width: 520px; height: 520px; background: rgba(124, 58, 237, .13); animation: auroraA 18s ease-in-out infinite alternate; }
+    body::after { bottom: -5%; right: -8%; width: 560px; height: 560px; background: rgba(8, 145, 178, .12); animation: auroraB 22s ease-in-out infinite alternate; }
+    @keyframes auroraA { to { transform: translate(120px, 80px) scale(1.15); } }
+    @keyframes auroraB { to { transform: translate(-100px, -60px) scale(1.2); } }
+
+    /* Panneaux de verre : liseré lumineux + reflet */
+    .glass-panel {
+      background: linear-gradient(145deg, rgba(24, 28, 46, .72), rgba(12, 15, 26, .62));
+      border: 1px solid rgba(160, 140, 255, .14);
+      box-shadow: 0 18px 40px -8px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .07);
+    }
+    .glass-card-hover:hover {
+      border-color: rgba(34, 211, 238, .45);
+      box-shadow: 0 22px 44px -10px rgba(0, 0, 0, .75), 0 0 34px rgba(124, 58, 237, .22), 0 0 14px rgba(34, 211, 238, .12);
+    }
+
+    /* Navigation : filet dégradé */
+    header { border-image: linear-gradient(to right, transparent, rgba(139, 92, 246, .45), rgba(34, 211, 238, .45), transparent) 1; }
+
+    /* Boutons dégradés : reflet qui glisse au survol */
+    a[class*="bg-gradient-to-r"], button[class*="bg-gradient-to-r"] { position: relative; overflow: hidden; }
+    a[class*="bg-gradient-to-r"]::after, button[class*="bg-gradient-to-r"]::after {
+      content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 40%;
+      background: linear-gradient(100deg, transparent, rgba(255,255,255,.35), transparent);
+      transform: skewX(-20deg); transition: left .6s ease; pointer-events: none;
+    }
+    a[class*="bg-gradient-to-r"]:hover::after, button[class*="bg-gradient-to-r"]:hover::after { left: 120%; }
+
+    /* Accessibilité */
+    :focus-visible { outline: 2px solid rgba(34, 211, 238, .8); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { body::before, body::after { animation: none; } }
   </style>
 </head>
 <body class="bg-obsidian-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-amber-500 selection:text-black relative overflow-x-hidden">
@@ -344,7 +404,8 @@
   </div>
 
   <!-- Body Content -->
-  <main class="flex-1">
+  <main class="flex-1 relative isolate">
+{% block page_banner %}<div class="page-banner" aria-hidden="true"></div>{% endblock %}
     {% block content %}{% endblock %}
   </main>
 

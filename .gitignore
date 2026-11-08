@@ -57,6 +57,8 @@ __pycache__/
 # ==========================================
 .vscode/
 .idea/
+.agents/
+crates/**/AETHER_AI_RULES.md
 *.sublime-project
 *.sublime-workspace
 .DS_Store

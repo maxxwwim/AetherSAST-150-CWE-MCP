@@ -268,6 +268,16 @@ impl PhpSecurityRules {
                 description: "Activation explicite de l'affichage des erreurs à l'utilisateur (ini_set('display_errors', '1')) ou appel à la fonction de diagnostic phpinfo() dans un script web accessible : fuite critique d'informations d'infrastructure, de variables d'environnement ($_ENV), de chemins serveurs et de versions logicielles.".to_string(),
                 default_enabled: true,
             },
+            // 26. CWE-98 / CWE-502: PHP Stream Wrapper Injection (phar:// Polyglot Deserialization & php://filter Chain RCE)
+            CveRuleDef {
+                rule_id: "CVE-PHP-STREAM-WRAPPER-PHAR-FILTER".to_string(),
+                cve_id: "CWE-98 / PHAR-POLYGLOT-AND-FILTER-CHAIN-RCE".to_string(),
+                name: "Injection de Stream Wrapper PHP (phar:// Polyglot Deserialization & php://filter Chain RCE)".to_string(),
+                category: "PHP / Web Security".to_string(),
+                severity: "CRITICAL".to_string(),
+                description: "Passage d'un chemin ou URI contrôlé par l'utilisateur en tête d'une fonction de métadonnées ou de flux PHP (file_exists, is_file, is_dir, md5_file, filesize, getimagesize, exif_read_data, copy) sans blocage des schémas de wrappers (://) ni préfixe de dossier statique : permet de déclencher une désérialisation RCE via une image polyglotte phar:// ou de synthétiser un webshell en mémoire via des chaînes php://filter/convert.iconv.".to_string(),
+                default_enabled: true,
+            },
         ]
     }
 
@@ -1013,6 +1023,52 @@ impl PhpSecurityRules {
                     transmitted_type: Some("Config (Exposed Diagnostic Interface)".to_string()),
                     remediation: "Désactiver l'affichage direct des erreurs en production avec ini_set('display_errors', '0'), journaliser via error_log() et supprimer tout appel à phpinfo().".to_string(),
                 });
+            }
+
+            // -------------------------------------------------------------
+            // 26. CVE-PHP-STREAM-WRAPPER-PHAR-FILTER (CWE-98 / CWE-502)
+            // -------------------------------------------------------------
+            let stream_meta_funcs = [
+                "file_exists(", "is_file(", "is_dir(", "md5_file(",
+                "sha1_file(", "filesize(", "getimagesize(", "exif_read_data(", "copy(",
+            ];
+            let matched_meta_fn = stream_meta_funcs.iter().find(|&&f| trimmed.contains(f));
+            if let Some(&fn_token) = matched_meta_fn {
+                if let Some(pos) = trimmed.find(fn_token) {
+                    let arg_head = trimmed[pos + fn_token.len()..].trim_start();
+                    // Le 1er argument commence directement par une variable ($) sans préfixe de dossier littéral ('/...' ou __DIR__)
+                    let starts_with_unprefixed_var = arg_head.starts_with('$');
+                    let has_tainted_stream_var = arg_head.contains("$_GET")
+                        || arg_head.contains("$_POST")
+                        || arg_head.contains("$_REQUEST")
+                        || arg_head.contains("$avatar")
+                        || arg_head.contains("$file")
+                        || arg_head.contains("$path")
+                        || arg_head.contains("$uri")
+                        || arg_head.contains("$image")
+                        || arg_head.contains("$doc")
+                        || arg_head.contains("$archive");
+                    let has_wrapper_guard = content.contains("strpos(")
+                        || content.contains("str_starts_with(")
+                        || content.contains("parse_url(")
+                        || content.contains("stream_wrapper_unregister(")
+                        || content.contains("basename(")
+                        || content.contains("://");
+
+                    if starts_with_unprefixed_var && has_tainted_stream_var && !has_wrapper_guard {
+                        violations.push(LinterViolation {
+                            file_path: file_path.to_string(),
+                            line_number: line_no,
+                            rule_id: "CVE-PHP-STREAM-WRAPPER-PHAR-FILTER".to_string(),
+                            cve_id: "CWE-98 / PHAR-POLYGLOT-AND-FILTER-CHAIN-RCE".to_string(),
+                            severity: "CRITICAL".to_string(),
+                            message: "🚨 [CWE-98] STREAM-WRAPPER-PHAR-FILTER-RCE : Fonction de métadonnées/flux PHP appelée avec une variable en tête de chemin sans préfixe de répertoire fixe ni blocage des schémas '://'. Permet la désérialisation RCE via phar:// sur un fichier polyglotte ou la synthèse de code via php://filter/convert.iconv.".to_string(),
+                            transmitted_data: Some("unprefixed_php_stream_uri".to_string()),
+                            transmitted_type: Some("StreamPath (phar:// & php://filter Wrapper Injection)".to_string()),
+                            remediation: "Interdire tout schéma '://' (strpos($path, '://') === false), appliquer basename($path) et préfixer systématiquement par un répertoire racine constant (__DIR__ . '/uploads/' . basename($path)).".to_string(),
+                        });
+                    }
+                }
             }
         }
 

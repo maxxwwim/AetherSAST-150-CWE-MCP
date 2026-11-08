@@ -214,10 +214,46 @@ impl DeepSecurityRules {
                 description: "Projection d'un fichier en mémoire via memmap2::Mmap::map exposée en &[u8] sans verrouillage exclusif OS (flock / lock_exclusive) : une troncature externe du fichier déclenche un signal matériel noyau SIGBUS non rattrapable par catch_unwind (crash instantané du validateur), et toute mutation concurrente viole l'immuabilité de &[u8] dans les tables de saut LLVM.".to_string(),
                 default_enabled: true,
             },
+            CveRuleDef {
+                rule_id: "CVE-INJ-POSIX-FLAG-SMUGGLING".to_string(),
+                cve_id: "CWE-88 / POSIX-ARGUMENT-INJECTION-RCE".to_string(),
+                name: "Injection d'Arguments POSIX & Smuggling de Drapeaux Exécutables (CWE-88)".to_string(),
+                category: "Code & File Injection".to_string(),
+                severity: "CRITICAL".to_string(),
+                description: "Exécution d'un binaire système (git, tar, find, rg, ssh, scp, rsync) sans shell mais avec un argument dynamique non précédé du délimiteur de fin d'options '--' ni filtré contre le préfixe '-' : un attaquant injecte des drapeaux exécutables (--upload-pack=..., --checkpoint-action=exec=..., -oProxyCommand=...) menant à un RCE direct.".to_string(),
+                default_enabled: true,
+            },
+            CveRuleDef {
+                rule_id: "CVE-INJ-FILELESS-ESM-WASM-DESER".to_string(),
+                cve_id: "CWE-94 / FILELESS-DATA-IMPORT-AND-CWASM-RCE".to_string(),
+                name: "Exécution Fileless par Import ESM Dynamique (data:/blob:) ou Désérialisation Wasm (.cwasm)".to_string(),
+                category: "Code & File Injection".to_string(),
+                severity: "CRITICAL".to_string(),
+                description: "Appel à import(specifier) dynamique en JS/TS/Deno/Node sans validation stricte du schéma (permettant d'injecter un payload fileless 'data:text/javascript;base64,...' en mémoire), ou appel à wasmtime::Module::deserialize / deserialize_file sur un artefact .cwasm précompilé sans vérification de signature cryptographique.".to_string(),
+                default_enabled: true,
+            },
+            CveRuleDef {
+                rule_id: "CVE-INJ-ARCHIVE-SYMLINK-ESCAPE".to_string(),
+                cve_id: "CWE-59 / ZIPSLIP-2-SYMLINK-CHAIN-ESCAPE".to_string(),
+                name: "Évasion d'Archive en 2 Temps par Chaîne de Symlinks (ZipSlip 2.0 / CWE-59)".to_string(),
+                category: "Code & File Injection".to_string(),
+                severity: "CRITICAL".to_string(),
+                description: "Décompression d'archive (tar::Archive::unpack en Rust sans unpack_in ni rejet de EntryType::Symlink/Link, ou tarfile.extractall en Python sans filter='data') : une archive contenant un lien symbolique interne suivi d'une écriture à travers ce lien contourne les filtres anti-'..' classiques et écrase des fichiers système hors du dossier cible.".to_string(),
+                default_enabled: true,
+            },
+            CveRuleDef {
+                rule_id: "CVE-INJ-PROCESS-ENV-LOADER-POISON".to_string(),
+                cve_id: "CWE-426 / ENV-LOADER-PRELOAD-INJECTION".to_string(),
+                name: "Empoisonnement d'Environnement Sous-Processus & Détournement du Chargeur Dynamique (CWE-426)".to_string(),
+                category: "Code & File Injection".to_string(),
+                severity: "CRITICAL".to_string(),
+                description: "Création d'un sous-processus (Command::envs, subprocess.Popen(..., env=...), child_process.spawn) en injectant un dictionnaire d'environnement dynamique non filtré sans neutraliser les variables du chargeur dynamique (LD_PRELOAD, NODE_OPTIONS, PYTHONSTARTUP, DYLD_INSERT_LIBRARIES, BASH_ENV, RUSTC_WRAPPER).".to_string(),
+                default_enabled: true,
+            },
         ]
     }
 
-    /// Audit syntaxique & heuristique pour les 10 règles élite
+    /// Audit syntaxique & heuristique pour les règles élite DeepSecurityRules
     pub fn audit_file(
         file_path: &str,
         content: &str,
@@ -234,6 +270,13 @@ impl DeepSecurityRules {
         let is_rust = lower_path.ends_with(".rs");
         let is_sol = lower_path.ends_with(".sol") || lower_path.ends_with(".vy");
         let is_circom = lower_path.ends_with(".circom");
+        let is_py = lower_path.ends_with(".py");
+        let is_js_ts = lower_path.ends_with(".js")
+            || lower_path.ends_with(".ts")
+            || lower_path.ends_with(".tsx")
+            || lower_path.ends_with(".jsx")
+            || lower_path.ends_with(".mjs")
+            || lower_path.ends_with(".cjs");
 
         // ---------------------------------------------------------------------
         // 1. CVE-ZK-WEAK-FIAT-SHAMIR (CWE-347) - Version portée de fonction chirurgicale
@@ -1325,6 +1368,310 @@ impl DeepSecurityRules {
                         transmitted_type: Some("memmap2::Mmap -> &[u8] (OS Page-Fault SIGBUS & Concurrent Aliasing UB)".to_string()),
                         remediation: "Verrouiller le descripteur de fichier via fs2::FileExt::lock_exclusive() avant Mmap::map(), et documenter l'absence de modification concurrente avec // SAFETY:.".to_string(),
                     });
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 24. CVE-INJ-POSIX-FLAG-SMUGGLING (CWE-88 / POSIX Argument Injection RCE)
+        // ---------------------------------------------------------------------
+        if is_rust || is_py || is_js_ts {
+            let posix_bins = [
+                "\"git\"", "'git'", "\"tar\"", "'tar'", "\"find\"", "'find'",
+                "\"rg\"", "'rg'", "\"ssh\"", "'ssh'", "\"scp\"", "'scp'", "\"rsync\"", "'rsync'",
+            ];
+            let has_posix_bin = posix_bins.iter().any(|b| content.contains(b));
+            if has_posix_bin {
+                let has_dash_guard = content.contains("\"--\"")
+                    || content.contains("'--'")
+                    || content.contains("starts_with('-')")
+                    || content.contains("starts_with(\"-\")")
+                    || content.contains("startsWith('-')")
+                    || content.contains("startsWith(\"-\")")
+                    || content.contains("startswith('-')")
+                    || content.contains("startswith(\"-\")");
+
+                if !has_dash_guard {
+                    for (idx, &line) in lines.iter().enumerate() {
+                        let line_no = idx + 1;
+                        let trimmed = line.trim();
+                        if trimmed.is_empty()
+                            || trimmed.starts_with("//")
+                            || trimmed.starts_with('#')
+                            || trimmed.starts_with("/*")
+                            || trimmed.starts_with('*')
+                        {
+                            continue;
+                        }
+
+                        let window_end = (idx + 4).min(lines.len().saturating_sub(1));
+                        let window_str = lines[idx..=window_end].join(" ");
+
+                        let is_spawn_line = (is_rust && trimmed.contains("Command::new(") && posix_bins.iter().any(|b| trimmed.contains(b)))
+                            || (is_js_ts && (trimmed.contains("execFile(") || trimmed.contains("spawn(") || trimmed.contains("execFileSync(") || trimmed.contains("spawnSync(")) && posix_bins.iter().any(|b| trimmed.contains(b)))
+                            || (is_py && (trimmed.contains("subprocess.run(") || trimmed.contains("subprocess.Popen(") || trimmed.contains("subprocess.check_output(")) && posix_bins.iter().any(|b| window_str.contains(b)));
+
+                        if is_spawn_line {
+                            // Vérifier la présence d'un argument dynamique non littéral dans la fenêtre d'appel
+                            let has_dynamic_arg = if is_rust {
+                                window_str.split(".arg(").skip(1).any(|seg| {
+                                    let arg_head = seg.trim_start();
+                                    !arg_head.starts_with('"') && !arg_head.starts_with('\'')
+                                }) || window_str.contains(".args(")
+                            } else if is_js_ts {
+                                if let (Some(lb), Some(rb)) = (window_str.find('['), window_str.rfind(']')) {
+                                    let inside = &window_str[lb + 1..rb];
+                                    inside.split(',').any(|elem| {
+                                        let t = elem.trim();
+                                        !t.is_empty() && !t.starts_with('\'') && !t.starts_with('"') && !t.starts_with('`')
+                                    })
+                                } else {
+                                    false
+                                }
+                            } else {
+                                if let (Some(lb), Some(rb)) = (window_str.find('['), window_str.rfind(']')) {
+                                    let inside = &window_str[lb + 1..rb];
+                                    inside.split(',').skip(1).any(|elem| {
+                                        let t = elem.trim();
+                                        !t.is_empty() && !t.starts_with('\'') && !t.starts_with('"')
+                                    })
+                                } else {
+                                    false
+                                }
+                            };
+
+                            if has_dynamic_arg {
+                                violations.push(LinterViolation {
+                                    file_path: file_path.to_string(),
+                                    line_number: line_no,
+                                    rule_id: "CVE-INJ-POSIX-FLAG-SMUGGLING".to_string(),
+                                    cve_id: "CWE-88 / POSIX-ARGUMENT-INJECTION-RCE".to_string(),
+                                    severity: "CRITICAL".to_string(),
+                                    message: "☣️ [CWE-88] POSIX_FLAG_SMUGGLING_RCE : Exécution de binaire POSIX (git/tar/find/rg/ssh/scp/rsync) avec argument dynamique sans délimiteur de fin d'options '--' ni rejet du préfixe '-' : injection de drapeaux exécutables (--upload-pack=..., --checkpoint-action=exec=..., -oProxyCommand=...) menant à un RCE sans shell".to_string(),
+                                    transmitted_data: Some("unterminated_posix_cli_argument".to_string()),
+                                    transmitted_type: Some("ArgvOptionVector (POSIX Flag Smuggling)".to_string()),
+                                    remediation: "Insérer systématiquement l'argument séparateur '--' avant toute entrée externe (.arg(\"--\").arg(user_input)) et refuser toute valeur commençant par '-' (!input.starts_with('-')).".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 25. CVE-INJ-FILELESS-ESM-WASM-DESER (CWE-94 / Fileless ESM data: Import & Wasm .cwasm Deser RCE)
+        // ---------------------------------------------------------------------
+        if is_js_ts && content.contains("import(") {
+            let has_scheme_guard = content.contains("startsWith('./')")
+                || content.contains("startsWith(\"./\")")
+                || content.contains("startsWith('/')")
+                || content.contains("startsWith(\"/\")")
+                || content.contains("ALLOWED_MODULES")
+                || content.contains("ALLOWED_PLUGINS")
+                || content.contains("allowlist")
+                || content.contains("whitelist")
+                || content.contains("data:");
+
+            if !has_scheme_guard {
+                for (idx, &line) in lines.iter().enumerate() {
+                    let line_no = idx + 1;
+                    let trimmed = line.trim();
+                    if trimmed.is_empty()
+                        || trimmed.starts_with("//")
+                        || trimmed.starts_with("/*")
+                        || trimmed.starts_with('*')
+                    {
+                        continue;
+                    }
+
+                    let is_dyn_import = trimmed.contains("await import(")
+                        || trimmed.starts_with("import(")
+                        || trimmed.contains("= import(")
+                        || trimmed.contains("return import(");
+
+                    if is_dyn_import {
+                        if let Some(pos) = trimmed.find("import(") {
+                            let after = trimmed[pos + 7..].trim_start();
+                            let is_static_literal = after.starts_with('\'')
+                                || after.starts_with('"')
+                                || (after.starts_with('`') && !after.contains("${"));
+                            if !is_static_literal {
+                                violations.push(LinterViolation {
+                                    file_path: file_path.to_string(),
+                                    line_number: line_no,
+                                    rule_id: "CVE-INJ-FILELESS-ESM-WASM-DESER".to_string(),
+                                    cve_id: "CWE-94 / FILELESS-DATA-IMPORT-AND-CWASM-RCE".to_string(),
+                                    severity: "CRITICAL".to_string(),
+                                    message: "☣️ [CWE-94] FILELESS_ESM_DATA_IMPORT_RCE : Appel dynamique import(specifier) sans validation stricte du schéma ou liste blanche : un attaquant peut injecter une URI 'data:text/javascript;base64,...' et exécuter du code arbitraire en mémoire sans toucher le disque (Fileless RCE)".to_string(),
+                                    transmitted_data: Some("unvalidated_esm_import_specifier".to_string()),
+                                    transmitted_type: Some("DynamicImportSpecifier (data:/blob: Fileless Code Injection)".to_string()),
+                                    remediation: "Valider le module contre une liste blanche stricte (ALLOWED_PLUGINS.includes(name)) et interdire tout schéma URI (: / data: / blob:) avant d'appeler import().".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if is_rust && (content.contains("Module::deserialize(") || content.contains("Module::deserialize_file(")) {
+            let has_sig_verification = content.contains("verify")
+                || content.contains("ed25519")
+                || content.contains("hmac")
+                || content.contains("blake3")
+                || content.contains("signature")
+                || content.contains("Signature");
+
+            if !has_sig_verification {
+                for (idx, &line) in lines.iter().enumerate() {
+                    let line_no = idx + 1;
+                    let trimmed = line.trim();
+                    if trimmed.is_empty()
+                        || trimmed.starts_with("//")
+                        || trimmed.starts_with("/*")
+                        || trimmed.starts_with('*')
+                    {
+                        continue;
+                    }
+
+                    if trimmed.contains("Module::deserialize(") || trimmed.contains("Module::deserialize_file(") {
+                        violations.push(LinterViolation {
+                            file_path: file_path.to_string(),
+                            line_number: line_no,
+                            rule_id: "CVE-INJ-FILELESS-ESM-WASM-DESER".to_string(),
+                            cve_id: "CWE-94 / FILELESS-DATA-IMPORT-AND-CWASM-RCE".to_string(),
+                            severity: "CRITICAL".to_string(),
+                            message: "☣️ [CWE-94] WASM_PRECOMPILED_CWASM_DESER_RCE : Désérialisation directe d'un module Wasm précompilé (Module::deserialize / deserialize_file) sans vérification de signature cryptographique : les artefacts .cwasm contiennent du code machine natif ELF/Mach-O exécuté hors bac à sable Cranelift".to_string(),
+                            transmitted_data: Some("unauthenticated_cwasm_artifact".to_string()),
+                            transmitted_type: Some("wasmtime::Module (.cwasm Native Machine Code Stream)".to_string()),
+                            remediation: "Authentifier l'artefact .cwasm par une signature Ed25519/HMAC-BLAKE3 avant Module::deserialize, ou compiler depuis le bytecode Wasm standard via Module::from_binary().".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 26. CVE-INJ-ARCHIVE-SYMLINK-ESCAPE (CWE-59 / ZipSlip 2.0 Symlink Chain Escape)
+        // ---------------------------------------------------------------------
+        if is_rust && (content.contains("tar::") || content.contains("Archive::new(")) && content.contains(".unpack(") {
+            let has_symlink_defense = content.contains(".unpack_in(")
+                || content.contains("EntryType::Symlink")
+                || content.contains("EntryType::Link")
+                || content.contains("is_symlink()");
+
+            if !has_symlink_defense {
+                for (idx, &line) in lines.iter().enumerate() {
+                    let line_no = idx + 1;
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with("//") {
+                        continue;
+                    }
+                    if trimmed.contains(".unpack(") && !trimmed.contains(".unpack_in(") {
+                        violations.push(LinterViolation {
+                            file_path: file_path.to_string(),
+                            line_number: line_no,
+                            rule_id: "CVE-INJ-ARCHIVE-SYMLINK-ESCAPE".to_string(),
+                            cve_id: "CWE-59 / ZIPSLIP-2-SYMLINK-CHAIN-ESCAPE".to_string(),
+                            severity: "CRITICAL".to_string(),
+                            message: "☣️ [CWE-59] ARCHIVE_SYMLINK_CHAIN_ESCAPE : Extraction d'archive tar via .unpack() sans .unpack_in() ni filtrage de EntryType::Symlink / EntryType::Link : vulnérable au ZipSlip 2.0 (création d'un symlink interne suivie d'une écriture de fichier à travers ce lien hors du dossier cible sans aucun '..')".to_string(),
+                            transmitted_data: Some("tar_symlink_chain_entry".to_string()),
+                            transmitted_type: Some("tar::Archive / Entry (Two-Step Symlink Escape)".to_string()),
+                            remediation: "Itérer sur archive.entries(), rejeter explicitement EntryType::Symlink et EntryType::Link, et extraire chaque entrée via entry.unpack_in(&dest_dir).".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        if is_py && content.contains("tarfile") && content.contains(".extractall(") {
+            let has_py_tar_filter = content.contains("filter='data'")
+                || content.contains("filter=\"data\"")
+                || content.contains("issym()")
+                || content.contains("islnk()");
+
+            if !has_py_tar_filter {
+                for (idx, &line) in lines.iter().enumerate() {
+                    let line_no = idx + 1;
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        continue;
+                    }
+                    if trimmed.contains(".extractall(") {
+                        violations.push(LinterViolation {
+                            file_path: file_path.to_string(),
+                            line_number: line_no,
+                            rule_id: "CVE-INJ-ARCHIVE-SYMLINK-ESCAPE".to_string(),
+                            cve_id: "CWE-59 / ZIPSLIP-2-SYMLINK-CHAIN-ESCAPE".to_string(),
+                            severity: "CRITICAL".to_string(),
+                            message: "☣️ [CWE-59] TARFILE_SYMLINK_CHAIN_ESCAPE : Appel à tarfile.extractall() sans filter='data' (PEP 706) ni rejet des entrées issym()/islnk() : permet l'évasion du répertoire cible par chaîne de liens symboliques (ZipSlip 2.0)".to_string(),
+                            transmitted_data: Some("unfiltered_tarfile_extractall".to_string()),
+                            transmitted_type: Some("tarfile.TarFile (Unfiltered Symlink Extraction)".to_string()),
+                            remediation: "Passer obligatoirement le filtre de sécurité PEP 706 : tar.extractall(path=dest, filter='data') et rejeter les membres issym() / islnk().".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 27. CVE-INJ-PROCESS-ENV-LOADER-POISON (CWE-426 / Dynamic Loader Preload Env Injection)
+        // ---------------------------------------------------------------------
+        if is_rust || is_py || is_js_ts {
+            let has_loader_sanitization = content.contains("LD_PRELOAD")
+                || content.contains("NODE_OPTIONS")
+                || content.contains("PYTHONSTARTUP")
+                || content.contains("DYLD_INSERT_LIBRARIES")
+                || content.contains("env_clear()");
+
+            if !has_loader_sanitization {
+                for (idx, &line) in lines.iter().enumerate() {
+                    let line_no = idx + 1;
+                    let trimmed = line.trim();
+                    if trimmed.is_empty()
+                        || trimmed.starts_with("//")
+                        || trimmed.starts_with('#')
+                        || trimmed.starts_with("/*")
+                        || trimmed.starts_with('*')
+                    {
+                        continue;
+                    }
+
+                    let is_rust_env_poison = is_rust
+                        && ((trimmed.contains(".envs(") && !trimmed.contains(".envs(["))
+                            || (trimmed.contains(".env(") && {
+                                if let Some(pos) = trimmed.find(".env(") {
+                                    let arg1 = trimmed[pos + 5..].trim_start();
+                                    !arg1.starts_with('"') && !arg1.starts_with('\'')
+                                } else {
+                                    false
+                                }
+                            }));
+
+                    let is_py_env_poison = is_py
+                        && (trimmed.contains("subprocess.Popen(") || trimmed.contains("subprocess.run(") || trimmed.contains("subprocess.call("))
+                        && trimmed.contains("env=")
+                        && !trimmed.contains("env={}");
+
+                    let is_js_env_poison = is_js_ts
+                        && (trimmed.contains("spawn(") || trimmed.contains("exec(") || trimmed.contains("fork("))
+                        && trimmed.contains("env:")
+                        && (trimmed.contains("...") || trimmed.contains("req.") || trimmed.contains("user") || trimmed.contains("payload") || trimmed.contains("customEnv"));
+
+                    if is_rust_env_poison || is_py_env_poison || is_js_env_poison {
+                        violations.push(LinterViolation {
+                            file_path: file_path.to_string(),
+                            line_number: line_no,
+                            rule_id: "CVE-INJ-PROCESS-ENV-LOADER-POISON".to_string(),
+                            cve_id: "CWE-426 / ENV-LOADER-PRELOAD-INJECTION".to_string(),
+                            severity: "CRITICAL".to_string(),
+                            message: "☣️ [CWE-426] PROCESS_ENV_LOADER_POISONING : Injection d'un dictionnaire ou clé d'environnement dynamique dans un sous-processus sans env_clear() ni filtrage des variables du chargeur dynamique (LD_PRELOAD, NODE_OPTIONS, PYTHONSTARTUP, DYLD_INSERT_LIBRARIES, BASH_ENV, RUSTC_WRAPPER) : exécution de code arbitraire dès le chargement du binaire".to_string(),
+                            transmitted_data: Some("unfiltered_subprocess_env_map".to_string()),
+                            transmitted_type: Some("ProcessEnvMap (Dynamic Linker Preload Hijack)".to_string()),
+                            remediation: "Purger l'environnement via .env_clear() et n'autoriser qu'une liste blanche stricte de clés en bloquant LD_PRELOAD, LD_LIBRARY_PATH, DYLD_*, NODE_OPTIONS, PYTHONSTARTUP, PYTHONPATH, BASH_ENV et RUSTC_WRAPPER.".to_string(),
+                        });
+                    }
                 }
             }
         }

@@ -386,3 +386,15 @@ Ce catalogue recense l'ensemble des règles statiques, vérifications de contrat
 
 ---
 
+## 🛡️ Code & File Injection — 5 Pépites Majestueuses (5 règles)
+
+| Sévérité | Règle / Identifiant | CWE / CVE | Intitulé & Risque Technique | Description & Mécanisme de Détection |
+| :--- | :--- | :--- | :--- | :--- |
+| 🔴 **CRITICAL** | `CVE-INJ-POSIX-FLAG-SMUGGLING` | **CWE-88 / POSIX-ARGUMENT-INJECTION-RCE** | Injection d'Arguments POSIX & Smuggling de Drapeaux Exécutables (CWE-88) | Exécution de git, tar, find, rg, ssh, scp ou rsync sans shell mais avec un argument dynamique non précédé du délimiteur `--` ni filtré contre `-` : injection de `--upload-pack=...`, `--checkpoint-action=exec=...` ou `-oProxyCommand=...`. |
+| 🔴 **CRITICAL** | `CVE-INJ-FILELESS-ESM-WASM-DESER` | **CWE-94 / FILELESS-DATA-IMPORT-AND-CWASM-RCE** | Exécution Fileless par Import ESM Dynamique (`data:`/`blob:`) ou Désérialisation Wasm (`.cwasm`) | Appel à `import(specifier)` dynamique en JS/TS/Node/Deno sans validation du schéma (autorisant `data:text/javascript;base64,...` en mémoire), ou `wasmtime::Module::deserialize` sur un artefact `.cwasm` non signé. |
+| 🔴 **CRITICAL** | `CVE-INJ-ARCHIVE-SYMLINK-ESCAPE` | **CWE-59 / ZIPSLIP-2-SYMLINK-CHAIN-ESCAPE** | Évasion d'Archive en 2 Temps par Chaîne de Symlinks (ZipSlip 2.0 / CWE-59) | Décompression d'archive (`tar::Archive::unpack` sans `unpack_in` ni filtrage de `EntryType::Symlink`/`Link`, ou `tarfile.extractall` en Python sans `filter='data'`) permettant une écriture hors dossier cible via un lien symbolique interne sans `..`. |
+| 🔴 **CRITICAL** | `CVE-INJ-PROCESS-ENV-LOADER-POISON` | **CWE-426 / ENV-LOADER-PRELOAD-INJECTION** | Empoisonnement d'Environnement Sous-Processus & Détournement du Chargeur Dynamique (CWE-426) | Passage d'une map d'environnement dynamique (`.envs(...)`, `subprocess.Popen(..., env=...)`, `spawn(..., { env })`) sans `.env_clear()` ni filtrage des variables de préchargement (`LD_PRELOAD`, `NODE_OPTIONS`, `PYTHONSTARTUP`, `DYLD_INSERT_LIBRARIES`). |
+| 🔴 **CRITICAL** | `CVE-PHP-STREAM-WRAPPER-PHAR-FILTER` | **CWE-98 / PHAR-POLYGLOT-AND-FILTER-CHAIN-RCE** | Injection de Stream Wrapper PHP (`phar://` Polyglot Deserialization & `php://filter` Chain RCE) | Appel aux fonctions de métadonnées/flux PHP (`file_exists`, `is_file`, `md5_file`, `getimagesize`, `exif_read_data`, `copy`) avec une variable en tête de chemin sans préfixe fixe ni blocage de `://`. |
+
+---
+

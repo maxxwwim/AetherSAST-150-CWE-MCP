@@ -982,6 +982,8 @@ impl SecurityLinter {
         let r = rule_id;
         if r.starts_with("CVE-PHP-") || r.contains("PHP") {
             &[".php", ".phtml", ".php3", ".php4", ".php5", ".php7", ".phps"]
+        } else if r.starts_with("CVE-INJ-") {
+            &[".rs", ".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs"]
         } else if r.starts_with("CVE-RUST-") || r.starts_with("CVE-L1-") || r.contains("RUST") {
             &[".rs"]
         } else if r.starts_with("CVE-PY-") || r.contains("PYTHON") {
@@ -1076,6 +1078,11 @@ impl SecurityLinter {
         "CVE-PHP-NOSQL-INJECTION",
         "CVE-PHP-ZIP-SLIP-EXTRACTION",
         "CVE-PHP-EXPOSED-DEBUG-CONFIG",
+        "CVE-PHP-STREAM-WRAPPER-PHAR-FILTER",
+        "CVE-INJ-POSIX-FLAG-SMUGGLING",
+        "CVE-INJ-FILELESS-ESM-WASM-DESER",
+        "CVE-INJ-ARCHIVE-SYMLINK-ESCAPE",
+        "CVE-INJ-PROCESS-ENV-LOADER-POISON",
     ];
 
     /// Audit d'un fichier avec élimination des faux positifs issus de chaînes/commentaires :

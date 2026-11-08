@@ -565,7 +565,10 @@
       </div>
 
       <div class="hub-footer">
-        <button class="aether-btn" id="btn-reset-default-settings" style="font-size:0.70rem;">↺ Réinitialiser</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="aether-btn" id="btn-reset-default-settings" style="font-size:0.70rem;">↺ Réinitialiser</button>
+          <button class="aether-btn" id="btn-settings-open-surface-scanner" onclick="closeSettingsModal(); openSurfaceScannerModal();" style="font-size:0.72rem; border-color:#10b981; color:#34d399; background:rgba(16,185,129,0.12); font-weight:700;">🛰️ Scanner Domaine / IP...</button>
+        </div>
         <div style="display:flex; gap:10px; align-items:center;">
           <button class="aether-btn" id="btn-cancel-settings" style="font-size:0.75rem;">Annuler</button>
           <button class="aether-btn primary" id="btn-save-settings" style="padding:7px 22px; font-weight:800; background:linear-gradient(135deg, #38bdf8, #818cf8); color:#02040a;">💾 Enregistrer & Fermer</button>
@@ -795,6 +798,10 @@
         <div class="aether-dropdown" id="dropdown-menu-settings">
           <button class="menu-bar-btn" id="btn-menu-settings-trigger" title="Préférences, Affichage & Performance">Options <span class="menu-chevron">▾</span></button>
           <div class="aether-dropdown-menu">
+            <button class="aether-dropdown-item" id="btn-menu-open-surface-scanner" onclick="openSurfaceScannerModal()" style="border:1px solid rgba(16, 185, 129, 0.45); background:linear-gradient(90deg, rgba(16, 185, 129, 0.16), rgba(56, 189, 248, 0.14)); margin-bottom:4px;">
+              <span>🛰️ <strong style="color:#34d399;">Scanner (Domaine / IP / Surface)...</strong></span>
+              <span class="kbd-shortcut" style="color:#34d399; border-color:rgba(16,185,129,0.5);">N</span>
+            </button>
             <button class="aether-dropdown-item primary-highlight" id="btn-menu-open-settings">
               <span>⚙️ <strong>Préférences Cockpit...</strong></span>
               <span class="kbd-shortcut">P</span>
@@ -1839,6 +1846,359 @@
           🔄 Tout Réactiver
         </button>
         <button class="aether-btn" onclick="closeIgnoredCweModal()">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 11: Scanner de Posture Domaine / IP / Surface Réseau & HTTP (Style Soft Pro Épuré & Copiable) -->
+  <div id="surface-scanner-modal" class="modal-overlay" onclick="if (event.target === this) closeSurfaceScannerModal()" style="user-select:text; -webkit-user-select:text;">
+    <div class="modal-card" style="width: 1120px; max-width: 96vw; background:#0b1120; border:1px solid rgba(148, 163, 184, 0.22); border-radius:12px; box-shadow: 0 24px 64px rgba(2, 6, 23, 0.88); user-select:text; -webkit-user-select:text;">
+      <div class="modal-header" style="border-bottom: 1px solid rgba(148, 163, 184, 0.14); background: #0f172a; padding: 14px 18px; border-radius:12px 12px 0 0;">
+        <div class="modal-title" style="display:flex; align-items:center; gap:12px; width:100%;">
+          <span style="display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:8px; background:rgba(56, 189, 248, 0.12); border:1px solid rgba(56, 189, 248, 0.28); font-size:1rem;">🛰️</span>
+          <div>
+            <strong style="color:#f8fafc; font-size:0.88rem; letter-spacing:0.01em; font-weight:700;">Audit de Surface, Architecture Fichiers (.html / .js), Pont AST &amp; Studio Binôme IA</strong>
+            <div style="font-size:0.66rem; color:#94a3b8; font-family:var(--font-mono); margin-top:1px;">4 Frontières de Confiance • Cascade X-Ray (.html ➔ .js ➔ API) • Pont AST Local • Snapshot Avant/Après • 3 Modes de Prompting</div>
+          </div>
+          <button class="cat-pill" id="btn-surface-snapshot" onclick="saveSurfaceBaselineSnapshot()" style="margin-left:auto; font-size:0.62rem; padding:3px 10px; background:#1e293b; border:1px solid rgba(56, 189, 248, 0.35); color:#38bdf8; cursor:pointer; font-family:var(--font-mono);" title="Figer le scan actuel comme référence pour comparer Avant / Après">📸 Figer Baseline</button>
+          <span class="project-pill" id="surface-scan-grade-badge" style="background:rgba(30, 41, 59, 0.9); border:1px solid rgba(148, 163, 184, 0.3); color:#e2e8f0; padding:3px 10px; font-weight:700;">Prêt</span>
+        </div>
+        <button class="modal-close" onclick="closeSurfaceScannerModal()">&times;</button>
+      </div>
+
+      <div class="modal-body" style="gap: 12px; max-height: 84vh; overflow-y: auto; padding: 14px 18px; background:#0b1120; user-select:text; -webkit-user-select:text;">
+        <!-- 1. Barre de Cible + Barre de Progression + 4 Niveaux Soft Pro -->
+        <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <div style="flex:1; min-width:260px; display:flex; align-items:center; gap:8px; background:#090d16; border:1px solid rgba(148, 163, 184, 0.25); border-radius:7px; padding:7px 11px;">
+              <span style="font-size:0.9rem; color:#64748b;">🌐</span>
+              <input type="text" id="surface-scan-target-input" value="127.0.0.1:3030" style="flex:1; background:transparent; border:none; color:#f8fafc; font-family:var(--font-mono); font-size:0.80rem; font-weight:600; outline:none; user-select:text;" placeholder="Domaine, IP, Dossier ou Fichier (ex: 127.0.0.1:3030, example.com/index.html)" />
+            </div>
+            <input type="text" id="surface-custom-ports-input" class="cosmo-input" style="width:165px; background:#090d16; border:1px solid rgba(148,163,184,0.22); font-family:var(--font-mono); font-size:0.72rem; padding:7px 10px; border-radius:7px;" placeholder="Ports + (ex: 9000)" title="Ports TCP supplémentaires à sonder" />
+            <button class="aether-btn primary" id="btn-run-surface-scan" onclick="runSurfaceScanner()" style="padding:8px 18px; font-weight:700; font-size:0.78rem; background:#0284c7; color:#f8fafc; border:1px solid #38bdf8; border-radius:7px;">
+              Lancer l'Audit
+            </button>
+          </div>
+
+          <!-- Barre de Chargement Multi-Étapes (Soft Pro) -->
+          <div id="surface-scan-progress-wrap" style="display:none; flex-direction:column; gap:5px; background:#090d16; border:1px solid rgba(56, 189, 248, 0.22); border-radius:7px; padding:8px 10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-family:var(--font-mono); font-size:0.65rem;">
+              <span id="surface-scan-progress-step" style="color:#cbd5e1;">Initialisation des sondes...</span>
+              <span id="surface-scan-progress-pct" style="color:#38bdf8; font-weight:700;">0%</span>
+            </div>
+            <div style="width:100%; height:5px; background:rgba(30, 41, 59, 0.9); border-radius:999px; overflow:hidden;">
+              <div id="surface-scan-progress-fill" style="width:0%; height:100%; background:linear-gradient(90deg, #0284c7, #10b981); border-radius:999px; transition:width 0.25s ease;"></div>
+            </div>
+          </div>
+
+          <!-- Sélecteur des 4 Modules de Niveau d'Impact & de Visibilité (Style Soft Pro) -->
+          <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+            <div id="surface-lvl-card-1" onclick="setSurfaceScanLevel(1)" style="cursor:pointer; background:#090d16; border:1px solid rgba(148, 163, 184, 0.16); border-radius:8px; padding:8px 10px; transition:all 0.15s;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.67rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono);">NIVEAU 1 • FURTIF</span>
+                <span style="font-size:0.55rem; padding:1px 6px; border-radius:4px; background:rgba(16,185,129,0.12); color:#34d399; font-family:var(--font-mono);">Passif</span>
+              </div>
+              <div style="font-size:0.61rem; color:#94a3b8; margin-top:4px; line-height:1.35;">
+                Visibilité minimale (~2 pqts)<br/>DNS, IP &amp; Sonde HTTP <code>HEAD</code>
+              </div>
+            </div>
+
+            <div id="surface-lvl-card-2" onclick="setSurfaceScanLevel(2)" style="cursor:pointer; background:#090d16; border:1px solid rgba(148, 163, 184, 0.16); border-radius:8px; padding:8px 10px; transition:all 0.15s;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.67rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono);">NIVEAU 2 • SERVICES</span>
+                <span style="font-size:0.55rem; padding:1px 6px; border-radius:4px; background:rgba(245,158,11,0.12); color:#fbbf24; font-family:var(--font-mono);">Modéré</span>
+              </div>
+              <div style="font-size:0.61rem; color:#94a3b8; margin-top:4px; line-height:1.35;">
+                Visibilité modérée (~15 pqts)<br/>Ports TCP, Bannières &amp; Versions
+              </div>
+            </div>
+
+            <div id="surface-lvl-card-3" onclick="setSurfaceScanLevel(3)" style="cursor:pointer; background:#090d16; border:1px solid rgba(148, 163, 184, 0.16); border-radius:8px; padding:8px 10px; transition:all 0.15s;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.67rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono);">NIVEAU 3 • ARCHI WEB</span>
+                <span style="font-size:0.55rem; padding:1px 6px; border-radius:4px; background:rgba(56,189,248,0.14); color:#38bdf8; font-family:var(--font-mono);">Fichiers/Forms</span>
+              </div>
+              <div style="font-size:0.61rem; color:#94a3b8; margin-top:4px; line-height:1.35;">
+                Scan par fichier (<code>.html</code>, <code>.js</code>), Dossiers &amp; «Form»
+              </div>
+            </div>
+
+            <div id="surface-lvl-card-4" onclick="setSurfaceScanLevel(4)" style="cursor:pointer; background:#1e293b; border:1px solid #38bdf8; border-radius:8px; padding:8px 10px; transition:all 0.15s;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.67rem; font-weight:700; color:#f8fafc; font-family:var(--font-mono);">NIVEAU 4 • COMPLET</span>
+                <span style="font-size:0.55rem; padding:1px 6px; border-radius:4px; background:rgba(168,85,247,0.18); color:#c084fc; font-family:var(--font-mono);">CWE-538</span>
+              </div>
+              <div style="font-size:0.61rem; color:#cbd5e1; margin-top:4px; line-height:1.35;">
+                Audit complet + <code>.env</code>, <code>.git</code> &amp; Configs (Masqué)
+              </div>
+            </div>
+          </div>
+
+          <!-- Presets & Sous-Modules de Vérification -->
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding-top:2px;">
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+              <span style="font-size:0.64rem; color:#64748b; font-family:var(--font-mono);">Cibles rapides :</span>
+              <button class="cat-pill" style="font-size:0.61rem; padding:2px 8px; background:#090d16; border-color:rgba(148,163,184,0.25); color:#cbd5e1;" onclick="setSurfacePreset('127.0.0.1:3030')">Cockpit (:3030)</button>
+              <button class="cat-pill" style="font-size:0.61rem; padding:2px 8px; background:#090d16; border-color:rgba(148,163,184,0.25); color:#cbd5e1;" onclick="setSurfacePreset('127.0.0.1:5000')">Control-Plane (:5000)</button>
+              <button class="cat-pill" style="font-size:0.61rem; padding:2px 8px; background:#090d16; border-color:rgba(148,163,184,0.25); color:#cbd5e1;" onclick="setSurfacePreset('localhost:8080')">Proxy (:8080)</button>
+              <button class="cat-pill" style="font-size:0.61rem; padding:2px 8px; background:#090d16; border-color:rgba(148,163,184,0.25); color:#cbd5e1;" onclick="setSurfacePreset('example.com')">example.com</button>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:0.66rem; color:#94a3b8; font-family:var(--font-mono);">
+              <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" id="surface-chk-dns" checked /> DNS/IP</label>
+              <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" id="surface-chk-ports" checked /> Ports/Bannières</label>
+              <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" id="surface-chk-headers" checked /> Headers/Versions</label>
+              <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" id="surface-chk-endpoints" checked /> robots.txt</label>
+              <label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#e2e8f0;"><input type="checkbox" id="surface-chk-web-forms" checked /> Fichiers (.html/.js), Dossiers &amp; «Form»</label>
+              <label style="display:flex; align-items:center; gap:4px; cursor:pointer; color:#e2e8f0;"><input type="checkbox" id="surface-chk-sensitive" checked /> .env/.git (Masqué)</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 1b. Bandeau Différentiel Avant / Après (Snapshot Baseline) -->
+        <div id="surface-delta-banner" style="display:none; background:rgba(16, 185, 129, 0.08); border:1px solid rgba(16, 185, 129, 0.30); border-radius:8px; padding:8px 12px; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        </div>
+
+        <!-- 2. Bandeau KPI des Résultats (5 Indicateurs Soft Pro) -->
+        <div id="surface-kpi-strip" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:8px;">
+          <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:8px; padding:9px 12px;">
+            <div style="font-size:0.59rem; color:#64748b; font-family:var(--font-mono); letter-spacing:0.04em;">SCORE DE POSTURE</div>
+            <div id="surface-kpi-score" style="font-size:1.05rem; font-weight:800; color:#f8fafc; font-family:var(--font-mono); margin-top:2px;">-- / 100</div>
+          </div>
+          <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:8px; padding:9px 12px;">
+            <div style="font-size:0.59rem; color:#64748b; font-family:var(--font-mono); letter-spacing:0.04em;">NIVEAU &amp; EMPREINTE</div>
+            <div id="surface-kpi-impact" style="font-size:0.68rem; font-weight:600; color:#cbd5e1; font-family:var(--font-mono); margin-top:3px;">Niveau 4 • Prêt</div>
+          </div>
+          <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:8px; padding:9px 12px;">
+            <div style="font-size:0.59rem; color:#64748b; font-family:var(--font-mono); letter-spacing:0.04em;">RÉSOLUTION DNS &amp; IP</div>
+            <div id="surface-kpi-dns" style="font-size:0.68rem; font-weight:600; color:#cbd5e1; font-family:var(--font-mono); margin-top:3px;">En attente...</div>
+          </div>
+          <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:8px; padding:9px 12px;">
+            <div style="font-size:0.59rem; color:#64748b; font-family:var(--font-mono); letter-spacing:0.04em;">SERVICES &amp; VERSIONS</div>
+            <div id="surface-kpi-ports" style="font-size:0.70rem; font-weight:700; color:#cbd5e1; font-family:var(--font-mono); margin-top:3px;">0 service(s)</div>
+          </div>
+          <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:8px; padding:9px 12px;">
+            <div style="font-size:0.59rem; color:#64748b; font-family:var(--font-mono); letter-spacing:0.04em;">HTTP, FICHIERS &amp; FORMS</div>
+            <div id="surface-kpi-http" style="font-size:0.68rem; font-weight:600; color:#cbd5e1; font-family:var(--font-mono); margin-top:3px;">--</div>
+          </div>
+        </div>
+
+        <!-- 3. Identification des Services, Versions & Stack Technologique -->
+        <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:9px; padding:10px 12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:0.70rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono);">SERVICES, VERSIONS, BANNIÈRES &amp; STACK TECHNOLOGIQUE</span>
+            <span id="surface-tech-count" style="font-size:0.62rem; color:#94a3b8; font-family:var(--font-mono);">En attente</span>
+          </div>
+          <div id="surface-tech-stack-list" style="display:flex; flex-wrap:wrap; gap:6px;">
+            <div style="font-size:0.67rem; color:#64748b;">Lancez l'audit pour identifier les services TCP, bannières protocolaires, serveurs HTTP et versions logicielles.</div>
+          </div>
+        </div>
+
+        <!-- 4. Architecture Web : 4 Frontières de Confiance, Cascade X-Ray (.html ➔ .js ➔ API), Dossiers, Forms & Pont AST Local -->
+        <div id="surface-web-arch-panel" style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:9px; padding:12px; display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+            <span style="font-size:0.72rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono);">ARCHITECTURE WEB : 4 FRONTIÈRES DE CONFIANCE, CASCADE X-RAY (.HTML ➔ .JS ➔ API) &amp; PONT AST LOCAL</span>
+            <span id="surface-web-arch-summary" style="font-size:0.63rem; color:#94a3b8; font-family:var(--font-mono);">Prêt</span>
+          </div>
+
+          <!-- 4.1 Carte des 4 Frontières de Confiance (Swimlanes Soft-Pro) -->
+          <div id="surface-trust-swimlanes" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+            <div style="background:#090d16; border:1px solid rgba(148,163,184,0.14); border-radius:7px; padding:7px 9px; font-size:0.63rem; color:#64748b; grid-column:span 4; text-align:center;">
+              Les 4 Frontières de Confiance (Client .html/.js ➔ Formulaires «Form» ➔ Dossiers &amp; API ➔ Services TCP &amp; Secrets) s'afficheront ici après le scan.
+            </div>
+          </div>
+
+          <!-- 4.2 Graphe Visuel d'Architecture Web -->
+          <div id="surface-web-visual-map" style="background:#090d16; border:1px solid rgba(148, 163, 184, 0.14); border-radius:8px; padding:10px;">
+            <div style="font-size:0.68rem; color:#64748b; text-align:center; padding:6px;">
+              Topologie visuelle du domaine : Point d'entrée ➔ Fichiers (.html/.js) &amp; Dossiers ➔ Formulaires «Form» ➔ Services Backend.
+            </div>
+          </div>
+
+          <!-- 4.3 Barre de Filtrage X-Ray Interactive par Fichier (.html / .js) -->
+          <div id="surface-file-filter-bar" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; background:#090d16; border:1px solid rgba(56, 189, 248, 0.18); border-radius:7px; padding:6px 10px;">
+            <span style="font-size:0.62rem; font-weight:700; color:#38bdf8; font-family:var(--font-mono);">🧬 Filtre Cascade X-Ray :</span>
+            <span style="font-size:0.61rem; color:#64748b; font-family:var(--font-mono);">Cliquez sur un fichier (.html / .js) après le scan pour isoler ses dossiers appelés, routes API et clés JSON.</span>
+          </div>
+
+          <!-- 4.4 Scan Architectural par Fichier (.html, .js, .css) & Appels de Dossiers / Répertoires -->
+          <div style="display:grid; grid-template-columns: 1.35fr 1fr; gap:10px;">
+            <div style="background:#090d16; border:1px solid rgba(148, 163, 184, 0.14); border-radius:8px; padding:9px;">
+              <div style="font-size:0.66rem; font-weight:700; color:#cbd5e1; font-family:var(--font-mono); margin-bottom:6px;">📄 SCAN PAR FICHIER (.HTML, .JS, .CSS) &amp; CLÉS JSON EXTRAITES</div>
+              <div id="surface-web-files-list" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">
+                <div style="font-size:0.66rem; color:#64748b; padding:6px;">Aucun fichier inspecté pour le moment.</div>
+              </div>
+            </div>
+            <div style="background:#090d16; border:1px solid rgba(148, 163, 184, 0.14); border-radius:8px; padding:9px;">
+              <div style="font-size:0.66rem; font-weight:700; color:#cbd5e1; font-family:var(--font-mono); margin-bottom:6px;">📁 ARBORESCENCE DES DOSSIERS &amp; RÉPERTOIRES APPELÉS</div>
+              <div id="surface-directories-list" style="display:flex; flex-direction:column; gap:5px; max-height:220px; overflow-y:auto;">
+                <div style="font-size:0.66rem; color:#64748b; padding:6px;">Aucun appel de dossier détecté pour le moment.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4.5 Grille Formulaires «Form» (Gauche) & Routes / Endpoints Découverts (Droite) -->
+          <div style="display:grid; grid-template-columns: 1.35fr 1fr; gap:10px;">
+            <div style="background:#090d16; border:1px solid rgba(148, 163, 184, 0.14); border-radius:8px; padding:9px;">
+              <div style="font-size:0.66rem; font-weight:700; color:#cbd5e1; font-family:var(--font-mono); margin-bottom:6px;">📝 FORMULAIRES «FORM» &amp; CHAMPS D'INFORMATION REÇUS</div>
+              <div id="surface-forms-list" style="display:flex; flex-direction:column; gap:7px; max-height:220px; overflow-y:auto;">
+                <div style="font-size:0.66rem; color:#64748b; padding:6px;">Aucun formulaire inspecté pour le moment.</div>
+              </div>
+            </div>
+            <div style="background:#090d16; border:1px solid rgba(148, 163, 184, 0.14); border-radius:8px; padding:9px;">
+              <div style="font-size:0.66rem; font-weight:700; color:#cbd5e1; font-family:var(--font-mono); margin-bottom:6px;">🧭 ROUTES, ENDPOINTS API, SCRIPTS &amp; ROBOTS.TXT</div>
+              <div id="surface-routes-list" style="display:flex; flex-direction:column; gap:5px; max-height:220px; overflow-y:auto;">
+                <div style="font-size:0.66rem; color:#64748b; padding:6px;">Aucune route cartographiée pour le moment.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4.6 Pont Hybride « Surface Externe ↔ Code Source AST Local » -->
+          <div id="surface-ast-bridge-panel" style="background:#090d16; border:1px solid rgba(56, 189, 248, 0.22); border-radius:8px; padding:9px 11px; display:flex; flex-direction:column; gap:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+              <span style="font-size:0.66rem; font-weight:700; color:#38bdf8; font-family:var(--font-mono);">🔗 PONT HYBRIDE AUTOMATIQUE : SURFACE WEB EXTERNE ↔ GRAPHE AST LOCAL DU PROJET</span>
+              <span id="surface-ast-bridge-summary" style="font-size:0.61rem; color:#94a3b8; font-family:var(--font-mono);">Corrélation automatique avec state.data.nodes</span>
+            </div>
+            <div id="surface-ast-bridge-list" style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px; max-height:175px; overflow-y:auto;">
+              <div style="font-size:0.65rem; color:#64748b; grid-column:span 2; padding:4px;">
+                Associe automatiquement les fichiers <code>.html</code>/<code>.js</code> et routes <code>/api/*</code> découverts sur le domaine aux fichiers sources locaux du projet actif.
+              </div>
+            </div>
+          </div>
+
+          <!-- 4.7 Suite de Tests de Faiblesse Bilatérale (1: Côté Externe Black-Box Boosted ↔ 2: Après Scan Black-Box Côté Interne AST & Tests Négatifs) -->
+          <div id="surface-dual-weakness-panel" style="background:#090d16; border:1px solid rgba(168, 85, 247, 0.30); border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div>
+                <span style="font-size:0.68rem; font-weight:700; color:#e9d5ff; font-family:var(--font-mono);">⚖️ SUITE DE FAIBLESSES MIROIR : CÔTÉ 1 (FRONTIÈRES BLACK-BOX BOOSTED) ↔ CÔTÉ 2 (APRÈS SCAN ➔ CODE AST &amp; TESTS NÉGATIFS)</span>
+                <div id="surface-dual-weakness-summary" style="font-size:0.59rem; color:#94a3b8; font-family:var(--font-mono); margin-top:2px;">
+                  Étape 1 : Sondes de frontière HTTP (CORS, OPTIONS, Dossiers, Cookies, Contrats JSON/Form) • Étape 2 : Débloquée après le scan Black-Box
+                </div>
+              </div>
+              <button class="aether-btn primary" id="btn-run-side-two-weakness" onclick="runPostBlackBoxSideTwoAudit()" disabled style="padding:5px 12px; font-size:0.63rem; font-weight:700; background:#1e1b4b; border:1px solid rgba(192, 132, 252, 0.45); color:#e9d5ff; border-radius:6px; cursor:pointer; font-family:var(--font-mono);" title="Croiser les trouvailles du Scan Black-Box avec le code AST local et générer la suite de tests négatifs">
+                🔬 Propulser Côté 2 (Après Scan Black-Box ➔ Tests AST)
+              </button>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+              <!-- Colonne Côté 1 : Sondes de Faiblesse de Frontière (Externe / Black-Box Boosted) -->
+              <div style="background:#0f172a; border:1px solid rgba(56, 189, 248, 0.22); border-radius:7px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-family:var(--font-mono); font-size:0.62rem;">
+                  <strong style="color:#38bdf8;">🌐 CÔTÉ 1 • SONDES DE FRONTIÈRE EXTERNES (BLACK-BOX BOOSTED)</strong>
+                  <span id="surface-side-one-badge" style="color:#94a3b8; font-size:0.57rem;">En attente du scan</span>
+                </div>
+                <div id="surface-side-one-weakness-list" style="display:flex; flex-direction:column; gap:6px; max-height:225px; overflow-y:auto;">
+                  <div style="font-size:0.63rem; color:#64748b; padding:6px;">
+                    Lancez l'audit Black-Box pour exécuter les sondes de faiblesse de frontière (CORS Origin, OPTIONS HTTP, Directory Listing CWE-548, Cookies, Contrats Form/JSON).
+                  </div>
+                </div>
+              </div>
+
+              <!-- Colonne Côté 2 : Matrice de Réceptivité AST & Tests Unitaires Négatifs (Après Scan Black-Box) -->
+              <div style="background:#0f172a; border:1px solid rgba(192, 132, 252, 0.26); border-radius:7px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-family:var(--font-mono); font-size:0.62rem;">
+                  <strong style="color:#c084fc;">🧬 CÔTÉ 2 • RÉCEPTIVITÉ AST &amp; TESTS NÉGATIFS (APRÈS SCAN BLACK-BOX)</strong>
+                  <span id="surface-side-two-badge" style="color:#94a3b8; font-size:0.57rem;">Verrouillé avant scan</span>
+                </div>
+                <div id="surface-side-two-weakness-list" style="display:flex; flex-direction:column; gap:6px; max-height:225px; overflow-y:auto;">
+                  <div style="font-size:0.63rem; color:#64748b; padding:6px;">
+                    Dès que le scan Black-Box est terminé, cliquez sur <strong>🔬 Propulser Côté 2</strong> pour croiser chaque vecteur externe avec vos nœuds AST et générer les tests unitaires négatifs.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4b. Module 4 : Audit d'Exposition des Fichiers Sensibles (.env, .git, Configs & Specs — Valeurs Masquées CWE-538) -->
+        <div id="surface-sensitive-panel" style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:9px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+            <span style="font-size:0.70rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono);">MODULE 4 • CONTRÔLE D'EXPOSITION DES FICHIERS SENSIBLES (<code>.env</code>, <code>.git/HEAD</code>, <code>docker-compose.yml</code> — CWE-538 MASQUÉ)</span>
+            <span id="surface-sensitive-summary" style="font-size:0.62rem; color:#94a3b8; font-family:var(--font-mono);">Anti-Soft-404 &amp; masquage strict des valeurs [MASQUÉ]</span>
+          </div>
+          <div id="surface-sensitive-list" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px;">
+            <div style="font-size:0.66rem; color:#64748b; grid-column:span 4; text-align:center; padding:6px;">
+              Vérifie si des fichiers de configuration sont publiquement accessibles sans exfiltrer leurs secrets.
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Grille Ports/Headers à gauche, Findings & Remédiations à droite -->
+        <div style="display:grid; grid-template-columns: 1fr 1.25fr; gap:10px;">
+          <!-- Colonne Gauche : Ports TCP + Matrice Headers HTTP -->
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:9px; padding:10px;">
+              <div style="font-size:0.68rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono); margin-bottom:8px;">PORTS, SERVICES, BANNIÈRES &amp; VERSIONS TCP</div>
+              <div id="surface-ports-grid" style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px; max-height:210px; overflow-y:auto;">
+                <div style="font-size:0.67rem; color:#64748b; grid-column:span 2; text-align:center; padding:10px;">Lancez l'audit pour inspecter les ports TCP.</div>
+              </div>
+            </div>
+
+            <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:9px; padding:10px;">
+              <div style="font-size:0.68rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono); margin-bottom:8px;">CONTRÔLES D'EN-TÊTES HTTP (CSP, HSTS, CORS, XFO)</div>
+              <div id="surface-headers-list" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">
+                <div style="font-size:0.67rem; color:#64748b; text-align:center; padding:10px;">Aucun en-tête HTTP audité.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Colonne Droite : Diagnostics de Sécurité & Remédiations -->
+          <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.16); border-radius:9px; padding:10px; display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.68rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono);">DIAGNOSTICS DE POSTURE &amp; REMÉDIATIONS</span>
+              <span id="surface-findings-count" style="font-size:0.62rem; color:#94a3b8; font-family:var(--font-mono);">0 alerte(s)</span>
+            </div>
+            <div id="surface-findings-list" style="display:flex; flex-direction:column; gap:8px; max-height:430px; overflow-y:auto;">
+              <div style="font-size:0.68rem; color:#64748b; text-align:center; padding:24px 12px;">
+                Saisissez un domaine ou une IP puis cliquez sur <strong>Lancer l'Audit</strong>.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. Studio de Prompting Binôme IA Multi-Modes (4 Onglets Boostés) & Rapport Copiable -->
+        <div style="background:#0f172a; border:1px solid rgba(148, 163, 184, 0.18); border-radius:9px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+            <span style="font-size:0.68rem; font-weight:700; color:#e2e8f0; font-family:var(--font-mono);">🧠 STUDIO DE PROMPTING BINÔME IA &amp; RAPPORT COPIABLE (4 MODES D'INGÉNIERIE BOOSTÉS)</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <button class="cat-pill" style="font-size:0.61rem; padding:2px 8px; background:#1e293b; border-color:rgba(56,189,248,0.4); color:#38bdf8;" onclick="selectAllSurfaceReportText()">🔍 Tout Sélectionner (Ctrl+C)</button>
+              <button class="cat-pill" style="font-size:0.61rem; padding:2px 8px; background:#1e293b; border-color:rgba(16,185,129,0.4); color:#34d399;" onclick="copySurfaceScanPrompt()">📋 Copier Prompt Actif</button>
+              <button class="cat-pill" style="font-size:0.61rem; padding:2px 8px; background:#1e293b; border-color:rgba(168,85,247,0.4); color:#c084fc;" onclick="copySurfaceScanJson()">📦 Copier JSON Brut</button>
+            </div>
+          </div>
+
+          <!-- Sélecteur des 4 Modes de Prompting Binôme IA -->
+          <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px;">
+            <button id="surface-prompt-tab-arch" onclick="setSurfacePromptMode('arch')" style="cursor:pointer; text-align:left; background:#1e293b; border:1px solid #38bdf8; border-radius:7px; padding:6px 10px; color:#f8fafc; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;">
+              📐 Mode 1 • Architecture &amp; Pont AST<br/>
+              <span style="font-size:0.55rem; font-weight:400; color:#94a3b8;">Topologie (.html ➔ .js ➔ API) &amp; AST</span>
+            </button>
+            <button id="surface-prompt-tab-hardening" onclick="setSurfacePromptMode('hardening')" style="cursor:pointer; text-align:left; background:#090d16; border:1px solid rgba(148,163,184,0.2); border-radius:7px; padding:6px 10px; color:#cbd5e1; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;">
+              🛡️ Mode 2 • Durcissement &amp; Code<br/>
+              <span style="font-size:0.55rem; font-weight:400; color:#64748b;">Correctifs (Middlewares, Forms, CWE-538)</span>
+            </button>
+            <button id="surface-prompt-tab-tests" onclick="setSurfacePromptMode('tests')" style="cursor:pointer; text-align:left; background:#090d16; border:1px solid rgba(148,163,184,0.2); border-radius:7px; padding:6px 10px; color:#cbd5e1; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;">
+              🧪 Mode 3 • Conformité Défensive<br/>
+              <span style="font-size:0.55rem; font-weight:400; color:#64748b;">Assertions non-destructives (curl -sSI)</span>
+            </button>
+            <button id="surface-prompt-tab-weakness" onclick="setSurfacePromptMode('weakness')" style="cursor:pointer; text-align:left; background:#090d16; border:1px solid rgba(192,132,252,0.35); border-radius:7px; padding:6px 10px; color:#e9d5ff; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;">
+              ⚖️ Mode 4 • Suite Faiblesses Miroir<br/>
+              <span style="font-size:0.55rem; font-weight:400; color:#c084fc;">Côté 1 (Frontières) ↔ Côté 2 (Tests Négatifs AST)</span>
+            </button>
+          </div>
+
+          <textarea id="surface-report-raw-textarea" readonly style="width:100%; height:135px; background:#090d16; border:1px solid rgba(148, 163, 184, 0.2); border-radius:6px; padding:8px 10px; color:#cbd5e1; font-family:var(--font-mono); font-size:0.65rem; line-height:1.4; resize:vertical; outline:none; user-select:text; -webkit-user-select:text;" placeholder="Le prompt Binôme IA formaté (Architecture / Correctifs / Tests de conformité) apparaîtra automatiquement ici dès la fin du scan..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="border-top: 1px solid rgba(148, 163, 184, 0.14); background:#0f172a; border-radius:0 0 12px 12px; justify-content:space-between; padding:10px 18px;">
+        <div id="surface-scan-footer-meta" style="font-size:0.66rem; color:#94a3b8; font-family:var(--font-mono);">
+          Audit défensif sans payload offensif • Texte 100% sélectionnable et copiable
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="aether-btn ai" onclick="sendSurfaceReportToCopilot()" title="Envoyer le rapport au Copilote IA intégré">⚡ Envoyer au Copilote IA</button>
+          <button class="aether-btn primary" onclick="copySurfaceScanPrompt()" style="background:#0284c7; color:#f8fafc; border-color:#38bdf8; font-weight:700;">📋 Copier Rapport Complet</button>
+          <button class="aether-btn" onclick="closeSurfaceScannerModal()">Fermer</button>
+        </div>
       </div>
     </div>
   </div>

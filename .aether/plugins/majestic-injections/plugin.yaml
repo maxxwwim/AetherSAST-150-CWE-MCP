@@ -1,0 +1,106 @@
+name: "majestic-injections"
+version: "1.0.0"
+author: "AetherScope Security Lab"
+description: "Détecte les 5 pépites d'injections de code et de fichiers : Argument Smuggling POSIX (CWE-88), Import ESM Fileless data:/Wasm .cwasm (CWE-94), ZipSlip 2.0 Symlink Chain (CWE-59), Empoisonnement LD_PRELOAD/NODE_OPTIONS (CWE-426) et Wrappers PHP phar:///php://filter (CWE-98)."
+enabled: true
+
+rules:
+  - id: "PLUGIN-INJ-POSIX-FLAG-SMUGGLING"
+    cwe_id: "CWE-88 / POSIX-ARGUMENT-INJECTION-RCE"
+    name: "Smuggling de Drapeaux Exécutables POSIX sans Délimiteur '--'"
+    category: "Code & File Injection"
+    severity: "CRITICAL"
+    description: "Exécution de git, tar, find, rg ou ssh avec un argument dynamique non précédé du séparateur '--', permettant d'injecter --upload-pack, --checkpoint-action=exec ou -oProxyCommand."
+    remediation: "Insérer systématiquement l'argument séparateur '--' avant toute valeur utilisateur et rejeter les entrées commençant par '-'."
+    file_extensions: [".rs", ".ts", ".js", ".py"]
+    match_mode: line_by_line
+    conditions:
+      check_literals: true
+      regex_patterns:
+        - "(?:Command::new|execFile|spawn)\\s*\\(\\s*['\"](?:git|tar|find|rg|ssh|scp|rsync)['\"]"
+      must_not_contain:
+        - "\"--\""
+        - "'--'"
+        - "starts_with('-')"
+        - "startsWith('-')"
+    test_cases:
+      - name: "Exécution git clone avec URL utilisateur sans '--' (Vulnérable)"
+        file_name: "src/git_service.rs"
+        code: |
+          pub fn clone_repo(repo_url: &str) {
+              std::process::Command::new("git").arg("clone").arg(repo_url).status().unwrap();
+          }
+        should_trigger: true
+      - name: "Exécution git clone protégée par '--' (Sûr)"
+        file_name: "src/git_service.rs"
+        code: |
+          pub fn clone_repo(repo_url: &str) {
+              std::process::Command::new("git").arg("clone").arg("--").arg(repo_url).status().unwrap();
+          }
+        should_trigger: false
+
+  - id: "PLUGIN-INJ-FILELESS-ESM-DATA-URI"
+    cwe_id: "CWE-94 / FILELESS-DATA-IMPORT-RCE"
+    name: "Import ESM Dynamique Fileless (data:text/javascript) Non Filtré"
+    category: "Code & File Injection"
+    severity: "CRITICAL"
+    description: "Appel à await import(variable) sans liste blanche ni blocage du schéma data:/blob:, permettant une exécution de code arbitraire 100% en mémoire."
+    remediation: "Valider le module contre une liste blanche stricte (ALLOWED_PLUGINS) et forcer le préfixe './' avant import()."
+    file_extensions: [".ts", ".js", ".mjs"]
+    match_mode: line_by_line
+    conditions:
+      check_literals: true
+      regex_patterns:
+        - "await\\s+import\\s*\\(\\s*[a-zA-Z_$][a-zA-Z0-9_$.]*\\s*\\)"
+      must_not_contain:
+        - "ALLOWED_PLUGINS"
+        - "startsWith('./')"
+    test_cases:
+      - name: "Import ESM dynamique sur variable non filtrée (Vulnérable)"
+        file_name: "server/plugin_loader.ts"
+        code: |
+          export async function loadPlugin(pluginUri: string) {
+              return await import(pluginUri);
+          }
+        should_trigger: true
+      - name: "Import ESM dynamique avec garde ALLOWED_PLUGINS sur la ligne (Sûr)"
+        file_name: "server/plugin_loader.ts"
+        code: |
+          export async function loadPlugin(pluginUri: string) {
+              return ALLOWED_PLUGINS.has(pluginUri) ? await import(pluginUri) : null;
+          }
+        should_trigger: false
+
+  - id: "PLUGIN-INJ-PHP-PHAR-STREAM-WRAPPER"
+    cwe_id: "CWE-98 / PHAR-POLYGLOT-STREAM-RCE"
+    name: "Injection de Stream Wrapper PHP (phar:// & php://filter)"
+    category: "PHP / Web Security"
+    severity: "CRITICAL"
+    description: "Appel à file_exists, is_file, md5_file ou getimagesize avec une superglobale non préfixée, permettant un RCE via phar:// ou php://filter."
+    remediation: "Utiliser basename() et préfixer par un dossier fixe (__DIR__ . '/uploads/' . basename($input))."
+    file_extensions: [".php", ".phtml"]
+    match_mode: line_by_line
+    conditions:
+      check_literals: true
+      regex_patterns:
+        - "(?:file_exists|is_file|md5_file|getimagesize)\\s*\\(\\s*\\$_(?:GET|POST|REQUEST)"
+      must_not_contain:
+        - "strpos("
+        - "basename("
+    test_cases:
+      - name: "Appel file_exists direct sur $_GET (Vulnérable)"
+        file_name: "src/AvatarController.php"
+        code: |
+          <?php
+          if (file_exists($_GET['avatar'])) {
+              readfile($_GET['avatar']);
+          }
+        should_trigger: true
+      - name: "Appel file_exists sécurisé avec basename (Sûr)"
+        file_name: "src/AvatarController.php"
+        code: |
+          <?php
+          if (file_exists(basename($_GET['avatar']))) {
+              readfile(basename($_GET['avatar']));
+          }
+        should_trigger: false

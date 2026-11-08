@@ -745,3 +745,107 @@ mod tests {
         violations
     );
 }
+
+#[test]
+fn test_majestic_injections_4_rules_and_safe_cases() {
+    // 1. CVE-INJ-POSIX-FLAG-SMUGGLING
+    let vuln_flag = r#"
+pub fn git_diff(user_ref: &str) {
+    std::process::Command::new("git")
+        .arg("diff")
+        .arg(user_ref)
+        .status()
+        .unwrap();
+}
+"#;
+    assert_rule_triggers("src/vcs/git_runner.rs", vuln_flag, "CVE-INJ-POSIX-FLAG-SMUGGLING");
+
+    let safe_flag = r#"
+pub fn git_diff(user_ref: &str) {
+    if user_ref.starts_with('-') {
+        return;
+    }
+    std::process::Command::new("git")
+        .arg("diff")
+        .arg("--")
+        .arg(user_ref)
+        .status()
+        .unwrap();
+}
+"#;
+    assert_rule_passes("src/vcs/git_runner.rs", safe_flag, "CVE-INJ-POSIX-FLAG-SMUGGLING");
+
+    // 2. CVE-INJ-FILELESS-ESM-WASM-DESER (JS ESM + Rust Wasmtime .cwasm)
+    let vuln_esm = r#"
+export async function runDynamicPlugin(pluginSpec) {
+    const mod = await import(pluginSpec);
+    return mod.default();
+}
+"#;
+    assert_rule_triggers("server/plugins/loader.js", vuln_esm, "CVE-INJ-FILELESS-ESM-WASM-DESER");
+
+    let safe_esm = r#"
+const ALLOWED_PLUGINS = new Set(['./plugin-a.js']);
+export async function runDynamicPlugin(pluginSpec) {
+    if (!pluginSpec.startsWith('./') || !ALLOWED_PLUGINS.has(pluginSpec)) {
+        throw new Error('Blocked');
+    }
+    const mod = await import(pluginSpec);
+    return mod.default();
+}
+"#;
+    assert_rule_passes("server/plugins/loader.js", safe_esm, "CVE-INJ-FILELESS-ESM-WASM-DESER");
+
+    let vuln_cwasm = r#"
+pub fn load_precompiled(engine: &wasmtime::Engine, bytes: &[u8]) {
+    let _module = unsafe { wasmtime::Module::deserialize(engine, bytes).unwrap() };
+}
+"#;
+    assert_rule_triggers("src/vm/wasm_loader.rs", vuln_cwasm, "CVE-INJ-FILELESS-ESM-WASM-DESER");
+
+    // 3. CVE-INJ-ARCHIVE-SYMLINK-ESCAPE (Rust tar + Python tarfile)
+    let vuln_tar = r#"
+pub fn extract_bundle(file: std::fs::File, dest: &std::path::Path) {
+    let mut archive = tar::Archive::new(file);
+    archive.unpack(dest).unwrap();
+}
+"#;
+    assert_rule_triggers("src/archive/extractor.rs", vuln_tar, "CVE-INJ-ARCHIVE-SYMLINK-ESCAPE");
+
+    let safe_tar = r#"
+pub fn extract_bundle(file: std::fs::File, dest: &std::path::Path) {
+    let mut archive = tar::Archive::new(file);
+    for entry in archive.entries().unwrap() {
+        let mut entry = entry.unwrap();
+        if entry.header().entry_type() == tar::EntryType::Symlink {
+            continue;
+        }
+        entry.unpack_in(dest).unwrap();
+    }
+}
+"#;
+    assert_rule_passes("src/archive/extractor.rs", safe_tar, "CVE-INJ-ARCHIVE-SYMLINK-ESCAPE");
+
+    // 4. CVE-INJ-PROCESS-ENV-LOADER-POISON
+    let vuln_env = r#"
+pub fn run_worker(user_env: std::collections::HashMap<String, String>) {
+    std::process::Command::new("/usr/bin/python3")
+        .envs(&user_env)
+        .status()
+        .unwrap();
+}
+"#;
+    assert_rule_triggers("src/worker/spawner.rs", vuln_env, "CVE-INJ-PROCESS-ENV-LOADER-POISON");
+
+    let safe_env = r#"
+pub fn run_worker(user_env: std::collections::HashMap<String, String>) {
+    std::process::Command::new("/usr/bin/python3")
+        .env_clear()
+        .env("PATH", "/usr/bin")
+        .status()
+        .unwrap();
+}
+"#;
+    assert_rule_passes("src/worker/spawner.rs", safe_env, "CVE-INJ-PROCESS-ENV-LOADER-POISON");
+}
+

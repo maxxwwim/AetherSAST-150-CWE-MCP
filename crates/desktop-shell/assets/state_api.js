@@ -305,16 +305,89 @@
       [0.99, 0.88, 0.25, 1.0]  // Pulsar Yellow
     ];
 
-    function getFolderColor(folder) {
-      if (!folder || folder === 'root') return [0.38, 0.88, 0.98, 1.0];
-      if (!state.folderPalettes.has(folder)) {
-        let hash = 0;
-        for (let i = 0; i < folder.length; i++) hash = (hash * 31 + folder.charCodeAt(i)) & 0xffffffff;
-        const idx = Math.abs(hash) % COSMIC_FOLDER_HUES.length;
-        state.folderPalettes.set(folder, COSMIC_FOLDER_HUES[idx]);
-      }
-      return state.folderPalettes.get(folder);
+    // --- Helper Conversion HSL vers RGB Normalisé [0..1] ---
+    function hslToRgb(h, s, l) {
+      h = ((h % 360) + 360) % 360;
+      s = Math.max(0, Math.min(1, s));
+      l = Math.max(0, Math.min(1, l));
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+      const m = l - c / 2;
+      let r = 0, g = 0, b = 0;
+      if (h < 60) { r = c; g = x; b = 0; }
+      else if (h < 120) { r = x; g = c; b = 0; }
+      else if (h < 180) { r = 0; g = c; b = x; }
+      else if (h < 240) { r = 0; g = x; b = c; }
+      else if (h < 300) { r = x; g = 0; b = c; }
+      else { r = c; g = 0; b = x; }
+      return [+(r + m).toFixed(3), +(g + m).toFixed(3), +(b + m).toFixed(3), 1.0];
     }
+    window.hslToRgb = hslToRgb;
+
+    const BRANCH_HUES = {
+      'desktop-shell': 196,     // Cyan Électrique #38bdf8
+      'core-graph': 255,        // Indigo Cosmique #818cf8
+      'security-linter': 38,    // Or Solaire / Ambre #fbbf24
+      'ast-scanner': 158,       // Menthe Jade / Émeraude #10b981
+      'ai-file-bridge': 178,    // Hyper Turquoise
+      'arch-templates': 282,    // Violet Plasma #c084fc
+      'aethercraft': 335,       // Rose Nova #fb7185
+      'desktop': 196,
+      'crates': 220,
+      'apps': 325,
+      'docs': 142,              // Émeraude Rayonnante
+      'tests': 48,
+      'root': 200
+    };
+
+    // Attribution chromatique arborescente : les sous-dossiers héritent harmonieusement de leur branche mère
+    function getFolderColor(folder) {
+      if (!folder || folder === 'root') return [0.22, 0.78, 0.99, 1.0];
+      if (!state.folderPalettes) state.folderPalettes = new Map();
+      if (state.folderPalettes.has(folder)) {
+        return state.folderPalettes.get(folder);
+      }
+
+      const clean = folder.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      const parts = clean.split('/').filter(Boolean);
+
+      let branchKey = 'root';
+      let subDepth = 0;
+      let subHash = 0;
+
+      if (parts.length >= 2 && (parts[0] === 'crates' || parts[0] === 'apps' || parts[0] === 'packages')) {
+        branchKey = parts[1];
+        subDepth = parts.length - 2;
+        const subStr = parts.slice(2).join('/');
+        for (let i = 0; i < subStr.length; i++) subHash = (subHash * 31 + subStr.charCodeAt(i)) & 0xffffffff;
+      } else if (parts.length >= 1) {
+        branchKey = parts[0];
+        subDepth = parts.length - 1;
+        const subStr = parts.slice(1).join('/');
+        for (let i = 0; i < subStr.length; i++) subHash = (subHash * 31 + subStr.charCodeAt(i)) & 0xffffffff;
+      }
+
+      let baseHue;
+      const lowerBranch = branchKey.toLowerCase();
+      if (BRANCH_HUES[lowerBranch] !== undefined) {
+        baseHue = BRANCH_HUES[lowerBranch];
+      } else {
+        let hHash = 0;
+        for (let i = 0; i < lowerBranch.length; i++) hHash = (hHash * 37 + lowerBranch.charCodeAt(i)) & 0xffffffff;
+        baseHue = Math.abs(hHash * 137.5) % 360;
+      }
+
+      const hueShift = (Math.abs(subHash) % 5 - 2) * 5;
+      const finalHue = (baseHue + hueShift + 360) % 360;
+
+      const sat = Math.max(0.70, Math.min(0.96, 0.88 - (subDepth * 0.04) + ((Math.abs(subHash) % 3) * 0.03)));
+      const lum = Math.max(0.48, Math.min(0.68, 0.58 + ((subDepth % 2 === 1) ? 0.05 : -0.03) + ((Math.abs(subHash) % 3) * 0.02)));
+
+      const rgb = hslToRgb(finalHue, sat, lum);
+      state.folderPalettes.set(folder, rgb);
+      return rgb;
+    }
+    window.getFolderColor = getFolderColor;
 
     // Clean, compact folder label formatter (respects the < 20-22 chars rule)
     function formatFolderLabel(folder) {
@@ -695,6 +768,14 @@ const AetherAPI = {
         project_path: projectPath,
         folder: folder || null
       })
+    });
+    return res.json();
+  },
+  async surfaceScan(payload) {
+    const res = await fetch('/api/surface_scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
     return res.json();
   },

@@ -205,10 +205,14 @@ function stepWorkerPhysics(zoom = 1.0) {
     exportClusters = clusterRes.exportClusters;
     const folderStats = clusterRes.folderStats;
 
+    // Intra-cellular node anti-stick & comfort spacing
     folderStats.forEach((st) => {
       if (!st.nodes || st.nodes.length <= 1) return;
       const count = st.nodes.length;
-      const innerStep = count > 48 ? Math.max(1, Math.floor(count / 28)) : 1;
+      const innerStep = count > 180 ? 2 : 1;
+      const minD = 58; // Distance de confort augmentée : les bulles ne se collent jamais
+      const minD2 = minD * minD;
+
       for (let i = 0; i < count; i++) {
         const na = st.nodes[i];
         for (let j = i + 1; j < count; j += innerStep) {
@@ -216,14 +220,21 @@ function stepWorkerPhysics(zoom = 1.0) {
           const bdx = nb.x - na.x;
           const bdy = nb.y - na.y;
           const bdist2 = bdx * bdx + bdy * bdy;
-          const minD = 44;
-          if (bdist2 < minD * minD && bdist2 > 0.01) {
+          if (bdist2 < minD2 && bdist2 > 0.0001) {
             const bdist = Math.sqrt(bdist2);
-            const repulse = Math.min(4.0, (minD - bdist) * 0.06);
+            const overlap = minD - bdist;
+            const repulse = Math.min(5.5, overlap * 0.10);
             const pfx = (bdx / bdist) * repulse;
             const pfy = (bdy / bdist) * repulse;
             if (!activeDragId || na.id !== activeDragId) { na.vx = (na.vx || 0) - pfx; na.vy = (na.vy || 0) - pfy; }
             if (!activeDragId || nb.id !== activeDragId) { nb.vx = (nb.vx || 0) + pfx; nb.vy = (nb.vy || 0) + pfy; }
+
+            // Séparation instantanée anti-overlap (Verlet push)
+            const pushRatio = 0.28;
+            const px = (bdx / bdist) * overlap * pushRatio;
+            const py = (bdy / bdist) * overlap * pushRatio;
+            if (!activeDragId || na.id !== activeDragId) { na.x -= px; na.y -= py; }
+            if (!activeDragId || nb.id !== activeDragId) { nb.x += px; nb.y += py; }
           }
         }
       }
@@ -251,13 +262,15 @@ function stepWorkerPhysics(zoom = 1.0) {
         const cdx = cxB - cxA;
         const cdy = cyB - cyA;
         const cdist = Math.hypot(cdx, cdy) || 1;
-        const safeClusterDist = rA + rB + 110;
+        // Espacement mass-aware : les gros amas d'étoiles sont bien plus espacés
+        const massPadding = Math.max(160, Math.sqrt(cA.count + cB.count) * 26);
+        const safeClusterDist = rA + rB + massPadding;
 
         if (cdist < safeClusterDist) {
           const overlap = safeClusterDist - cdist;
-          const repulse = Math.min(6.5, overlap * 0.05);
-          const rfx = (cdx / cdist) * repulse * 0.6;
-          const rfy = (cdy / cdist) * repulse * 0.6;
+          const repulse = Math.min(9.5, overlap * 0.08);
+          const rfx = (cdx / cdist) * repulse * 0.8;
+          const rfy = (cdy / cdist) * repulse * 0.8;
           cA._cfx -= rfx;
           cA._cfy -= rfy;
           cB._cfx += rfx;
@@ -280,22 +293,30 @@ function stepWorkerPhysics(zoom = 1.0) {
   } else {
     // In Structured Views
     const count = nodes.length;
-    const step = count > 350 ? Math.max(1, Math.floor(count / 90)) : 1;
+    const step = count > 500 ? 2 : 1;
+    const minD = 48;
+    const minD2 = minD * minD;
     for (let i = 0; i < count; i += step) {
       const na = nodes[i];
-      for (let j = i + 1; j < Math.min(count, i + 32); j++) {
+      for (let j = i + 1; j < Math.min(count, i + 48); j++) {
         const nb = nodes[j];
         const bdx = nb.x - na.x;
         const bdy = nb.y - na.y;
         const bdist2 = bdx * bdx + bdy * bdy;
-        const minD = 38;
-        if (bdist2 < minD * minD && bdist2 > 0.01) {
+        if (bdist2 < minD2 && bdist2 > 0.0001) {
           const bdist = Math.sqrt(bdist2);
-          const repulse = Math.min(3.5, (minD - bdist) * 0.08);
+          const overlap = minD - bdist;
+          const repulse = Math.min(4.5, overlap * 0.09);
           const pfx = (bdx / bdist) * repulse;
           const pfy = (bdy / bdist) * repulse;
           if (!activeDragId || na.id !== activeDragId) { na.vx = (na.vx || 0) - pfx; na.vy = (na.vy || 0) - pfy; }
           if (!activeDragId || nb.id !== activeDragId) { nb.vx = (nb.vx || 0) + pfx; nb.vy = (nb.vy || 0) + pfy; }
+
+          const pushRatio = 0.22;
+          const px = (bdx / bdist) * overlap * pushRatio;
+          const py = (bdy / bdist) * overlap * pushRatio;
+          if (!activeDragId || na.id !== activeDragId) { na.x -= px; na.y -= py; }
+          if (!activeDragId || nb.id !== activeDragId) { nb.x += px; nb.y += py; }
         }
       }
     }

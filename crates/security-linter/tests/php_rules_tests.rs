@@ -16,8 +16,8 @@ fn test_cwe_catalog_includes_25_php_rules_and_file_detection() {
 
     assert_eq!(
         php_rules.len(),
-        25,
-        "Expected exactly 25 PHP CWE rules in catalog, found {}",
+        26,
+        "Expected exactly 26 PHP CWE rules in catalog, found {}",
         php_rules.len()
     );
 
@@ -401,6 +401,24 @@ ini_set('display_errors', '0');
     assert!(v_debug.iter().any(|v| v.rule_id == "CVE-PHP-EXPOSED-DEBUG-CONFIG" && v.severity == "HIGH"));
     let s_debug = SecurityLinter::audit_file("src/Bootstrap.php", safe_debug, None);
     assert!(!s_debug.iter().any(|v| v.rule_id == "CVE-PHP-EXPOSED-DEBUG-CONFIG"));
+
+    // 26. CWE-98 / CWE-502: Stream Wrapper Phar Polyglot & Filter Chain RCE
+    let vuln_phar = r#"<?php
+$avatar = $_GET['avatar'];
+if (file_exists($avatar)) {
+    $info = getimagesize($avatar);
+}
+"#;
+    let safe_phar = r#"<?php
+$avatar = basename($_GET['avatar']);
+if (file_exists(__DIR__ . "/uploads/" . $avatar)) {
+    $info = getimagesize(__DIR__ . "/uploads/" . $avatar);
+}
+"#;
+    let v_phar = SecurityLinter::audit_file("src/AvatarService.php", vuln_phar, None);
+    assert!(v_phar.iter().any(|v| v.rule_id == "CVE-PHP-STREAM-WRAPPER-PHAR-FILTER" && v.severity == "CRITICAL"));
+    let s_phar = SecurityLinter::audit_file("src/AvatarService.php", safe_phar, None);
+    assert!(!s_phar.iter().any(|v| v.rule_id == "CVE-PHP-STREAM-WRAPPER-PHAR-FILTER"));
 }
 
 #[test]
