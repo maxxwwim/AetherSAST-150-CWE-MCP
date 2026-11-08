@@ -1,6 +1,7 @@
 name: "AetherScope SAST Security Scan"
 
 on:
+  workflow_dispatch: # Permet de lancer le scan manuellement depuis l'onglet Actions
   push:
     branches: [ "main", "master", "develop" ]
   pull_request:
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   aetherscope-sast:
     name: "AetherScope Real-time SAST & Contract Audit"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Évite la notice de migration ubuntu-latest vers Ubuntu 26
 
     steps:
       - name: Checkout repository
@@ -32,7 +33,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/aether-engine
-          key: ${{ runner.os }}-aether-engine-v2.0.9
+          key: ${{ runner.os }}-aether-engine-v2.1.0
 
       - name: Install Rust toolchain
         if: steps.cache-aetherscope.outputs.cache-hit != 'true'
