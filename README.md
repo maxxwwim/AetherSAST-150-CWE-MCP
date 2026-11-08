@@ -2,7 +2,7 @@
 
 # 🪐 AetherScope V2 (`aether-engine`)
 
-### **Cockpit Spatial d'Architecture WebGL 2 (120 FPS) • Linter SAST Zero-Day (150+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
+### **Cockpit Spatial d'Architecture WebGL 2  • Linter SAST Zero-Day (150+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-BLAKE3-Serveur-MCP-Visualiseur-de-code-feat-IA/)
 [![Release](https://img.shields.io/badge/Release-v2.0.9_Surface_Scanner_&_Arborescence-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-BLAKE3-Serveur-MCP-Visualiseur-de-code-feat-IA/releases)
