@@ -1,7 +1,7 @@
 # 🪐 AETHERSCOPE V2 — DIRECTIVES SYSTÈME COPILOTE IA (ARCHITECTURE & PAIR-PROGRAMMING)
 
 > **Projet :** `aether-engine`  
-> **Racine :** `C:\Users\1234\Desktop\Projets\aether-engine`  
+> **Racine :** `\\?\C:\Users\1234\Desktop\Projets\aether-engine`  
 > **Stack Détectée :** 🦀 Pure Rust (Cargo Workspace Hexagonal)  
 > **Architecture Active :** Cargo Workspace : `crates/domain` (100% pur), `crates/server-axum`, `crates/client-ui`, `crates/db-adapter`  
 > **Serveur Local AetherScope :** `http://127.0.0.1:3030`  

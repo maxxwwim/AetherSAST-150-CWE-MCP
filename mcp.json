@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/mcp-server.json",
   "name": "aetherscope-mcp",
-  "version": "2.0.5",
-  "description": "Serveur MCP AetherScope V2 - Visualiseur 3D, SAST 150+ CWE Blake3, Télémétrie et Orchestrateur de Tâches IA",
+  "version": "2.1.0",
+  "description": "Serveur MCP AetherScope V2.1 - Visualiseur 3D, SAST 150+ CWE Blake3, Télémétrie, Pare-feu IA verify_patch et Orchestrateur de Tâches",
   "capabilities": {
     "tools": true,
     "resources": true,
@@ -10,7 +10,7 @@
   },
   "mcpServers": {
     "aetherscope": {
-      "command": "target/release/aetherscope-mcp.exe",
+      "command": "aetherscope-mcp.exe",
       "args": ["--port", "3030", "--path", "."],
       "env": {}
     }

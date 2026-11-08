@@ -4,8 +4,8 @@
 
 ### **Cockpit Spatial d'Architecture WebGL 2  • Linter SAST Zero-Day (150+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-BLAKE3-Serveur-MCP-Visualiseur-de-code-feat-IA/)
-[![Release](https://img.shields.io/badge/Release-v2.0.9_Surface_Scanner_&_Arborescence-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-BLAKE3-Serveur-MCP-Visualiseur-de-code-feat-IA/releases)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-MCP/)
+[![Release](https://img.shields.io/badge/Release-v2.1.0_SARIF_Reachability_MCP_Firewall-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -66,7 +66,7 @@
    - [Lecteur / Éditeur Markdown & Hub de Scaffolding Multi-Architecture](#lecteur--éditeur-markdown--hub-de-scaffolding-multi-architecture)
 5. [Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
    - [Architecture JSON-RPC 2.0 & Double Mode Opérationnel Résilient](#architecture-json-rpc-20--double-mode-opérationnel-résilient)
-   - [Catalogue Exhaustif des 9 Outils MCP](#catalogue-exhaustif-des-9-outils-mcp)
+   - [Catalogue Exhaustif des 17 Outils MCP](#catalogue-exhaustif-des-9-outils-mcp)
    - [Sous-Système de Tâches & Quêtes Hybride (`.aether/tasks/`)](#sous-système-de-tâches--quêtes-hybride-aethertasks)
    - [Console Chat Copilot (`<thought>`), Télémétrie Spatiale & `<aether_handshake>`](#console-chat-copilot-thought-télémétrie-spatiale--aether_handshake)
    - [Configuration Universelle (Antigravity, Claude Desktop, Cursor)](#configuration-universelle-antigravity-claude-desktop-cursor)
@@ -398,6 +398,47 @@ Le serveur Axum embarqué sert le cockpit spatial directement sur la route racin
 
 ---
 
+
+---
+
+## 🚀 Nouveautés Majeures SAST V2.1 (Production Ready)
+
+### 1. Sérialiseur Standard SARIF v2.1.0 (OASIS & GitHub Code Scanning)
+- **Génération native SARIF 2.1.0 :** Intégration dans `crates/security-linter/src/sarif.rs` compatible à 100% avec l'onglet **GitHub Security / Code Scanning Alerts**.
+- **CLI CI/CD Ultra-Rapide :**
+  ```bash
+  # Générer un rapport standard SARIF
+  aether-engine.exe --path . --audit-only --format sarif --output results.sarif
+
+  # Bloquer les Pull Requests en < 100 ms si une faille critique ou haute est détectée
+  aether-engine.exe --path . --audit-only --format sarif --output results.sarif --fail-on HIGH
+  ```
+- **Workflow GitHub Action Clé en Main :** Fichier `.github/workflows/aetherscope-sarif.yml` prêt à l'emploi.
+
+### 2. Reachability Taint-Graph 3D (Source-to-Sink)
+- **Algorithme Inverse BFS :** Analyse instantanée dans `crates/core-graph/src/reachability.rs` reliant chaque Sink CVE aux points d'entrée publics (`SymbolKind::FormOrEndpoint`) via les canaux réseau RPC, WebSocket et sémantiques.
+- **Visualisation 3D WebGL 2 :** Badge `🔥 EXPLOITABLE (Source-to-Sink)` dans l'inspecteur CVE et **laser rouge pulsant en continu** sur l'intégralité du chemin `Endpoint -> Handler -> Service -> Sink` lors du clic.
+
+### 3. Convertisseur Universel Semgrep & Nuclei vers Plugins AetherScope
+- **Traduction Automatique des Règles YAML :** Module `crates/security-linter/src/semgrep_importer.rs` convertissant les métavariables `$X` et ellipses `...` en expressions régulières Rust natives ultra-performantes.
+- **Commande CLI d'Importation :**
+  ```bash
+  aether-plugin-tool.exe import-semgrep --input ./semgrep-rules/ --output .aether/plugins/imported/
+  ```
+
+### 4. Pare-Feu IA Temps Réel (17ème Outil MCP `aetherscope_verify_patch`)
+- Permet aux agents autonomes (Claude, Cursor, Antigravity) de vérifier leurs modifications en **< 50 ms** avant d'altérer les fichiers de production :
+  - Scan SAST incrémental + vérification d'atteignabilité Source-to-Sink
+  - Contrôle strict des contrats EARS du dossier parent (`RULE_FORBIDDEN_IMPORT`, `RULE_MAX_LINES`, `BLAKE3_TAMPERED`)
+  - Verdict certifié `[PATCH_APPROVED]` ou `[PATCH_REJECTED]` avec centrage de caméra 3D.
+
+### 5. Harnais de Benchmark Reproductible & Haute Fréquence
+- **Mode CLI `--benchmark` :** Mesure le temps de lexing, la construction parallèle AST (Rayon), l'évaluation des 150+ CWE, le pic RSS en mémoire vive et le débit en LOC/s.
+  ```bash
+  aether-engine.exe --benchmark
+  ```
+- Rapport comparatif généré automatiquement dans [`BENCHMARK.md`](./BENCHMARK.md) (Débit mesuré : **4 446 LOC/seconde**, pic RAM : **27.5 MB**).
+
 ## 🏛️ Architecture Globale & Structure du Workspace Cargo
 
 Le moteur est découpé en **6 crates Rust** strictement isolés selon les principes de l'Architecture Hexagonale :
@@ -675,7 +716,7 @@ flowchart TD
 
 ---
 
-### Catalogue Exhaustif des 16 Outils MCP & Conformité M8ven (Score 98+/100)
+### Catalogue Exhaustif des 17 Outils MCP & Conformité M8ven (Score 98+/100)
 
 > **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), des schémas JSON stricts avec exemples concrets (`additionalProperties: false`, `examples: [...]`), ainsi qu'une encapsulation standardisée des erreurs (`isError: true/false`), garantissant une exécution prévisible pour les agents autonomes.
 
@@ -697,6 +738,7 @@ flowchart TD
 | **`aetherscope_test_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugins_dir?`, `path?` | **[Nouveau v2.0.7]** Exécute automatiquement la suite de tests unitaires intégrée aux règles pour certifier le zéro-faux-positif. |
 | **`aetherscope_scan_with_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `target_path`, `plugins_dir?` | **[Nouveau v2.0.7]** Audite un fichier ou dossier avec les plugins de règles personnalisés et remonte les violations et remédiations. |
 | **`aetherscope_upsert_plugin_rule`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugin_name`, `rule_id`, `cwe_id`, `name`, `severity`, `description`, `remediation`, `file_extensions`, `test_cases?` | **[Nouveau v2.0.7]** Permet à l'IA d'écrire, modifier et certifier en direct une règle de sécurité YAML persistée dans `.aether/plugins/`. |
+| **`aetherscope_verify_patch`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `files_modified` | **[Nouveau v2.1.0]** Pare-feu IA temps réel (< 50 ms) : valide la conformité des patchs avant commit (contrats EARS, `RULE_FORBIDDEN_IMPORT`, `RULE_MAX_LINES`, SAST incrémental 150+ CWEs, Reachability Source-to-Sink et signatures BLAKE3). Retourne `[PATCH_APPROVED]` ou `[PATCH_REJECTED]` avec caméra 3D. |
 
 ---
 
