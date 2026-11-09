@@ -277,7 +277,7 @@ rules:
       - pattern: "file_exists($PATH)"
 
   - id: semgrep-cwe-buffer-overflow-strcpy
-    languages: [c, cpp]
+    languages: [c, cpp, zig]
     severity: CRITICAL
     message: "Unbounded buffer copy function prone to memory corruption and buffer overflow (CWE-787)."
     metadata:
@@ -288,3 +288,29 @@ rules:
       - pattern: "strcpy($DEST, $SRC)"
       - pattern: "strcat($DEST, $SRC)"
       - pattern: "sprintf($BUF, ...)"
+      - pattern: "c.strcpy($DEST, $SRC)"
+
+  - id: semgrep-csharp-binaryformatter-deser
+    languages: [csharp]
+    severity: CRITICAL
+    message: "Insecure deserialization via BinaryFormatter or NetDataContractSerializer enables Remote Code Execution (CWE-502)."
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "new BinaryFormatter()"
+      - pattern: "new NetDataContractSerializer()"
+      - pattern: "TypeNameHandling.All"
+
+  - id: semgrep-zig-unsafe-ptrcast-runtime
+    languages: [zig]
+    severity: HIGH
+    message: "Unsafe Zig pointer cast or disabled runtime safety can cause memory corruption and undefined behavior (CWE-843)."
+    metadata:
+      cwe: "CWE-843: Access of Resource Using Incompatible Type ('Type Confusion')"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "@setRuntimeSafety(false)"
+      - pattern: "@intToPtr($TYPE, $VAL)"

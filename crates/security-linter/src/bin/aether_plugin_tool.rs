@@ -165,7 +165,7 @@ fn main() {
                         severity: "HIGH".to_string(),
                         description: "Détection d'un contournement d'authentification ou fonction non protégée".to_string(),
                         remediation: "Appliquez le middleware de vérification d'autorisation avant d'exécuter l'action.".to_string(),
-                        file_extensions: vec![".rs".to_string(), ".py".to_string(), ".ts".to_string()],
+                        file_extensions: vec![".rs".to_string(), ".zig".to_string(), ".cs".to_string(), ".py".to_string(), ".ts".to_string()],
                         match_mode: security_linter::plugin::MatchMode::LineByLine,
                         conditions: RuleConditions {
                             must_contain: vec![],
@@ -472,7 +472,7 @@ fn scan_directory_recursive(engine: &mut PluginEngine, dir: &Path, total_violati
             let path = entry.path();
             if path.is_dir() {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if name == "target" || name == ".git" || name == "node_modules" {
+                if name == "target" || name == ".git" || name == "node_modules" || name == "zig-cache" || name == "zig-out" || name == "bin" || name == "obj" {
                     continue;
                 }
                 scan_directory_recursive(engine, &path, total_violations);
@@ -515,7 +515,7 @@ fn collect_yaml_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
             let path = entry.path();
             if path.is_dir() {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if name == "target" || name == ".git" || name == "node_modules" {
+                if name == "target" || name == ".git" || name == "node_modules" || name == "zig-cache" || name == "zig-out" || name == "bin" || name == "obj" {
                     continue;
                 }
                 collect_yaml_files_recursive(&path, out);

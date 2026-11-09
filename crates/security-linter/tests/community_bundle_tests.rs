@@ -186,6 +186,36 @@ function computeFormula(expr) {
         "Expected semgrep-owasp-code-injection-eval violation in: {:?}",
         v_eval
     );
+
+    // 9. C# Insecure Deserialization via BinaryFormatter (Plugin / Semgrep Bundle)
+    let cs_snippet = r#"
+public class SessionLoader {
+    public object Load(Stream s) {
+        var bf = new BinaryFormatter();
+        return bf.Deserialize(s);
+    }
+}
+"#;
+    let v_cs = engine.audit_file("Services/SessionLoader.cs", cs_snippet);
+    assert!(
+        v_cs.iter().any(|v| v.rule_id == "semgrep-csharp-binaryformatter-deser"),
+        "Expected semgrep-csharp-binaryformatter-deser violation in: {:?}",
+        v_cs
+    );
+
+    // 10. Zig Runtime Safety Disabled / Unsafe Pointer Cast (Plugin / Semgrep Bundle)
+    let zig_snippet = r#"
+pub fn rawAccess(addr: usize) *u8 {
+    @setRuntimeSafety(false);
+    return @intToPtr(*u8, addr);
+}
+"#;
+    let v_zig = engine.audit_file("src/mem.zig", zig_snippet);
+    assert!(
+        v_zig.iter().any(|v| v.rule_id == "semgrep-zig-unsafe-ptrcast-runtime"),
+        "Expected semgrep-zig-unsafe-ptrcast-runtime violation in: {:?}",
+        v_zig
+    );
 }
 
 #[test]
