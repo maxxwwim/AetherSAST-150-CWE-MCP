@@ -1,8 +1,8 @@
 # Smithery MCP Server Specification
 # https://smithery.ai/docs/config#smitheryyaml
-version: "1.0.0"
+version: "2.2.1"
 name: "aetherscope-mcp"
-description: "Serveur MCP haute performance pour AetherScope V2 : Visualiseur 3D de Codebase, SAST 150+ CWE Blake3, Télémétrie Caméra et Gestionnaire de Tâches IA."
+description: "Moteur MCP d'intelligence architecturale & Pare-Feu IA temps réel (< 50ms, 150+ CWEs, Visualiseur 3D WebGL2 & Obsidian Vault)."
 
 startCommand:
   type: "stdio"
@@ -10,23 +10,16 @@ startCommand:
     type: "object"
     properties:
       port:
-        type: "integer"
+        type: "number"
         default: 3030
-        description: "Port HTTP utilisé par l'interface WebGL 2 et l'API AetherScope"
+        description: "Port HTTP du serveur AetherScope (défaut: 3030)"
       path:
         type: "string"
         default: "."
-        description: "Chemin racine du projet à surveiller et analyser"
-  commandFunction:
-    windows:
-      - "target/release/aetherscope-mcp.exe"
-      - "--port"
-      - "{{port}}"
-      - "--path"
-      - "{{path}}"
-    linux:
-      - "./target/release/aetherscope-mcp"
-      - "--port"
-      - "{{port}}"
-      - "--path"
-      - "{{path}}"
+        description: "Chemin racine du projet ou coffre Obsidian à surveiller"
+  commandFunction: |-
+    config => ({
+      command: 'aetherscope-mcp',
+      args: ['--port', String(config.port || 3030), '--path', config.path || '.'],
+      env: {}
+    })
