@@ -1,4 +1,4 @@
-#[path = "mcp_catalog.rs"]
+﻿#[path = "mcp_catalog.rs"]
 mod mcp_catalog;
 pub use mcp_catalog::*;
 
@@ -1218,7 +1218,7 @@ mod tests {
         let resp = handle_mcp_request(req, 3030, ".").await.expect("tools/list response");
         let res = resp.result.expect("tools/list result");
         let tools = res["tools"].as_array().expect("tools array");
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 21);
 
         let expected_tools = [
             ("aetherscope_get_graph_summary", true, false, true, false),
@@ -1230,6 +1230,18 @@ mod tests {
             ("aetherscope_chat", false, false, false, false),
             ("aetherscope_manage_plugins", false, false, true, false),
             ("aetherscope_teleport_camera", true, false, true, false),
+            ("aetherscope_scan_project", true, false, true, false),
+            ("aetherscope_trace_flow", true, false, true, false),
+            ("aetherscope_query_violations", true, false, true, false),
+            ("aetherscope_create_task", false, false, false, false),
+            ("aetherscope_update_task", false, false, true, false),
+            ("aetherscope_list_tasks", true, false, true, false),
+            ("aetherscope_send_chat_message", false, false, false, false),
+            ("aetherscope_get_chat_history", true, false, true, false),
+            ("aetherscope_list_plugins", true, false, true, false),
+            ("aetherscope_test_plugins", true, false, true, false),
+            ("aetherscope_scan_with_plugins", true, false, true, false),
+            ("aetherscope_upsert_plugin_rule", false, false, true, false),
         ];
 
         for (name, ro, dest, idemp, ow) in expected_tools {
@@ -1248,6 +1260,7 @@ mod tests {
             assert_eq!(ann["idempotentHint"].as_bool(), Some(idemp), "annotations idempotentHint on {}", name);
             assert_eq!(ann["openWorldHint"].as_bool(), Some(ow), "annotations openWorldHint on {}", name);
         }
+
     }
 
     #[tokio::test]

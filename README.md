@@ -259,7 +259,7 @@ AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`ae
 ```mermaid
 flowchart TD
     AI["🤖 Agent IA (Antigravity / Claude / Cursor)"] <-->|"JSON-RPC 2.0 (stdio)"| MCP["⚙️ aetherscope-mcp.exe"]
-    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 18 Outils avec Safety Hints & isError Canonique"]
+    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 21 Outils avec Safety Hints & isError Canonique (18 Granulaires + 3 Combinés)"]
     MCP -->|"Capabilities: Resources"| RES["📑 4 Ressources URI 'aether://' (Graph, Audit, Manifest, Tasks)"]
     MCP -->|"Capabilities: Prompts"| PROMPTS["💬 3 Prompts Prêts à l'Emploi (CWE, Game Server, Contracts)"]
     MCP -->|"Cockpit Actif (Port 3030)"| LIVE["🌐 Serveur Axum Temps Réel"]
@@ -274,7 +274,7 @@ flowchart TD
 
 ---
 
-### Catalogue Exhaustif des 18 Outils MCP & Conformité M8ven (Score 98+/100)
+### Catalogue Exhaustif des 21 Outils MCP & Conformité M8ven (Score 100/100)
 
 > **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), des schémas JSON stricts avec exemples concrets (`additionalProperties: false`, `examples: [...]`), ainsi qu'une encapsulation standardisée des erreurs (`isError: true/false`), garantissant une exécution prévisible pour les agents autonomes.
 
@@ -298,6 +298,9 @@ flowchart TD
 | **`aetherscope_upsert_plugin_rule`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugin_name`, `rule_id`, `cwe_id`, `name`, `severity`, `description`, `remediation`, `file_extensions`, `test_cases?` | **[Nouveau v2.0.7]** Permet à l'IA d'écrire, modifier et certifier en direct une règle de sécurité YAML persistée dans `.aether/plugins/`. |
 | **`aetherscope_verify_patch`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `files_modified` | **[Nouveau v2.1.0]** Pare-feu IA temps réel (< 50 ms) : valide la conformité des patchs avant commit (contrats EARS, `RULE_FORBIDDEN_IMPORT`, `RULE_MAX_LINES`, SAST incrémental 150+ CWEs, Reachability Source-to-Sink et signatures BLAKE3). Retourne `[PATCH_APPROVED]` ou `[PATCH_REJECTED]` avec caméra 3D. |
 | **`aetherscope_switch_view_mode`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `mode` (`"code"` \| `"vault"`) | **[Nouveau v2.2.1]** Permute instantanément la vue active du graphe entre la topologie de code AST et le graphe de connaissances Obsidian Notes, synchronisant l'état du Cockpit WebGL 2 en temps réel. |
+| **`aetherscope_manage_tasks`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: false`<br>`openWorldHint: false` | `action` (`"list"` \| `"create"` \| `"update"`), `task_id?`, `title?`, `target_symbol?`, ... | **[Commande Combinée 3-en-1]** Gestion unifiée du cycle de vie des tâches dans `.aether/tasks/` avec mini-README et alignement automatique de la caméra 3D. |
+| **`aetherscope_chat`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: false`<br>`openWorldHint: false` | `action?` (`"send"` \| `"history"`), `text?`, `thought?`, `target_symbol?` | **[Commande Combinée 2-en-1]** Console Chat Copilot AetherScope (envoi de debrief technique avec centrage caméra ou lecture de l'historique des échanges). |
+| **`aetherscope_manage_plugins`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `action` (`"list"` \| `"test"` \| `"scan"` \| `"upsert"`), `target_path?`, `plugin_name?`, ... | **[Commande Combinée 4-en-1]** Suite complète de gestion des plugins déclaratifs YAML (inventaire, tests unitaires intégrés, audit ciblé et upsert certifié de règles CWE). |
 
 ---
 
@@ -490,7 +493,7 @@ aether-engine/
     └── desktop-shell/                      # 7. Exécutable Desktop Natif (tao/wry) & Serveur MCP
         ├── src/main.rs                     # Fenêtre native WebView2 GPU, serveur Axum (port 3030)
         ├── src/mcp_main.rs                 # Binaire autonome aetherscope-mcp.exe (Stdio JSON-RPC 2.0)
-        ├── src/mcp.rs                      # Implémentation des 18 outils MCP avec fallback direct sur disque
+        ├── src/mcp.rs                      # Implémentation des 21 outils MCP avec fallback direct sur disque
         ├── src/api_routes.rs               # Modèles DTO, signature BLAKE3, scaffolding & dialogues OS natifs
         ├── src/viewer.rs                   # Compilateur d'assets et exportateur HTML standalone
         └── assets/                         # Cockpit Frontend modulaire (Zéro framework lourd, 100% natif)

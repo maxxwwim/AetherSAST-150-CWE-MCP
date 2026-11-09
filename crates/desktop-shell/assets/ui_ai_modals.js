@@ -720,7 +720,7 @@ Dans notre visualiseur AetherScope, chaque fichier est une planète céleste et 
 
 ---
 
-### 🛠️ 4. PROTOCOLE MCP UNIFIÉ (8 COMMANDES COMBINÉES AETHERSCOPE)
+### 🛠️ 4. PROTOCOLE MCP UNIFIÉ & MODULAIRE (21 OUTILS AETHERSCOPE V2)
 1. \`aetherscope_get_graph_summary({"rescan": false, "include_tasks": true, "severity": "HIGH"})\` : Vue globale + Tâches + Alertes SAST (4-en-1).
 2. \`aetherscope_get_active_target({"symbol_id": "<symbole>", "action": "Analyse", "trace_direction": "both"})\` : Caméra 3D + Contrat EARS + Trace MVC (3-en-1).
 3. \`aetherscope_search_symbols({"query": "...", "layer": "...", "has_violation": true, "cwe_id": "CWE-89"})\` : Recherche AST + Filtre CWE (2-en-1).
