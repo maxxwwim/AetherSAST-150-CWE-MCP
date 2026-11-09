@@ -30,33 +30,32 @@ Les commandes MCP d'AetherScope ont été **fusionnées et réduites à 8 outils
 
 ---
 
-## 🛠️ 2. RÉFÉRENTIEL COMPLET DES 21 MODULES & COMMANDES MCP (`aetherscope_*`)
-AetherScope expose une suite modulaire complète de **21 outils MCP** (18 modules chirurgicaux dédiés + 3 commandes combinées pour workflows rapides) :
+## 🛠️ 2. RÉFÉRENTIEL DES 10 OUTILS D'ÉLITE MCP AETHERSCOPE (10 MAX — ANTI-FLOOD)
+AetherScope concentre l'intelligence architecturale sur **10 outils MCP d'élite** hautement optimisés pour éviter tout flood de contexte tout en couvrant 100% des cas d'usage :
 
-### 🌟 Modules Chirurgicaux Spécialisés (18 Outils Granulaires)
-1. **`aetherscope_teleport_camera(target, action, details)`** : Déplacement direct de la caméra WebGL 3D, fil d'Ariane violet et réticule tactique.
-2. **`aetherscope_get_graph_summary(path?, rescan?, include_tasks?, severity?)`** : Vue globale de l'architecture AST & notes Obsidian (nœuds, arêtes, violations, tâches).
-3. **`aetherscope_get_active_target(symbol_id, action?, details?, trace_direction?, max_depth?, path?)`** : Contexte chirurgical, contrat EARS, métadonnées YAML/tags Obsidian et traçage direct de flux.
-4. **`aetherscope_search_symbols(query?, layer?, kind?, stereotype?, has_violation?, cwe_id?, severity?, file_pattern?, limit?, path?)`** : Recherche multi-critères dans l'AST de code ou les notes Obsidian.
-5. **`aetherscope_switch_view_mode(mode: 'code' | 'vault', path?)`** : Bascule dynamiquement la vision 3D entre graphe d'architecture logicielle (`'code'`) et graphe de connaissances Obsidian (`'vault'`).
-6. **`aetherscope_trace_flow(symbol_id, direction: 'upstream' | 'downstream' | 'both', max_depth?, path?)`** : Traçage précis de dépendances, de flux MVC et de backlinks.
-7. **`aetherscope_query_violations(severity?, cwe_id?, file_pattern?, path?)`** : Requête chirurgicale des violations SAST, motifs Zero-Day et failles CWE.
-8. **`aetherscope_scan_project(path?)`** : Déclenche un rescan ultrarapide (< 50ms) de l'AST ou du vault.
-9. **`aetherscope_verify_patch(files_modified, task_id?, status?, progress?, progress_note?, chat_message?)`** : Pare-feu IA Temps Réel (< 50ms) certifiant zéro violation SAST 150+ CWE et contrats EARS/BLAKE3.
-10. **`aetherscope_create_task(title, kind, target_symbol?, target_file?, priority?, initial_readme?)`** : Crée une tâche avec son mini-README dans `.aether/tasks/`.
-11. **`aetherscope_update_task(task_id, status?, progress?, progress_note?, full_readme?)`** : Met à jour l'avancement, le statut et l'historique d'une tâche.
-12. **`aetherscope_list_tasks(status_filter: 'active' | 'all' | 'done')`** : Liste les tâches avec statut et progression.
-13. **`aetherscope_send_chat_message(text, thought?, target_symbol?)`** : Publie un debrief dans le Chat Copilot du cockpit.
-14. **`aetherscope_get_chat_history()`** : Récupère l'historique des échanges du chat AetherScope.
-15. **`aetherscope_list_plugins(plugins_dir?, path?)`** : Inventaire des plugins déclaratifs YAML dans `.aether/plugins/`.
-16. **`aetherscope_test_plugins(plugins_dir?, path?)`** : Exécute instantanément la suite de tests unitaires embarqués des plugins.
-17. **`aetherscope_scan_with_plugins(target_path, plugins_dir?, path?)`** : Audit SAST sur fichier ou dossier via les plugins de règles personnalisées.
-18. **`aetherscope_upsert_plugin_rule(plugin_name, rule_id, name, severity, ...)`** : Crée ou met à jour une règle CWE déclarative certifiée sans recompilation.
+### 🪐 Les 10 Commandes Stratégiques
+1. **`aetherscope_get_graph_summary(path?, rescan?, include_tasks?, severity?)`** *(Diagnostic Global 4-en-1)*
+   - Résumé global de l'architecture (Code AST & Vault Obsidian), violations SAST/CWE actives, liste des tâches et option de rescan à chaud.
+2. **`aetherscope_get_active_target(symbol_id, action?, details?, trace_direction?, max_depth?, path?)`** *(Inspection Cible 3-en-1)*
+   - Téléporte la caméra 3D, extrait le contrat EARS / métadonnées YAML Obsidian, et trace automatiquement les flux amont/aval ou wikilinks.
+3. **`aetherscope_search_symbols(query?, layer?, kind?, stereotype?, has_violation?, cwe_id?, severity?, file_pattern?, limit?, path?)`** *(Recherche Universelle 2-en-1)*
+   - Recherche multi-critères dans le graphe (symboles de code, notes Markdown Obsidian, tags `#tag`) ET audit ciblé des failles CWE.
+4. **`aetherscope_switch_view_mode(mode: 'code' | 'vault', path?)`** *(Bascule Vision 3D WebGL2)*
+   - Permute instantanément la vue du cockpit 3D entre la topologie de code AST (`'code'`) et le réseau de connaissances Obsidian (`'vault'`).
+5. **`aetherscope_verify_patch(files_modified, task_id?, status?, progress?, progress_note?, chat_message?)`** *(Pare-Feu IA Temps Réel 4-en-1)*
+   - Analyse incrémentale < 50ms sur `files_modified` (150+ CWEs, Reachability Source-to-Sink, contrats EARS/BLAKE3). Clôture la tâche et notifie le HUD.
+6. **`aetherscope_manage_tasks(action: 'list' | 'create' | 'update', task_id?, title?, kind?, target_symbol?, priority?, status?, progress?, progress_note?, initial_readme?, full_readme?, status_filter?)`** *(Gestionnaire Tâches 3-en-1)*
+   - Cycle complet des tâches avec mini-READMEs dans `.aether/tasks/` et alignement automatique de la caméra 3D.
+7. **`aetherscope_chat(action: 'send' | 'history', text?, thought?, target_symbol?)`** *(Console Chat Copilot 2-en-1)*
+   - Envoi de debrief Markdown avec balise `<thought>` dans le HUD du cockpit ou lecture de l'historique conversationnel.
+8. **`aetherscope_manage_plugins(action: 'list' | 'test' | 'scan' | 'upsert', target_path?, plugins_dir?, path?, ...)`** *(Moteur Plugins SAST 4-en-1)*
+   - Gestion déclarative complète des règles de sécurité YAML : inventaire, exécution des tests unitaires, audit de fichiers et upsert certifié.
+9. **`aetherscope_teleport_camera(target, action, details)`** *(Navigation Rapide 3D)*
+   - Oriente directement la caméra WebGL vers un composant, active le fil d'Ariane violet et le badge de télémétrie sans recharger l'arbre.
+10. **`aetherscope_scan_project(path?)`** *(Rescan Express)*
+   - Force une réanalyse AST/Vault ultrarapide du projet pour synchroniser immédiatement l'état sur disque avec le visualiseur 3D.
 
-### ⚡ Commandes Combinées Multi-Actions (3 Workflows Haute-Efficacité)
-19. **`aetherscope_manage_tasks(action: 'list' | 'create' | 'update', ...)`** : Gestion 3-en-1 des tâches (list, create, update) avec téléportation caméra.
-20. **`aetherscope_chat(action: 'send' | 'history', text?, ...)`** : Chat Copilot 2-en-1 (envoi de debrief ou lecture historique).
-21. **`aetherscope_manage_plugins(action: 'list' | 'test' | 'scan' | 'upsert', ...)`** : Suite plugin 4-en-1 unifiée.
+*(Note : les alias et commandes unitaires spécialisées restent supportés par le serveur en arrière-plan sans encombrer la mémoire de l'IA).*
 
 ---
 

@@ -259,7 +259,7 @@ AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`ae
 ```mermaid
 flowchart TD
     AI["🤖 Agent IA (Antigravity / Claude / Cursor)"] <-->|"JSON-RPC 2.0 (stdio)"| MCP["⚙️ aetherscope-mcp.exe"]
-    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 21 Outils avec Safety Hints & isError Canonique (18 Granulaires + 3 Combinés)"]
+    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 10 Outils d'Élite avec Safety Hints & isError Canonique (Anti-Flood)"]
     MCP -->|"Capabilities: Resources"| RES["📑 4 Ressources URI 'aether://' (Graph, Audit, Manifest, Tasks)"]
     MCP -->|"Capabilities: Prompts"| PROMPTS["💬 3 Prompts Prêts à l'Emploi (CWE, Game Server, Contracts)"]
     MCP -->|"Cockpit Actif (Port 3030)"| LIVE["🌐 Serveur Axum Temps Réel"]
@@ -274,7 +274,7 @@ flowchart TD
 
 ---
 
-### Catalogue Exhaustif des 21 Outils MCP & Conformité M8ven (Score 100/100)
+### Catalogue des 10 Outils MCP d'Élite & Conformité M8ven (Score 100/100)
 
 > **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), des schémas JSON stricts avec exemples concrets (`additionalProperties: false`, `examples: [...]`), ainsi qu'une encapsulation standardisée des erreurs (`isError: true/false`), garantissant une exécution prévisible pour les agents autonomes.
 
@@ -493,7 +493,7 @@ aether-engine/
     └── desktop-shell/                      # 7. Exécutable Desktop Natif (tao/wry) & Serveur MCP
         ├── src/main.rs                     # Fenêtre native WebView2 GPU, serveur Axum (port 3030)
         ├── src/mcp_main.rs                 # Binaire autonome aetherscope-mcp.exe (Stdio JSON-RPC 2.0)
-        ├── src/mcp.rs                      # Implémentation des 21 outils MCP avec fallback direct sur disque
+        ├── src/mcp.rs                      # Implémentation des 10 outils MCP d'élite avec fallback direct sur disque
         ├── src/api_routes.rs               # Modèles DTO, signature BLAKE3, scaffolding & dialogues OS natifs
         ├── src/viewer.rs                   # Compilateur d'assets et exportateur HTML standalone
         └── assets/                         # Cockpit Frontend modulaire (Zéro framework lourd, 100% natif)

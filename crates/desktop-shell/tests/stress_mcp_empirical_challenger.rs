@@ -1,7 +1,7 @@
 //! Empirical Stress Tests and Adversarial Oracles for AetherScope MCP Server & JSON-RPC
 //! Agent: teamwork_challenger_obs_m2_2 (Empirical Challenger Archetype)
 //! Scope:
-//!   1. Complete tools/list verification: 21 tools, 4 capability hints (root & annotations)
+//!   1. Complete tools/list verification: 10 tools, 4 capability hints (root & annotations)
 //!   2. Adversarial stress tests: aetherscope_switch_view_mode, aetherscope_get_graph_summary, aetherscope_get_active_target
 //!   3. True offline fallback resilience when Axum server is unreachable (closed port)
 //!   4. JSON-RPC protocol edge cases, fuzzing, and malformed payload recovery
@@ -41,11 +41,11 @@ impl Drop for TempDirGuard {
 }
 
 // =========================================================================
-// SECTION 1: MCP tools/list Comprehensive Verification (All 21 tools & 4 hints)
+// SECTION 1: MCP tools/list Comprehensive Verification (All 10 tools & 4 hints)
 // =========================================================================
 
 #[tokio::test]
-async fn test_empirical_tools_list_all_21_tools_and_4_hints() {
+async fn test_empirical_tools_list_all_10_tools_and_4_hints() {
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(json!("challenger-tools-list-001")),
@@ -62,8 +62,8 @@ async fn test_empirical_tools_list_all_21_tools_and_4_hints() {
     let result = resp.result.expect("result field must be present");
     let tools = result["tools"].as_array().expect("tools must be an array");
 
-    // Exactly 21 registered tools (18 surgical granular tools + 3 unified commands)
-    assert_eq!(tools.len(), 21, "MCP server must expose exactly 21 registered tools");
+        // Exactly 10 registered tools (curated high-impact suite)
+    assert_eq!(tools.len(), 10, "MCP server must expose exactly 10 registered tools");
 
     // Expected tools and their hint truth table:
     // (name, readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
@@ -78,17 +78,6 @@ async fn test_empirical_tools_list_all_21_tools_and_4_hints() {
         ("aetherscope_manage_plugins", false, false, true, false),
         ("aetherscope_teleport_camera", true, false, true, false),
         ("aetherscope_scan_project", true, false, true, false),
-        ("aetherscope_trace_flow", true, false, true, false),
-        ("aetherscope_query_violations", true, false, true, false),
-        ("aetherscope_create_task", false, false, false, false),
-        ("aetherscope_update_task", false, false, true, false),
-        ("aetherscope_list_tasks", true, false, true, false),
-        ("aetherscope_send_chat_message", false, false, false, false),
-        ("aetherscope_get_chat_history", true, false, true, false),
-        ("aetherscope_list_plugins", true, false, true, false),
-        ("aetherscope_test_plugins", true, false, true, false),
-        ("aetherscope_scan_with_plugins", true, false, true, false),
-        ("aetherscope_upsert_plugin_rule", false, false, true, false),
     ];
 
     for (name, expected_ro, expected_dest, expected_idemp, expected_ow) in expected_hints {
