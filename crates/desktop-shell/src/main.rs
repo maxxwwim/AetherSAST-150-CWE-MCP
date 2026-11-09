@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+﻿#![windows_subsystem = "windows"]
 #![recursion_limit = "512"]
 
 mod api_routes;
@@ -101,13 +101,13 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.update_rules {
         let plugins_dir = Path::new(&args.path).join(".aether").join("plugins");
-        println!("🔄 Synchronizing Semgrep community rules bundle to {}", plugins_dir.display());
+        println!("ðŸ”„ Synchronizing Semgrep community rules bundle to {}", plugins_dir.display());
         match security_linter::CommunityBundle::unpack_to_directory(&plugins_dir) {
             Ok(p) => {
-                println!("✅ Successfully hydrated Semgrep community bundle at {}", p.display());
+                println!("âœ… Successfully hydrated Semgrep community bundle at {}", p.display());
             }
             Err(e) => {
-                eprintln!("❌ Failed to hydrate Semgrep community rules: {}", e);
+                eprintln!("âŒ Failed to hydrate Semgrep community rules: {}", e);
                 return Err(Box::new(e));
             }
         }
@@ -128,7 +128,16 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 
     if mcp {
         let rt = tokio::runtime::Runtime::new()?;
-        return rt.block_on(mcp::run_mcp_server(args));
+        return rt.block_on(async move {
+            if !mcp::check_server_listening(port) {
+                let server_args = args.clone();
+                tokio::spawn(async move {
+                    let _ = run_server_and_watcher(server_args).await;
+                });
+                tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
+            }
+            mcp::run_mcp_stdio_loop(port, &args.path).await
+        });
     }
 
     if args.sca_only {
@@ -141,14 +150,14 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
         return rt.block_on(run_audit_cli(args));
     }
 
-    // Démarre le serveur backend Axum et le File-Watcher dans un thread d'arrière-plan Tokio
+    // DÃ©marre le serveur backend Axum et le File-Watcher dans un thread d'arriÃ¨re-plan Tokio
     let server_args = args.clone();
     std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().expect("Échec initialisation Tokio runtime");
+        let rt = tokio::runtime::Runtime::new().expect("Ã‰chec initialisation Tokio runtime");
         rt.block_on(async {
             if let Err(e) = run_server_and_watcher(server_args).await {
                 let _ = std::fs::write("server-error.log", format!("SERVER ERROR: {:?}", e));
-                eprintln!("⚠️ Erreur serveur interne : {}", e);
+                eprintln!("âš ï¸ Erreur serveur interne : {}", e);
             }
         });
     });
@@ -166,7 +175,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_title("🪐 AetherScope V2 — Architectural Intelligence & Live GPU Cockpit")
+        .with_title("ðŸª AetherScope V2 â€” Architectural Intelligence & Live GPU Cockpit")
         .with_maximized(true)
         .with_inner_size(LogicalSize::new(1280.0, 800.0))
         .with_min_inner_size(LogicalSize::new(800.0, 500.0))
@@ -228,7 +237,7 @@ async fn run_sca_only_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> 
         fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
     };
 
-    println!("📦 [SCA] Scanning dependencies in `{}` (offline: {})...", project_root.display(), args.offline_sca);
+    println!("ðŸ“¦ [SCA] Scanning dependencies in `{}` (offline: {})...", project_root.display(), args.offline_sca);
     let mut sca_report = security_linter::sca::ScaEngine::scan_project(&project_root, args.offline_sca)?;
     println!("   Discovered {} dependencies across lockfiles.", sca_report.dependencies.len());
 
@@ -236,19 +245,19 @@ async fn run_sca_only_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> 
     let mut graph = scanner.scan_project(&project_root);
     security_linter::sca::ScaEngine::cross_reference_reachability(&mut graph, &mut sca_report);
 
-    println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("📊 AETHERSCOPE SOFTWARE COMPOSITION ANALYSIS (SCA) REPORT");
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("   • Total Dependencies      : {}", sca_report.dependencies.len());
-    println!("   • Total Vulnerabilities   : {}", sca_report.total_vulnerabilities);
-    println!("   • 🔴 REACHABLE (High Risk): {}", sca_report.reachable_count);
-    println!("   • ⚪ Unreachable (Low Risk): {}", sca_report.unreachable_count);
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    println!("\nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+    println!("ðŸ“Š AETHERSCOPE SOFTWARE COMPOSITION ANALYSIS (SCA) REPORT");
+    println!("â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+    println!("   â€¢ Total Dependencies      : {}", sca_report.dependencies.len());
+    println!("   â€¢ Total Vulnerabilities   : {}", sca_report.total_vulnerabilities);
+    println!("   â€¢ ðŸ”´ REACHABLE (High Risk): {}", sca_report.reachable_count);
+    println!("   â€¢ âšª Unreachable (Low Risk): {}", sca_report.unreachable_count);
+    println!("â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n");
 
     if sca_report.reachable_count > 0 {
-        println!("🚨 REACHABLE VULNERABILITIES (Called from Entrypoints / Endpoints) :");
+        println!("ðŸš¨ REACHABLE VULNERABILITIES (Called from Entrypoints / Endpoints) :");
         for v in sca_report.vulnerabilities.iter().filter(|v| v.is_reachable) {
-            println!("  🔴 [{}] {} v{} — {}", v.cve_id, v.dependency.name, v.dependency.version, v.severity);
+            println!("  ðŸ”´ [{}] {} v{} â€” {}", v.cve_id, v.dependency.name, v.dependency.version, v.severity);
             println!("     Summary     : {}", v.summary);
             println!("     Exploit Path: {}", v.exploit_path.join(" -> "));
             println!("     Remediation : {}\n", v.remediation);
@@ -256,9 +265,9 @@ async fn run_sca_only_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     if sca_report.unreachable_count > 0 {
-        println!("🛡️ UNREACHABLE VULNERABILITIES (Dead Code / Unexposed Dependencies) :");
+        println!("ðŸ›¡ï¸ UNREACHABLE VULNERABILITIES (Dead Code / Unexposed Dependencies) :");
         for v in sca_report.vulnerabilities.iter().filter(|v| !v.is_reachable) {
-            println!("  ⚪ [{}] {} v{} — {}", v.cve_id, v.dependency.name, v.dependency.version, v.severity);
+            println!("  âšª [{}] {} v{} â€” {}", v.cve_id, v.dependency.name, v.dependency.version, v.severity);
             println!("     Summary     : {}", v.summary);
             println!("     Remediation : {}\n", v.remediation);
         }
@@ -278,7 +287,7 @@ async fn run_sca_only_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> 
             };
             if triggered {
                 eprintln!(
-                    "❌ [GATE] Reachable SCA vulnerability {} ({}) exceeds failure threshold `{}`",
+                    "âŒ [GATE] Reachable SCA vulnerability {} ({}) exceeds failure threshold `{}`",
                     v.cve_id, sev, threshold
                 );
                 failed = true;
@@ -307,7 +316,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut graph = scanner.scan_project(&project_root);
 
     if args.sca || args.offline_sca {
-        println!("📦 [SCA] Analyzing software dependencies (offline: {})...", args.offline_sca);
+        println!("ðŸ“¦ [SCA] Analyzing software dependencies (offline: {})...", args.offline_sca);
         match security_linter::sca::ScaEngine::scan_project(&project_root, args.offline_sca) {
             Ok(mut sca_report) => {
                 security_linter::sca::ScaEngine::cross_reference_reachability(&mut graph, &mut sca_report);
@@ -320,7 +329,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             Err(e) => {
-                eprintln!("⚠️ [SCA] Error scanning dependencies: {}", e);
+                eprintln!("âš ï¸ [SCA] Error scanning dependencies: {}", e);
             }
         }
     }
@@ -347,7 +356,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             }
             fs::write(out_file, &sarif_json)?;
             println!(
-                "✅ [SARIF] Rapport SARIF v2.1.0 écrit dans `{}` ({} résultats)",
+                "âœ… [SARIF] Rapport SARIF v2.1.0 Ã©crit dans `{}` ({} rÃ©sultats)",
                 out_file.display(),
                 all_anomalies.len()
             );
@@ -357,7 +366,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         AuditWriter::write_live_audit(&project_root, &all_violations, file_count)?;
         println!(
-            "✅ [SAST] Audit terminé sur `{}` : {} nœuds, {} flux, {} violations dans .aether/LIVE_AUDIT.md ({} fichiers audités)",
+            "âœ… [SAST] Audit terminÃ© sur `{}` : {} nÅ“uds, {} flux, {} violations dans .aether/LIVE_AUDIT.md ({} fichiers auditÃ©s)",
             project_root.display(),
             graph.nodes.len(),
             graph.edges.len(),
@@ -406,7 +415,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         if !failed_violations.is_empty() {
             let elapsed = start_instant.elapsed();
             eprintln!(
-                "❌ [FAIL-ON: {}] {} infraction(s) bloquante(s) détectée(s) en {:?} (seuil: {}). Blocage de la PR.",
+                "âŒ [FAIL-ON: {}] {} infraction(s) bloquante(s) dÃ©tectÃ©e(s) en {:?} (seuil: {}). Blocage de la PR.",
                 threshold,
                 failed_violations.len(),
                 elapsed,
@@ -414,7 +423,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             );
             for fv in failed_violations.iter().take(5) {
                 eprintln!(
-                    "   • [{}] L{}: {} ({})",
+                    "   â€¢ [{}] L{}: {} ({})",
                     fv.rule_id, fv.line_number, fv.file_path, fv.message
                 );
             }
@@ -430,7 +439,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     if mcp::check_server_listening(args.port) {
         println!(
-            "📡 [SYNCHRO EN DIRECT] Cockpit AetherScope détecté sur http://127.0.0.1:{} : actualisation du Cockpit 3D & du MCP...",
+            "ðŸ“¡ [SYNCHRO EN DIRECT] Cockpit AetherScope dÃ©tectÃ© sur http://127.0.0.1:{} : actualisation du Cockpit 3D & du MCP...",
             args.port
         );
         let path_str = clean_path_string(&project_root);
@@ -443,15 +452,15 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .await
         {
             Ok(_) => {
-                println!("🚀 [OK] Graphe WebGL 3D et passerelle MCP synchronisés en temps réel !");
+                println!("ðŸš€ [OK] Graphe WebGL 3D et passerelle MCP synchronisÃ©s en temps rÃ©el !");
             }
             Err(e) => {
-                eprintln!("⚠️ Échec synchronisation en direct avec le Cockpit ({})", e);
+                eprintln!("âš ï¸ Ã‰chec synchronisation en direct avec le Cockpit ({})", e);
             }
         }
     } else {
         println!(
-            "ℹ️ Serveur Cockpit non actif sur le port {}. Lancez le Cockpit via le Launcher pour visualiser le graphe en 3D.",
+            "â„¹ï¸ Serveur Cockpit non actif sur le port {}. Lancez le Cockpit via le Launcher pour visualiser le graphe en 3D.",
             args.port
         );
     }
@@ -598,7 +607,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 let state = state_pick_ws.clone();
                 async move {
                     let chosen = tokio::task::spawn_blocking(|| {
-                        pick_folder_dialog("Sélectionnez le dossier racine contenant tous les projets")
+                        pick_folder_dialog("SÃ©lectionnez le dossier racine contenant tous les projets")
                     })
                     .await
                     .ok()
@@ -631,7 +640,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 let state = state_pick_proj.clone();
                 async move {
                     let chosen = tokio::task::spawn_blocking(|| {
-                        pick_folder_dialog("Sélectionnez le projet à ouvrir et analyser")
+                        pick_folder_dialog("SÃ©lectionnez le projet Ã  ouvrir et analyser")
                     })
                     .await
                     .ok()
@@ -682,7 +691,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let created = init_project_structure(base, &req.stack);
                     axum::Json(InitProjectResponse {
                         status: "ok".to_string(),
-                        message: format!("Projet initialisé avec {} dossiers et contrats README.md signés BLAKE3", created.len()),
+                        message: format!("Projet initialisÃ© avec {} dossiers et contrats README.md signÃ©s BLAKE3", created.len()),
                         created_dirs: created,
                     })
                 }
@@ -729,7 +738,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| "Projet".to_string());
 
-                        // Émet un événement de télémétrie spatiale vers le HUD du Cockpit
+                        // Ã‰met un Ã©vÃ©nement de tÃ©lÃ©mÃ©trie spatiale vers le HUD du Cockpit
                         {
                             let mut t_guard = state.telemetry.write().await;
                             *t_guard = Some(AiTelemetryEvent {
@@ -738,7 +747,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 details: {
                                     let failles_count = violations.iter().filter(|v| v.rule_id != "RULE_MAX_LINES" && v.severity != "WARNING" && !v.cve_id.contains("ARCH-BUDGET-EXCEEDED")).count();
                                     format!(
-                                        "Codebase actualisée : {} nœuds, {} flux, {} failles SAST",
+                                        "Codebase actualisÃ©e : {} nÅ“uds, {} flux, {} failles SAST",
                                         new_graph.nodes.len(),
                                         new_graph.edges.len(),
                                         failles_count
@@ -755,7 +764,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 id: format!("msg_{}", now_ms),
                                 sender: "system".to_string(),
                                 text: format!(
-                                    "⚡ Analyse terminée pour `{}` : {} symboles, {} liaisons, {} règles de sécurité auditées.",
+                                    "âš¡ Analyse terminÃ©e pour `{}` : {} symboles, {} liaisons, {} rÃ¨gles de sÃ©curitÃ© auditÃ©es.",
                                     proj_display,
                                     new_graph.nodes.len(),
                                     new_graph.edges.len(),
@@ -810,7 +819,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| "Projet".to_string());
 
-                        // Émet un événement de télémétrie spatiale vers le HUD du Cockpit
+                        // Ã‰met un Ã©vÃ©nement de tÃ©lÃ©mÃ©trie spatiale vers le HUD du Cockpit
                         {
                             let mut t_guard = state.telemetry.write().await;
                             *t_guard = Some(AiTelemetryEvent {
@@ -819,7 +828,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 details: {
                                     let failles_count = violations.iter().filter(|v| v.rule_id != "RULE_MAX_LINES" && v.severity != "WARNING" && !v.cve_id.contains("ARCH-BUDGET-EXCEEDED")).count();
                                     format!(
-                                        "Codebase actualisée : {} nœuds, {} flux, {} failles SAST",
+                                        "Codebase actualisÃ©e : {} nÅ“uds, {} flux, {} failles SAST",
                                         new_graph.nodes.len(),
                                         new_graph.edges.len(),
                                         failles_count
@@ -836,7 +845,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 id: format!("msg_{}", now_ms),
                                 sender: "system".to_string(),
                                 text: format!(
-                                    "⚡ Analyse terminée pour `{}` : {} symboles, {} liaisons, {} règles de sécurité auditées.",
+                                    "âš¡ Analyse terminÃ©e pour `{}` : {} symboles, {} liaisons, {} rÃ¨gles de sÃ©curitÃ© auditÃ©es.",
                                     proj_display,
                                     new_graph.nodes.len(),
                                     new_graph.edges.len(),
@@ -960,7 +969,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
 
                     axum::Json(SignContractsResponse {
                         status: "ok".to_string(),
-                        message: format!("{} contrat(s) README.md signé(s) avec BLAKE3 dans aether.lock.toml", signed_count),
+                        message: format!("{} contrat(s) README.md signÃ©(s) avec BLAKE3 dans aether.lock.toml", signed_count),
                         signed_count,
                         blake3_hash,
                         graph: new_graph,
@@ -968,7 +977,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // Pont IA Zero-Shell : écriture de .aether/ACTIVE_TARGET.md et génération du paquet <aether_handshake version="2.0">
+        // Pont IA Zero-Shell : Ã©criture de .aether/ACTIVE_TARGET.md et gÃ©nÃ©ration du paquet <aether_handshake version="2.0">
         .route(
             "/api/ai/target",
             axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<AiTargetRequest>| {
@@ -1086,7 +1095,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         }
 
                         let doc_display = if doc_content.is_empty() {
-                            "*(Aucun commentaire AST direct détecté)*".to_string()
+                            "*(Aucun commentaire AST direct dÃ©tectÃ©)*".to_string()
                         } else {
                             doc_content.clone()
                         };
@@ -1095,7 +1104,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         let deps_md = categorized_out.to_compact_markdown("aval", 4);
 
                         let formatted_doc_and_liaisons = format!(
-                            "# 🎯 Cible : `{}`\n- **Fichier :** `{}:{}`\n- **Architecture :** Galaxie `{}` | Couche `{}` | Stéréotype `{}`\n\n## 📖 DOCUMENTATION & SPÉCIFICATIONS AST :\n{}\n\n## 📥 FLUX AMONT / APPELANTS (Total: {}):\n{}\n## 📤 FLUX AVAL / DÉPENDANCES & LIAISONS (Total: {}):\n{}\n## 🔒 CONTRAT DU MODULE (`{}`):\n- Imports autorisés : `{:?}`\n- Imports INTERDITS : `{:?}`\n- Lignes max : {}\n- Exigences EARS : {}",
+                            "# ðŸŽ¯ Cible : `{}`\n- **Fichier :** `{}:{}`\n- **Architecture :** Galaxie `{}` | Couche `{}` | StÃ©rÃ©otype `{}`\n\n## ðŸ“– DOCUMENTATION & SPÃ‰CIFICATIONS AST :\n{}\n\n## ðŸ“¥ FLUX AMONT / APPELANTS (Total: {}):\n{}\n## ðŸ“¤ FLUX AVAL / DÃ‰PENDANCES & LIAISONS (Total: {}):\n{}\n## ðŸ”’ CONTRAT DU MODULE (`{}`):\n- Imports autorisÃ©s : `{:?}`\n- Imports INTERDITS : `{:?}`\n- Lignes max : {}\n- Exigences EARS : {}",
                             sym.name,
                             sym.file_path,
                             sym.line_number,
@@ -1155,7 +1164,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // Télémetrie IA
+        // TÃ©lÃ©metrie IA
         .route(
             "/api/ai/telemetry",
             axum::routing::get({
@@ -1241,13 +1250,13 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             msgs.push(AiChatMessage {
                                 id: format!("msg_{}", now_ms),
                                 sender: "ai".to_string(),
-                                text: "⚠️ Requête interrompue par l'utilisateur.".to_string(),
+                                text: "âš ï¸ RequÃªte interrompue par l'utilisateur.".to_string(),
                                 target_symbol: None,
                                 timestamp: now_ms,
                             });
                         }
                     }
-                    axum::Json(serde_json::json!({ "status": "ok", "message": "Requête IA annulée" }))
+                    axum::Json(serde_json::json!({ "status": "ok", "message": "RequÃªte IA annulÃ©e" }))
                 }
             }),
         )
@@ -1260,7 +1269,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     msgs.clear();
                     let mut t = state.telemetry.write().await;
                     *t = None;
-                    axum::Json(serde_json::json!({ "status": "ok", "message": "Nouvelle session démarrée" }))
+                    axum::Json(serde_json::json!({ "status": "ok", "message": "Nouvelle session dÃ©marrÃ©e" }))
                 }
             }),
         )
@@ -1272,7 +1281,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let tool = req.tool.unwrap_or_else(|| "gemini".to_string());
                     axum::Json(serde_json::json!({
                         "status": "ok",
-                        "message": format!("Terminal CLI {} initialisé", tool),
+                        "message": format!("Terminal CLI {} initialisÃ©", tool),
                         "tool": tool,
                         "project_path": req.project_path,
                         "prompt": req.prompt
@@ -1300,7 +1309,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // Gestionnaire de Tâches & Quêtes (Model & User)
+        // Gestionnaire de TÃ¢ches & QuÃªtes (Model & User)
         .route(
             "/api/tasks",
             axum::routing::get({
@@ -1349,7 +1358,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         req.full_readme.as_deref(),
                     ) {
                         Ok(Some(task)) => axum::Json(serde_json::json!({ "status": "ok", "task": task })),
-                        Ok(None) => axum::Json(serde_json::json!({ "status": "not_found", "message": "Tâche introuvable" })),
+                        Ok(None) => axum::Json(serde_json::json!({ "status": "not_found", "message": "TÃ¢che introuvable" })),
                         Err(e) => axum::Json(serde_json::json!({ "status": "error", "message": format!("{}", e) })),
                     }
                 }
@@ -1368,7 +1377,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // Création de fichier assistée par l'Inspecteur / IA
+        // CrÃ©ation de fichier assistÃ©e par l'Inspecteur / IA
         .route(
             "/api/ai/create_file",
             axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<CreateFileRequest>| {
@@ -1397,7 +1406,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // Chargement à la demande de fichier / README (Lazy-loading pour booster les perfs)
+        // Chargement Ã  la demande de fichier / README (Lazy-loading pour booster les perfs)
         .route(
             "/api/file_content",
             axum::routing::get({
@@ -1550,8 +1559,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             "/favicon.ico",
             axum::routing::get(|| async { axum::http::StatusCode::NO_CONTENT }),
         )
-        // Pas de CORS permissif : le cockpit est servi par ce même serveur (same-origin) et le pont MCP
-        // n'envoie pas d'Origin. Toute requête cross-origin / DNS-rebinding est refusée par le garde.
+        // Pas de CORS permissif : le cockpit est servi par ce mÃªme serveur (same-origin) et le pont MCP
+        // n'envoie pas d'Origin. Toute requÃªte cross-origin / DNS-rebinding est refusÃ©e par le garde.
         .layer(axum::middleware::from_fn_with_state(
             local_guard::LocalGuard::new(args.port),
             local_guard::enforce_local_only,

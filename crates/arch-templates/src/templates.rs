@@ -1,320 +1,73 @@
 use core_graph::manifest::{GalaxyManifest, GuardrailSettings, ProjectManifest, StackType, TopologyMode};
 use std::collections::HashMap;
 
+fn gm(path: &str, role: &str) -> GalaxyManifest {
+    GalaxyManifest {
+        path: path.to_string(),
+        role: role.to_string(),
+        remote_sync: false,
+        remote_endpoint: None,
+        readme_blake3: None,
+    }
+}
+
 pub struct ArchScaffolder;
 
 impl ArchScaffolder {
     pub fn create_manifest(project_id: &str, stack: StackType, topology: TopologyMode) -> ProjectManifest {
         let mut galaxies = HashMap::new();
+        let mut add = |name: &str, path: &str, role: &str| {
+            galaxies.insert(name.to_string(), gm(path, role));
+        };
 
         match stack {
             StackType::PureRust => {
-                galaxies.insert(
-                    "contracts".to_string(),
-                    GalaxyManifest {
-                        path: "./contracts".to_string(),
-                        role: "Common DTOs, wire types and API schemas".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "client".to_string(),
-                    GalaxyManifest {
-                        path: "./client".to_string(),
-                        role: "Desktop/Web frontend view and state management".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "server".to_string(),
-                    GalaxyManifest {
-                        path: "./server".to_string(),
-                        role: "Axum backend, domain logic and API routes".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "data-nodes".to_string(),
-                    GalaxyManifest {
-                        path: "./data-nodes".to_string(),
-                        role: "SQLx / SeaORM migrations and database repositories".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
+                add("contracts", "./contracts", "Common DTOs, wire types and API schemas");
+                add("client", "./client", "Desktop/Web frontend view and state management");
+                add("server", "./server", "Axum backend, domain logic and API routes");
+                add("data-nodes", "./data-nodes", "SQLx / SeaORM migrations and database repositories");
             }
             StackType::PurePythonUv => {
-                galaxies.insert(
-                    "contracts".to_string(),
-                    GalaxyManifest {
-                        path: "./contracts".to_string(),
-                        role: "Pydantic v2 schemas and shared domain interfaces".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "client".to_string(),
-                    GalaxyManifest {
-                        path: "./client".to_string(),
-                        role: "Streamlit / Reflex or frontend SPA".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "server".to_string(),
-                    GalaxyManifest {
-                        path: "./server".to_string(),
-                        role: "FastAPI REST API, background workers and domain services".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "data-nodes".to_string(),
-                    GalaxyManifest {
-                        path: "./data-nodes".to_string(),
-                        role: "SQLAlchemy 2 models, Alembic migrations and Redis cache".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
+                add("contracts", "./contracts", "Pydantic v2 schemas and shared domain interfaces");
+                add("client", "./client", "Streamlit / Reflex or frontend SPA");
+                add("server", "./server", "FastAPI REST API, background workers and domain services");
+                add("data-nodes", "./data-nodes", "SQLAlchemy 2 models, Alembic migrations and Redis cache");
             }
             StackType::PureNodePnpm => {
-                galaxies.insert(
-                    "contracts".to_string(),
-                    GalaxyManifest {
-                        path: "./contracts".to_string(),
-                        role: "Zod schemas, tRPC routers, API request/response types".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "client".to_string(),
-                    GalaxyManifest {
-                        path: "./client".to_string(),
-                        role: "Next.js / Vite UI, components and client forms".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "server".to_string(),
-                    GalaxyManifest {
-                        path: "./server".to_string(),
-                        role: "Hono / Fastify server, domain use-cases and WebSocket handlers".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "data-nodes".to_string(),
-                    GalaxyManifest {
-                        path: "./data-nodes".to_string(),
-                        role: "Drizzle / Prisma schema, migrations and repositories".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
+                add("contracts", "./contracts", "Zod schemas, tRPC routers, API request/response types");
+                add("client", "./client", "Next.js / Vite UI, components and client forms");
+                add("server", "./server", "Hono / Fastify server, domain use-cases and WebSocket handlers");
+                add("data-nodes", "./data-nodes", "Drizzle / Prisma schema, migrations and repositories");
             }
             StackType::HybridMmoWeb3 => {
-                galaxies.insert(
-                    "contracts".to_string(),
-                    GalaxyManifest {
-                        path: "./contracts".to_string(),
-                        role: "Smart contracts ABI, WebSocket packet definitions, shared types".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "client".to_string(),
-                    GalaxyManifest {
-                        path: "./client".to_string(),
-                        role: "PixiJS / Svelte WebGL presentation, UI forms and local states".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "server".to_string(),
-                    GalaxyManifest {
-                        path: "./server".to_string(),
-                        role: "Rust WebSocket high-concurrency game loop and domain services".to_string(),
-                        remote_sync: topology == TopologyMode::Dissociated,
-                        remote_endpoint: if topology == TopologyMode::Dissociated {
-                            Some("wss://game-server.internal/aether-sync".to_string())
-                        } else {
-                            None
-                        },
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "data-nodes".to_string(),
-                    GalaxyManifest {
-                        path: "./data-nodes".to_string(),
-                        role: "PostgreSQL player state, Redis pub/sub and Web3 indexers".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
+                add("contracts", "./contracts", "Smart contracts ABI, WebSocket packet definitions, shared types");
+                add("client", "./client", "PixiJS / Svelte WebGL presentation, UI forms and local states");
+                add("data-nodes", "./data-nodes", "PostgreSQL player state, Redis pub/sub and Web3 indexers");
+                let mut srv = gm("./server", "Rust WebSocket high-concurrency game loop and domain services");
+                if topology == TopologyMode::Dissociated {
+                    srv.remote_sync = true;
+                    srv.remote_endpoint = Some("wss://game-server.internal/aether-sync".to_string());
+                }
+                galaxies.insert("server".to_string(), srv);
             }
             StackType::RobloxLuau => {
-                galaxies.insert(
-                    "contracts".to_string(),
-                    GalaxyManifest {
-                        path: "./contracts".to_string(),
-                        role: "Shared Luau types, RemoteEvent/RemoteFunction definitions & EARS contracts".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "server".to_string(),
-                    GalaxyManifest {
-                        path: "./server".to_string(),
-                        role: "Authoritative server loop, hit validation, anti-exploit & domain services".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "client".to_string(),
-                    GalaxyManifest {
-                        path: "./client".to_string(),
-                        role: "Client controllers, local prediction, camera and UI interaction".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "data-nodes".to_string(),
-                    GalaxyManifest {
-                        path: "./data-nodes".to_string(),
-                        role: "DataStoreService adapter, ProfileService session locking & auto-save".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
+                add("contracts", "./contracts", "Shared Luau types, RemoteEvent/RemoteFunction definitions & EARS contracts");
+                add("server", "./server", "Authoritative server loop, hit validation, anti-exploit & domain services");
+                add("client", "./client", "Client controllers, local prediction, camera and UI interaction");
+                add("data-nodes", "./data-nodes", "DataStoreService adapter, ProfileService session locking & auto-save");
             }
             StackType::MinecraftServer => {
-                galaxies.insert(
-                    "contracts".to_string(),
-                    GalaxyManifest {
-                        path: "./contracts".to_string(),
-                        role: "Plugin communication protocols, EARS specs and manifest contracts".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "server".to_string(),
-                    GalaxyManifest {
-                        path: "./server".to_string(),
-                        role: "Paper/Purpur server configs, Aikar JVM scripts and engine tuning".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "plugins".to_string(),
-                    GalaxyManifest {
-                        path: "./plugins".to_string(),
-                        role: "Paper/Spigot plugins, extensions and event handlers".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "data-nodes".to_string(),
-                    GalaxyManifest {
-                        path: "./data-nodes".to_string(),
-                        role: "World saves, SQLite/MySQL player stores and backups".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
+                add("contracts", "./contracts", "Plugin communication protocols, EARS specs and manifest contracts");
+                add("server", "./server", "Paper/Purpur server configs, Aikar JVM scripts and engine tuning");
+                add("plugins", "./plugins", "Paper/Spigot plugins, extensions and event handlers");
+                add("data-nodes", "./data-nodes", "World saves, SQLite/MySQL player stores and backups");
             }
             StackType::ClassicMvc => {
-                galaxies.insert(
-                    "models".to_string(),
-                    GalaxyManifest {
-                        path: "./models".to_string(),
-                        role: "Domain entities, data transfer schemas and business models (M)".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "views".to_string(),
-                    GalaxyManifest {
-                        path: "./views".to_string(),
-                        role: "UI templates, presentation components and client forms (V)".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "controllers".to_string(),
-                    GalaxyManifest {
-                        path: "./controllers".to_string(),
-                        role: "Route handlers, request dispatchers and action controllers (C)".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "services".to_string(),
-                    GalaxyManifest {
-                        path: "./services".to_string(),
-                        role: "Core domain services, pure logic and workflow orchestration".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
-                galaxies.insert(
-                    "data-nodes".to_string(),
-                    GalaxyManifest {
-                        path: "./data-nodes".to_string(),
-                        role: "Database repositories, ORM migrations and cache stores".to_string(),
-                        remote_sync: false,
-                        remote_endpoint: None,
-                        readme_blake3: None,
-                    },
-                );
+                add("models", "./models", "Domain entities, data transfer schemas and business models (M)");
+                add("views", "./views", "UI templates, presentation components and client forms (V)");
+                add("controllers", "./controllers", "Route handlers, request dispatchers and action controllers (C)");
+                add("services", "./services", "Core domain services, pure logic and workflow orchestration");
+                add("data-nodes", "./data-nodes", "Database repositories, ORM migrations and cache stores");
             }
         }
 

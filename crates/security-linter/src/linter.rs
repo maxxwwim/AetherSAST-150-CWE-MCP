@@ -1402,9 +1402,14 @@ impl SecurityLinter {
 
             // 3. SAST Global & Contract: no_raw_sql (CWE-89)
             let check_raw_sql = contract.map(|c| c.frontmatter.security_rules.no_raw_sql).unwrap_or(true);
+            let upper_sql = trimmed.to_uppercase();
+            let has_sql_verb = (upper_sql.contains("SELECT ") && (upper_sql.contains(" FROM ") || upper_sql.contains(" WHERE ")))
+                || upper_sql.contains("INSERT INTO ")
+                || (upper_sql.contains("UPDATE ") && upper_sql.contains(" SET "))
+                || upper_sql.contains("DELETE FROM ");
             if !is_test_file
                 && check_raw_sql
-                && (trimmed.to_uppercase().contains("SELECT ") || trimmed.to_uppercase().contains("INSERT INTO ") || trimmed.to_uppercase().contains("UPDATE ") || trimmed.to_uppercase().contains("DELETE FROM "))
+                && has_sql_verb
                 && (trimmed.contains("${") || trimmed.contains("format!(") || trimmed.contains('+') || trimmed.contains("%s") || trimmed.contains("f\""))
             {
                 violations.push(LinterViolation {

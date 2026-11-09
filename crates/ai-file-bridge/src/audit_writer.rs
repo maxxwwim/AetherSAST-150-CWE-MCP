@@ -3,7 +3,19 @@ use core_graph::bubble::SymbolBubble;
 use security_linter::contract::ReadmeContract;
 use security_linter::linter::LinterViolation;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
+
+fn safe_write_in_root(project_root: &Path, target: &Path, content: &str) -> std::io::Result<()> {
+    if !target.starts_with(project_root)
+        || target.components().any(|c| matches!(c, Component::ParentDir))
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Target path escapes project root",
+        ));
+    }
+    fs::write(target, content)
+}
 
 pub struct AuditWriter;
 
@@ -58,7 +70,7 @@ impl AuditWriter {
             }
         }
 
-        fs::write(audit_file, content)
+        safe_write_in_root(project_root, &audit_file, &content)
     }
 
     /// Écrit .aether/ACTIVE_TARGET.md lorsqu'une bulle est ciblée dans le cockpit WebGL
@@ -163,7 +175,7 @@ impl AuditWriter {
             symbol.file_path, symbol.name
         ));
 
-        fs::write(target_file, content)
+        safe_write_in_root(project_root, &target_file, &content)
     }
 
     /// Détecte la stack réelle du projet en analysant les manifestes et lockfiles
@@ -354,6 +366,6 @@ Spécifie toujours les paramètres exacts lors de tes appels MCP :
             .unwrap_or_else(|| "Project".to_string());
         let stack_str = Self::detect_project_stack(project_root);
         let content = Self::generate_optimized_system_prompt(project_root, &proj_name, stack_str, 3030);
-        fs::write(rules_file, content)
+        safe_write_in_root(project_root, &rules_file, &content)
     }
 }
