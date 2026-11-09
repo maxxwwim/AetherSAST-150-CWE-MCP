@@ -291,6 +291,10 @@ impl SanitizerRule {
             r("validator.escape", &["CWE-79"], MethodCall), r("html.escape", &["CWE-79"], MethodCall), r("bleach.clean", &["CWE-79"], MethodCall), r("markupsafe.escape", &["CWE-79"], MethodCall),
             r("basename", &["CWE-22"], ExactName), r("sanitize_path", &["CWE-22"], ExactName), r("realpath", &["CWE-22"], ExactName), r("Path::canonicalize", &["CWE-22"], MethodCall),
             r("path.basename", &["CWE-22"], MethodCall), r("os.path.basename", &["CWE-22"], MethodCall),
+            r("FromSqlInterpolated", &["CWE-89"], MethodCall), r("Parameters.AddWithValue", &["CWE-89"], MethodCall),
+            r("HtmlEncoder.Default.Encode", &["CWE-79"], MethodCall), r("WebUtility.HtmlEncode", &["CWE-79"], MethodCall), r("HttpUtility.HtmlEncode", &["CWE-79"], MethodCall),
+            r("Path.GetFileName", &["CWE-22"], MethodCall), r("ArgumentList.Add", &["CWE-78"], MethodCall),
+            r("dupeZ", &["CWE-170"], MethodCall), r("bytesAsValue", &["CWE-843"], MethodCall), r("bytesAsSlice", &["CWE-843"], MethodCall),
             SanitizerRule::new_all("sanitize", ExactName), SanitizerRule::new_all("clean", ExactName),
         ]
     }

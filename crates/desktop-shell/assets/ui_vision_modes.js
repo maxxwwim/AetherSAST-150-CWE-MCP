@@ -785,6 +785,8 @@ function getLanguageForAnomaly(filePath, ruleId) {
   const r = (ruleId || '').toUpperCase();
   if (r.startsWith('RULE_') || r.includes('ARCH') || r.includes('BLAKE3') || r === 'SAST_DIRECT_ENV_ACCESS') return 'arch';
   if (p.endsWith('.php') || p.endsWith('.phtml') || p.endsWith('.php3') || p.endsWith('.php4') || p.endsWith('.php5') || p.endsWith('.php7') || p.endsWith('.phps') || r.includes('-PHP-') || r.includes('PHP')) return 'php';
+  if (p.endsWith('.zig') || r.includes('-ZIG-')) return 'zig';
+  if (p.endsWith('.cs') || r.includes('-CS-')) return 'csharp';
   if (p.endsWith('.c') || p.endsWith('.cpp') || p.endsWith('.cc') || p.endsWith('.h') || p.endsWith('.hpp') || r.includes('-CPP-')) return 'cpp';
   if (p.endsWith('.sol')) return 'web3';
   if (p.endsWith('.rs')) return 'rust';
@@ -1006,6 +1008,8 @@ function renderCveAnomaliesPanel(lang = null) {
     all: `Tous (${anomalies.length})`,
     critical: `🔴 Critical (${critCount})`,
     php: `🐘 PHP (${anomalies.filter(a => a.lang === 'php').length})`,
+    zig: `⚡ Zig (${anomalies.filter(a => a.lang === 'zig').length})`,
+    csharp: `🔷 C# (${anomalies.filter(a => a.lang === 'csharp').length})`,
     rust: `🦀 Rust (${anomalies.filter(a => a.lang === 'rust').length})`,
     node: `🟢 Node/TS (${anomalies.filter(a => a.lang === 'node').length})`,
     web3: `🌐 Web3 (${anomalies.filter(a => isWeb3Anomaly(a)).length})`,
@@ -1055,6 +1059,8 @@ function renderCveAnomaliesPanel(lang = null) {
 
   const langIcons = {
     php: '🐘',
+    zig: '⚡',
+    csharp: '🔷',
     rust: '🦀',
     python: '🐍',
     node: '🟢',
@@ -1972,6 +1978,150 @@ const CVE_ATTACK_EXPLANATIONS = {
   },
   'CVE-PHP-EXPOSED-DEBUG-CONFIG': {
     attack: "Exposition de configuration de débogage : ini_set('display_errors', '1') ou phpinfo() révélant les variables d'environnement, secrets et chemins du serveur.",
+    shield: "Forcer display_errors à 0 en production, journaliser via error_log() et supprimer tout appel à phpinfo()."
+  },
+  'CVE-ZIG-USE-AFTER-FREE': {
+    attack: "Use-After-Free en Zig : accès ou déréférencement d'un pointeur ou d'une tranche après appel explicite à allocator.free() ou allocator.destroy().",
+    shield: "Utiliser 'defer allocator.free(slice)' en début de portée et ne jamais réutiliser la référence libérée."
+  },
+  'CVE-ZIG-UNHANDLED-ERROR-UNION': {
+    attack: "Union d'erreur ignorée : assignation '_ = fallibleCall()' masquant silencieusement une défaillance d'allocation, d'E/S ou de validation cryptographique.",
+    shield: "Propager l'erreur avec 'try' ou la traiter explicitement via 'catch |err|'."
+  },
+  'CVE-ZIG-INTEGER-OVERFLOW-WRAPPING': {
+    attack: "Débordement d'entier par opérateur wrapping (+%, -%, *%) contournant les vérifications de sécurité Zig et faussant les calculs de taille de tampon.",
+    shield: "Utiliser '@addWithOverflow' ou les opérateurs saturants '+|', '-|', '*|'."
+  },
+  'CVE-ZIG-INSECURE-POINTER-CAST': {
+    attack: "Confusion de type et désalignement mémoire via @ptrCast / @alignCast / @intToPtr sur des tampons bruts sans validation de taille ni d'alignement.",
+    shield: "Vérifier 'slice.len >= @sizeOf(T)' et utiliser 'std.mem.bytesAsValue(T, slice)'."
+  },
+  'CVE-ZIG-UNINITIALIZED-MEMORY': {
+    attack: "Fuite ou corruption mémoire via une variable déclarée '= undefined' transmise à une fonction ou retournée avant initialisation complète.",
+    shield: "Initialiser avec une valeur par défaut ('std.mem.zeroes(T)') ou remplir via '@memset' avant lecture."
+  },
+  'CVE-ZIG-BUFFER-OVERRUN-C-INTEROP': {
+    attack: "Débordement de tampon C-ABI : passage d'un pointeur 'slice.ptr' non terminé par '\\0' à une fonction C (strcpy, printf, strlen) lisant hors bornes.",
+    shield: "Allouer une chaîne terminée par zéro via 'allocator.dupeZ(u8, slice)' ou utiliser un type '[:0]const u8'."
+  },
+  'CVE-ZIG-UNPROTECTED-C-FORMAT-STRING': {
+    attack: "Chaîne de format C non contrôlée : appel à c.printf(user_buf) sans spécificateur fixe '%s', permettant la lecture/écriture arbitraire de la pile.",
+    shield: "Passer une chaîne de format constante 'c.printf(\"%s\", safe_str.ptr)' ou utiliser 'std.debug.print'."
+  },
+  'CVE-ZIG-RAW-ALLOCATOR-LEAK': {
+    attack: "Fuite d'allocation mémoire : appel à allocator.alloc/create/dupe sans 'defer allocator.free()' ni 'errdefer' dans la portée de la fonction.",
+    shield: "Associer immédiatement 'defer allocator.free(buf)' ou 'errdefer allocator.free(buf)' à chaque allocation."
+  },
+  'CVE-ZIG-COMMAND-INJECTION': {
+    attack: "Injection de commande OS via std.process.Child invoquant '/bin/sh -c' ou 'cmd.exe /c' avec une entrée non filtrée.",
+    shield: "Exécuter directement le binaire cible avec un tableau d'arguments discrets sans passer par un shell."
+  },
+  'CVE-ZIG-PATH-TRAVERSAL': {
+    attack: "Traversée de répertoires (../) via std.fs.path.join ou std.fs.cwd().openFile sur un chemin utilisateur non confiné.",
+    shield: "Isoler le nom de fichier avec 'std.fs.path.basename' et rejeter toute séquence '..'."
+  },
+  'CVE-ZIG-RUNTIME-SAFETY-DISABLED': {
+    attack: "Désactivation des garde-fous compilateur via '@setRuntimeSafety(false)', exposant la fonction aux débordements de tampon et UB.",
+    shield: "Supprimer '@setRuntimeSafety(false)' et valider explicitement les indices de tranches."
+  },
+  'CVE-ZIG-STACK-ADDRESS-RETURN': {
+    attack: "Retour de l'adresse d'une variable locale allouée sur la pile ('return &local'), créant un pointeur pendouillant immédiat.",
+    shield: "Allouer sur le tas via un 'std.mem.Allocator' ou remplir un tampon fourni par l'appelant."
+  },
+  'CVE-ZIG-TLS-VERIFY-DISABLED': {
+    attack: "Désactivation de la vérification des certificats TLS ('.ca_bundle = .none', 'tls_skip_verify = true') permettant l'interception MitM.",
+    shield: "Activer la validation du bundle d'autorités de certification système via 'ca_bundle.rescan(allocator)'."
+  },
+  'CVE-ZIG-WEAK-PRNG-CRYPTO': {
+    attack: "Génération de jetons ou clés avec 'std.rand.DefaultPrng' / 'Xoroshiro128' dont l'état interne est prédictible.",
+    shield: "Utiliser exclusivement 'std.crypto.random' (CSPRNG du système d'exploitation)."
+  },
+  'CVE-ZIG-SIMD-VECTOR-UNALIGNED-OOB': {
+    attack: "Chargement direct d'un pointeur de tranche dans un registre SIMD '@Vector' via '@ptrCast' sans vérification de taille ni d'alignement.",
+    shield: "Vérifier 'slice.len >= N' et utiliser '@alignCast' ou une copie bornée."
+  },
+  'CVE-CS-INSECURE-DESERIALIZATION': {
+    attack: "Désérialisation .NET non sécurisée (BinaryFormatter, NetDataContractSerializer, TypeNameHandling.All) permettant l'exécution de code à distance (RCE).",
+    shield: "Utiliser 'System.Text.Json.JsonSerializer' avec des types forts et 'TypeNameHandling.None'."
+  },
+  'CVE-CS-SQL-INJECTION': {
+    attack: "Injection SQL via concaténation ou interpolation '$' dans SqlCommand, ExecuteSqlRaw ou Dapper.",
+    shield: "Utiliser 'SqlParameter' ('Parameters.AddWithValue') ou 'ExecuteSqlInterpolated'."
+  },
+  'CVE-CS-COMMAND-INJECTION': {
+    attack: "Injection de commande OS via Process.Start / ProcessStartInfo invoquant cmd.exe ou /bin/sh avec des arguments concaténés.",
+    shield: "Utiliser 'ProcessStartInfo.ArgumentList.Add()' avec 'UseShellExecute = false'."
+  },
+  'CVE-CS-PATH-TRAVERSAL': {
+    attack: "Traversée de chemin (Path Traversal) via File.ReadAllText / Path.Combine sur une entrée non canonisée.",
+    shield: "Extraire 'Path.GetFileName()' et vérifier que 'Path.GetFullPath()' commence par le dossier racine autorisé."
+  },
+  'CVE-CS-WEAK-CRYPTOGRAPHY': {
+    attack: "Utilisation d'algorithmes cryptographiques obsolètes (MD5, SHA1, DES, TripleDES, CipherMode.ECB).",
+    shield: "Utiliser AES-GCM ('AesGcm'), 'SHA256.Create()' et 'Rfc2898DeriveBytes' / Argon2."
+  },
+  'CVE-CS-XSS-RAW-HTML': {
+    attack: "Injection XSS via 'Html.Raw()', 'new HtmlString()' ou 'Response.WriteAsync()' sans encodage HTML.",
+    shield: "Encoder avec 'HtmlEncoder.Default.Encode()' ou laisser Razor encoder automatiquement."
+  },
+  'CVE-CS-XXE-INJECTION': {
+    attack: "Injection XML External Entity (XXE) via XmlDocument / XmlReader avec résolution DTD ou XmlUrlResolver actif.",
+    shield: "Configurer 'DtdProcessing = DtdProcessing.Prohibit' et 'XmlResolver = null'."
+  },
+  'CVE-CS-INSECURE-RANDOM': {
+    attack: "Utilisation de 'System.Random' (prédictible) pour générer des jetons, mots de passe ou codes OTP.",
+    shield: "Utiliser 'RandomNumberGenerator.GetBytes()' ou 'RandomNumberGenerator.GetInt32()'."
+  },
+  'CVE-CS-LDAP-INJECTION': {
+    attack: "Injection de filtre LDAP via concaténation non échappée dans 'DirectorySearcher.Filter'.",
+    shield: "Échapper les caractères spéciaux RFC 4515 ('*', '(', ')', '\\\\', NUL) avant construction du filtre."
+  },
+  'CVE-CS-CSRF-DISABLED': {
+    attack: "Désactivation de la protection Anti-Forgery ('[IgnoreAntiforgeryToken]') sur une action mutatrice '[HttpPost]' / '[HttpPut]' / '[HttpDelete]'.",
+    shield: "Retirer '[IgnoreAntiforgeryToken]' et appliquer '[ValidateAntiForgeryToken]'."
+  },
+  'CVE-CS-SSRF-HTTPCLIENT': {
+    attack: "Server-Side Request Forgery (SSRF) via HttpClient / WebClient vers une URL fournie par l'utilisateur sans filtrage d'hôte.",
+    shield: "Valider le schéma HTTPS, vérifier l'hôte sur une liste blanche et bloquer les IP privées/loopback."
+  },
+  'CVE-CS-TLS-CERT-BYPASS': {
+    attack: "Contournement de validation TLS via 'DangerousAcceptAnyServerCertificateValidator' ou callback retournant toujours 'true'.",
+    shield: "Vérifier strictement que 'sslPolicyErrors == SslPolicyErrors.None'."
+  },
+  'CVE-CS-JWT-VALIDATION-BYPASS': {
+    attack: "Désactivation de la vérification de signature ou d'expiration JWT ('ValidateIssuerSigningKey = false', 'RequireSignedTokens = false').",
+    shield: "Imposer 'ValidateIssuerSigningKey = true', 'RequireSignedTokens = true' et 'ValidateLifetime = true'."
+  },
+  'CVE-CS-OPEN-REDIRECT': {
+    attack: "Redirection ouverte ('Redirect(returnUrl)') vers une URL externe arbitraire contrôlée par l'utilisateur.",
+    shield: "Utiliser 'LocalRedirect(returnUrl)' ou vérifier 'Url.IsLocalUrl(returnUrl)'."
+  },
+  'CVE-CS-MASS-ASSIGNMENT': {
+    attack: "Mass Assignment / Over-Posting via 'TryUpdateModelAsync(entity)' sans filtre de propriétés, permettant l'élévation de privilèges.",
+    shield: "Lier un DTO dédié ou spécifier les lambdas de propriétés autorisées dans 'TryUpdateModelAsync'."
+  },
+  'CVE-CS-REDOS-UNBOUNDED-REGEX': {
+    attack: "Déni de service par expression régulière (ReDoS) via 'Regex.IsMatch' / 'new Regex' sans délai d'expiration 'TimeSpan'.",
+    shield: "Passer un 'TimeSpan.FromMilliseconds(250)' ou utiliser 'RegexOptions.NonBacktracking'."
+  },
+  'CVE-CS-HARDCODED-CREDENTIALS': {
+    attack: "Clé secrète JWT ('SymmetricSecurityKey') ou mot de passe de connexion codé en dur dans le code source C#.",
+    shield: "Charger les secrets via Azure KeyVault, variables d'environnement ou 'IConfiguration' sécurisée."
+  },
+  'CVE-CS-UNSAFE-STACKALLOC-OVERFLOW': {
+    attack: "Allocation sur la pile 'stackalloc byte[len]' avec une taille dynamique non bornée, provoquant un crash immédiat par StackOverflowException.",
+    shield: "Borner la taille (< 1024 octets) et utiliser 'ArrayPool<byte>.Shared.Rent()' au-delà."
+  },
+  'CVE-CS-UNSAFE-REFLECTION-INVOKE': {
+    attack: "Résolution dynamique de type ('Type.GetType(userInput)', 'Assembly.LoadFrom') permettant l'instanciation de gadgets arbitraires.",
+    shield: "Valider le nom de type sur une liste blanche stricte avant toute réflexion."
+  },
+  'CVE-CS-SENSITIVE-ERROR-EXPOSURE': {
+    attack: "Divulgation directe de 'ex.StackTrace' ou 'ex.ToString()' dans une réponse HTTP ('BadRequest', 'StatusCode(500)').",
+    shield: "Journaliser l'erreur en interne via 'ILogger' et retourner un message générique 'Problem()'."
+  },
+  'CVE-PHP-EXPOSED-DEBUG-CONFIG-ALIAS': {
+    attack: "Exposition de configuration de débogage PHP.",
     shield: "Forcer display_errors à 0 en production, journaliser via error_log() et supprimer tout appel à phpinfo()."
   }
 };
@@ -3674,6 +3824,39 @@ function applyBountyScopePreset(preset) {
       'storage/framework/',
       '[Exclu] Dépendances vendor/ non modifiables directement',
       '[Exclu] Attaques par force brute volumétrique sans impact de bypass logique'
+    ].join('\n');
+  } else if (preset === 'zig_systems') {
+    inEl.value = [
+      'src/',
+      'lib/',
+      '[Impact Critique] Memory Corruption (Use-After-Free, Stack Address Return, @ptrCast Type Confusion)',
+      '[Impact Critique] C-ABI Interop Buffer Overrun & Format String RCE',
+      '[Impact Critique] OS Command Injection via std.process.Child',
+      '[Impact High] Wrapping Integer Overflow (+%, -%, *%), SIMD @Vector OOB, Raw Allocator Leak'
+    ].join('\n');
+    outEl.value = [
+      'zig-cache/',
+      'zig-out/',
+      'tests/',
+      '[Exclu] Fichiers de test inline et artefacts de compilation zig-out/'
+    ].join('\n');
+  } else if (preset === 'csharp_dotnet') {
+    inEl.value = [
+      'Controllers/',
+      'Services/',
+      'Repositories/',
+      'Models/',
+      '[Impact Critique] Insecure Deserialization RCE (BinaryFormatter, TypeNameHandling.All)',
+      '[Impact Critique] SQL Injection, Command Injection & Unsafe Reflection Invoke',
+      '[Impact Critique] JWT Signature Validation Bypass & TLS Certificate Bypass',
+      '[Impact High] SSRF HttpClient, Path Traversal, Mass Assignment, ReDoS, stackalloc DoS'
+    ].join('\n');
+    outEl.value = [
+      'bin/',
+      'obj/',
+      'Migrations/',
+      'Tests/',
+      '[Exclu] Fichiers auto-générés EF Core Migrations et dossiers bin/ obj/'
     ].join('\n');
   } else if (preset === 'l1_consensus') {
     inEl.value = [

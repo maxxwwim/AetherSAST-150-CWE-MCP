@@ -13,6 +13,10 @@ pub enum Lang {
     Python,
     /// PHP (`//`, `/* */`, `#`, `'`, `"`)
     Php,
+    /// Zig (`//`, `\\` multiline string literals)
+    Zig,
+    /// C# (`//`, `/* */`, `@"..."` verbatim strings, `$"..."` interpolated)
+    CSharp,
 }
 
 impl Lang {
@@ -21,6 +25,10 @@ impl Lang {
             Some(Lang::Rust)
         } else if lower_path.ends_with(".py") {
             Some(Lang::Python)
+        } else if lower_path.ends_with(".zig") {
+            Some(Lang::Zig)
+        } else if lower_path.ends_with(".cs") {
+            Some(Lang::CSharp)
         } else if [
             ".php", ".phtml", ".php3", ".php4", ".php5", ".php7", ".phps",
         ]
@@ -83,7 +91,7 @@ fn mask_impl(src: &str, lang: Lang, mask_strings: bool) -> String {
         }
 
         // --- commentaires bloc ---
-        if lang != Lang::Python && c == '/' && next == '*' {
+        if lang != Lang::Python && lang != Lang::Zig && c == '/' && next == '*' {
             let mut depth = 0usize;
             while i < n {
                 if ch[i] == '/' && i + 1 < n && ch[i + 1] == '*' {
@@ -104,6 +112,76 @@ fn mask_impl(src: &str, lang: Lang, mask_strings: bool) -> String {
                 }
             }
             continue;
+        }
+
+        // --- Zig multiline strings: \\ ... ---
+        if lang == Lang::Zig && c == '\\' && next == '\\' {
+            out.push('\\');
+            out.push('\\');
+            i += 2;
+            while i < n && ch[i] != '\n' {
+                out.push(sb(ch[i]));
+                i += 1;
+            }
+            continue;
+        }
+
+        // --- C# verbatim strings: @"...", $@"... ", @$"..." ---
+        if lang == Lang::CSharp {
+            let is_verbatim = (c == '@' && next == '"')
+                || (c == '$' && next == '@' && i + 2 < n && ch[i + 2] == '"')
+                || (c == '@' && next == '$' && i + 2 < n && ch[i + 2] == '"');
+            if is_verbatim {
+                let prefix_len = if c == '@' && next == '"' { 2 } else { 3 };
+                for k in 0..prefix_len {
+                    out.push(ch[i + k]);
+                }
+                i += prefix_len;
+                while i < n {
+                    if ch[i] == '"' {
+                        if i + 1 < n && ch[i + 1] == '"' {
+                            // Escaped quote ""
+                            out.push(sb('"'));
+                            out.push(sb('"'));
+                            i += 2;
+                            continue;
+                        } else {
+                            // Closing quote
+                            out.push('"');
+                            i += 1;
+                            break;
+                        }
+                    }
+                    out.push(sb(ch[i]));
+                    i += 1;
+                }
+                continue;
+            }
+
+            if c == '$' && next == '"' {
+                out.push('$');
+                out.push('"');
+                i += 2;
+                while i < n {
+                    if ch[i] == '\\' && i + 1 < n {
+                        out.push(sb('\\'));
+                        out.push(sb(ch[i + 1]));
+                        i += 2;
+                        continue;
+                    }
+                    if ch[i] == '"' {
+                        out.push('"');
+                        i += 1;
+                        break;
+                    }
+                    if ch[i] == '\n' {
+                        break;
+                    }
+                    out.push(sb(ch[i]));
+                    i += 1;
+                }
+                continue;
+            }
         }
 
         // --- Rust raw strings: r"..", r#".."#, br#".."# ---
@@ -182,9 +260,30 @@ fn mask_impl(src: &str, lang: Lang, mask_strings: bool) -> String {
             continue;
         }
 
+        // --- Char literals (Zig & C#) ---
+        if (lang == Lang::Zig || lang == Lang::CSharp) && c == '\'' {
+            out.push('\'');
+            i += 1;
+            while i < n && ch[i] != '\'' && ch[i] != '\n' {
+                if ch[i] == '\\' && i + 1 < n {
+                    out.push(blank(ch[i]));
+                    out.push(blank(ch[i + 1]));
+                    i += 2;
+                    continue;
+                }
+                out.push(blank(ch[i]));
+                i += 1;
+            }
+            if i < n && ch[i] == '\'' {
+                out.push('\'');
+                i += 1;
+            }
+            continue;
+        }
+
         // --- chaînes simples ---
         let is_quote = c == '"'
-            || (lang != Lang::Rust && c == '\'')
+            || (lang != Lang::Rust && lang != Lang::Zig && lang != Lang::CSharp && c == '\'')
             || (lang == Lang::CLike && c == '`');
         if is_quote {
             // Seuls `"` Rust et les backticks peuvent s'étendre sur plusieurs lignes
@@ -272,5 +371,28 @@ mod tests {
     fn python_triple_quotes_and_hash() {
         let m = mask_literals("\"\"\"os.system(x)\"\"\"\nos.system(y) # os.system(z)\n", Lang::Python);
         assert_eq!(m.matches("os.system").count(), 1);
+    }
+
+    #[test]
+    fn zig_comments_and_multiline_strings() {
+        let src = "const a = 1; // comment allocator.free\nconst b = \\\n\\\\dangerous_call()\nconst c = 2;\n";
+        let m = mask_literals(src, Lang::Zig);
+        assert!(m.contains("const a = 1;"));
+        assert!(m.contains("const c = 2;"));
+        assert!(!m.contains("allocator.free"));
+        assert!(!m.contains("dangerous_call()"));
+        assert_eq!(m.lines().count(), src.lines().count());
+    }
+
+    #[test]
+    fn csharp_comments_and_verbatim_strings() {
+        let src = "var x = 1; /* block comment */ // line comment\nvar y = @\"verbatim \"\"dangerous\"\" string\nmultiline\";\nvar z = 2;";
+        let m = mask_literals(src, Lang::CSharp);
+        assert!(m.contains("var x = 1;"));
+        assert!(m.contains("var z = 2;"));
+        assert!(!m.contains("block comment"));
+        assert!(!m.contains("line comment"));
+        assert!(!m.contains("dangerous"));
+        assert_eq!(m.lines().count(), src.lines().count());
     }
 }

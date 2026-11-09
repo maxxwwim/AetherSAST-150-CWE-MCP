@@ -155,7 +155,7 @@ impl FileWatcherBridge {
                             .to_lowercase();
                         if [
                             "rs", "ts", "tsx", "js", "jsx", "py", "md", "cpp", "hpp", "cc", "hh",
-                            "c", "h", "java", "sol", "php", "json", "toml", "yaml", "yml",
+                            "c", "h", "java", "sol", "php", "zig", "cs", "json", "toml", "yaml", "yml",
                         ]
                         .contains(&ext.as_str())
                         {

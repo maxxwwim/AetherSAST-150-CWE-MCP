@@ -36,6 +36,14 @@ static_regex!(
     re_rs_func_decl,
     r#"(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)"#
 );
+static_regex!(
+    re_zig_func_decl,
+    r#"(?:pub\s+)?(?:export\s+|extern\s+|inline\s+)?fn\s+([a-zA-Z0-9_]+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)"#
+);
+static_regex!(
+    re_cs_func_decl,
+    r#"(?:(?:public|protected|private|internal|static|virtual|override|abstract|sealed|async|partial|extern)\s+)+(?:[A-Za-z0-9_<>\[\]?,\s]+\s+)+([A-Za-z0-9_]+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)"#
+);
 
 static_regex!(
     re_php_var,
@@ -152,6 +160,8 @@ impl TaintExtractor {
         let is_js = file_path.ends_with(".js") || file_path.ends_with(".ts") || file_path.ends_with(".jsx") || file_path.ends_with(".tsx");
         let is_py = file_path.ends_with(".py");
         let is_rs = file_path.ends_with(".rs");
+        let is_zig = file_path.ends_with(".zig");
+        let is_cs = file_path.ends_with(".cs");
 
         let lines: Vec<&str> = content.lines().collect();
 
@@ -215,6 +225,32 @@ impl TaintExtractor {
                         let clean = p.trim().split(':').next().unwrap_or("").trim().trim_start_matches("mut ").trim();
                         if !clean.is_empty() && !clean.contains("self") {
                             func_params.push(clean.to_string());
+                        }
+                    }
+                    detected_func = Some(fn_name);
+                }
+            } else if is_zig {
+                if let Some(caps) = re_zig_func_decl().captures(trimmed) {
+                    let fn_name = caps[1].to_string();
+                    for p in caps[2].split(',') {
+                        let clean = p.trim().split(':').next().unwrap_or("").trim();
+                        if !clean.is_empty() && clean != "self" && !clean.contains("self") {
+                            func_params.push(clean.to_string());
+                        }
+                    }
+                    detected_func = Some(fn_name);
+                }
+            } else if is_cs {
+                if let Some(caps) = re_cs_func_decl().captures(trimmed) {
+                    let fn_name = caps[1].to_string();
+                    for p in caps[2].split(',') {
+                        let trimmed_p = p.trim();
+                        let parts: Vec<&str> = trimmed_p.split_whitespace().collect();
+                        if let Some(last_ident) = parts.last() {
+                            let clean = last_ident.trim_start_matches('@').trim();
+                            if !clean.is_empty() && clean != "this" {
+                                func_params.push(clean.to_string());
+                            }
                         }
                     }
                     detected_func = Some(fn_name);
@@ -454,7 +490,9 @@ impl TaintExtractor {
             || trimmed.contains("passthru(")
             || trimmed.contains("popen(")
             || trimmed.contains("child_process.exec(")
-            || trimmed.contains("Command::new(");
+            || trimmed.contains("Command::new(")
+            || trimmed.contains("Process.Start(")
+            || trimmed.contains("std.process.Child.run(");
 
         if is_cmd_sink && !trimmed.starts_with("function") {
             let used_vars = extract_vars_in_expr(trimmed, is_php, scope_versions);
@@ -473,7 +511,8 @@ impl TaintExtractor {
         let is_xss_sink = trimmed.starts_with("echo ")
             || trimmed.starts_with("print ")
             || trimmed.contains("innerHTML =")
-            || trimmed.contains("res.send(");
+            || trimmed.contains("res.send(")
+            || trimmed.contains("Response.Write(");
 
         if is_xss_sink {
             let used_vars = extract_vars_in_expr(trimmed, is_php, scope_versions);
@@ -494,6 +533,9 @@ impl TaintExtractor {
             || (trimmed.contains("include ") && !trimmed.contains("class "))
             || (trimmed.contains("require ") && !trimmed.contains("class "))
             || trimmed.contains("fs.readFile(")
+            || trimmed.contains("File.Open(")
+            || trimmed.contains("File.ReadAllText(")
+            || trimmed.contains("std.fs.cwd().openFile(")
             || trimmed.contains("open(");
 
         if is_path_sink {
@@ -603,4 +645,37 @@ fn extract_vars_in_expr(
         }
     }
     vars
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zig_taint_parameter_extraction() {
+        let zig_code = r#"
+pub fn executeCommand(cmd: []const u8, timeout: u32) !void {
+    std.process.Child.run(cmd);
+}
+"#;
+        let dfg = TaintExtractor::extract_from_source("server/worker.zig", zig_code, &[]);
+        assert!(dfg.nodes.values().any(|v| v.name == "cmd" && v.version == 0));
+        assert!(dfg.nodes.values().any(|v| v.name == "timeout" && v.version == 0));
+        assert!(dfg.sinks.iter().any(|s| s.sink_kind == SinkKind::CommandExecution));
+    }
+
+    #[test]
+    fn test_csharp_taint_parameter_extraction() {
+        let cs_code = r#"
+public class ReportController {
+    public void RunReport(string query, int maxRows) {
+        Process.Start(query);
+    }
+}
+"#;
+        let dfg = TaintExtractor::extract_from_source("server/ReportController.cs", cs_code, &[]);
+        assert!(dfg.nodes.values().any(|v| v.name == "query" && v.version == 0));
+        assert!(dfg.nodes.values().any(|v| v.name == "maxRows" && v.version == 0));
+        assert!(dfg.sinks.iter().any(|s| s.sink_kind == SinkKind::CommandExecution));
+    }
 }

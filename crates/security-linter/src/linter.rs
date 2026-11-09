@@ -975,6 +975,8 @@ impl SecurityLinter {
         rules.extend(crate::rules::AdvancedDefiRules::definitions());
         rules.extend(crate::deep_rules::DeepSecurityRules::definitions());
         rules.extend(crate::php_rules::PhpSecurityRules::definitions());
+        rules.extend(crate::zig_rules::ZigSecurityRules::definitions());
+        rules.extend(crate::csharp_rules::CSharpSecurityRules::definitions());
         rules
     }
     /// Détecte les types de fichiers ciblés en fonction du type de CWE / rule_id
@@ -982,6 +984,10 @@ impl SecurityLinter {
         let r = rule_id;
         if r.starts_with("CVE-PHP-") || r.contains("PHP") {
             &[".php", ".phtml", ".php3", ".php4", ".php5", ".php7", ".phps"]
+        } else if r.starts_with("CVE-ZIG-") || r.contains("ZIG") {
+            &[".zig"]
+        } else if r.starts_with("CVE-CS-") || r.starts_with("CVE-CSHARP-") || r.contains("CSHARP") {
+            &[".cs"]
         } else if r.starts_with("CVE-INJ-") {
             &[".rs", ".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs"]
         } else if r.starts_with("CVE-RUST-") || r.starts_with("CVE-L1-") || r.contains("RUST") {
@@ -1083,6 +1089,30 @@ impl SecurityLinter {
         "CVE-INJ-FILELESS-ESM-WASM-DESER",
         "CVE-INJ-ARCHIVE-SYMLINK-ESCAPE",
         "CVE-INJ-PROCESS-ENV-LOADER-POISON",
+        "CVE-ZIG-UNPROTECTED-C-FORMAT-STRING",
+        "CVE-ZIG-COMMAND-INJECTION",
+        "CVE-ZIG-PATH-TRAVERSAL",
+        "CVE-ZIG-TLS-VERIFY-DISABLED",
+        "CVE-CS-INSECURE-DESERIALIZATION",
+        "CVE-CS-SQL-INJECTION",
+        "CVE-CS-COMMAND-INJECTION",
+        "CVE-CS-PATH-TRAVERSAL",
+        "CVE-CS-WEAK-CRYPTOGRAPHY",
+        "CVE-CS-XSS-RAW-HTML",
+        "CVE-CS-XXE-INJECTION",
+        "CVE-CS-INSECURE-RANDOM",
+        "CVE-CS-LDAP-INJECTION",
+        "CVE-CS-CSRF-DISABLED",
+        "CVE-CS-SSRF-HTTPCLIENT",
+        "CVE-CS-TLS-CERT-BYPASS",
+        "CVE-CS-JWT-VALIDATION-BYPASS",
+        "CVE-CS-OPEN-REDIRECT",
+        "CVE-CS-MASS-ASSIGNMENT",
+        "CVE-CS-REDOS-UNBOUNDED-REGEX",
+        "CVE-CS-HARDCODED-CREDENTIALS",
+        "CVE-CS-UNSAFE-STACKALLOC-OVERFLOW",
+        "CVE-CS-UNSAFE-REFLECTION-INVOKE",
+        "CVE-CS-SENSITIVE-ERROR-EXPOSURE",
     ];
 
     /// Audit d'un fichier avec élimination des faux positifs issus de chaînes/commentaires :
@@ -1180,6 +1210,9 @@ impl SecurityLinter {
             || lower_file_name == "linter.rs"
             || lower_file_name == "rules.rs"
             || lower_file_name == "deep_rules.rs"
+            || lower_file_name == "php_rules.rs"
+            || lower_file_name == "zig_rules.rs"
+            || lower_file_name == "csharp_rules.rs"
             || lower_file_name == "lexer.rs";
         if is_linter_catalog {
             return violations;
@@ -1327,6 +1360,18 @@ impl SecurityLinter {
             is_interface_or_types,
         ));
         violations.extend(crate::php_rules::PhpSecurityRules::audit_file(
+            file_path,
+            content,
+            is_test_file,
+            is_interface_or_types,
+        ));
+        violations.extend(crate::zig_rules::ZigSecurityRules::audit_file(
+            file_path,
+            content,
+            is_test_file,
+            is_interface_or_types,
+        ));
+        violations.extend(crate::csharp_rules::CSharpSecurityRules::audit_file(
             file_path,
             content,
             is_test_file,

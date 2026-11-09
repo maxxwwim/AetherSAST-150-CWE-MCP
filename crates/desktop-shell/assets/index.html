@@ -1339,6 +1339,8 @@
             <button class="cve-filter-btn active" data-lang="all" onclick="filterCveAnomalies('all', this)">Tous</button>
             <button class="cve-filter-btn" data-lang="critical" onclick="filterCveAnomalies('critical', this)">🔴 Critical</button>
             <button class="cve-filter-btn" data-lang="php" onclick="filterCveAnomalies('php', this)">🐘 PHP</button>
+            <button class="cve-filter-btn" data-lang="zig" onclick="filterCveAnomalies('zig', this)">⚡ Zig</button>
+            <button class="cve-filter-btn" data-lang="csharp" onclick="filterCveAnomalies('csharp', this)">🔷 C#</button>
             <button class="cve-filter-btn" data-lang="rust" onclick="filterCveAnomalies('rust', this)">🦀 Rust</button>
             <button class="cve-filter-btn" data-lang="node" onclick="filterCveAnomalies('node', this)">🟢 Node/TS</button>
             <button class="cve-filter-btn" data-lang="web3" onclick="filterCveAnomalies('web3', this)">🌐 Web3</button>
@@ -1721,6 +1723,8 @@
             <span style="font-size:0.68rem; font-weight:800; color:#fbbf24; font-family:var(--font-mono);">⚡ PRESETS SCOPE :</span>
             <button class="cat-pill" onclick="applyBountyScopePreset('auto')" style="border-color:#38bdf8; color:#7dd3fc;">✨ Auto (Projet Actif)</button>
             <button class="cat-pill" onclick="applyBountyScopePreset('php_web')" style="border-color:#a855f7; color:#d8b4fe;">🐘 PHP Web & API</button>
+            <button class="cat-pill" onclick="applyBountyScopePreset('zig_systems')" style="border-color:#f59e0b; color:#fde047;">⚡ Zig Systems & C-ABI</button>
+            <button class="cat-pill" onclick="applyBountyScopePreset('csharp_dotnet')" style="border-color:#60a5fa; color:#bfdbfe;">🔷 C# / ASP.NET Core</button>
             <button class="cat-pill" onclick="applyBountyScopePreset('l1_consensus')" style="border-color:#f59e0b; color:#fde047;">⛓️ L1 & Consensus Distribué</button>
             <button class="cat-pill" onclick="applyBountyScopePreset('web3_defi')" style="border-color:#c084fc; color:#e9d5ff;">🌐 Smart Contracts & DeFi</button>
             <button class="cat-pill" onclick="applyBountyScopePreset('rust_lowlevel')" style="border-color:#10b981; color:#6ee7b7;">🦀 Rust Deep-Core & Unsafe</button>

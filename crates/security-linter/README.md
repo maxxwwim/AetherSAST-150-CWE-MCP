@@ -1,7 +1,7 @@
 ---
 id: security-linter
 layer: domain
-max_lines_per_file: 4500
+max_lines_per_file: 5000
 allowed_imports: ["core_graph::*", "serde::*", "serde_json::*", "serde_yaml::*", "blake3::*", "regex::*", "std::*"]
 forbidden_imports: ["ast_scanner::*", "ai_file_bridge::*", "arch_templates::*", "desktop_shell::*", "axum::*", "tokio::*"]
 security_rules:
@@ -11,7 +11,7 @@ security_rules:
 ---
 # 🛡️ security-linter — Moteur SAST, lexer & contrats BLAKE3
 
-Audit statique temps réel : 150+ règles CWE / Zero-Day, masquage lexical anti-faux-positifs, routage des règles par extension de fichier, et parsing des contrats `README.md` (frontmatter YAML + EARS + empreinte BLAKE3).
+Audit statique temps réel : 185+ règles CWE / Zero-Day, masquage lexical anti-faux-positifs, routage des règles par extension de fichier, et parsing des contrats `README.md` (frontmatter YAML + EARS + empreinte BLAKE3).
 
 ## 📦 Contenu
 
@@ -23,6 +23,8 @@ Audit statique temps réel : 150+ règles CWE / Zero-Day, masquage lexical anti-
 | `src/rules.rs` | Règles DeFi, vaults, oracles, taint tracking |
 | `src/deep_rules.rs` | Règles bas niveau (Rust LLVM/UB/ABI, ZK-SNARKs, runtimes VM) |
 | `src/php_rules.rs` | 25 règles PHP (SQLi, RCE, désérialisation, LFI/RFI, SSRF, SSTI…) |
+| `src/zig_rules.rs` | 15 règles Zig (UAF, Error Union, Wrapping Overflow, `@ptrCast`, C-ABI, `@Vector` SIMD, OS Command…) |
+| `src/csharp_rules.rs` | 20 règles C# / .NET (Désérialisation, SQLi, SSRF, JWT, TLS Bypass, Mass Assignment, ReDoS, `stackalloc`…) |
 | `tests/` | Tests de règles et `self_scan.rs` (le linter s'audite lui-même) |
 
 > [!NOTE]

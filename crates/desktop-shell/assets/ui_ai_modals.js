@@ -2726,6 +2726,8 @@ async function renderCveRulesSettings() {
     const rid = (r.rule_id || '').toUpperCase();
     const cat = (r.category || '').toLowerCase();
     if (rid.includes('-PHP-') || cat.includes('php')) return '<span class="cve-rule-cat" style="color:#c084fc; border-color:rgba(192,132,252,0.3); background:rgba(192,132,252,0.1);">📁 .php, .phtml</span>';
+    if (rid.includes('-ZIG-') || cat.includes('zig')) return '<span class="cve-rule-cat" style="color:#f59e0b; border-color:rgba(245,158,11,0.3); background:rgba(245,158,11,0.1);">📁 .zig</span>';
+    if (rid.includes('-CS-') || cat.includes('c#')) return '<span class="cve-rule-cat" style="color:#60a5fa; border-color:rgba(96,165,250,0.3); background:rgba(96,165,250,0.1);">📁 .cs</span>';
     if (rid.includes('-RUST-') || cat.includes('rust')) return '<span class="cve-rule-cat" style="color:#f97316; border-color:rgba(249,115,22,0.3); background:rgba(249,115,22,0.1);">📁 .rs</span>';
     if (rid.includes('-PY-') || cat.includes('python')) return '<span class="cve-rule-cat" style="color:#eab308; border-color:rgba(234,179,8,0.3); background:rgba(234,179,8,0.1);">📁 .py</span>';
     if (rid.includes('-CPP-') || cat.includes('c / c++')) return '<span class="cve-rule-cat" style="color:#38bdf8; border-color:rgba(56,189,248,0.3); background:rgba(56,189,248,0.1);">📁 .cpp, .c, .h</span>';

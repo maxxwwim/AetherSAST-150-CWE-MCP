@@ -392,6 +392,8 @@ pub fn languages_to_extensions(languages: &[String]) -> Vec<String> {
                 ]);
             }
             "solidity" | "sol" => exts.push(".sol".to_string()),
+            "zig" => exts.push(".zig".to_string()),
+            "csharp" | "cs" | "c#" => exts.push(".cs".to_string()),
             "go" | "golang" => exts.push(".go".to_string()),
             "java" => exts.push(".java".to_string()),
             "ruby" | "rb" => exts.push(".rb".to_string()),

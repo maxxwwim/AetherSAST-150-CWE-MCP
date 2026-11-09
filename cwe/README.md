@@ -1,11 +1,11 @@
 # 🛡️ Catalogue des Règles CWE & Zero-Day Patterns par Famille
 
-> Détail complet des 150+ règles du moteur SAST AetherScope, classées par famille.  
+> Détail complet des 185+ règles du moteur SAST AetherScope, classées par famille (incluant **15 règles Zig** et **20 règles C# / .NET**).  
 > Vue d'ensemble et tableau récapitulatif : [`CWE_CATALOG.md`](../CWE_CATALOG.md) · Retour au [README principal](../README.md).
 
 ---
 
-### 📋 Catalogue des 150+ Zero-Day Patterns & CWE Rules par Famille
+### 📋 Catalogue des 185+ Zero-Day Patterns & CWE Rules par Famille
 
 > 📖 *L'ensemble des règles est documenté de manière exhaustive avec leurs mécanismes d'audit dans le [Catalogue Officiel CWE_CATALOG.md](./CWE_CATALOG.md).*
 
@@ -235,3 +235,52 @@
 | `CVE-PHP-NOSQL-INJECTION` | CWE-943 / NOSQL-INJECTION-MONGODB | **HIGH** | Passage direct de superglobales (`$_POST`, `$_GET`) dans des requêtes MongoDB sans transtypage : injection d'opérateurs BSON (`[$ne] => null`) court-circuitant l'authentification. | Transtyper obligatoirement en scalaires stricts (`['password' => (string)$_POST['password']]`). |
 | `CVE-PHP-ZIP-SLIP-EXTRACTION` | CWE-770 / ZIP-SLIP-ARBITRARY-EXTRACTION | **HIGH** | Décompression d'archive `ZipArchive::extractTo()` sans contrôle de confinement des chemins : séquences `../` écrasant des fichiers de code système hors du répertoire cible. | Vérifier pour chaque entrée que `realpath()` commence strictement par le répertoire de destination autorisé. |
 | `CVE-PHP-EXPOSED-DEBUG-CONFIG` | CWE-209 / SENSITIVE-INFO-DEBUG-EXPOSURE | **HIGH** | Activation de `ini_set('display_errors', '1')` ou présence de `phpinfo()` dans des scripts exposés : fuite de variables d'environnement (`$_ENV`), identifiants DB et configuration serveur. | Forcer `display_errors = 0` en production, consigner les erreurs dans `error_log()` et supprimer tout appel à `phpinfo()`. |
+
+---
+
+### 12. Zig Systems, Mémoire, Interopérabilité C-ABI & SIMD (15 règles)
+
+| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
+| :--- | :--- | :---: | :--- | :--- |
+| `CVE-ZIG-USE-AFTER-FREE` | CWE-416 / USE-AFTER-FREE-ALLOCATOR | **CRITICAL** | Accès, indexation ou déréférencement d'un pointeur ou d'une tranche après appel explicite à `allocator.free()` ou `allocator.destroy()` dans la même portée. | Utiliser `defer allocator.free(slice)` en début de portée et ne jamais réutiliser la référence libérée. |
+| `CVE-ZIG-UNHANDLED-ERROR-UNION` | CWE-703 / CWE-391-IGNORED-ERROR-UNION | **HIGH** | Assignation `_ = faillible()` ignorant silencieusement une union d'erreur sur une opération d'E/S, réseau, allocation ou système. | Propager l'erreur avec `try` ou la gérer explicitement via `catch \|err\|`. |
+| `CVE-ZIG-INTEGER-OVERFLOW-WRAPPING` | CWE-190 / WRAPPING-ARITHMETIC-OVERFLOW | **HIGH** | Utilisation d'opérateurs wrapping (`+%`, `-%`, `*%`) contournant les vérifications d'overflow Zig sur des tailles de tampons ou compteurs. | Utiliser `@addWithOverflow` / `@subWithOverflow` ou les opérateurs saturants `+\|`, `-\|`, `*\|`. |
+| `CVE-ZIG-INSECURE-POINTER-CAST` | CWE-843 / UNSAFE-PTRCAST-ALIGNCAST | **CRITICAL** | Transtypage direct via `@ptrCast`, `@alignCast` ou `@intToPtr` sur des tranches brutes sans validation de longueur ni d'alignement. | Vérifier `slice.len >= @sizeOf(T)` et utiliser `std.mem.bytesAsValue(T, slice[0..@sizeOf(T)])`. |
+| `CVE-ZIG-UNINITIALIZED-MEMORY` | CWE-457 / UNINITIALIZED-UNDEFINED-MEMORY | **HIGH** | Variable locale déclarée `= undefined` lue, transmise à une fonction ou retournée avant initialisation complète ou `@memset`. | Initialiser avec `std.mem.zeroes(T)` ou remplir explicitement via `@memset` avant lecture. |
+| `CVE-ZIG-BUFFER-OVERRUN-C-INTEROP` | CWE-119 / CWE-120-C-ABI-BUFFER-OVERRUN | **CRITICAL** | Passage d'un pointeur `slice.ptr` non terminé par `\0` à une fonction C (`@cImport`) ou appel à `c.strcpy`/`c.sprintf`/`c.gets`. | Allouer une chaîne terminée par zéro via `allocator.dupeZ(u8, slice)` ou utiliser un type `[:0]const u8`. |
+| `CVE-ZIG-UNPROTECTED-C-FORMAT-STRING` | CWE-134 / UNCONTROLLED-C-FORMAT-STRING | **CRITICAL** | Appel à `c.printf(user_input)` / `c.snprintf` avec une variable non constante comme chaîne de format C. | Toujours passer un format fixe `"%s"` en premier argument ou utiliser `std.debug.print` / `std.fmt.format`. |
+| `CVE-ZIG-RAW-ALLOCATOR-LEAK` | CWE-401 / MISSING-DEFER-ALLOCATOR-FREE | **HIGH** | Allocation dynamique (`allocator.alloc`, `create`, `dupe`) sans `defer allocator.free()` ni `errdefer` ni retour de la référence. | Associer immédiatement `defer allocator.free(buf)` ou `errdefer allocator.free(buf)` à l'allocation. |
+| `CVE-ZIG-COMMAND-INJECTION` | CWE-78 / OS-COMMAND-INJECTION-CHILD | **CRITICAL** | Exécution de `std.process.Child` invoquant un interpréteur shell (`/bin/sh -c`, `cmd.exe /c`) avec des arguments dynamiques. | Exécuter directement le binaire cible avec un tableau d'arguments discrets sans passer par un shell. |
+| `CVE-ZIG-PATH-TRAVERSAL` | CWE-22 / PATH-TRAVERSAL-UNCONFINED-FS | **HIGH** | Construction de chemin via `std.fs.path.join` ou ouverture directe via `std.fs.cwd().openFile` sans filtrage de `..` ni `basename`. | Isoler le nom de fichier avec `std.fs.path.basename` et rejeter toute entrée contenant `..`. |
+| `CVE-ZIG-RUNTIME-SAFETY-DISABLED` | CWE-676 / SET-RUNTIME-SAFETY-DISABLED-UB | **HIGH** | Désactivation explicite des contrôles de sécurité du compilateur via `@setRuntimeSafety(false)`. | Supprimer `@setRuntimeSafety(false)` et valider les bornes des tranches. |
+| `CVE-ZIG-STACK-ADDRESS-RETURN` | CWE-562 / STACK-USE-AFTER-RETURN-DANGLING | **CRITICAL** | Fonction retournant l'adresse d'une variable locale allouée sur la pile (`return &local`), créant un pointeur pendouillant immédiat. | Allouer sur le tas via un `std.mem.Allocator` ou écrire dans un buffer fourni par l'appelant. |
+| `CVE-ZIG-TLS-VERIFY-DISABLED` | CWE-295 / TLS-CERTIFICATE-VERIFY-BYPASS | **HIGH** | Désactivation de la validation des certificats TLS/SSL (`.ca_bundle = .none`, `tls_skip_verify = true`). | Activer la vérification du bundle d'autorités de certification système via `ca_bundle.rescan(allocator)`. |
+| `CVE-ZIG-WEAK-PRNG-CRYPTO` | CWE-338 / INSECURE-PRNG-DEFAULTPRNG | **HIGH** | Utilisation de `std.rand.DefaultPrng` ou `Xoroshiro128` dans un contexte de génération de clés, jetons ou nonces. | Utiliser exclusivement `std.crypto.random` (CSPRNG du système d'exploitation). |
+| `CVE-ZIG-SIMD-VECTOR-UNALIGNED-OOB` | CWE-125 / SIMD-VECTOR-OUT-OF-BOUNDS | **HIGH** | Chargement d'un pointeur de tranche dans un registre SIMD `@Vector(N, T)` via `@ptrCast` sans `@alignCast` ni vérification de bornes. | Vérifier `slice.len >= N` et valider l'alignement ou copier dans un vecteur local. |
+
+---
+
+### 13. C# / .NET, ASP.NET Core & Entity Framework Core (20 règles)
+
+| Identifiant Règle (`rule_id`) | Référence CWE / Classe | Gravité | Mécanisme de Faille & Vecteur d'Exploitation | Remédiation Certifiée |
+| :--- | :--- | :---: | :--- | :--- |
+| `CVE-CS-INSECURE-DESERIALIZATION` | CWE-502 / DOTNET-INSECURE-DESERIALIZATION | **CRITICAL** | Utilisation de `BinaryFormatter`, `SoapFormatter`, `NetDataContractSerializer`, `LosFormatter`, `ObjectStateFormatter` ou `TypeNameHandling.All/Auto/Objects`. | Migrer vers `System.Text.Json.JsonSerializer` avec des DTOs fortement typés et `TypeNameHandling.None`. |
+| `CVE-CS-SQL-INJECTION` | CWE-89 / DOTNET-SQL-INJECTION | **CRITICAL** | Concaténation `+` ou interpolation `$"..."` dans `SqlCommand`, `ExecuteSqlRaw`, `FromSqlRaw` ou Dapper. | Utiliser `SqlCommand.Parameters.AddWithValue` ou `FromSqlInterpolated` / `ExecuteSqlInterpolated`. |
+| `CVE-CS-COMMAND-INJECTION` | CWE-78 / DOTNET-OS-COMMAND-INJECTION | **CRITICAL** | Appel à `Process.Start` ou `ProcessStartInfo` invoquant un shell (`cmd.exe /c`, `/bin/sh -c`) ou concaténant des arguments. | Utiliser `ProcessStartInfo.ArgumentList.Add()` avec `UseShellExecute = false`. |
+| `CVE-CS-PATH-TRAVERSAL` | CWE-22 / DOTNET-PATH-TRAVERSAL | **HIGH** | Opérations `File.ReadAllText`, `File.WriteAllBytes`, `File.Delete` ou `new FileStream` sur un chemin dynamique non canonisé. | Extraire `Path.GetFileName(input)` et vérifier `Path.GetFullPath(combined).StartsWith(canonicalBase)`. |
+| `CVE-CS-WEAK-CRYPTOGRAPHY` | CWE-327 / CWE-328-WEAK-CRYPTO-DOTNET | **HIGH** | Utilisation de `MD5`, `SHA1`, `DES`, `TripleDES`, `RC2` ou du mode `CipherMode.ECB`. | Utiliser `SHA256.Create()`, `AesGcm` et `Rfc2898DeriveBytes` (PBKDF2) / Argon2. |
+| `CVE-CS-XSS-RAW-HTML` | CWE-79 / ASPNET-RAW-HTML-XSS | **HIGH** | Rendu HTML brut non encodé via `Html.Raw()`, `new HtmlString()`, `MarkupString` ou `Response.WriteAsync()`. | Encoder les entrées via `HtmlEncoder.Default.Encode()` ou utiliser l'encodage automatique Razor. |
+| `CVE-CS-XXE-INJECTION` | CWE-611 / DOTNET-XXE-XML-RESOLVER | **HIGH** | Analyse XML avec `XmlResolver = new XmlUrlResolver()` ou `DtdProcessing.Parse` activé sur `XmlDocument` / `XmlReaderSettings`. | Configurer `DtdProcessing = DtdProcessing.Prohibit` et `XmlResolver = null`. |
+| `CVE-CS-INSECURE-RANDOM` | CWE-330 / DOTNET-SYSTEM-RANDOM-PRNG | **MEDIUM** | Génération de valeurs pseudo-aléatoires prédictibles via `new Random()`. | Utiliser `System.Security.Cryptography.RandomNumberGenerator.GetInt32()` ou `GetBytes()`. |
+| `CVE-CS-LDAP-INJECTION` | CWE-90 / DOTNET-LDAP-FILTER-INJECTION | **HIGH** | Concaténation ou interpolation directe dans `DirectorySearcher.Filter` sans échappement LDAP. | Échapper les caractères spéciaux RFC 4515 (`*`, `(`, `)`, `\`, NUL) avant de construire le filtre. |
+| `CVE-CS-CSRF-DISABLED` | CWE-352 / ASPNET-CSRF-ANTIFORGERY-DISABLED | **MEDIUM** | Attribut `[IgnoreAntiforgeryToken]` appliqué sur une action mutatrice `[HttpPost]`, `[HttpPut]`, `[HttpDelete]` ou `[HttpPatch]`. | Supprimer `[IgnoreAntiforgeryToken]` et activer `[ValidateAntiForgeryToken]` ou `[AutoValidateAntiforgeryToken]`. |
+| `CVE-CS-SSRF-HTTPCLIENT` | CWE-918 / SSRF-OUTBOUND-HTTPCLIENT | **HIGH** | Requête HTTP sortante (`HttpClient.GetAsync`, `GetStringAsync`, `PostAsync`, `SendAsync`) vers une URL dynamique sans validation d'hôte. | Valider l'URI avec `Uri.TryCreate`, imposer HTTPS, vérifier `uri.Host` sur liste blanche et bloquer les IP privées/loopback. |
+| `CVE-CS-TLS-CERT-BYPASS` | CWE-295 / TLS-SERVER-CERT-VALIDATION-BYPASS | **CRITICAL** | Validation TLS désactivée via `DangerousAcceptAnyServerCertificateValidator` ou callback retournant `=> true`. | Vérifier strictement `sslPolicyErrors == SslPolicyErrors.None` dans le callback de validation. |
+| `CVE-CS-JWT-VALIDATION-BYPASS` | CWE-347 / JWT-TOKEN-VALIDATION-BYPASS | **CRITICAL** | Configuration `TokenValidationParameters` désactivant `ValidateIssuerSigningKey`, `RequireSignedTokens` ou `ValidateLifetime`. | Maintenir `ValidateIssuerSigningKey = true`, `RequireSignedTokens = true` et `ValidateLifetime = true`. |
+| `CVE-CS-OPEN-REDIRECT` | CWE-601 / UNVALIDATED-OPEN-REDIRECT | **HIGH** | Redirection HTTP vers une URL externe fournie par l'utilisateur (`return Redirect(returnUrl)`) sans validation locale. | Utiliser `LocalRedirect(returnUrl)` ou vérifier `Url.IsLocalUrl(returnUrl)` avant redirection. |
+| `CVE-CS-MASS-ASSIGNMENT` | CWE-915 / ASPNET-OVERPOSTING-MASS-ASSIGNMENT | **HIGH** | Appel à `TryUpdateModelAsync(entity)` sans filtre d'inclusion de propriétés, permettant la modification de champs sensibles (`Role`, `IsAdmin`). | Utiliser un DTO dédié ou spécifier explicitement les propriétés autorisées (`u => u.Name, u => u.Email`). |
+| `CVE-CS-REDOS-UNBOUNDED-REGEX` | CWE-1333 / REGEX-MISSING-TIMEOUT-REDOS | **HIGH** | Évaluation `new Regex()`, `Regex.IsMatch()` ou `Regex.Match()` sans `TimeSpan` de timeout ni `RegexOptions.NonBacktracking`. | Passer un délai `TimeSpan.FromMilliseconds(250)` ou activer `RegexOptions.NonBacktracking` (.NET 7+). |
+| `CVE-CS-HARDCODED-CREDENTIALS` | CWE-798 / HARDCODED-SECRET-KEY-CONNSTRING | **CRITICAL** | Clé secrète JWT (`SymmetricSecurityKey`), constante `JwtSecret`/`SecretKey` ou mot de passe de connexion SQL codé en dur. | Charger les secrets depuis Azure KeyVault, les variables d'environnement ou `IConfiguration` sécurisée. |
+| `CVE-CS-UNSAFE-STACKALLOC-OVERFLOW` | CWE-787 / UNBOUNDED-STACKALLOC-CRASH-DOS | **HIGH** | Allocation sur la pile `stackalloc T[dynamicLen]` avec une taille dynamique non bornée provoquant un `StackOverflowException`. | Borner la taille allouée sur la pile (`<= 1024` octets) et utiliser `ArrayPool<byte>.Shared.Rent()` au-delà. |
+| `CVE-CS-UNSAFE-REFLECTION-INVOKE` | CWE-470 / UNSAFE-TYPE-GETTYPE-ACTIVATOR-RCE | **CRITICAL** | Résolution dynamique de type (`Type.GetType(userInput)`, `Assembly.LoadFrom`, `CSharpScript.EvaluateAsync`) à partir d'une entrée externe. | Valider le nom de type sur une liste blanche fermée ou utiliser un registre de fabriques typées. |
+| `CVE-CS-SENSITIVE-ERROR-EXPOSURE` | CWE-209 / EXCEPTION-STACKTRACE-EXPOSURE | **MEDIUM** | Exposition directe de `ex.StackTrace` ou `ex.ToString()` dans une réponse HTTP (`BadRequest`, `StatusCode(500)`, `Problem`). | Journaliser l'exception côté serveur via `ILogger` et retourner un message générique au client. |
