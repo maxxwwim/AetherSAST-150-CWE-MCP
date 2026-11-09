@@ -5,7 +5,7 @@
 ### **Cockpit Spatial d'Architecture WebGL 2  • Linter SAST Zero-Day (185+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.2.0_SSA_Taint_SCA_Semgrep_Rules-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.2.0_Zig_%26_C%23_SSA_Taint_SCA_Semgrep-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -39,10 +39,10 @@
 ## 📌 Sommaire Exécutif
 
 1. [⚡ Qu'est-ce qu'AetherScope V2 ?](#-quest-ce-quaetherscope-v2-)
-2. [🧬 Nouveautés V2.2 : Semgrep Communautaire, SSA Dataflow & SCA Reachable](#-nouveautés-v22--semgrep-communautaire-ssa-dataflow--sca-reachable)
+2. [🧬 Nouveautés V2.2 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow & SCA Reachable](#-nouveautés-v22--support-zig--cnet-semgrep-communautaire-ssa-dataflow--sca-reachable)
 3. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
 4. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
-5. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 150+ Règles CWE](#-moteur-sast-chasse-zero-day--catalogue-des-150-règles-cwe)
+5. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 185+ Règles CWE](#-moteur-sast-chasse-zero-day--catalogue-des-185-règles-cwe)
 6. [🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
 7. [🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3](#-gouvernance-spec-driven-contrats-ears--sceau-blake3)
 8. [🏛️ Architecture Globale & Structure du Workspace Cargo](#-architecture-globale--structure-du-workspace-cargo)
@@ -54,9 +54,25 @@
 
 ---
 
-## 🧬 Nouveautés V2.2 : Semgrep Communautaire, SSA Dataflow & SCA Reachable
 
-### 1. Règles Semgrep Communautaires (hors-ligne, sans compte Cloud)
+
+## 🧬 Nouveautés V2.2 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow & SCA Reachable
+
+### 1. ⚡ Support Natif Zig (`ast-scanner` + 15 Règles CWE + Taint Tracking)
+- **Extraction AST & Lexer Zig (`scanner.rs`, `lexer.rs`) :** Analyse parallèle des `struct`, `packed struct`, `extern struct`, `union(enum)`, `error`, `pub fn`, `@import` et `@cImport`, avec masquage lexical des chaînes multilignes `\\` et troncature automatique des blocs `test "..." {}`.
+- **15 Règles SAST Zig (`zig_rules.rs`) :**
+  - **Mémoire & Pointeurs :** `CVE-ZIG-USE-AFTER-FREE` (`CWE-416`), `CVE-ZIG-RAW-ALLOCATOR-LEAK` (`CWE-401`), `CVE-ZIG-STACK-ADDRESS-RETURN` (`CWE-562`), `CVE-ZIG-UNINITIALIZED-MEMORY` (`CWE-457`), `CVE-ZIG-INSECURE-POINTER-CAST` (`CWE-843`).
+  - **Arithmétique, SIMD & Compilateur :** `CVE-ZIG-INTEGER-OVERFLOW-WRAPPING` (`+%`/`-%`/`*%`, `CWE-190`), `CVE-ZIG-SIMD-VECTOR-UNALIGNED-OOB` (`@Vector`, `CWE-125`), `CVE-ZIG-RUNTIME-SAFETY-DISABLED` (`@setRuntimeSafety(false)`, `CWE-676`), `CVE-ZIG-UNHANDLED-ERROR-UNION` (`_ = fallible()`, `CWE-703`).
+  - **Interopérabilité C-ABI, OS & Crypto :** `CVE-ZIG-BUFFER-OVERRUN-C-INTEROP` (`CWE-119`), `CVE-ZIG-UNPROTECTED-C-FORMAT-STRING` (`CWE-134`), `CVE-ZIG-COMMAND-INJECTION` (`std.process.Child`, `CWE-78`), `CVE-ZIG-PATH-TRAVERSAL` (`CWE-22`), `CVE-ZIG-TLS-VERIFY-DISABLED` (`CWE-295`), `CVE-ZIG-WEAK-PRNG-CRYPTO` (`DefaultPrng`, `CWE-338`).
+
+### 2. 🔷 Support Natif C# / .NET 8+ (`ast-scanner` + 20 Règles CWE + Taint Tracking)
+- **Extraction AST & Lexer C# (`scanner.rs`, `lexer.rs`) :** Analyse des `namespace` (file-scoped et block), `class`, `record`, `struct`, `interface`, propriétés, méthodes `async`/`Task<T>`, endpoints ASP.NET Core (`[HttpGet]`, `[HttpPost]`, `[Route]`, Minimal APIs `app.MapGet`/`MapPost`) et masquage des chaînes verbatim `@"..."` et raw `"""..."""`.
+- **20 Règles SAST C# / .NET (`csharp_rules.rs`) :**
+  - **Injections & RCE :** `CVE-CS-INSECURE-DESERIALIZATION` (`BinaryFormatter`/`TypeNameHandling`, `CWE-502`), `CVE-CS-SQL-INJECTION` (`SqlCommand`/`ExecuteSqlRaw`/Dapper, `CWE-89`), `CVE-CS-COMMAND-INJECTION` (`Process.Start`, `CWE-78`), `CVE-CS-UNSAFE-REFLECTION-INVOKE` (`Type.GetType`/`CSharpScript`, `CWE-470`), `CVE-CS-XXE-INJECTION` (`CWE-611`), `CVE-CS-LDAP-INJECTION` (`CWE-90`).
+  - **Web, API & ASP.NET Core :** `CVE-CS-SSRF-HTTPCLIENT` (`CWE-918`), `CVE-CS-XSS-RAW-HTML` (`Html.Raw`/`HtmlString`, `CWE-79`), `CVE-CS-OPEN-REDIRECT` (`CWE-601`), `CVE-CS-MASS-ASSIGNMENT` (`TryUpdateModelAsync`, `CWE-915`), `CVE-CS-CSRF-DISABLED` (`[IgnoreAntiforgeryToken]`, `CWE-352`), `CVE-CS-PATH-TRAVERSAL` (`CWE-22`), `CVE-CS-SENSITIVE-ERROR-EXPOSURE` (`ex.StackTrace`, `CWE-209`).
+  - **Auth, Crypto & Runtime :** `CVE-CS-JWT-VALIDATION-BYPASS` (`TokenValidationParameters`, `CWE-347`), `CVE-CS-TLS-CERT-BYPASS` (`DangerousAcceptAnyServerCertificateValidator`, `CWE-295`), `CVE-CS-HARDCODED-CREDENTIALS` (`CWE-798`), `CVE-CS-WEAK-CRYPTOGRAPHY` (`MD5`/`SHA1`/`DES`/`ECB`, `CWE-327`), `CVE-CS-INSECURE-RANDOM` (`System.Random`, `CWE-330`), `CVE-CS-REDOS-UNBOUNDED-REGEX` (`CWE-1333`), `CVE-CS-UNSAFE-STACKALLOC-OVERFLOW` (`stackalloc`, `CWE-787`).
+
+### 3. 🧬 Règles Semgrep Communautaires (hors-ligne, sans compte Cloud)
 - **22 règles OWASP Top 10 / CWE Top 25** embarquées dans le binaire (`community_owasp_cwe.yaml`, `community_bundle.rs`), actives dès le premier lancement.
 - **Synchronisation à la demande** et rechargement à chaud (hot-reload) dans `.aether/plugins/` :
   ```bash
@@ -65,11 +81,11 @@
   aether-plugin-tool.exe import-semgrep --input ./semgrep-rules --output .aether/plugins/imported
   ```
 
-### 2. True Dataflow / SSA Taint Tracking Inter-Procédural
+### 4. 🔗 True Dataflow / SSA Taint Tracking Inter-Procédural
 - Module `crates/core-graph/src/dataflow/` : versioning exact des variables (`SsaVar`), chaînes def-use, propagation à travers les appels, parcours résistant aux cycles.
 - **Catalogue de sanitizers par CWE** (`sanitizer_catalog.rs`) : une donnée passée par `sanitize(x)` ne déclenche plus d'alerte au Sink. Trace exacte de propagation sur les flux non assainis.
 
-### 3. SCA Reachable Dependencies (OSV.dev)
+### 5. 📦 SCA Reachable Dependencies (OSV.dev)
 - Parseurs `Cargo.lock`, `package-lock.json`, `composer.lock` (`crates/security-linter/src/sca/`).
 - Requêtes OSV.dev avec **cache disque persistant signé BLAKE3** : scans hors-ligne après la première synchronisation.
 - Croisement avec le graphe d'appels : seules les dépendances vulnérables dont la fonction est **réellement appelée depuis un Endpoint** sont marquées atteignables.
@@ -177,12 +193,12 @@ Le serveur Axum embarqué sert le cockpit spatial directement sur la route racin
 | `GET` / `POST /api/tasks` | Liste ou crée une tâche persistante dans `.aether/tasks/`. |
 | `POST /api/tasks/update` | Met à jour le statut, la progression (`0-100%`) et le `README.md` d'une tâche. |
 | `POST /api/tasks/delete` | Supprime une tâche et met à jour `.aether/TASKS_SUMMARY.md`. |
-| `GET` / `POST /api/settings` | Lit ou sauvegarde les exclusions et l'activation granulaire des 150+ Zero-Day Patterns & CWE Rules. |
+| `GET` / `POST /api/settings` | Lit ou sauvegarde les exclusions et l'activation granulaire des 185+ Zero-Day Patterns & CWE Rules. |
 | `POST /api/export` | Exporte le graphe interactif en un fichier autonome `aetherscope_viewer.html`. |
 
 ---
 
-## 🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 150+ Règles CWE
+## 🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 185+ Règles CWE
 
 ### Masquage Lexical Anti-Faux-Positifs, Routage Typé CWE & Préparateur de Scope Bug Bounty
 
@@ -191,8 +207,8 @@ Contrairement aux scanners par expressions régulières classiques qui génèren
 1. **Un Lexer Multi-Langages (`lexer.rs`) à Double Passe :** Masque automatiquement les commentaires (`//`, `/* */`, `#`, docstrings PHP/Python/Rust) et les littéraux de chaînes non pertinents avant d'évaluer les règles syntaxiques, tout en tronquant automatiquement les modules de tests unitaires Rust inline (`#[cfg(test)]`, `mod tests`).
 2. **Un Routage Typé des Fichiers par Famille de CWE (`matches_file` & `get_file_types_for_cwe`) :** Élimine 100% des interférences inter-langages grâce à la détection native par extension. Chaque règle de sécurité déclare son périmètre (`target_file_types()`). Les 25 règles PHP (CWE-89, CWE-78, etc.) ne s'exécutent que sur les extensions valides (`.php`, `.phtml`, `.php3`..), les 15 règles Zig sur `.zig`, les 20 règles C# sur `.cs`, les règles Rust sur le Rust (`.rs`), et le C/C++ sur ses extensions propres (`.c`, `.cpp`, `.h`, `.hpp`). L'AST Scanner (`ast-scanner`) extrait en amont les classes, structs, records, traits, interfaces, méthodes, fonctions, routes (`#[Route]`, `[HttpGet]`, `$app->get`, `Route::*`) et docstrings.
 3. **Un Préparateur de Scope Bug Bounty & Générateur de PoC (`🎯 Scope / PoC Bug Bounty`) :**
-   - Permet de filtrer visuellement les dossiers **✅ IN-SCOPE** et **🚫 OUT-OF-SCOPE** (avec presets *🐘 PHP Web & API*, *L1 Consensus*, *Web3 DeFi*, *Rust Low-Level*) et de synchroniser ces exclusions avec le scanner.
-   - Sélecteur de langages par badges dans l'inspecteur : bascule instantanée entre *Rust*, *Solidity*, *Go*, *JS/TS*, *Python*, *C/C++* et *🐘 PHP*.
+   - Permet de filtrer visuellement les dossiers **✅ IN-SCOPE** et **🚫 OUT-OF-SCOPE** (avec presets *🐘 PHP Web & API*, *⚡ Zig Systems & C-ABI*, *🔷 C# / ASP.NET Core*, *L1 Consensus*, *Web3 DeFi*, *Rust Low-Level*) et de synchroniser ces exclusions avec le scanner.
+   - Sélecteur de langages par badges dans l'inspecteur : bascule instantanée entre *Rust*, *⚡ Zig*, *🔷 C#*, *Solidity*, *Go*, *JS/TS*, *Python*, *C/C++*, *☕ Java* et *🐘 PHP*.
    - **3 Modes de Génération de Prompts d'Audit :**
      - 🧪 **Mode 1 — Triage & Proof of Concept (PoC) Exécutable (Sans modifier le code) :** Impose la règle *"Zéro correction barbare"*, demande à l'IA de vérifier l'atteignabilité *Source-to-Sink*, d'écrire un test d'exploitation autonome (`#[test]` Rust, script exploit Python/curl, `cargo miri`, ou Foundry `test_poc`) et de rédiger le rapport final au format **Immunefi / HackerOne / Cantina**.
      - 🔬 **Mode 2 — Chasse Zero-Day Bas-Niveau :** Oriente l'audit sur les bugs subtils de compilateur LLVM, d'unwind de pile, d'ABI FFI et de désynchronisation d'état.
@@ -206,7 +222,7 @@ Contrairement aux scanners par expressions régulières classiques qui génèren
    - **Outil CLI Dédié (`aether-plugin-tool`) :** Commandes `init`, `test`, `scan`, `list` et `export` pour gérer vos catalogues de plugins en toute simplicité.
    - **Pilotage Autonome par IA (4 Outils MCP Dédiés) :** Les assistants IA peuvent lister les plugins (`aetherscope_list_plugins`), exécuter les tests unitaires (`aetherscope_test_plugins`), scanner du code (`aetherscope_scan_with_plugins`) et rédiger ou certifier de nouvelles règles à chaud (`aetherscope_upsert_plugin_rule`).
 
-### 📚 Catalogue des 150+ Règles CWE & Zero-Day Patterns
+### 📚 Catalogue des 185+ Règles CWE & Zero-Day Patterns
 
 La liste détaillée des règles, classées en 13 familles (Rust/LLVM, Consensus & Wasm, Smart Contracts EVM, DeFi, ZK, MMO, injections multi-langages, Front-End/Node, Architecture EARS, C/C++, PHP, Zig, C# / .NET), est dans le répertoire dédié :
 
@@ -271,7 +287,7 @@ Permet aux modèles et assistants de lire passivement le contexte sans invoquer 
 | URI Ressource (`uri`) | MIME Type | Description & Contenu Exposé |
 | :--- | :--- | :--- |
 | **`aether://graph/summary`** | `application/json` | Synthèse temps réel du graphe AST 3D (nœuds, arêtes, clusters, santé globale). |
-| **`aether://audit/live`** | `text/markdown` | Rapport SAST en direct (`.aether/LIVE_AUDIT.md`) répertoriant les 150+ violations CWE. |
+| **`aether://audit/live`** | `text/markdown` | Rapport SAST en direct (`.aether/LIVE_AUDIT.md`) répertoriant les 185+ violations CWE. |
 | **`aether://contracts/manifest`** | `application/json` | Spécification architecturale et contrats EARS (`aether.manifest.json` / `aether.lock.toml`). |
 | **`aether://tasks/active`** | `application/json` | Registre JSON de toutes les tâches d'ingénierie actives du projet (`.aether/tasks/`). |
 
