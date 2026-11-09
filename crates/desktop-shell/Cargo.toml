@@ -19,6 +19,7 @@ ast-scanner = { path = "../ast-scanner" }
 arch-templates = { path = "../arch-templates" }
 security-linter = { path = "../security-linter" }
 ai-file-bridge = { path = "../ai-file-bridge" }
+obsidian-vault = { workspace = true }
 
 serde.workspace = true
 serde_json.workspace = true
@@ -33,3 +34,6 @@ toml.workspace = true
 wry = "0.42"
 tao = "0.28"
 rfd = "0.15"
+
+[dev-dependencies]
+tempfile.workspace = true

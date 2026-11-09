@@ -1,0 +1,22 @@
+[package]
+name = "obsidian-vault"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Dedicated Obsidian vault parser, project classifier, and core-graph generator for AetherScope"
+
+[dependencies]
+core-graph = { path = "../core-graph" }
+serde.workspace = true
+serde_yaml.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+walkdir.workspace = true
+rayon.workspace = true
+bitflags.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

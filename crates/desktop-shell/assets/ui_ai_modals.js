@@ -1193,7 +1193,10 @@ async function pollGraphVersion() {
       if (gRes.ok) {
         const newGraph = await gRes.json();
         applyDataKeepView(newGraph);
-        showToast('⚡ Codebase actualisée en direct (FileWatcher)');
+        const toastMsg = state.active_view_mode === 'vault'
+          ? '⚡ Vault Obsidian actualisé en direct (FileWatcher)'
+          : '⚡ Codebase actualisée en direct (FileWatcher)';
+        showToast(toastMsg);
       }
     }
     syncFailures = 0;
@@ -1702,6 +1705,7 @@ async function analyze(path) {
   showToast('⚡ Analyse Rust V2 ultra-rapide...');
   try {
     const data = await window.AetherAPI.analyze(path);
+    if (typeof syncProjectStatus === 'function') syncProjectStatus();
     applyData(data);
     hideLoadingScreen();
     showToast(`✨ ${data.nodes.length} nœuds, ${data.edges.length} liens analysés en ${data.stats.elapsed_ms}ms !`);
@@ -1713,6 +1717,8 @@ async function analyze(path) {
 window.analyze = analyze;
 
 function applyData(data) {
+  state.data = data;
+  state.project_path = data.project_path || '';
   state.nodeMap = null;
   state.cachedFolderStats = null;
   state.cachedEdgePaths = null;
@@ -1862,6 +1868,8 @@ function applyData(data) {
 window.applyData = applyData;
 
 function applyDataKeepView(data, focusSymbol) {
+  state.data = data;
+  state.project_path = data.project_path || '';
   state.nodeMap = null;
   state.cachedFolderStats = null;
   if (typeof precomputeDocMetadata === 'function') precomputeDocMetadata(data);
@@ -1983,6 +1991,7 @@ document.getElementById('btn-pick-project')?.addEventListener('click', async () 
       if (d.graph) {
         applyData(d.graph);
         showToast(`✅ Projet chargé : ${d.project_path}`);
+        if (typeof syncProjectStatus === 'function') syncProjectStatus();
       } else {
         analyze(d.project_path);
       }
@@ -4853,6 +4862,7 @@ if (state.settings && window.AudioSys) {
   window.AudioSys.enabled = state.settings.sound !== false;
 }
 loadProjects();
+if (typeof syncProjectStatus === 'function') syncProjectStatus();
 if (state.data && state.data.nodes && state.data.nodes.length > 0) {
   applyData(state.data);
 }

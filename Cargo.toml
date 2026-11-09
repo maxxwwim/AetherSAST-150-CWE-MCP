@@ -7,13 +7,14 @@ members = [
     "crates/security-linter",
     "crates/ai-file-bridge",
     "crates/desktop-shell",
+    "crates/obsidian-vault",
 ]
 exclude = [
     "apps/aethercraft/runner",
 ]
 
 [workspace.package]
-version = "2.2.0"
+version = "2.2.1"
 authors = ["AetherScope Engineering Team"]
 edition = "2021"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -25,6 +26,9 @@ ast-scanner = { path = "crates/ast-scanner" }
 arch-templates = { path = "crates/arch-templates" }
 security-linter = { path = "crates/security-linter" }
 ai-file-bridge = { path = "crates/ai-file-bridge" }
+obsidian-vault = { path = "crates/obsidian-vault" }
+thiserror = "2.0"
+tempfile = "3"
 
 # Data & Serialization
 serde = { version = "1.0", features = ["derive"] }

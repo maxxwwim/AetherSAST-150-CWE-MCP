@@ -1,4 +1,4 @@
-﻿use super::{JsonRpcRequest, JsonRpcResponse};
+use super::{JsonRpcRequest, JsonRpcResponse};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
@@ -457,7 +457,7 @@ pub(crate) async fn handle_catalog_request(
                 "tools": [
                     {
                         "name": "aetherscope_get_graph_summary",
-                        "description": "[COMMANDE COMBINÃ‰E 4-EN-1] RÃ©cupÃ¨re en 1 seul appel l'architecture globale du projet (nÅ“uds, arÃªtes, dossiers), les violations de sÃ©curitÃ© SAST/CWE actives, la liste des tÃ¢ches en cours (include_tasks=true) et peut forcer une rÃ©analyse complÃ¨te AST (rescan=true).",
+                        "description": "[COMMANDE COMBINÉE 4-EN-1] Récupère en 1 seul appel l'architecture globale du projet (nœuds, arêtes, dossiers), la classification du projet (Obsidian Vault, Code Project ou Mixed), le mode de vision actif ('code' ou 'vault'), les métriques de notes Obsidian (wikilinks, tags, backlinks), les violations de sécurité SAST/CWE actives, la liste des tâches en cours (include_tasks=true) et peut forcer une réanalyse complète AST/Vault (rescan=true).",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -467,20 +467,20 @@ pub(crate) async fn handle_catalog_request(
                             "properties": {
                                 "path": {
                                     "type": "string",
-                                    "description": "Chemin optionnel du projet Ã  analyser ou basculer (par dÃ©faut le projet actif)",
+                                    "description": "Chemin optionnel du projet à analyser ou basculer (par défaut le projet actif)",
                                     "examples": [".", "crates/desktop-shell", "crates/core-graph"]
                                 },
                                 "rescan": {
                                     "type": "boolean",
-                                    "description": "Si true, force une rÃ©analyse complÃ¨te de l'arbre AST et des rÃ¨gles SAST avant de renvoyer le rÃ©sumÃ© (remplace aetherscope_scan_project)"
+                                    "description": "Si true, force une réanalyse complète de l'arbre AST ou du vault Obsidian avant de renvoyer le résumé"
                                 },
                                 "include_tasks": {
                                     "type": "boolean",
-                                    "description": "Si true (dÃ©faut), inclut directement la liste des tÃ¢ches actives du projet dans le rÃ©sumÃ© (remplace un appel sÃ©parÃ© Ã  list_tasks)"
+                                    "description": "Si true (défaut), inclut directement la liste des tâches actives du projet dans le résumé"
                                 },
                                 "severity": {
                                     "type": "string",
-                                    "description": "Filtre optionnel de sÃ©vÃ©ritÃ© pour dÃ©tailler les violations SAST/CWE ('critical', 'high', 'all')",
+                                    "description": "Filtre optionnel de sévérité pour détailler les violations SAST/CWE ('critical', 'high', 'all')",
                                     "enum": ["all", "critical", "high", "medium", "low", "warning"]
                                 }
                             },
@@ -488,7 +488,7 @@ pub(crate) async fn handle_catalog_request(
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Diagnostic Global CombinÃ© (Graphe + Scan + TÃ¢ches + CWE)",
+                            "title": "Diagnostic Global Combiné (Code AST + Vault Obsidian + Tâches + CWE)",
                             "readOnlyHint": true,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -497,7 +497,7 @@ pub(crate) async fn handle_catalog_request(
                     },
                     {
                         "name": "aetherscope_get_active_target",
-                        "description": "[COMMANDE COMBINÃ‰E 3-EN-1] En 1 seul appel : (1) TÃ©lÃ©porte la camÃ©ra 3D WebGL et met Ã  jour le HUD de tÃ©lÃ©mÃ©trie, (2) RÃ©cupÃ¨re le contrat EARS, les rÃ¨gles d'imports et le Handshake du symbole, et (3) Trace automatiquement le flux amont/aval (trace_direction='both').",
+                        "description": "[COMMANDE COMBINÉE 3-EN-1] En 1 seul appel : (1) Téléporte la caméra 3D WebGL et met à jour le HUD de télémétrie, (2) Récupère le contexte complet : contrat EARS/MVC pour les symboles de code OU métadonnées YAML, tags, en-têtes et wikilinks pour les notes Obsidian («Note»), et (3) Trace automatiquement le flux amont/aval ou les backlinks/wikilinks (trace_direction='both').",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -507,26 +507,26 @@ pub(crate) async fn handle_catalog_request(
                             "properties": {
                                 "symbol_id": {
                                     "type": "string",
-                                    "description": "Nom ou identifiant du symbole ou fichier cible (ex: 'handle_booking', 'crates/core-graph/src/manifest.rs')",
-                                    "examples": ["handle_booking", "BookingForm", "crates/core-graph/src/manifest.rs"]
+                                    "description": "Nom ou identifiant du symbole, fichier de code ou note Obsidian cible (ex: 'handle_booking', 'note::docs/Architecture.md', 'Architecture')",
+                                    "examples": ["handle_booking", "Architecture", "docs/overview.md"]
                                 },
                                 "action": {
                                     "type": "string",
-                                    "description": "Badge d'action affichÃ© en direct sur le HUD 3D lors de la tÃ©lÃ©portation camÃ©ra (dÃ©faut: 'Inspection')",
-                                    "examples": ["Inspection", "Analyse", "Refactoring", "Correction CVE", "Audit"]
+                                    "description": "Badge d'action affiché en direct sur le HUD 3D lors de la téléportation caméra (défaut: 'Inspection')",
+                                    "examples": ["Inspection", "Analyse", "Refactoring", "Correction CVE", "Audit Notes"]
                                 },
                                 "details": {
                                     "type": "string",
-                                    "description": "Description technique courte affichÃ©e dans le journal de tÃ©lÃ©mÃ©trie 3D"
+                                    "description": "Description technique courte affichée dans le journal de télémétrie 3D"
                                 },
                                 "trace_direction": {
                                     "type": "string",
-                                    "description": "Direction du traÃ§age de flux automatique inclus dans la rÃ©ponse : 'both' (dÃ©faut), 'upstream', 'downstream', ou 'none'",
+                                    "description": "Direction du traçage de flux / liens : 'both' (défaut), 'upstream' (appelants/backlinks), 'downstream' (dépendances/wikilinks), ou 'none'",
                                     "enum": ["both", "upstream", "downstream", "none"]
                                 },
                                 "max_depth": {
                                     "type": "integer",
-                                    "description": "Profondeur maximale du traÃ§age de flux (dÃ©faut: 2, max: 5)",
+                                    "description": "Profondeur maximale du traçage (défaut: 2, max: 5)",
                                     "minimum": 1,
                                     "maximum": 5
                                 },
@@ -539,7 +539,7 @@ pub(crate) async fn handle_catalog_request(
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Inspection Cible CombinÃ©e (Contexte EARS + CamÃ©ra 3D + Trace Flux)",
+                            "title": "Inspection Cible Combinée (Code AST / Note Obsidian + Caméra 3D + Flux)",
                             "readOnlyHint": true,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -548,7 +548,7 @@ pub(crate) async fn handle_catalog_request(
                     },
                     {
                         "name": "aetherscope_search_symbols",
-                        "description": "[COMMANDE COMBINÃ‰E 2-EN-1] Recherche multi-critÃ¨res dans l'index AST (mot-clÃ©, couche MVC, type, stÃ©rÃ©otype) ET filtrage dÃ©taillÃ© des violations SAST/CWE (cwe_id, severity, file_pattern) avec recommandations de remÃ©diation.",
+                        "description": "[COMMANDE COMBINÉE 2-EN-1] Recherche multi-critères dans l'index (symboles AST de code, notes Obsidian, tags '#tag', alias YAML, couche MVC/docs, stéréotype '«Note»') ET filtrage détaillé des violations SAST/CWE avec recommandations de remédiation.",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -558,8 +558,8 @@ pub(crate) async fn handle_catalog_request(
                             "properties": {
                                 "query": {
                                     "type": "string",
-                                    "description": "Texte ou mot-clÃ© Ã  rechercher dans le nom du symbole, le fichier ou les mÃ©thodes",
-                                    "examples": ["checkout", "auth", "BookingService"]
+                                    "description": "Texte ou mot-clé à rechercher : nom de symbole, titre de note, tag Obsidian (ex: '#dev/db'), alias YAML ou en-tête",
+                                    "examples": ["checkout", "#kb/arch", "Architecture", "BookingService"]
                                 },
                                 "layer": {
                                     "type": "string",
@@ -573,19 +573,19 @@ pub(crate) async fn handle_catalog_request(
                                 },
                                 "stereotype": {
                                     "type": "string",
-                                    "description": "StÃ©rÃ©otype architectural (ex: 'Â«ModelÂ»', 'Â«ControllerÂ»', 'Â«ComponentÂ»', 'Â«ServiceÂ»')"
+                                    "description": "Stéréotype architectural ou Obsidian (ex: '«Model»', '«Controller»', '«Note»', '«GhostNote»', '«Attachment»')"
                                 },
                                 "has_violation": {
                                     "type": "boolean",
-                                    "description": "Filtrer uniquement les symboles ayant des violations de sÃ©curitÃ© ou CVE dÃ©tectÃ©es"
+                                    "description": "Filtrer uniquement les symboles ayant des violations de sécurité ou CVE détectées"
                                 },
                                 "cwe_id": {
                                     "type": "string",
-                                    "description": "Filtre direct sur un identifiant CWE ou rÃ¨gle SAST (ex: 'CWE-89', 'CWE-22', 'CVE-RUST-') : inclut le rapport dÃ©taillÃ© de remÃ©diation"
+                                    "description": "Filtre direct sur un identifiant CWE ou règle SAST (ex: 'CWE-89', 'CWE-22')"
                                 },
                                 "severity": {
                                     "type": "string",
-                                    "description": "Niveau de sÃ©vÃ©ritÃ© des violations Ã  auditer : 'all', 'critical', 'high', 'medium', 'low', 'warning'",
+                                    "description": "Niveau de sévérité des violations à auditer : 'all', 'critical', 'high', 'medium', 'low', 'warning'",
                                     "enum": ["all", "critical", "high", "medium", "low", "warning"]
                                 },
                                 "file_pattern": {
@@ -594,7 +594,7 @@ pub(crate) async fn handle_catalog_request(
                                 },
                                 "limit": {
                                     "type": "integer",
-                                    "description": "Nombre maximum de rÃ©sultats (dÃ©faut: 15, max: 50)",
+                                    "description": "Nombre maximum de résultats (défaut: 15, max: 50)",
                                     "minimum": 1,
                                     "maximum": 50
                                 },
@@ -607,8 +607,39 @@ pub(crate) async fn handle_catalog_request(
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Recherche AST & Audit Violations SAST/CWE CombinÃ©s",
+                            "title": "Recherche AST & Notes Obsidian + Audit Violations Combinés",
                             "readOnlyHint": true,
+                            "destructiveHint": false,
+                            "idempotentHint": true,
+                            "openWorldHint": false
+                        }
+                    },
+                    {
+                        "name": "aetherscope_switch_view_mode",
+                        "description": "Bascule dynamiquement le mode de vision du cockpit AetherScope entre 'code' (graphe d'architecture AST 3D) et 'vault' (graphe de notes Obsidian 3D). Met à jour en direct le graphe actif dans le visualiseur WebGL 2.",
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "mode": {
+                                    "type": "string",
+                                    "description": "Mode de vision cible dans le cockpit : 'code' (architecture logicielle) ou 'vault' (graphe de notes Obsidian)",
+                                    "enum": ["code", "vault"]
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin optionnel du projet cible (par défaut le projet actif)"
+                                }
+                            },
+                            "required": ["mode"],
+                            "additionalProperties": false
+                        },
+                        "annotations": {
+                            "title": "Bascule Vision Cockpit (Code / Vault)",
+                            "readOnlyHint": false,
                             "destructiveHint": false,
                             "idempotentHint": true,
                             "openWorldHint": false
@@ -909,7 +940,7 @@ pub(crate) async fn handle_catalog_request(
     Some(res)
 }
 
-pub(crate) fn format_graph_summary(val: &Value) -> String {
+pub(crate) fn format_graph_summary(val: &Value, status_opt: Option<&Value>) -> String {
     let project_name = val.get("project_name").and_then(|v| v.as_str()).unwrap_or("Projet AetherScope");
     let project_path = val.get("project_path").and_then(|v| v.as_str()).unwrap_or("");
     let nodes = val.get("nodes").and_then(|v| v.as_array());
@@ -919,11 +950,40 @@ pub(crate) fn format_graph_summary(val: &Value) -> String {
 
     let mut folders = std::collections::BTreeMap::new();
     let mut violations = Vec::new();
+    let mut notes_count = 0usize;
+    let mut ghost_notes_count = 0usize;
+    let mut attachments_count = 0usize;
+    let mut code_symbols_count = 0usize;
+    let mut unique_tags = std::collections::HashSet::new();
 
     if let Some(nodes_arr) = nodes {
         for n in nodes_arr {
             let f = n.get("folder").and_then(|v| v.as_str()).unwrap_or("root");
             *folders.entry(f.to_string()).or_insert(0usize) += 1;
+
+            let st = n.get("stereotype").and_then(|v| v.as_str()).unwrap_or("");
+            let sym_type = n.get("symbol_type").and_then(|v| v.as_str()).unwrap_or("");
+            let layer = n.get("layer").and_then(|v| v.as_str()).unwrap_or("");
+
+            if st == "«GhostNote»" || sym_type == "ghost_note" {
+                ghost_notes_count += 1;
+            } else if st == "«Attachment»" || sym_type == "attachment" {
+                attachments_count += 1;
+            } else if st == "«Note»" || sym_type == "note" || layer == "docs" {
+                notes_count += 1;
+                if let Some(attrs) = n.get("metadata").and_then(|m| m.get("attributes")).and_then(|a| a.as_array()) {
+                    for attr in attrs {
+                        if attr.get("name").and_then(|v| v.as_str()) == Some("tag") {
+                            if let Some(t) = attr.get("type").and_then(|v| v.as_str()) {
+                                unique_tags.insert(t.to_string());
+                            }
+                        }
+                    }
+                }
+            } else {
+                code_symbols_count += 1;
+            }
+
             if n.get("has_security_violation").and_then(|v| v.as_bool()).unwrap_or(false) {
                 let name = n.get("name").and_then(|v| v.as_str()).unwrap_or("inconnu");
                 let file = n.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
@@ -939,21 +999,70 @@ pub(crate) fn format_graph_summary(val: &Value) -> String {
                 } else {
                     String::new()
                 };
-                violations.push(format!("- ðŸš¨ `{}`{} â€” `{}`", name, cve_desc, file));
+                violations.push(format!("- 🚨 `{}`{} — `{}`", name, cve_desc, file));
             }
         }
     }
 
+    let mut wikilinks_count = 0usize;
+    let mut embeds_count = 0usize;
+    if let Some(edges_arr) = edges {
+        for e in edges_arr {
+            let rel = e.get("relation").and_then(|v| v.as_str()).unwrap_or("");
+            if rel == "links_to" {
+                wikilinks_count += 1;
+            } else if rel == "embeds" {
+                embeds_count += 1;
+            }
+        }
+    }
+
+    // Determine Project Type and Active View Mode
+    let (project_type_str, active_view_str, supported_views_str) = if let Some(st) = status_opt {
+        let raw_p_type = st.get("project_type").and_then(|v| v.as_str()).unwrap_or("Code Project");
+        let p_type = match raw_p_type {
+            "PureObsidianVault" | "Obsidian Vault" => "Obsidian Vault",
+            "Mixed" | "Mixed Project" => "Mixed Project",
+            "PureCode" | "Code Project" => "Code Project",
+            other => other,
+        };
+        let a_view = st.get("active_view")
+            .or_else(|| st.get("active_view_mode"))
+            .or_else(|| st.get("default_view"))
+            .and_then(|v| v.as_str())
+            .unwrap_or(if p_type == "Obsidian Vault" { "vault" } else { "code" });
+        let s_views: Vec<String> = st.get("supported_views")
+            .and_then(|v| v.as_array())
+            .filter(|arr| !arr.is_empty())
+            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| format!("'{}'", s))).collect())
+            .unwrap_or_else(|| {
+                if p_type == "Obsidian Vault" {
+                    vec!["'vault'".to_string(), "'code'".to_string()]
+                } else if p_type == "Mixed Project" {
+                    vec!["'code'".to_string(), "'vault'".to_string()]
+                } else {
+                    vec!["'code'".to_string()]
+                }
+            });
+        (p_type.to_string(), a_view.to_string(), s_views.join(", "))
+    } else if notes_count > 0 && code_symbols_count > 0 {
+        ("Mixed Project".to_string(), "vault".to_string(), "'code', 'vault'".to_string())
+    } else if notes_count > 0 {
+        ("Obsidian Vault".to_string(), "vault".to_string(), "'vault', 'code'".to_string())
+    } else {
+        ("Code Project".to_string(), "code".to_string(), "'code'".to_string())
+    };
+
     let mut folders_str = String::new();
     for (f, cnt) in folders.iter().take(15) {
-        folders_str.push_str(&format!("  - ðŸ“ `{}` : {} symbole(s)\n", f, cnt));
+        folders_str.push_str(&format!("  - 📁 `{}` : {} symbole(s)\n", f, cnt));
     }
     if folders.len() > 15 {
         folders_str.push_str(&format!("  - ... et {} autre(s) dossier(s)\n", folders.len() - 15));
     }
 
     let violations_str = if violations.is_empty() {
-        "âœ… Aucune violation de sÃ©curitÃ© ou CVE dÃ©tectÃ©e.".to_string()
+        "✅ Aucune violation de sécurité ou CVE détectée.".to_string()
     } else {
         let total_v = violations.len();
         let display_v: Vec<String> = violations.into_iter().take(15).collect();
@@ -962,25 +1071,51 @@ pub(crate) fn format_graph_summary(val: &Value) -> String {
         } else {
             String::new()
         };
-        format!("âš ï¸ {} Violation(s) de sÃ©curitÃ© / CVE dÃ©tectÃ©e(s) :\n{}{}", total_v, display_v.join("\n"), more_msg)
+        format!("⚠️ {} Violation(s) de sécurité / CVE détectée(s) :\n{}{}", total_v, display_v.join("\n"), more_msg)
     };
 
     let path_line = if !project_path.is_empty() {
-        format!("â€¢ Emplacement : `{}`\n", project_path)
+        format!("• Emplacement : `{}`\n", project_path)
     } else {
         String::new()
     };
 
+    let mut vault_section = String::new();
+    if notes_count > 0 || ghost_notes_count > 0 || attachments_count > 0 || project_type_str.contains("Vault") || project_type_str.contains("Mixed") {
+        vault_section = format!(
+            "• Graphe de Notes Obsidian :\n\
+               - 📝 Notes Markdown : {}\n\
+               - 🔗 Wikilinks : {} relations\n\
+               - 📎 Transclusions & Pièces jointes : {} embeds ({} fichiers joints)\n\
+               - 🏷️ Tags uniques : {} tags\n\
+               - 👻 Notes fantômes : {} cible(s) non résolue(s)\n",
+            notes_count, wikilinks_count, embeds_count, attachments_count, unique_tags.len(), ghost_notes_count
+        );
+    }
+
     format!(
-        "ðŸª RÃ©sumÃ© Architectural AetherScope V2 :\n\
-         â€¢ Projet Actif : `{}`\n\
+        "🪐 Résumé Architectural & Connaissances AetherScope V2 :\n\
+         • Projet Actif : `{}`\n\
+         • Type de Projet : `{}`\n\
+         • Mode de Vision Actif : `{}` (Visions disponibles: [{supp}])\n\
          {}\
-         â€¢ Total NÅ“uds (Bulles) : {}\n\
-         â€¢ Total Relations (ArÃªtes) : {}\n\
-         â€¢ Modules / Dossiers ({} au total) :\n{}\
-         â€¢ Statut SÃ©curitÃ© & RÃ¨gles :\n{}\n\
-         â€¢ Visualiseur WebGL 2 disponible sur http://127.0.0.1:3030",
-        project_name, path_line, total_nodes, total_edges, folders.len(), folders_str, violations_str
+         {}\
+         • Total Nœuds (Bulles) : {}\n\
+         • Total Relations (Arêtes) : {}\n\
+         • Modules / Dossiers ({} au total) :\n{}\
+         • Statut Sécurité & Règles :\n{}\n\
+         • Visualiseur WebGL 2 disponible sur http://127.0.0.1:3030",
+        project_name,
+        project_type_str,
+        active_view_str,
+        path_line,
+        vault_section,
+        total_nodes,
+        total_edges,
+        folders.len(),
+        folders_str,
+        violations_str,
+        supp = supported_views_str
     )
 }
 
@@ -1092,16 +1227,211 @@ pub fn resolve_project_root(path_str: &str) -> PathBuf {
     p
 }
 
+pub(crate) fn format_note_bubble_details(
+    sym: &core_graph::bubble::SymbolBubble,
+    incoming: &[&core_graph::edge::AffiliationEdge],
+    outgoing: &[&core_graph::edge::AffiliationEdge],
+) -> String {
+    let mut out = format!(
+        "# 📝 Cible Note Obsidian : `{}` (`{}`)\n\
+         - **Stéréotype :** `{}` | **Dossier :** `{}` | **Lignes :** {}\n\
+         - **Degré de Centralité :** Backlinks entrants: {} | Wikilinks sortants: {}\n\
+         - **Complexité (Liens + Tags) :** {}\n\n",
+        sym.name,
+        sym.file_path,
+        sym.stereotype,
+        if sym.folder.is_empty() { "root" } else { &sym.folder },
+        sym.lines_count,
+        sym.in_degree,
+        sym.out_degree,
+        sym.complexity
+    );
+
+    // Frontmatter Tags & Custom Attributes
+    let tags: Vec<&str> = sym
+        .metadata
+        .attributes
+        .iter()
+        .filter(|a| a.name == "tag")
+        .filter_map(|a| a.r#type.as_deref())
+        .collect();
+
+    let custom_attrs: Vec<(&str, &str)> = sym
+        .metadata
+        .attributes
+        .iter()
+        .filter(|a| a.name != "tag")
+        .map(|a| (a.name.as_str(), a.r#type.as_deref().unwrap_or("")))
+        .collect();
+
+    out.push_str("## 🏷️ Métadonnées & Frontmatter YAML :\n");
+    if tags.is_empty() && custom_attrs.is_empty() {
+        out.push_str("*(Aucune métadonnée YAML ou tag détecté)*\n\n");
+    } else {
+        if !tags.is_empty() {
+            let formatted_tags: Vec<String> = tags.iter().map(|t| format!("`#{}`", t)).collect();
+            out.push_str(&format!("- **Tags :** {}\n", formatted_tags.join(", ")));
+        }
+        if !custom_attrs.is_empty() {
+            out.push_str("- **Attributs personnalisés :**\n");
+            for (k, v) in custom_attrs {
+                out.push_str(&format!("  - `{}`: `{}`\n", k, v));
+            }
+        }
+        out.push('\n');
+    }
+
+    // Section Headings (AST Methods)
+    if !sym.metadata.methods.is_empty() {
+        out.push_str("## 📑 Structure des Sections & En-têtes :\n");
+        for m in &sym.metadata.methods {
+            out.push_str(&format!("- {}\n", m.name));
+        }
+        out.push('\n');
+    }
+
+    // Outgoing Wikilinks and Embeds
+    out.push_str(&format!("## 🔗 Liens Wikilinks & Transclusions Sortants (Total: {}) :\n", outgoing.len()));
+    if outgoing.is_empty() {
+        out.push_str("*(Aucun lien wikilink sortant)*\n\n");
+    } else {
+        for e in outgoing.iter().take(20) {
+            let icon = if e.relation == "embeds" { "📎 Transclusion" } else { "➡️ Wikilink" };
+            let alias_str = if let Some(ref l) = e.label {
+                format!(" (alias: \"{}\")", l)
+            } else {
+                String::new()
+            };
+            let anchor_str = if !e.order_label.is_empty() {
+                format!(" #{}", e.order_label)
+            } else {
+                String::new()
+            };
+            out.push_str(&format!("- {} vers `{}`{}{}\n", icon, e.target, anchor_str, alias_str));
+        }
+        if outgoing.len() > 20 {
+            out.push_str(&format!("  ... et {} autre(s) lien(s)\n", outgoing.len() - 20));
+        }
+        out.push('\n');
+    }
+
+    // Incoming Backlinks
+    out.push_str(&format!("## 📥 Backlinks / Références Entrantes (Total: {}) :\n", incoming.len()));
+    if incoming.is_empty() {
+        out.push_str("*(Aucun backlink entrant — note racine ou orpheline)*\n\n");
+    } else {
+        for e in incoming.iter().take(20) {
+            let rel_icon = if e.relation == "embeds" { "📎 Intégrée par" } else { "⬅️ Citée par" };
+            out.push_str(&format!("- {} `[[{}]]`\n", rel_icon, e.source));
+        }
+        if incoming.len() > 20 {
+            out.push_str(&format!("  ... et {} autre(s) backlink(s)\n", incoming.len() - 20));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
+pub(crate) fn format_ghost_note_details(
+    sym: &core_graph::bubble::SymbolBubble,
+    incoming: &[&core_graph::edge::AffiliationEdge],
+) -> String {
+    let mut out = format!(
+        "# 👻 Cible Note Fantôme : `{}`\n\
+         - **Stéréotype :** `«GhostNote»`\n\
+         - **Description :** Cette note est référencée dans des wikilinks du vault mais n'a pas encore de fichier physique `.md`.\n\
+         - **Nombre de citations entrantes :** {}\n\n\
+         ## 📥 Notes Citant cette Référence :\n",
+        sym.name, incoming.len()
+    );
+
+    if incoming.is_empty() {
+        out.push_str("*(Aucun référent direct)*\n\n");
+    } else {
+        for e in incoming.iter().take(15) {
+            out.push_str(&format!("- ⬅️ `[[{}]]` via `{}`\n", e.source, e.relation));
+        }
+    }
+    out.push_str("\n💡 *Pour résoudre ce lien manquant, créez le fichier correspondant dans le vault.*");
+    out
+}
+
+pub(crate) fn format_attachment_details(
+    sym: &core_graph::bubble::SymbolBubble,
+    incoming: &[&core_graph::edge::AffiliationEdge],
+) -> String {
+    let mut out = format!(
+        "# 📎 Fichier Joint / Média : `{}` (`{}`)\n\
+         - **Stéréotype :** `«Attachment»` | **Dossier :** `{}`\n\
+         - **Total Notes intégrant ce média :** {}\n\n\
+         ## 📥 Notes hôtes (Transclusions) :\n",
+        sym.name,
+        sym.file_path,
+        if sym.folder.is_empty() { "assets" } else { &sym.folder },
+        incoming.len()
+    );
+
+    if incoming.is_empty() {
+        out.push_str("*(Pièce jointe orpheline non intégrée dans les notes)*\n\n");
+    } else {
+        for e in incoming.iter().take(15) {
+            out.push_str(&format!("- 📎 `[[{}]]` via `{}`\n", e.source, e.relation));
+        }
+    }
+    out
+}
+
 pub(crate) fn offline_active_target_fallback(project_path: &str, symbol_id: &str) -> String {
     let p_buf = resolve_project_root(project_path);
-    let scanner = ast_scanner::ProjectScanner::default();
-    let g = scanner.scan_project(&p_buf);
+
+    // Detect if target is an Obsidian Vault or Mixed Project
+    let is_vault_project = obsidian_vault::detect_project_type(&p_buf)
+        .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
+        .unwrap_or(false);
+
+    let g = if is_vault_project {
+        obsidian_vault::scan_obsidian_vault(&p_buf)
+            .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
+    } else {
+        ast_scanner::ProjectScanner::default().scan_project(&p_buf)
+    };
+
+    let clean_id = symbol_id.strip_suffix(".md")
+        .or_else(|| symbol_id.strip_suffix(".MD"))
+        .unwrap_or(symbol_id);
+
+    let norm_sym = symbol_id.replace('\\', "/");
+    let norm_clean = clean_id.replace('\\', "/");
 
     let sym_opt = g.nodes.iter().find(|n| {
+        let n_norm_fp = n.file_path.replace('\\', "/");
         n.id == symbol_id
-            || n.name == symbol_id
-            || n.file_path == symbol_id
+            || n.name.eq_ignore_ascii_case(symbol_id)
+            || n.name.eq_ignore_ascii_case(clean_id)
+            || n.file_path.eq_ignore_ascii_case(symbol_id)
+            || n_norm_fp.eq_ignore_ascii_case(&norm_sym)
+            || n_norm_fp.eq_ignore_ascii_case(&format!("{}.md", norm_clean))
+            || n.id == format!("note::{}", symbol_id)
+            || n.id == format!("note::{}", clean_id)
+            || n.id == format!("note::{}.md", clean_id)
+            || n.id == format!("ghost::{}", symbol_id)
+            || n.id == format!("ghost::{}", clean_id)
+            || n.id == format!("attachment::{}", symbol_id)
             || n.id.ends_with(&format!("::{}", symbol_id))
+            || n.id.ends_with(&format!("::{}", clean_id))
+            || n.id.ends_with(&format!("::{}.md", clean_id))
+            || n.file_path.strip_suffix(".md").map(|s| s.eq_ignore_ascii_case(clean_id)).unwrap_or(false)
+            || n_norm_fp.ends_with(&format!("/{}", norm_sym))
+            || n_norm_fp.ends_with(&format!("/{}.md", norm_clean))
+            || n.file_path.ends_with(&format!("/{}", symbol_id))
+            || n.file_path.ends_with(&format!("\\{}", symbol_id))
+            || n.file_path.ends_with(&format!("/{}.md", clean_id))
+            || n.file_path.ends_with(&format!("\\{}.md", clean_id))
+    }).or_else(|| {
+        g.nodes.iter().find(|n| {
+            n.name.to_lowercase().contains(&clean_id.to_lowercase())
+        })
     });
 
     if let Some(sym) = sym_opt {
@@ -1116,34 +1446,42 @@ pub(crate) fn offline_active_target_fallback(project_path: &str, symbol_id: &str
             .filter(|e| e.source == sym.id && e.relation != "contains")
             .collect();
 
-        let in_cat = core_graph::edge::CategorizedLiaisons::from_edges(&incoming_edges, &sym.id, true);
-        let out_cat = core_graph::edge::CategorizedLiaisons::from_edges(&outgoing_edges, &sym.id, false);
-
-        let doc_display = if !sym.docstring.is_empty() {
-            &sym.docstring
-        } else if let Some(raw) = &sym.metadata.raw_content {
-            raw.as_str()
+        if sym.stereotype == "«GhostNote»" || sym.symbol_type == "ghost_note" {
+            format_ghost_note_details(sym, &incoming_edges)
+        } else if sym.stereotype == "«Attachment»" || sym.symbol_type == "attachment" {
+            format_attachment_details(sym, &incoming_edges)
+        } else if sym.stereotype == "«Note»" || sym.symbol_type == "note" || sym.layer == "docs" {
+            format_note_bubble_details(sym, &incoming_edges, &outgoing_edges)
         } else {
-            "*(Aucun commentaire AST direct dÃ©tectÃ©)*"
-        };
+            let in_cat = core_graph::edge::CategorizedLiaisons::from_edges(&incoming_edges, &sym.id, true);
+            let out_cat = core_graph::edge::CategorizedLiaisons::from_edges(&outgoing_edges, &sym.id, false);
 
-        let callers_md = in_cat.to_compact_markdown("amont", 4);
-        let deps_md = out_cat.to_compact_markdown("aval", 4);
+            let doc_display = if !sym.docstring.is_empty() {
+                &sym.docstring
+            } else if let Some(raw) = &sym.metadata.raw_content {
+                raw.as_str()
+            } else {
+                "*(Aucun commentaire AST direct détecté)*"
+            };
 
-        format!(
-            "# ðŸŽ¯ Cible : `{}` (Mode Autonome AST)\n- **Fichier :** `{}:{}`\n- **Architecture :** Galaxie `{}` | Couche `{}` | StÃ©rÃ©otype `{}`\n\n## ðŸ“– DOCUMENTATION & SPÃ‰CIFICATIONS AST :\n{}\n\n## ðŸ“¥ FLUX AMONT / APPELANTS (Total: {}):\n{}\n## ðŸ“¤ FLUX AVAL / DÃ‰PENDANCES & LIAISONS (Total: {}):\n{}",
-            sym.name,
-            sym.file_path,
-            sym.line_number,
-            sym.galaxy,
-            sym.layer,
-            sym.stereotype,
-            doc_display,
-            in_cat.total(),
-            callers_md,
-            out_cat.total(),
-            deps_md
-        )
+            let callers_md = in_cat.to_compact_markdown("amont", 4);
+            let deps_md = out_cat.to_compact_markdown("aval", 4);
+
+            format!(
+                "# 🎯 Cible : `{}` (Mode Autonome AST)\n- **Fichier :** `{}:{}`\n- **Architecture :** Galaxie `{}` | Couche `{}` | Stéréotype `{}`\n\n## 📖 DOCUMENTATION & SPÉCIFICATIONS AST :\n{}\n\n## 📥 FLUX AMONT / APPELANTS (Total: {}):\n{}\n## 📤 FLUX AVAL / DÉPENDANCES & LIAISONS (Total: {}):\n{}",
+                sym.name,
+                sym.file_path,
+                sym.line_number,
+                sym.galaxy,
+                sym.layer,
+                sym.stereotype,
+                doc_display,
+                in_cat.total(),
+                callers_md,
+                out_cat.total(),
+                deps_md
+            )
+        }
     } else {
         let sym_low = symbol_id.to_lowercase();
         let suggestions: Vec<&str> = g.nodes.iter()
@@ -1152,9 +1490,9 @@ pub(crate) fn offline_active_target_fallback(project_path: &str, symbol_id: &str
             .take(5)
             .collect();
         if !suggestions.is_empty() {
-            format!("âš ï¸ Symbole '{}' introuvable dans '{}'.\nðŸ’¡ Symboles proches dÃ©tectÃ©s : {}\nðŸ‘‰ Utilisez `aetherscope_search_symbols` pour explorer l'index.", symbol_id, p_buf.display(), suggestions.join(", "))
+            format!("⚠️ Symbole ou note '{}' introuvable dans '{}'.\n💡 Symboles proches détectés : {}\n👉 Utilisez `aetherscope_search_symbols` pour explorer l'index.", symbol_id, p_buf.display(), suggestions.join(", "))
         } else {
-            format!("âš ï¸ Symbole '{}' introuvable dans '{}'. Utilisez `aetherscope_search_symbols` pour rechercher par mot-clÃ©.", symbol_id, p_buf.display())
+            format!("⚠️ Symbole ou note '{}' introuvable dans '{}'. Utilisez `aetherscope_search_symbols` pour rechercher par mot-clé ou tag.", symbol_id, p_buf.display())
         }
     }
 }
@@ -1200,12 +1538,29 @@ pub async fn send_http_request(
         stream.read_to_end(&mut response_bytes).map_err(|e| e.to_string())?;
 
         let response_str = String::from_utf8_lossy(&response_bytes);
-        if let Some((_, json_part)) = response_str.split_once("\r\n\r\n") {
-            let val: Value = serde_json::from_str(json_part.trim()).unwrap_or_else(|_| json!({ "raw": json_part }));
-            Ok(val)
-        } else {
-            Ok(json!({ "raw": response_str }))
+        let (header_part, json_part) = match response_str.split_once("\r\n\r\n") {
+            Some((h, b)) => (h, b),
+            None => ("", response_str.as_ref()),
+        };
+
+        let status_code = header_part
+            .lines()
+            .next()
+            .and_then(|line| {
+                let mut parts = line.split_whitespace();
+                let _proto = parts.next()?;
+                let code_str = parts.next()?;
+                code_str.parse::<u16>().ok()
+            });
+
+        if let Some(code) = status_code {
+            if !(200..300).contains(&code) {
+                return Err(format!("HTTP error {}: {}", code, json_part.trim()));
+            }
         }
+
+        let val: Value = serde_json::from_str(json_part.trim()).unwrap_or_else(|_| json!({ "raw": json_part }));
+        Ok(val)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1221,7 +1576,8 @@ pub(crate) fn format_search_symbols_response(
     violation_filter: Option<bool>,
     limit: usize,
 ) -> String {
-    let q_lower = query.trim().to_lowercase();
+    let q_raw = query.trim().to_lowercase();
+    let q_clean = q_raw.strip_prefix('#').unwrap_or(&q_raw);
     let layer_opt = layer_filter.map(|s| s.trim().to_lowercase());
     let kind_opt = kind_filter.map(|s| s.trim().to_lowercase());
     let stereo_opt = stereo_filter.map(|s| s.trim().to_lowercase());
@@ -1250,8 +1606,16 @@ pub(crate) fn format_search_symbols_response(
             }
         }
 
-        if q_lower.is_empty() {
-            let base_score = if n.has_security_violation { 90 } else if n.is_class { 40 } else { 10 };
+        if q_raw.is_empty() {
+            let base_score = if n.has_security_violation {
+                90
+            } else if n.stereotype == "«Note»" {
+                50
+            } else if n.is_class {
+                40
+            } else {
+                10
+            };
             scored.push((base_score, n));
         } else {
             let name_lower = n.name.to_lowercase();
@@ -1260,18 +1624,41 @@ pub(crate) fn format_search_symbols_response(
             let id_lower = n.id.to_lowercase();
 
             let mut score = 0;
-            if name_lower == q_lower || id_lower == q_lower {
+            if name_lower == q_clean || id_lower == q_clean {
                 score = 100;
-            } else if name_lower.starts_with(&q_lower) {
+            } else if name_lower.starts_with(q_clean) {
                 score = 80;
-            } else if name_lower.contains(&q_lower) {
+            } else if name_lower.contains(q_clean) {
                 score = 60;
-            } else if file_lower.contains(&q_lower) {
+            } else if file_lower.contains(q_clean) {
                 score = 40;
-            } else if doc_lower.contains(&q_lower) {
+            } else if doc_lower.contains(q_clean) {
                 score = 30;
-            } else if n.metadata.methods.iter().any(|m| m.name.to_lowercase().contains(&q_lower)) {
+            } else if n.metadata.methods.iter().any(|m| m.name.to_lowercase().contains(q_clean)) {
                 score = 50;
+            }
+
+            // Tag & Alias Matching in metadata.attributes
+            for attr in &n.metadata.attributes {
+                if attr.name == "tag" {
+                    if let Some(ref t) = attr.r#type {
+                        let t_lower = t.to_lowercase();
+                        if t_lower == q_clean {
+                            score = score.max(90);
+                        } else if t_lower.contains(q_clean) {
+                            score = score.max(75);
+                        }
+                    }
+                } else if attr.name == "alias" {
+                    if let Some(ref a) = attr.r#type {
+                        let a_lower = a.to_lowercase();
+                        if a_lower == q_clean {
+                            score = score.max(95);
+                        } else if a_lower.contains(q_clean) {
+                            score = score.max(70);
+                        }
+                    }
+                }
             }
 
             if score > 0 {
@@ -1288,22 +1675,28 @@ pub(crate) fn format_search_symbols_response(
     let display_items: Vec<_> = scored.into_iter().take(limit).collect();
 
     if display_items.is_empty() {
-        return format!("ðŸ” Aucun symbole trouvÃ© pour la requÃªte '{}' avec les filtres sÃ©lectionnÃ©s.", query);
+        return format!("🔍 Aucun symbole ou note trouvé pour la requête '{}' avec les filtres sélectionnés.", query);
     }
 
     let mut out = format!(
-        "ðŸ” **RÃ©sultats de Recherche AetherScope ({}/{} trouvÃ©s) :**\n\n| Score | Symbole | StÃ©rÃ©otype | Couche / Galaxie | Fichier : Ligne | Statut |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n",
+        "🔍 **Résultats de Recherche AetherScope ({}/{} trouvés) :**\n\n| Score | Symbole / Note | Stéréotype | Couche / Galaxie | Fichier : Ligne | Statut |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n",
         display_items.len(),
         total_matches
     );
 
     for (score, n) in display_items {
         let sec_badge = if n.has_security_violation {
-            "ðŸš¨ CVE/SAST"
+            "🚨 CVE/SAST"
+        } else if n.stereotype == "«Note»" {
+            "📝 Note"
+        } else if n.stereotype == "«GhostNote»" {
+            "👻 Fantôme"
+        } else if n.stereotype == "«Attachment»" {
+            "📎 Média"
         } else if n.is_dead_code {
-            "âšª Inactif"
+            "⚪ Inactif"
         } else {
-            "âœ… Conforme"
+            "✅ Conforme"
         };
         out.push_str(&format!(
             "| `{}` | `{}` | `{}` | `{}` (`{}`) | `{}:{}` | {} |\n",
@@ -1311,7 +1704,7 @@ pub(crate) fn format_search_symbols_response(
         ));
     }
 
-    out.push_str("\nðŸ’¡ *Pour inspecter le contexte prÃ©cis, les flux et rÃ¨gles EARS d'un symbole : utilisez `aetherscope_get_active_target(\"<symbole>\")` ou `aetherscope_trace_flow(\"<symbole>\")`.*");
+    out.push_str("\n💡 *Pour inspecter le contexte précis, les wikilinks ou règles EARS : utilisez `aetherscope_get_active_target(\"<symbole>\")`.*");
     out
 }
 

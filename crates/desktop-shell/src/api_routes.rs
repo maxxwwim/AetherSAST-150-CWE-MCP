@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::sync::RwLock;
+use obsidian_vault::{
+    DetectedProjectType, ProjectDetectionReport,
+};
 
 #[derive(Serialize, Clone)]
 pub struct ProjectItem {
@@ -264,6 +267,52 @@ pub struct PickProjectResponse {
     pub graph: Option<AetherGraph>,
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// M2: OBSIDIAN VAULT & DUAL-VISION MODELS
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ViewModeRequest {
+    pub mode: String, // "code" | "vault" (or "notes")
+}
+
+#[allow(dead_code)]
+pub type SwitchViewModeRequest = ViewModeRequest;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectStatusResponse {
+    pub status: String,
+    pub project_type: String,
+    pub has_obsidian_dir: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub obsidian_dir_path: Option<String>,
+    pub supported_views: Vec<String>,
+    pub active_view_mode: String,
+    pub active_view: String,
+    pub code_files_count: usize,
+    pub markdown_files_count: usize,
+    pub obsidian_syntax_markers_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detection_report: Option<ProjectDetectionReport>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ViewModeError {
+    InvalidMode(String),
+    GraphNotAvailable(String),
+}
+
+impl std::fmt::Display for ViewModeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ViewModeError::InvalidMode(s) => write!(f, "{}", s),
+            ViewModeError::GraphNotAvailable(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl std::error::Error for ViewModeError {}
+
 pub struct AppState {
     pub graph: RwLock<AetherGraph>,
     pub project_root: RwLock<PathBuf>,
@@ -273,7 +322,218 @@ pub struct AppState {
     pub custom_exclusions: RwLock<Vec<String>>,
     pub active_cve_rules: RwLock<Option<Vec<String>>>,
     pub ignored_cwes: RwLock<Vec<String>>,
+
+    // === Obsidian Vault & Dual-Vision Vision Mode Extensions (M2) ===
+    pub project_type: RwLock<DetectedProjectType>,
+    pub active_view_mode: RwLock<String>,
+    pub code_graph: RwLock<Option<AetherGraph>>,
+    pub vault_graph: RwLock<Option<AetherGraph>>,
+    pub detection_report: RwLock<Option<ProjectDetectionReport>>,
 }
+
+impl AppState {
+    pub fn new(
+        graph: AetherGraph,
+        project_root: PathBuf,
+        project_type: DetectedProjectType,
+        active_view_mode: String,
+        code_graph: Option<AetherGraph>,
+        vault_graph: Option<AetherGraph>,
+        detection_report: Option<ProjectDetectionReport>,
+    ) -> Self {
+        Self {
+            graph: RwLock::new(graph),
+            project_root: RwLock::new(project_root),
+            telemetry: RwLock::new(None),
+            chat_messages: RwLock::new(Vec::new()),
+            graph_version: std::sync::atomic::AtomicU64::new(1),
+            custom_exclusions: RwLock::new(Vec::new()),
+            active_cve_rules: RwLock::new(None),
+            ignored_cwes: RwLock::new(Vec::new()),
+            project_type: RwLock::new(project_type),
+            active_view_mode: RwLock::new(active_view_mode),
+            code_graph: RwLock::new(code_graph),
+            vault_graph: RwLock::new(vault_graph),
+            detection_report: RwLock::new(detection_report),
+        }
+    }
+
+    pub async fn get_active_view_mode(&self) -> String {
+        self.active_view_mode.read().await.clone()
+    }
+
+    pub async fn get_project_type(&self) -> DetectedProjectType {
+        *self.project_type.read().await
+    }
+
+    pub async fn get_detection_report(&self) -> Option<ProjectDetectionReport> {
+        self.detection_report.read().await.clone()
+    }
+
+    pub async fn get_active_graph(&self) -> AetherGraph {
+        self.graph.read().await.clone()
+    }
+
+    pub async fn get_code_graph(&self) -> Option<AetherGraph> {
+        self.code_graph.read().await.clone()
+    }
+
+    pub async fn get_vault_graph(&self) -> Option<AetherGraph> {
+        self.vault_graph.read().await.clone()
+    }
+
+    pub async fn get_supported_views(&self) -> Vec<String> {
+        if let Some(rep) = self.detection_report.read().await.as_ref() {
+            rep.supported_views.clone()
+        } else {
+            self.project_type.read().await.supported_views().into_iter().map(|s| s.to_string()).collect()
+        }
+    }
+
+    pub async fn get_project_status(&self) -> ProjectStatusResponse {
+        let p_type = *self.project_type.read().await;
+        let report_guard = self.detection_report.read().await;
+        let active_mode = self.active_view_mode.read().await.clone();
+
+        if let Some(ref report) = *report_guard {
+            ProjectStatusResponse {
+                status: "ok".to_string(),
+                project_type: report.project_type.as_str().to_string(),
+                has_obsidian_dir: report.has_obsidian_dir,
+                obsidian_dir_path: report.obsidian_dir_path.clone(),
+                supported_views: report.supported_views.clone(),
+                active_view_mode: active_mode.clone(),
+                active_view: active_mode,
+                code_files_count: report.code_files_count,
+                markdown_files_count: report.markdown_files_count,
+                obsidian_syntax_markers_count: report.obsidian_syntax_markers_count,
+                detection_report: Some(report.clone()),
+            }
+        } else {
+            let supported_views: Vec<String> = p_type
+                .supported_views()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
+            ProjectStatusResponse {
+                status: "ok".to_string(),
+                project_type: p_type.as_str().to_string(),
+                has_obsidian_dir: false,
+                obsidian_dir_path: None,
+                supported_views,
+                active_view_mode: active_mode.clone(),
+                active_view: active_mode,
+                code_files_count: 0,
+                markdown_files_count: 0,
+                obsidian_syntax_markers_count: 0,
+                detection_report: None,
+            }
+        }
+    }
+
+    pub async fn switch_view_mode(&self, requested_mode: &str) -> Result<AetherGraph, ViewModeError> {
+        let norm_mode = match requested_mode.trim().to_lowercase().as_str() {
+            "vault" | "notes" => "vault",
+            "code" => "code",
+            other => {
+                return Err(ViewModeError::InvalidMode(format!(
+                    "Mode de vue inconnu '{}'. Modes acceptés: 'code', 'vault'.",
+                    other
+                )));
+            }
+        };
+
+        let target_graph = match norm_mode {
+            "vault" => {
+                let cached = self.vault_graph.read().await.clone();
+                if let Some(g) = cached {
+                    g
+                } else {
+                    let ptype = *self.project_type.read().await;
+                    if ptype.is_vault() || ptype.is_mixed() {
+                        let root = self.project_root.read().await.clone();
+                        let scanned = tokio::task::spawn_blocking(move || {
+                            obsidian_vault::scan_obsidian_vault(&root)
+                        })
+                        .await
+                        .map_err(|e| ViewModeError::GraphNotAvailable(format!("Erreur join scan vault: {}", e)))?
+                        .map_err(|e| ViewModeError::GraphNotAvailable(format!("Scan vault échoué: {}", e)))?;
+
+                        *self.vault_graph.write().await = Some(scanned.clone());
+                        scanned
+                    } else {
+                        return Err(ViewModeError::GraphNotAvailable(
+                            "Aucun graphe Obsidian Vault n'est disponible pour ce projet.".to_string(),
+                        ));
+                    }
+                }
+            }
+            "code" => {
+                let cached = self.code_graph.read().await.clone();
+                if let Some(g) = cached {
+                    g
+                } else {
+                    let ptype = *self.project_type.read().await;
+                    if ptype.is_code() || ptype.is_mixed() {
+                        let root = self.project_root.read().await.clone();
+                        let excl = self.custom_exclusions.read().await.clone();
+                        let scanned = tokio::task::spawn_blocking(move || {
+                            let scanner = ast_scanner::ProjectScanner::default();
+                            scanner.scan_project_with_exclusions(&root, &excl)
+                        })
+                        .await
+                        .map_err(|e| ViewModeError::GraphNotAvailable(format!("Erreur join scan code: {}", e)))?;
+
+                        *self.code_graph.write().await = Some(scanned.clone());
+                        scanned
+                    } else {
+                        return Err(ViewModeError::GraphNotAvailable(
+                            "Aucun graphe AST Code n'est disponible pour ce projet.".to_string(),
+                        ));
+                    }
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        // Sequential non-nested lock updates
+        {
+            let mut active_mode_guard = self.active_view_mode.write().await;
+            *active_mode_guard = norm_mode.to_string();
+        }
+        {
+            let mut graph_guard = self.graph.write().await;
+            *graph_guard = target_graph.clone();
+        }
+        self.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let (action_title, details_msg) = if norm_mode == "vault" {
+            (
+                "Bascule Vision Vault",
+                format!("Vue Notes & Relations Obsidian activée ({} nœuds)", target_graph.nodes.len()),
+            )
+        } else {
+            (
+                "Bascule Vision Code",
+                format!("Vue Architecture & AST Code activée ({} symboles)", target_graph.nodes.len()),
+            )
+        };
+        let mut t_guard = self.telemetry.write().await;
+        *t_guard = Some(AiTelemetryEvent {
+            target: "Cockpit".to_string(),
+            action: action_title.to_string(),
+            details: details_msg,
+            timestamp: now_ms,
+        });
+
+        Ok(target_graph)
+    }
+}
+
 
 pub fn clean_path_string(p: &Path) -> String {
     let s = p.to_string_lossy().to_string();
@@ -1099,3 +1359,178 @@ pub fn pick_folder_dialog(title: &str) -> Option<PathBuf> {
     }
     None
 }
+
+#[cfg(test)]
+mod app_state_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_app_state_initialization_pure_code() {
+        let dummy_graph = AetherGraph::new("CodeProject");
+        let state = AppState::new(
+            dummy_graph.clone(),
+            PathBuf::from("/test/code"),
+            DetectedProjectType::PureCode,
+            "code".to_string(),
+            Some(dummy_graph),
+            None,
+            None,
+        );
+
+        assert_eq!(state.get_project_type().await, DetectedProjectType::PureCode);
+        assert_eq!(state.get_active_view_mode().await, "code");
+        assert_eq!(state.get_supported_views().await, vec!["code"]);
+        assert!(state.get_code_graph().await.is_some());
+        assert!(state.get_vault_graph().await.is_none());
+        assert_eq!(state.get_active_graph().await.project_name, "CodeProject");
+    }
+
+    #[tokio::test]
+    async fn test_app_state_initialization_pure_vault() {
+        let dummy_vault = AetherGraph::new("ObsidianVault");
+        let state = AppState::new(
+            dummy_vault.clone(),
+            PathBuf::from("/test/vault"),
+            DetectedProjectType::PureObsidianVault,
+            "vault".to_string(),
+            None,
+            Some(dummy_vault),
+            None,
+        );
+
+        assert_eq!(state.get_project_type().await, DetectedProjectType::PureObsidianVault);
+        assert_eq!(state.get_active_view_mode().await, "vault");
+        assert!(state.get_supported_views().await.contains(&"vault".to_string()));
+        assert!(state.get_vault_graph().await.is_some());
+        assert_eq!(state.get_active_graph().await.project_name, "ObsidianVault");
+    }
+
+    #[tokio::test]
+    async fn test_app_state_mixed_dual_vision_toggle() {
+        let code_g = AetherGraph::new("CodeGraph");
+        let vault_g = AetherGraph::new("VaultGraph");
+        let state = AppState::new(
+            code_g.clone(),
+            PathBuf::from("/test/mixed"),
+            DetectedProjectType::Mixed,
+            "code".to_string(),
+            Some(code_g),
+            Some(vault_g),
+            None,
+        );
+
+        // Initial view
+        assert_eq!(state.get_active_view_mode().await, "code");
+        assert_eq!(state.get_active_graph().await.project_name, "CodeGraph");
+        let v1 = state.graph_version.load(std::sync::atomic::Ordering::SeqCst);
+
+        // Toggle to vault
+        let swapped = state.switch_view_mode("vault").await.expect("Switch to vault should succeed");
+        assert_eq!(swapped.project_name, "VaultGraph");
+        assert_eq!(state.get_active_view_mode().await, "vault");
+        assert_eq!(state.get_active_graph().await.project_name, "VaultGraph");
+        let v2 = state.graph_version.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(v2 > v1);
+
+        // Toggle back to code
+        let back = state.switch_view_mode("code").await.expect("Switch to code should succeed");
+        assert_eq!(back.project_name, "CodeGraph");
+        assert_eq!(state.get_active_view_mode().await, "code");
+        assert_eq!(state.get_active_graph().await.project_name, "CodeGraph");
+        let v3 = state.graph_version.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(v3 > v2);
+    }
+
+    #[tokio::test]
+    async fn test_app_state_alias_notes_maps_to_vault() {
+        let code_g = AetherGraph::new("CodeGraph");
+        let vault_g = AetherGraph::new("VaultGraph");
+        let state = AppState::new(
+            code_g.clone(),
+            PathBuf::from("/test/mixed"),
+            DetectedProjectType::Mixed,
+            "code".to_string(),
+            Some(code_g),
+            Some(vault_g),
+            None,
+        );
+
+        // Pass alias "notes"
+        let res = state.switch_view_mode("notes").await.expect("Alias 'notes' should succeed");
+        assert_eq!(res.project_name, "VaultGraph");
+        assert_eq!(state.get_active_view_mode().await, "vault");
+    }
+
+    #[tokio::test]
+    async fn test_app_state_unsupported_mode_rejection() {
+        let code_g = AetherGraph::new("CodeGraph");
+        let state = AppState::new(
+            code_g.clone(),
+            PathBuf::from("/test/code"),
+            DetectedProjectType::PureCode,
+            "code".to_string(),
+            Some(code_g),
+            None,
+            None,
+        );
+
+        // PureCode does not have vault graph and scanning fails
+        let err = state.switch_view_mode("vault").await.expect_err("Should fail");
+        assert!(matches!(err, ViewModeError::GraphNotAvailable(_)));
+
+        // Invalid mode
+        let err_inv = state.switch_view_mode("galaxy").await.expect_err("Should fail");
+        assert!(matches!(err_inv, ViewModeError::InvalidMode(_)));
+    }
+
+    #[tokio::test]
+    async fn test_app_state_concurrent_access_stress() {
+        let code_g = AetherGraph::new("CodeGraph");
+        let vault_g = AetherGraph::new("VaultGraph");
+        let state = Arc::new(AppState::new(
+            code_g.clone(),
+            PathBuf::from("/test/mixed"),
+            DetectedProjectType::Mixed,
+            "code".to_string(),
+            Some(code_g),
+            Some(vault_g),
+            None,
+        ));
+
+        let mut handles = Vec::new();
+        // Spawn 30 readers
+        for _ in 0..30 {
+            let s = state.clone();
+            handles.push(tokio::spawn(async move {
+                for _ in 0..50 {
+                    let _ = s.get_active_graph().await;
+                    let _ = s.get_active_view_mode().await;
+                    let _ = s.get_project_status().await;
+                }
+            }));
+        }
+
+        // Spawn 10 togglers
+        for i in 0..10 {
+            let s = state.clone();
+            handles.push(tokio::spawn(async move {
+                for j in 0..20 {
+                    let mode = if (i + j) % 2 == 0 { "code" } else { "vault" };
+                    let _ = s.switch_view_mode(mode).await;
+                }
+            }));
+        }
+
+        for h in handles {
+            h.await.expect("Task failed");
+        }
+
+        // Verify final state is valid
+        let final_mode = state.get_active_view_mode().await;
+        assert!(final_mode == "code" || final_mode == "vault");
+        let final_graph = state.get_active_graph().await;
+        assert!(final_graph.project_name == "CodeGraph" || final_graph.project_name == "VaultGraph");
+    }
+}
+

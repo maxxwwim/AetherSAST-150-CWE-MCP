@@ -8,7 +8,7 @@ let nodes = [];
 let edges = [];
 let nodeMap = new Map();
 let depth = 1;
-let activeLayers = new Set(['ui', 'action', 'domain', 'database', 'network', 'external', 'test']);
+let activeLayers = new Set(['ui', 'action', 'domain', 'database', 'network', 'external', 'test', 'config', 'utility', 'docs']);
 let hiddenModules = new Set();
 let folderAnchors = new Map();
 let activeDragId = null;
@@ -27,6 +27,7 @@ function initGraph(payload) {
   activeDragId = null;
   physicsSleeping = false;
   physicsCooldown = 150;
+  folderAnchors.clear();
 
   nodeMap = new Map();
   for (let i = 0; i < nodes.length; i++) {

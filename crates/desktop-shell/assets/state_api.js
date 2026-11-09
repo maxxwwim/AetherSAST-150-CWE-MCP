@@ -28,7 +28,7 @@
         'submits', 'network', 'realtime', 'realtimews', 'realtime_ws',
         'queries',
         'violates', 'violation', 'security_violation', 'security_violates',
-        'documents', 'binds', 'inter_module'
+        'documents', 'binds', 'inter_module', 'links_to', 'embeds'
       ]),
       synthesisMenuCollapsed: true,
       searchCategory: 'all',
@@ -84,7 +84,9 @@
       bubbleBirthMap: new Map(),
       waterRipples: [],
       filterBits: 31,
-      project_path: ''
+      project_path: '',
+      project_type: 'Mixed',
+      active_view_mode: 'code'
     };
 
     function wakePhysics(steps = 100) {
@@ -542,6 +544,63 @@ window.state = state;
 // Connects to all Axum backend endpoints in api_routes.rs
 // =========================================================================
 const AetherAPI = {
+  async fetchProjectStatus() {
+    if (window.location.protocol.startsWith('http')) {
+      try {
+        const res = await fetch('/api/project/status');
+        if (res.ok) return await res.json();
+      } catch (err) {
+        console.warn('Network fetchProjectStatus failed, checking dual graph fallback:', err);
+      }
+    }
+    const dual = window.__AETHERSCOPE_DUAL_GRAPH__ || window.AETHER_DUAL_GRAPH;
+    if (dual) {
+      return {
+        status: 'ok',
+        project_type: dual.project_type || 'Mixed',
+        supported_views: dual.supported_views || (dual.code && dual.vault ? ['code', 'vault'] : (dual.vault ? ['vault'] : ['code'])),
+        active_view_mode: dual.active_view || 'code',
+        active_view: dual.active_view || 'code',
+        code_files_count: dual.code?.nodes?.length || 0,
+        markdown_files_count: dual.vault?.nodes?.length || 0,
+        obsidian_syntax_markers_count: 0
+      };
+    }
+    return {
+      status: 'ok',
+      project_type: 'PureCode',
+      supported_views: ['code'],
+      active_view_mode: 'code',
+      active_view: 'code'
+    };
+  },
+  async getProjectStatus() {
+    return this.fetchProjectStatus();
+  },
+  async switchViewMode(mode) {
+    const normMode = (mode === 'vault' || mode === 'notes') ? 'vault' : 'code';
+    if (window.location.protocol.startsWith('http')) {
+      try {
+        const res = await fetch('/api/view_mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: normMode })
+        });
+        if (res.ok) return await res.json();
+      } catch (err) {
+        console.warn('Network switchViewMode failed, checking dual graph fallback:', err);
+      }
+    }
+    const dual = window.__AETHERSCOPE_DUAL_GRAPH__ || window.AETHER_DUAL_GRAPH;
+    if (dual) {
+      const g = normMode === 'vault' ? dual.vault : dual.code;
+      if (g) {
+        dual.active_view = normMode;
+        return g;
+      }
+    }
+    throw new Error(`Graphe non disponible pour le mode '${normMode}'`);
+  },
   async fetchGraph() {
     const res = await fetch('/api/graph');
     return res.json();

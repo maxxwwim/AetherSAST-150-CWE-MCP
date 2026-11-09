@@ -606,3 +606,136 @@ window.fitView = fitView;
 window.switchDepth = switchDepth;
 window.zoomCameraAroundPoint = zoomCameraAroundPoint;
 window.updateTooltip = updateTooltip;
+
+
+// =========================================================================
+// M3: DUAL-VISION CONTROLLER (Code AST vs Obsidian Vault Notes)
+// =========================================================================
+
+async function syncProjectStatus() {
+  try {
+    const status = await window.AetherAPI.fetchProjectStatus();
+    state.project_type = status.project_type;
+    state.active_view_mode = status.active_view_mode || status.active_view || 'code';
+    renderProjectStatusUI(status);
+  } catch (err) {
+    console.warn('Erreur synchronisation statut projet:', err);
+  }
+}
+
+function renderProjectStatusUI(status) {
+  const btnCode = document.getElementById('btn-view-mode-code');
+  const btnVault = document.getElementById('btn-view-mode-vault');
+  const menuCode = document.getElementById('btn-menu-view-code');
+  const menuVault = document.getElementById('btn-menu-view-vault');
+  const badgeCode = document.getElementById('menu-badge-view-code');
+  const badgeVault = document.getElementById('menu-badge-view-vault');
+
+  const pType = status.project_type;
+  const isPureCode = pType === 'PureCode';
+  const isPureVault = pType === 'PureObsidianVault';
+  const activeMode = status.active_view_mode || 'code';
+  const isCode = activeMode === 'code';
+
+  if (btnVault) {
+    btnVault.disabled = isPureCode;
+    btnVault.classList.toggle('disabled', isPureCode);
+    btnVault.title = isPureCode
+      ? 'Aucun coffre Obsidian détecté dans ce projet (PureCode)'
+      : 'Vision 2 : Graphe de Notes & Wikilinks Obsidian (Alt+2)';
+    btnVault.classList.toggle('active', !isCode && !isPureCode);
+  }
+
+  if (btnCode) {
+    btnCode.disabled = isPureVault;
+    btnCode.classList.toggle('disabled', isPureVault);
+    btnCode.title = isPureVault
+      ? 'Coffre Obsidian pur (aucun fichier code détecté)'
+      : 'Vision 1 : Architecture & AST Code (Alt+1)';
+    btnCode.classList.toggle('active', isCode && !isPureVault);
+  }
+
+  if (menuVault) {
+    menuVault.disabled = isPureCode;
+    menuVault.classList.toggle('disabled', isPureCode);
+    menuVault.classList.toggle('active-vision-mode', !isCode);
+    if (!isCode) menuVault.classList.add('vault');
+    else menuVault.classList.remove('vault');
+  }
+
+  if (menuCode) {
+    menuCode.disabled = isPureVault;
+    menuCode.classList.toggle('disabled', isPureVault);
+    menuCode.classList.toggle('active-vision-mode', isCode);
+  }
+
+  if (badgeCode) {
+    badgeCode.innerText = isCode ? 'ACTIF' : (isPureVault ? 'NON DISPO' : 'INACTIF');
+    badgeCode.style.color = isCode ? '#38bdf8' : (isPureVault ? '#ef4444' : '#64748b');
+  }
+
+  if (badgeVault) {
+    badgeVault.innerText = !isCode ? 'ACTIF' : (isPureCode ? 'NON DISPO' : 'INACTIF');
+    badgeVault.style.color = !isCode ? '#c084fc' : (isPureCode ? '#ef4444' : '#64748b');
+  }
+}
+
+async function switchProjectViewMode(requestedMode) {
+  const normMode = (requestedMode === 'vault' || requestedMode === 'notes') ? 'vault' : 'code';
+  if (state.active_view_mode === normMode) return;
+
+  const btnCode = document.getElementById('btn-view-mode-code');
+  const btnVault = document.getElementById('btn-view-mode-vault');
+  const activeBtn = normMode === 'vault' ? btnVault : btnCode;
+
+  try {
+    if (activeBtn) activeBtn.classList.add('loading-pulse');
+    showToast(`⏳ Bascule vers la vision ${normMode === 'vault' ? 'Obsidian Notes' : 'Architecture Code'}...`);
+
+    const newGraph = await window.AetherAPI.switchViewMode(normMode);
+    state.active_view_mode = normMode;
+
+    if (window.AudioSys && typeof AudioSys.depthSwitch === 'function') {
+      AudioSys.depthSwitch();
+    }
+
+    if (typeof applyData === 'function') {
+      applyData(newGraph);
+    }
+
+    renderProjectStatusUI({
+      project_type: state.project_type || 'Mixed',
+      active_view_mode: normMode
+    });
+
+    const count = (newGraph.nodes || []).length;
+    const toastLabel = normMode === 'vault'
+      ? `📓 Vision Vault Notes activée (${count} notes & liens)`
+      : `💻 Vision Architecture Code activée (${count} symboles)`;
+    showToast(toastLabel);
+  } catch (err) {
+    console.error('Erreur bascule vision:', err);
+    showToast(`❌ Erreur bascule vision: ${err.message}`);
+  } finally {
+    if (activeBtn) activeBtn.classList.remove('loading-pulse');
+  }
+}
+
+window.switchProjectViewMode = switchProjectViewMode;
+window.syncProjectStatus = syncProjectStatus;
+window.refreshProjectStatusUi = syncProjectStatus;
+window.applyProjectStatusToUi = renderProjectStatusUI;
+
+// Keyboard shortcuts for view switching
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
+
+  if (e.altKey && (e.key === '1' || e.code === 'Digit1')) {
+    e.preventDefault();
+    switchProjectViewMode('code');
+  } else if (e.altKey && (e.key === '2' || e.code === 'Digit2')) {
+    e.preventDefault();
+    switchProjectViewMode('vault');
+  }
+});

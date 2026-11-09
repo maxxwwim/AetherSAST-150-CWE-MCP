@@ -1,4 +1,4 @@
-﻿#[path = "mcp_catalog.rs"]
+#[path = "mcp_catalog.rs"]
 mod mcp_catalog;
 pub use mcp_catalog::*;
 
@@ -194,12 +194,25 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let target_path = req_path_opt.unwrap_or(default_path);
                     let p_buf = resolve_project_root(target_path);
 
+                    // Query project detection status if server is active
+                    let status_val_res = send_http_request(server_port, "GET", "/api/project/status", None).await;
+                    let status_opt = status_val_res.ok();
+
                     let mut summary = match graph_val_res {
-                        Ok(graph_val) => format_graph_summary(&graph_val),
+                        Ok(graph_val) => format_graph_summary(&graph_val, status_opt.as_ref()),
                         Err(_) => {
-                            let scanner = ast_scanner::ProjectScanner::default();
-                            let g = scanner.scan_project(&p_buf);
-                            format_ast_summary(&g, &p_buf)
+                            // Offline fallback: detect project type and scan
+                            let report_res = obsidian_vault::detect_project_type(&p_buf);
+                            let g = match report_res {
+                                Ok(ref rep) if rep.project_type.is_vault() || rep.project_type.is_mixed() => {
+                                    obsidian_vault::scan_obsidian_vault(&p_buf)
+                                        .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
+                                }
+                                _ => ast_scanner::ProjectScanner::default().scan_project(&p_buf),
+                            };
+                            let status_json = report_res.ok().map(|r| serde_json::to_value(&r).unwrap_or_default());
+                            let g_val = serde_json::to_value(&g).unwrap_or_default();
+                            format_graph_summary(&g_val, status_json.as_ref())
                         }
                     };
 
@@ -234,6 +247,93 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     }
 
                     (json!([{ "type": "text", "text": summary }]), false)
+                }
+
+                "aetherscope_switch_view_mode" => {
+                    let mode = arguments
+                        .get("mode")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_lowercase();
+
+                    if mode != "code" && mode != "vault" {
+                        (
+                            json!([{
+                                "type": "text",
+                                "text": "⚠️ Erreur: Le paramètre 'mode' est requis et doit être soit 'code' soit 'vault'."
+                            }]),
+                            true,
+                        )
+                    } else {
+                        let target_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+
+                        // 1. Send spatial telemetry to update Cockpit HUD
+                        let _ = send_http_request(
+                            server_port,
+                            "POST",
+                            "/api/ai/telemetry",
+                            Some(&json!({
+                                "target": format!("Vision: {}", mode),
+                                "action": "Bascule Vision Cockpit",
+                                "details": format!("Bascule du cockpit vers la vision '{}'", mode)
+                            })),
+                        )
+                        .await;
+
+                        // 2. Call POST /api/view_mode on Axum backend
+                        let res = send_http_request(
+                            server_port,
+                            "POST",
+                            "/api/view_mode",
+                            Some(&json!({ "mode": mode })),
+                        )
+                        .await;
+
+                        match res {
+                            Ok(graph_val) => {
+                                if graph_val.get("status").and_then(|s| s.as_str()) == Some("error") {
+                                    let err_msg = graph_val
+                                        .get("message")
+                                        .and_then(|m| m.as_str())
+                                        .unwrap_or("Erreur lors du basculement de vision");
+                                    let text = format!("⚠️ Échec du basculement en mode vision `{}` : {}", mode, err_msg);
+                                    (json!([{ "type": "text", "text": text }]), true)
+                                } else {
+                                    let nodes_cnt = graph_val.get("nodes").and_then(|n| n.as_array()).map(|a| a.len()).unwrap_or(0);
+                                    let edges_cnt = graph_val.get("edges").and_then(|e| e.as_array()).map(|a| a.len()).unwrap_or(0);
+                                    let text = format!(
+                                        "🌌 Cockpit AetherScope basculé avec succès en mode vision : `{}`\n\
+                                         • Graphe actif synchronisé : {} nœuds, {} relations\n\
+                                         • Visualiseur WebGL 2 actualisé en direct sur http://127.0.0.1:{}",
+                                        mode, nodes_cnt, edges_cnt, server_port
+                                    );
+                                    (json!([{ "type": "text", "text": text }]), false)
+                                }
+                            }
+                            Err(e) => {
+                                if e.starts_with("HTTP error") {
+                                    let text = format!("⚠️ Échec du basculement en mode vision `{}` : {}", mode, e);
+                                    (json!([{ "type": "text", "text": text }]), true)
+                                } else {
+                                    // Offline fallback
+                                    let p_buf = resolve_project_root(target_path);
+                                    let report = obsidian_vault::detect_project_type(&p_buf).ok();
+                                    let is_avail = report.as_ref().map(|r| r.is_vault_mode_available()).unwrap_or(false);
+                                    let text = format!(
+                                        "🌌 Mode vision sélectionné : `{}` (Mode hors-ligne / Autonome)\n\
+                                         • Projet : `{}`\n\
+                                         • Disponibilité vision vault : {}\n\
+                                         💡 Lancez `aether-engine` pour visualiser le basculement dynamique dans le cockpit WebGL 2.",
+                                        mode,
+                                        p_buf.display(),
+                                        if is_avail { "Oui (Vault/Mixed)" } else { "Non disponible (PureCode)" }
+                                    );
+                                    (json!([{ "type": "text", "text": text }]), false)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 "aetherscope_send_chat_message" => {
@@ -305,14 +405,13 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         }))).await;
 
                         let (mut text, is_err) = match res {
-                            Ok(val) => {
+                            Ok(val) if val.get("status").and_then(|v| v.as_str()) == Some("ok") => {
                                 let t = format_active_target_response(&val);
-                                let err = val.get("status").and_then(|v| v.as_str()) != Some("ok");
-                                (t, err)
+                                (t, false)
                             }
-                            Err(_) => {
+                            _ => {
                                 let t = offline_active_target_fallback(target_path, &symbol_id);
-                                let err = t.starts_with("âš ï¸");
+                                let err = t.starts_with("⚠️") || t.contains("introuvable dans") || t.starts_with("âš");
                                 (t, err)
                             }
                         };
@@ -347,21 +446,30 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                 "details": "RÃ©analyse complÃ¨te dÃ©clenchÃ©e par l'agent IA via MCP"
                             }))).await;
 
-                            let summary = format_graph_summary(&val);
+                            let status_opt = send_http_request(server_port, "GET", "/api/project/status", None).await.ok();
+                            let summary = format_graph_summary(&val, status_opt.as_ref());
                             (json!([{
                                 "type": "text",
-                                "text": format!("âš¡ Projet `{}` rÃ©analysÃ© et synchronisÃ© avec succÃ¨s dans AetherScope V2 !\n\n{}", scan_path, summary)
+                                "text": format!("⚡ Projet `{}` réanalysé et synchronisé avec succès dans AetherScope V2 !\n\n{}", scan_path, summary)
                             }]), false)
                         }
                         Err(e) => {
                             // Fallback direct AST scanner offline si le serveur n'est pas joignable
                             let p_buf = PathBuf::from(scan_path);
-                            let scanner = ast_scanner::ProjectScanner::default();
-                            let g = scanner.scan_project(&p_buf);
-                            let summary = format_ast_summary(&g, &p_buf);
+                            let report_res = obsidian_vault::detect_project_type(&p_buf);
+                            let g = match report_res {
+                                Ok(ref rep) if rep.project_type.is_vault() || rep.project_type.is_mixed() => {
+                                    obsidian_vault::scan_obsidian_vault(&p_buf)
+                                        .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
+                                }
+                                _ => ast_scanner::ProjectScanner::default().scan_project(&p_buf),
+                            };
+                            let status_json = report_res.ok().map(|r| serde_json::to_value(&r).unwrap_or_default());
+                            let g_val = serde_json::to_value(&g).unwrap_or_default();
+                            let summary = format_graph_summary(&g_val, status_json.as_ref());
                             (json!([{
                                 "type": "text",
-                                "text": format!("âš¡ Projet `{}` analysÃ© (mode autonome AST direct - serveur: {}) :\n\n{}", scan_path, e, summary)
+                                "text": format!("⚡ Projet `{}` analysé (mode autonome AST direct - serveur: {}) :\n\n{}", scan_path, e, summary)
                             }]), false)
                         }
                     }
@@ -550,8 +658,15 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
 
                     let p_buf = resolve_project_root(req_path);
-                    let scanner = ast_scanner::ProjectScanner::default();
-                    let g = scanner.scan_project(&p_buf);
+                    let is_vault_project = obsidian_vault::detect_project_type(&p_buf)
+                        .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
+                        .unwrap_or(false);
+                    let g = if is_vault_project {
+                        obsidian_vault::scan_obsidian_vault(&p_buf)
+                            .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
+                    } else {
+                        ast_scanner::ProjectScanner::default().scan_project(&p_buf)
+                    };
 
                     let effective_has_violation = if cwe_id.is_some() || severity.is_some() {
                         Some(true)
@@ -579,9 +694,16 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         let max_depth = arguments.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
                         let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
 
-                        let p_buf = resolve_project_root(req_path);
-                        let scanner = ast_scanner::ProjectScanner::default();
-                        let g = scanner.scan_project(&p_buf);
+                    let p_buf = resolve_project_root(req_path);
+                    let is_vault_project = obsidian_vault::detect_project_type(&p_buf)
+                        .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
+                        .unwrap_or(false);
+                    let g = if is_vault_project {
+                        obsidian_vault::scan_obsidian_vault(&p_buf)
+                            .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
+                    } else {
+                        ast_scanner::ProjectScanner::default().scan_project(&p_buf)
+                    };
                         let text = format_trace_flow_response(&g, symbol_id, direction, max_depth);
                         (json!([{ "type": "text", "text": text }]), false)
                     }
@@ -594,8 +716,15 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
 
                     let p_buf = resolve_project_root(req_path);
-                    let scanner = ast_scanner::ProjectScanner::default();
-                    let g = scanner.scan_project(&p_buf);
+                    let is_vault_project = obsidian_vault::detect_project_type(&p_buf)
+                        .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
+                        .unwrap_or(false);
+                    let g = if is_vault_project {
+                        obsidian_vault::scan_obsidian_vault(&p_buf)
+                            .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
+                    } else {
+                        ast_scanner::ProjectScanner::default().scan_project(&p_buf)
+                    };
                     let text = format_violations_response(&g, severity, cwe_id, file_pattern);
                     (json!([{ "type": "text", "text": text }]), false)
                 }
@@ -1089,12 +1218,13 @@ mod tests {
         let resp = handle_mcp_request(req, 3030, ".").await.expect("tools/list response");
         let res = resp.result.expect("tools/list result");
         let tools = res["tools"].as_array().expect("tools array");
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 9);
 
         let expected_tools = [
             ("aetherscope_get_graph_summary", true, false, true, false),
             ("aetherscope_get_active_target", true, false, true, false),
             ("aetherscope_search_symbols", true, false, true, false),
+            ("aetherscope_switch_view_mode", false, false, true, false),
             ("aetherscope_manage_tasks", false, false, false, false),
             ("aetherscope_verify_patch", true, false, true, false),
             ("aetherscope_chat", false, false, false, false),
@@ -1462,5 +1592,149 @@ mod tests {
         };
         let resp_scan = handle_mcp_request(req_scan, 3030, ".").await.expect("scan_with_plugins response");
         assert_eq!(resp_scan.result.expect("result present")["isError"], false);
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_switch_view_mode_valid() {
+        for mode in &["code", "vault"] {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                id: Some(json!(701)),
+                method: "tools/call".to_string(),
+                params: Some(json!({
+                    "name": "aetherscope_switch_view_mode",
+                    "arguments": {
+                        "mode": mode,
+                        "path": "."
+                    }
+                })),
+            };
+            let resp = handle_mcp_request(req, 3030, ".").await.expect("switch_view_mode response");
+            let res = resp.result.expect("result present");
+            assert_eq!(res["isError"], false);
+            let content = res["content"].as_array().expect("content array");
+            assert!(!content.is_empty());
+            let text = content[0]["text"].as_str().expect("text content");
+            assert!(text.contains(mode), "Expected response to mention switched mode '{}'", mode);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_switch_view_mode_invalid() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(702)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_switch_view_mode",
+                "arguments": {
+                    "mode": "invalid_mode"
+                }
+            })),
+        };
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("invalid mode response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], true);
+        let text = res["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("doit être soit 'code' soit 'vault'"));
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_get_graph_summary_vault_reporting() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp_dir.path().join(".obsidian")).unwrap();
+        std::fs::write(
+            temp_dir.path().join("Architecture.md"),
+            "---\ntags:\n  - kb/architecture\n  - core\naliases:\n  - ArchSpec\n---\n# Architecture\nSee [[Overview]] and ![[diagram.png]].",
+        ).unwrap();
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(703)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_get_graph_summary",
+                "arguments": {
+                    "path": temp_dir.path().to_str().unwrap(),
+                    "rescan": true
+                }
+            })),
+        };
+
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("get_graph_summary response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+        let text = res["content"][0]["text"].as_str().unwrap();
+
+        assert!(text.contains("Type de Projet"), "Expected Type de Projet in summary");
+        assert!(text.contains("Obsidian Vault"), "Expected Obsidian Vault classification in summary");
+        assert!(text.contains("Notes Markdown"), "Expected Notes Markdown metric in summary");
+        assert!(text.contains("Wikilinks"), "Expected Wikilinks metric in summary");
+        assert!(text.contains("Tags uniques"), "Expected Tags uniques metric in summary");
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_get_active_target_note_bubble() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp_dir.path().join(".obsidian")).unwrap();
+        std::fs::write(
+            temp_dir.path().join("Guide.md"),
+            "---\ntags:\n  - guide/install\nstatus: ready\n---\n# Installation Guide\nDetailed steps to run.\n## Prerequisites\nRust 1.80+ required.\nSee [[Configuration#Advanced|Setup]].",
+        ).unwrap();
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(704)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_get_active_target",
+                "arguments": {
+                    "symbol_id": "Guide",
+                    "path": temp_dir.path().to_str().unwrap()
+                }
+            })),
+        };
+
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("get_active_target note response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+        let text = res["content"][0]["text"].as_str().unwrap();
+
+        assert!(text.contains("Cible Note Obsidian"), "Expected Note header in target response");
+        assert!(text.contains("Guide"), "Expected note name in response");
+        assert!(text.contains("guide/install"), "Expected tag in response");
+        assert!(text.contains("Prerequisites"), "Expected section heading in response");
+        assert!(text.contains("Configuration"), "Expected outgoing wikilink target in response");
+    }
+
+    #[tokio::test]
+    async fn test_tool_aetherscope_search_symbols_note_and_tags() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp_dir.path().join(".obsidian")).unwrap();
+        std::fs::write(
+            temp_dir.path().join("Security.md"),
+            "---\ntags:\n  - security/sast\naliases:\n  - SecGuide\n---\n# Security Policies\nAudit guidelines.",
+        ).unwrap();
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(705)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_search_symbols",
+                "arguments": {
+                    "query": "#security/sast",
+                    "path": temp_dir.path().to_str().unwrap()
+                }
+            })),
+        };
+
+        let resp = handle_mcp_request(req, 3030, ".").await.expect("search_symbols tag response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+        let text = res["content"][0]["text"].as_str().unwrap();
+
+        assert!(text.contains("Security"), "Expected Security note found in search results");
+        assert!(text.contains("«Note»") || text.contains("Note"), "Expected note stereotype/status badge");
     }
 }

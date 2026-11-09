@@ -6874,3 +6874,111 @@
 
     }
 
+
+/* =========================================================================
+   MILESTONE M3: DUAL-VISION TOGGLE (Code AST vs Obsidian Vault Notes)
+   ========================================================================= */
+
+.aether-capsule-group.view-mode-capsule {
+  background: rgba(10, 16, 32, 0.92);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  padding: 2px 3px;
+  gap: 2px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+
+.aether-capsule-group.view-mode-capsule:hover {
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.view-toggle-btn {
+  font-family: var(--font-ui);
+  font-size: 0.69rem !important;
+  font-weight: 600 !important;
+  padding: 3px 9px !important;
+  border-radius: 999px !important;
+  border: none !important;
+  background: transparent !important;
+  color: #94a3b8 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.view-toggle-btn .view-mode-icon {
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.view-toggle-btn:hover:not(:disabled):not(.disabled) {
+  color: #f1f5f9 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Active State: Code (Cyan theme) */
+#btn-view-mode-code.active {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.35), rgba(56, 189, 248, 0.22)) !important;
+  color: #38bdf8 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+}
+
+/* Active State: Vault Notes (Obsidian Purple/Violet theme) */
+#btn-view-mode-vault.active {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.38), rgba(168, 85, 247, 0.25)) !important;
+  color: #f5d0fe !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(192, 132, 252, 0.55) !important;
+}
+
+/* Pulse dot on vault button when active or available */
+.view-mode-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #64748b;
+  display: inline-block;
+  transition: all 0.2s ease;
+}
+
+#btn-view-mode-vault.active .view-mode-dot {
+  background: #c084fc;
+  box-shadow: 0 0 8px #c084fc;
+  animation: pulseGlow 1.8s infinite;
+}
+
+/* Disabled State (PureCode where Vault is unavailable) */
+.view-toggle-btn:disabled,
+.view-toggle-btn.disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(80%);
+  pointer-events: none;
+}
+
+/* Dropdown menu items for view switcher */
+.aether-dropdown-item.active-vision-mode {
+  background: rgba(56, 189, 248, 0.16) !important;
+  color: #38bdf8 !important;
+  font-weight: 700;
+}
+
+.aether-dropdown-item.active-vision-mode.vault {
+  background: rgba(168, 85, 247, 0.18) !important;
+  color: #d8b4fe !important;
+}
+
+.aether-dropdown-item:disabled,
+.aether-dropdown-item.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}

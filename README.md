@@ -5,7 +5,7 @@
 ### **Cockpit Spatial d'Architecture WebGL 2  • Linter SAST Zero-Day (185+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.2.0_Zig_%26_C%23_SSA_Taint_SCA_Semgrep-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.2.1_Zig_%26_C%23_SSA_Taint_SCA_Semgrep_Obsidian_Vault-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -39,7 +39,7 @@
 ## 📌 Sommaire Exécutif
 
 1. [⚡ Qu'est-ce qu'AetherScope V2 ?](#-quest-ce-quaetherscope-v2-)
-2. [🧬 Nouveautés V2.2 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow & SCA Reachable](#-nouveautés-v22--support-zig--cnet-semgrep-communautaire-ssa-dataflow--sca-reachable)
+2. [🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian](#-nouveautés-v221--support-zig--cnet-semgrep-communautaire-ssa-dataflow-sca-reachable--mode-vault-obsidian)
 3. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
 4. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
 5. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 185+ Règles CWE](#-moteur-sast-chasse-zero-day--catalogue-des-185-règles-cwe)
@@ -56,23 +56,41 @@
 
 
 
-## 🧬 Nouveautés V2.2 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow & SCA Reachable
+## 🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian
 
-### 1. ⚡ Support Natif Zig (`ast-scanner` + 15 Règles CWE + Taint Tracking)
+### 1. 📓 Mode Coffre Obsidian & Dual-Vision Cockpit (Crate Dédiée `crates/obsidian-vault`)
+- **Détection Automatique & Classification Tri-Mode :** Détecte automatiquement la nature du répertoire cible à chaque scan :
+  - **`PureObsidianVault`** : Coffre de notes pur (présence de `.obsidian/` ou densité de wikilinks, 0 code) — vue Notes par défaut.
+  - **`PureCode`** : Projet de code classique (Rust, C#, Zig, PHP, Python, etc.) — vue Architecture Code.
+  - **`Mixed`** : Répertoire hybride combinant code source et base de connaissances / documentation Obsidian — **propose les deux visions avec bascule dynamique instantanée**.
+- **Parseur Markdown & Syntaxe Obsidian Complète (`parser.rs`) :**
+  - **Wikilinks simples & alias :** `[[note]]`, `[[note|label personnalisé]]`, résolution par chemin relatif et par nom de fichier (stem).
+  - **Ancres de section & Block Refs :** `[[note#Titre Section]]`, auto-ancres `[[#Titre]]` et références de blocs `[[note#^block-id]]`.
+  - **Transclusions / Inclusions média & notes :** `![[Diagramme.png]]`, `![[Note#Section]]` matérialisant des liaisons de rendu d'inclusions (`EdgeType::Render`).
+  - **Tags hiérarchiques & Frontmatter YAML :** Extraction des tags inline `#tag`, `#projet/roadmap`, des attributs et métadonnées YAML (`tags: [...]`, `aliases: [...]`, attributs sur-mesure) avec masquage strict des blocs de code et commentaires CommonMark.
+  - **Backlinks & Ghost Notes :** Calcul automatique des backlinks bidirectionnels (`in_degree`, `out_degree`) et matérialisation de bulles stellaires «GhostNote» pour les liens non encore rédigés.
+- **Sécurité & Confinement Strict (`confinement.rs` — Zéro évasion CWE-22) :**
+  - Module `PathGuard` et prison logicielle `TargetJail` : rejet systématique des traversées (`..`), chemins réseau UNC (`\\server\share`), lettres de lecteurs (`C:\Windows`), octets nuls (`\0`) et liens symboliques pointant hors de la racine.
+- **Bascule Dual-Vision WebGL2 en Temps Réel :**
+  - Sélecteur de vision dans la barre `#serverbar` et le menu *Vision* avec raccourcis <kbd>Alt</kbd> + <kbd>1</kbd> (Code) et <kbd>Alt</kbd> + <kbd>2</kbd> (Vault Notes).
+  - Permutation fluide du graphe sans rechargement de page via `POST /api/view_mode` et mise à jour de la physique GPU off-thread (couche `docs` intégrée).
+  - **Export Autonome Dual-Vision :** L'export standalone HTML (`aetherscope_viewer.html` et démo `docs/index.html`) embarque les deux topologies (`window.__AETHERSCOPE_DUAL_GRAPH__`) pour basculer hors-ligne sans serveur.
+
+### 2. ⚡ Support Natif Zig (`ast-scanner` + 15 Règles CWE + Taint Tracking)
 - **Extraction AST & Lexer Zig (`scanner.rs`, `lexer.rs`) :** Analyse parallèle des `struct`, `packed struct`, `extern struct`, `union(enum)`, `error`, `pub fn`, `@import` et `@cImport`, avec masquage lexical des chaînes multilignes `\\` et troncature automatique des blocs `test "..." {}`.
 - **15 Règles SAST Zig (`zig_rules.rs`) :**
   - **Mémoire & Pointeurs :** `CVE-ZIG-USE-AFTER-FREE` (`CWE-416`), `CVE-ZIG-RAW-ALLOCATOR-LEAK` (`CWE-401`), `CVE-ZIG-STACK-ADDRESS-RETURN` (`CWE-562`), `CVE-ZIG-UNINITIALIZED-MEMORY` (`CWE-457`), `CVE-ZIG-INSECURE-POINTER-CAST` (`CWE-843`).
   - **Arithmétique, SIMD & Compilateur :** `CVE-ZIG-INTEGER-OVERFLOW-WRAPPING` (`+%`/`-%`/`*%`, `CWE-190`), `CVE-ZIG-SIMD-VECTOR-UNALIGNED-OOB` (`@Vector`, `CWE-125`), `CVE-ZIG-RUNTIME-SAFETY-DISABLED` (`@setRuntimeSafety(false)`, `CWE-676`), `CVE-ZIG-UNHANDLED-ERROR-UNION` (`_ = fallible()`, `CWE-703`).
   - **Interopérabilité C-ABI, OS & Crypto :** `CVE-ZIG-BUFFER-OVERRUN-C-INTEROP` (`CWE-119`), `CVE-ZIG-UNPROTECTED-C-FORMAT-STRING` (`CWE-134`), `CVE-ZIG-COMMAND-INJECTION` (`std.process.Child`, `CWE-78`), `CVE-ZIG-PATH-TRAVERSAL` (`CWE-22`), `CVE-ZIG-TLS-VERIFY-DISABLED` (`CWE-295`), `CVE-ZIG-WEAK-PRNG-CRYPTO` (`DefaultPrng`, `CWE-338`).
 
-### 2. 🔷 Support Natif C# / .NET 8+ (`ast-scanner` + 20 Règles CWE + Taint Tracking)
+### 3. 🔷 Support Natif C# / .NET 8+ (`ast-scanner` + 20 Règles CWE + Taint Tracking)
 - **Extraction AST & Lexer C# (`scanner.rs`, `lexer.rs`) :** Analyse des `namespace` (file-scoped et block), `class`, `record`, `struct`, `interface`, propriétés, méthodes `async`/`Task<T>`, endpoints ASP.NET Core (`[HttpGet]`, `[HttpPost]`, `[Route]`, Minimal APIs `app.MapGet`/`MapPost`) et masquage des chaînes verbatim `@"..."` et raw `"""..."""`.
 - **20 Règles SAST C# / .NET (`csharp_rules.rs`) :**
   - **Injections & RCE :** `CVE-CS-INSECURE-DESERIALIZATION` (`BinaryFormatter`/`TypeNameHandling`, `CWE-502`), `CVE-CS-SQL-INJECTION` (`SqlCommand`/`ExecuteSqlRaw`/Dapper, `CWE-89`), `CVE-CS-COMMAND-INJECTION` (`Process.Start`, `CWE-78`), `CVE-CS-UNSAFE-REFLECTION-INVOKE` (`Type.GetType`/`CSharpScript`, `CWE-470`), `CVE-CS-XXE-INJECTION` (`CWE-611`), `CVE-CS-LDAP-INJECTION` (`CWE-90`).
   - **Web, API & ASP.NET Core :** `CVE-CS-SSRF-HTTPCLIENT` (`CWE-918`), `CVE-CS-XSS-RAW-HTML` (`Html.Raw`/`HtmlString`, `CWE-79`), `CVE-CS-OPEN-REDIRECT` (`CWE-601`), `CVE-CS-MASS-ASSIGNMENT` (`TryUpdateModelAsync`, `CWE-915`), `CVE-CS-CSRF-DISABLED` (`[IgnoreAntiforgeryToken]`, `CWE-352`), `CVE-CS-PATH-TRAVERSAL` (`CWE-22`), `CVE-CS-SENSITIVE-ERROR-EXPOSURE` (`ex.StackTrace`, `CWE-209`).
   - **Auth, Crypto & Runtime :** `CVE-CS-JWT-VALIDATION-BYPASS` (`TokenValidationParameters`, `CWE-347`), `CVE-CS-TLS-CERT-BYPASS` (`DangerousAcceptAnyServerCertificateValidator`, `CWE-295`), `CVE-CS-HARDCODED-CREDENTIALS` (`CWE-798`), `CVE-CS-WEAK-CRYPTOGRAPHY` (`MD5`/`SHA1`/`DES`/`ECB`, `CWE-327`), `CVE-CS-INSECURE-RANDOM` (`System.Random`, `CWE-330`), `CVE-CS-REDOS-UNBOUNDED-REGEX` (`CWE-1333`), `CVE-CS-UNSAFE-STACKALLOC-OVERFLOW` (`stackalloc`, `CWE-787`).
 
-### 3. 🧬 Règles Semgrep Communautaires (hors-ligne, sans compte Cloud)
+### 4. 🧬 Règles Semgrep Communautaires (hors-ligne, sans compte Cloud)
 - **22 règles OWASP Top 10 / CWE Top 25** embarquées dans le binaire (`community_owasp_cwe.yaml`, `community_bundle.rs`), actives dès le premier lancement.
 - **Synchronisation à la demande** et rechargement à chaud (hot-reload) dans `.aether/plugins/` :
   ```bash
@@ -81,11 +99,11 @@
   aether-plugin-tool.exe import-semgrep --input ./semgrep-rules --output .aether/plugins/imported
   ```
 
-### 4. 🔗 True Dataflow / SSA Taint Tracking Inter-Procédural
+### 5. 🔗 True Dataflow / SSA Taint Tracking Inter-Procédural
 - Module `crates/core-graph/src/dataflow/` : versioning exact des variables (`SsaVar`), chaînes def-use, propagation à travers les appels, parcours résistant aux cycles.
 - **Catalogue de sanitizers par CWE** (`sanitizer_catalog.rs`) : une donnée passée par `sanitize(x)` ne déclenche plus d'alerte au Sink. Trace exacte de propagation sur les flux non assainis.
 
-### 5. 📦 SCA Reachable Dependencies (OSV.dev)
+### 6. 📦 SCA Reachable Dependencies (OSV.dev)
 - Parseurs `Cargo.lock`, `package-lock.json`, `composer.lock` (`crates/security-linter/src/sca/`).
 - Requêtes OSV.dev avec **cache disque persistant signé BLAKE3** : scans hors-ligne après la première synchronisation.
 - Croisement avec le graphe d'appels : seules les dépendances vulnérables dont la fonction est **réellement appelée depuis un Endpoint** sont marquées atteignables.
@@ -195,6 +213,8 @@ Le serveur Axum embarqué sert le cockpit spatial directement sur la route racin
 | `POST /api/tasks/delete` | Supprime une tâche et met à jour `.aether/TASKS_SUMMARY.md`. |
 | `GET` / `POST /api/settings` | Lit ou sauvegarde les exclusions et l'activation granulaire des 185+ Zero-Day Patterns & CWE Rules. |
 | `POST /api/export` | Exporte le graphe interactif en un fichier autonome `aetherscope_viewer.html`. |
+| `GET /api/project/status` | Rapport de détection du projet (type: `PureObsidianVault`, `PureCode`, `Mixed`, mode actif, modes supportés). |
+| `POST /api/view_mode` | Permutation instantanée du graphe actif (`"code"` ou `"vault"`) sans rechargement de page. |
 
 ---
 
@@ -239,7 +259,7 @@ AetherScope V2 compile un second exécutable natif dédié aux agents IA : **`ae
 ```mermaid
 flowchart TD
     AI["🤖 Agent IA (Antigravity / Claude / Cursor)"] <-->|"JSON-RPC 2.0 (stdio)"| MCP["⚙️ aetherscope-mcp.exe"]
-    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 9 Outils avec Safety Hints & isError Canonique"]
+    MCP -->|"Capabilities: Tools"| TOOLS["🛠️ 18 Outils avec Safety Hints & isError Canonique"]
     MCP -->|"Capabilities: Resources"| RES["📑 4 Ressources URI 'aether://' (Graph, Audit, Manifest, Tasks)"]
     MCP -->|"Capabilities: Prompts"| PROMPTS["💬 3 Prompts Prêts à l'Emploi (CWE, Game Server, Contracts)"]
     MCP -->|"Cockpit Actif (Port 3030)"| LIVE["🌐 Serveur Axum Temps Réel"]
@@ -254,13 +274,13 @@ flowchart TD
 
 ---
 
-### Catalogue Exhaustif des 17 Outils MCP & Conformité M8ven (Score 98+/100)
+### Catalogue Exhaustif des 18 Outils MCP & Conformité M8ven (Score 98+/100)
 
 > **Protocole MCP 2024-11-05 & Due Diligence :** Tous les outils exposent explicitement leurs annotations sémantiques et hints de sécurité (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), des schémas JSON stricts avec exemples concrets (`additionalProperties: false`, `examples: [...]`), ainsi qu'une encapsulation standardisée des erreurs (`isError: true/false`), garantissant une exécution prévisible pour les agents autonomes.
 
 | Outil MCP | Hints M8ven & Sécurité | Paramètres Clés | Impact Opérationnel & Synchronisation Cockpit |
 | :--- | :--- | :--- | :--- |
-| **`aetherscope_get_graph_summary`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `path?` | Retourne l'architecture globale du projet : nombre de nœuds, flux, répartition des dossiers, score de santé et décompte des violations CVE. |
+| **`aetherscope_get_graph_summary`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `path?` | Retourne l'architecture globale du projet : nombre de nœuds, flux, répartition des dossiers, score de santé, décompte des violations CVE, et statistiques du coffre Obsidian (notes, liens, mode de vue actif). |
 | **`aetherscope_get_active_target`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `symbol_id` | Extrait le contexte chirurgical d'un symbole : code, docstring, **flux entrants/sortants classés en 6 catégories** (UI, HTTP, WS, DB, Contrats, Appels), règles EARS et tâches liées. |
 | **`aetherscope_teleport_camera`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `target`, `action`, `details` | **Téléporte la caméra 3D du cockpit** sur le symbole ou dossier ciblé par l'IA, trace le fil d'Ariane stellaire et affiche l'action en cours dans le bandeau de télémétrie. |
 | **`aetherscope_scan_project`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `path?` | Déclenche à chaud une ré-analyse AST multithread et un audit SAST complet (< 100 ms) et rafraîchit le graphe WebGL 2. |
@@ -269,7 +289,7 @@ flowchart TD
 | **`aetherscope_list_tasks`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `status_filter?` | Liste toutes les tâches actives/terminées et synchronise automatiquement `.aether/TASKS_SUMMARY.md`. |
 | **`aetherscope_send_chat_message`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: false`<br>`openWorldHint: false` | `text`, `thought?`, `target_symbol?` | Publie un compte-rendu ou une question dans la **Console Chat Copilot** du cockpit, avec affichage dédié des réflexions internes `<thought>` et bouton de centrage caméra. |
 | **`aetherscope_get_chat_history`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | *(aucun)* | Lit l'historique des messages échangés dans le cockpit pour maintenir une continuité conversationnelle parfaite. |
-| **`aetherscope_search_symbols`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `query`, `layer?`, `kind?`, `limit?` | Recherche ultra-rapide de symboles dans l'AST par nom, regex ou stéréotype architectural. |
+| **`aetherscope_search_symbols`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `query`, `layer?`, `kind?`, `limit?` | Recherche ultra-rapide unifiée de symboles AST et de notes Obsidian Markdown par nom, regex ou stéréotype architectural (`«Note»`, `«GhostNote»`, etc.). |
 | **`aetherscope_trace_flow`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `symbol_id`, `direction?`, `max_depth?` | Trace les flux de données et dépendances directes amont et aval d'un symbole. |
 | **`aetherscope_query_violations`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `severity?`, `cwe_id?`, `file_pattern?` | Requête et filtre les violations de sécurité SAST et règles CWE détectées sur l'ensemble du projet. |
 | **`aetherscope_list_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugins_dir?`, `path?` | **[Nouveau v2.0.7]** Liste tous les plugins de sécurité SAST et règles CWE déclaratives chargées depuis `.aether/plugins/`. |
@@ -277,6 +297,7 @@ flowchart TD
 | **`aetherscope_scan_with_plugins`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `target_path`, `plugins_dir?` | **[Nouveau v2.0.7]** Audite un fichier ou dossier avec les plugins de règles personnalisés et remonte les violations et remédiations. |
 | **`aetherscope_upsert_plugin_rule`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `plugin_name`, `rule_id`, `cwe_id`, `name`, `severity`, `description`, `remediation`, `file_extensions`, `test_cases?` | **[Nouveau v2.0.7]** Permet à l'IA d'écrire, modifier et certifier en direct une règle de sécurité YAML persistée dans `.aether/plugins/`. |
 | **`aetherscope_verify_patch`** | `readOnlyHint: true`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `files_modified` | **[Nouveau v2.1.0]** Pare-feu IA temps réel (< 50 ms) : valide la conformité des patchs avant commit (contrats EARS, `RULE_FORBIDDEN_IMPORT`, `RULE_MAX_LINES`, SAST incrémental 150+ CWEs, Reachability Source-to-Sink et signatures BLAKE3). Retourne `[PATCH_APPROVED]` ou `[PATCH_REJECTED]` avec caméra 3D. |
+| **`aetherscope_switch_view_mode`** | `readOnlyHint: false`<br>`destructiveHint: false`<br>`idempotentHint: true`<br>`openWorldHint: false` | `mode` (`"code"` \| `"vault"`) | **[Nouveau v2.2.1]** Permute instantanément la vue active du graphe entre la topologie de code AST et le graphe de connaissances Obsidian Notes, synchronisant l'état du Cockpit WebGL 2 en temps réel. |
 
 ---
 
@@ -459,10 +480,17 @@ aether-engine/
     ├── arch-templates/                     # 5. Hub de Topologies & Scaffolding Multi-Stack
     │   └── src/templates.rs                # Générateur de squelettes (Rust, Python uv, Node pnpm, MMO/Web3)
     │
-    └── desktop-shell/                      # 6. Exécutable Desktop Natif (tao/wry) & Serveur MCP
+    ├── obsidian-vault/                     # 6. Moteur Coffre Obsidian & Confinement Sécurisé
+    │   ├── src/confinement.rs              # PathGuard & TargetJail (Résistance CWE-22, isolation lexicale/canonique)
+    │   ├── src/detector.rs                 # Détection déterministe (PureObsidianVault, PureCode, Mixed)
+    │   ├── src/parser.rs                   # Parseur Obsidian (Wikilinks [[...]], transclusions, tags, frontmatter YAML)
+    │   ├── src/graph_builder.rs            # Projection en SymbolBubble & AffiliationEdge, backlinks & GhostNotes
+    │   └── src/types.rs                    # Structures typées, cibles de liens, ancres de blocs et métadonnées
+    │
+    └── desktop-shell/                      # 7. Exécutable Desktop Natif (tao/wry) & Serveur MCP
         ├── src/main.rs                     # Fenêtre native WebView2 GPU, serveur Axum (port 3030)
         ├── src/mcp_main.rs                 # Binaire autonome aetherscope-mcp.exe (Stdio JSON-RPC 2.0)
-        ├── src/mcp.rs                      # Implémentation des 9 outils MCP avec fallback direct sur disque
+        ├── src/mcp.rs                      # Implémentation des 18 outils MCP avec fallback direct sur disque
         ├── src/api_routes.rs               # Modèles DTO, signature BLAKE3, scaffolding & dialogues OS natifs
         ├── src/viewer.rs                   # Compilateur d'assets et exportateur HTML standalone
         └── assets/                         # Cockpit Frontend modulaire (Zéro framework lourd, 100% natif)
@@ -667,6 +695,8 @@ Basculez instantanément entre 4 topologies géométriques interpolées à 120 F
 | :---: | :--- |
 | <kbd>Ctrl</kbd> + <kbd>K</kbd> ou <kbd>/</kbd> | **Omnibox Deep Search :** Recherche instantanée de dossiers, fichiers, fonctions, classes, Zero-Day patterns & CWE. |
 | <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> / <kbd>4</kbd> | **Layouts `Z-1` à `Z-4` :** Bascule entre *Obsidian Galaxy*, *Système 7 Couches*, *Flux DAG* et *Matrice UML*. |
+| <kbd>Alt</kbd> + <kbd>1</kbd> | **Vision Code AST :** Bascule l'affichage du cockpit sur le graphe d'architecture logicielle. |
+| <kbd>Alt</kbd> + <kbd>2</kbd> | **Vision Coffre Obsidian :** Bascule l'affichage sur le graphe de connaissances des notes Markdown. |
 | <kbd>F</kbd> | **Fit View :** Recadre la caméra avec lissage inertiel pour embrasser toute la galaxie. |
 | <kbd>X</kbd> | **Mode X-Ray Focus Tunnel :** Isole la chaîne causale amont/aval du symbole sélectionné. |
 | <kbd>D</kbd> | **Mode Dead Code Scanner :** Met en surbrillance les symboles et fichiers orphelins ($\text{in-degree} = 0$). |

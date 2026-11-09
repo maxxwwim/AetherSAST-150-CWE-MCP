@@ -1,4 +1,4 @@
-﻿#![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 #![recursion_limit = "512"]
 
 mod api_routes;
@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use tao::{
     dpi::LogicalSize,
@@ -468,27 +467,300 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Core pipeline executing deterministic project detection, dual vault/code scanning,
+/// state caching, SAST live audit, and cockpit HUD telemetry emission.
+pub async fn execute_project_pipeline(
+    state: &AppState,
+    path: PathBuf,
+    exclusions: Option<Vec<String>>,
+) -> core_graph::graph::AetherGraph {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let proj_display = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Projet".to_string());
+
+    let mut custom_excl = state.custom_exclusions.read().await.clone();
+    if let Some(req_excl) = exclusions {
+        custom_excl = req_excl.clone();
+        let mut excl_guard = state.custom_exclusions.write().await;
+        *excl_guard = req_excl;
+    }
+
+    // 1. Détection automatique du type de projet
+    let scan_path = path.clone();
+    let detection_report = tokio::task::spawn_blocking(move || {
+        obsidian_vault::detect_project_type(&scan_path)
+    })
+    .await
+    .unwrap_or_else(|_| {
+        Ok(obsidian_vault::ProjectDetectionReport::new(
+            obsidian_vault::DetectedProjectType::PureCode,
+            false,
+            None,
+            0,
+            0,
+            0,
+        ))
+    })
+    .unwrap_or_else(|_| {
+        obsidian_vault::ProjectDetectionReport::new(
+            obsidian_vault::DetectedProjectType::PureCode,
+            false,
+            None,
+            0,
+            0,
+            0,
+        )
+    });
+
+    let p_type = detection_report.project_type;
+
+    // 2. Scan selon la classification
+    let (active_graph, final_mode) = match p_type {
+        obsidian_vault::DetectedProjectType::PureObsidianVault => {
+            let scan_path = path.clone();
+            let vault_g = tokio::task::spawn_blocking(move || {
+                obsidian_vault::scan_obsidian_vault(&scan_path)
+            })
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or_else(|| core_graph::graph::AetherGraph::new(&proj_display));
+
+            *state.code_graph.write().await = None;
+            *state.vault_graph.write().await = Some(vault_g.clone());
+            (vault_g, "vault".to_string())
+        }
+        obsidian_vault::DetectedProjectType::PureCode => {
+            let scan_path = path.clone();
+            let excl = custom_excl.clone();
+            let code_g = tokio::task::spawn_blocking(move || {
+                let scanner = ProjectScanner::default();
+                scanner.scan_project_with_exclusions(&scan_path, &excl)
+            })
+            .await
+            .unwrap_or_else(|_| core_graph::graph::AetherGraph::new(&proj_display));
+
+            *state.code_graph.write().await = Some(code_g.clone());
+            *state.vault_graph.write().await = None;
+            (code_g, "code".to_string())
+        }
+        obsidian_vault::DetectedProjectType::Mixed => {
+            let scan_path1 = path.clone();
+            let scan_path2 = path.clone();
+            let excl = custom_excl.clone();
+
+            let (code_res, vault_res) = tokio::join!(
+                tokio::task::spawn_blocking(move || {
+                    let scanner = ProjectScanner::default();
+                    scanner.scan_project_with_exclusions(&scan_path1, &excl)
+                }),
+                tokio::task::spawn_blocking(move || {
+                    obsidian_vault::scan_obsidian_vault(&scan_path2)
+                })
+            );
+
+            let code_g = code_res.unwrap_or_else(|_| core_graph::graph::AetherGraph::new(&proj_display));
+            let vault_g = match vault_res {
+                Ok(Ok(g)) => g,
+                Ok(Err(e)) => {
+                    eprintln!("⚠️ [OBSIDIAN] Échec scan vault dans dossier mixte: {:?}", e);
+                    core_graph::graph::AetherGraph::new(&proj_display)
+                }
+                Err(err) => {
+                    eprintln!("⚠️ [OBSIDIAN] JoinError scan vault: {:?}", err);
+                    core_graph::graph::AetherGraph::new(&proj_display)
+                }
+            };
+
+            *state.code_graph.write().await = Some(code_g.clone());
+            *state.vault_graph.write().await = Some(vault_g.clone());
+
+            let current_view = state.active_view_mode.read().await.clone();
+            if current_view == "vault" {
+                (vault_g, "vault".to_string())
+            } else {
+                (code_g, "code".to_string())
+            }
+        }
+    };
+
+    // 3. Mise à jour de l'état partagé
+    *state.project_type.write().await = p_type;
+    *state.detection_report.write().await = Some(detection_report);
+    *state.active_view_mode.write().await = final_mode.clone();
+    *state.graph.write().await = active_graph.clone();
+    *state.project_root.write().await = path.clone();
+    state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+    // 4. Audit SAST si code présent
+    if let Some(ref code_g) = *state.code_graph.read().await {
+        let _ = AuditWriter::ensure_master_rules_file(&path);
+        let (violations, file_count) = extract_live_audit_from_graph(code_g);
+        let _ = AuditWriter::write_live_audit(&path, &violations, file_count);
+
+        if p_type == obsidian_vault::DetectedProjectType::PureCode {
+            let mut t_guard = state.telemetry.write().await;
+            let failles_count = violations
+                .iter()
+                .filter(|v| v.rule_id != "RULE_MAX_LINES" && v.severity != "WARNING" && !v.cve_id.contains("ARCH-BUDGET-EXCEEDED"))
+                .count();
+            *t_guard = Some(AiTelemetryEvent {
+                target: proj_display.clone(),
+                action: "Analyse AST & SAST Live".to_string(),
+                details: format!(
+                    "Codebase actualisée : {} nœuds, {} flux, {} failles SAST",
+                    code_g.nodes.len(),
+                    code_g.edges.len(),
+                    failles_count
+                ),
+                timestamp: now_ms,
+            });
+
+            let mut chat_guard = state.chat_messages.write().await;
+            chat_guard.push(AiChatMessage {
+                id: format!("msg_{}", now_ms),
+                sender: "system".to_string(),
+                text: format!(
+                    "⚡ Analyse terminée pour `{}` : {} symboles, {} liaisons, {} règles de sécurité auditées.",
+                    proj_display,
+                    code_g.nodes.len(),
+                    code_g.edges.len(),
+                    violations.len()
+                ),
+                target_symbol: Some(proj_display.clone()),
+                timestamp: now_ms,
+            });
+        }
+    }
+
+    // 5. Télémétrie HUD et Chat spécifiques Obsidian & Hybride
+    match p_type {
+        obsidian_vault::DetectedProjectType::PureObsidianVault => {
+            let mut t_guard = state.telemetry.write().await;
+            *t_guard = Some(AiTelemetryEvent {
+                target: proj_display.clone(),
+                action: "Scan Obsidian Vault".to_string(),
+                details: format!(
+                    "Obsidian Knowledge Base : {} notes & médias, {} liaisons",
+                    active_graph.nodes.len(),
+                    active_graph.edges.len()
+                ),
+                timestamp: now_ms,
+            });
+
+            let mut chat_guard = state.chat_messages.write().await;
+            chat_guard.push(AiChatMessage {
+                id: format!("msg_{}", now_ms),
+                sender: "system".to_string(),
+                text: format!(
+                    "⚡ Obsidian Vault chargé pour `{}` : {} notes, {} wikilinks & transclusions.",
+                    proj_display,
+                    active_graph.nodes.len(),
+                    active_graph.edges.len()
+                ),
+                target_symbol: Some(proj_display.clone()),
+                timestamp: now_ms,
+            });
+        }
+        obsidian_vault::DetectedProjectType::Mixed => {
+            let code_count = state.code_graph.read().await.as_ref().map(|g| g.nodes.len()).unwrap_or(0);
+            let vault_count = state.vault_graph.read().await.as_ref().map(|g| g.nodes.len()).unwrap_or(0);
+
+            let mut t_guard = state.telemetry.write().await;
+            *t_guard = Some(AiTelemetryEvent {
+                target: proj_display.clone(),
+                action: "Analyse Mixte (Code + Obsidian)".to_string(),
+                details: format!(
+                    "Dossier Mixte : {} symboles code, {} notes vault (vue active: {})",
+                    code_count,
+                    vault_count,
+                    final_mode
+                ),
+                timestamp: now_ms,
+            });
+
+            let mut chat_guard = state.chat_messages.write().await;
+            chat_guard.push(AiChatMessage {
+                id: format!("msg_{}", now_ms),
+                sender: "system".to_string(),
+                text: format!(
+                    "⚡ Projet Mixte analysé pour `{}` : {} symboles code, {} notes Obsidian. Bascule dynamique disponible !",
+                    proj_display,
+                    code_count,
+                    vault_count
+                ),
+                target_symbol: Some(proj_display.clone()),
+                timestamp: now_ms,
+            });
+        }
+        obsidian_vault::DetectedProjectType::PureCode => {}
+    }
+
+    active_graph
+}
+
 pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+
     let project_root = fs::canonicalize(Path::new(&args.path)).unwrap_or_else(|_| PathBuf::from(&args.path));
 
     AuditWriter::ensure_master_rules_file(&project_root)?;
 
-    let scanner = ProjectScanner::default();
-    let graph = scanner.scan_project(&project_root);
+    // 1. Detect project type
+    let detection_report = obsidian_vault::detect_project_type(&project_root).ok();
+    let project_type = detection_report
+        .as_ref()
+        .map(|r| r.project_type)
+        .unwrap_or(obsidian_vault::DetectedProjectType::PureCode);
+    let active_view_mode = detection_report
+        .as_ref()
+        .map(|r| r.default_view.clone())
+        .unwrap_or_else(|| "code".to_string());
 
-    let (all_violations, audited_files_count) = extract_live_audit_from_graph(&graph);
-    let _ = AuditWriter::write_live_audit(&project_root, &all_violations, audited_files_count);
+    // 2. Scan code graph if project has code
+    let code_graph = if project_type.is_code() || project_type.is_mixed() {
+        let scanner = ProjectScanner::default();
+        let g = scanner.scan_project(&project_root);
+        let (all_violations, audited_files_count) = extract_live_audit_from_graph(&g);
+        let _ = AuditWriter::write_live_audit(&project_root, &all_violations, audited_files_count);
+        Some(g)
+    } else {
+        None
+    };
 
-    let shared_state = Arc::new(AppState {
-        graph: RwLock::new(graph),
-        project_root: RwLock::new(project_root.clone()),
-        telemetry: RwLock::new(None),
-        chat_messages: RwLock::new(Vec::new()),
-        graph_version: std::sync::atomic::AtomicU64::new(1),
-        custom_exclusions: RwLock::new(Vec::new()),
-        active_cve_rules: RwLock::new(None),
-        ignored_cwes: RwLock::new(Vec::new()),
-    });
+    // 3. Scan vault graph if project has vault notes
+    let vault_graph = if project_type.is_vault() || project_type.is_mixed() {
+        match obsidian_vault::scan_obsidian_vault(&project_root) {
+            Ok(g) => Some(g),
+            Err(e) => {
+                eprintln!("⚠️ Warning: Obsidian vault scan failed: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // 4. Initial active graph matching default view mode
+    let initial_active_graph = match active_view_mode.as_str() {
+        "vault" => vault_graph.clone().or_else(|| code_graph.clone()),
+        _ => code_graph.clone().or_else(|| vault_graph.clone()),
+    }
+    .unwrap_or_else(|| core_graph::graph::AetherGraph::new("Project"));
+
+    let shared_state = Arc::new(AppState::new(
+        initial_active_graph,
+        project_root.clone(),
+        project_type,
+        active_view_mode,
+        code_graph,
+        vault_graph,
+        detection_report,
+    ));
 
     // FileWatcher background loop
     let watcher_root = project_root.clone();
@@ -505,19 +777,42 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
 
                 let changed = watcher.poll_changed_files();
                 if !changed.is_empty() {
-                    let custom_excl = watcher_state.custom_exclusions.read().await.clone();
-                    let scan_root = current_root.clone();
-                    if let Ok(updated_graph) = tokio::task::spawn_blocking(move || {
-                        let scanner = ProjectScanner::default();
-                        scanner.scan_project_with_exclusions(&scan_root, &custom_excl)
-                    })
-                    .await
-                    {
-                        let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
-                        let _ = AuditWriter::write_live_audit(&current_root, &violations, file_count);
-                        let mut graph_guard = watcher_state.graph.write().await;
-                        *graph_guard = updated_graph;
-                        watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let current_mode = watcher_state.get_active_view_mode().await;
+                    let has_md_changes = changed.iter().any(|p| p.extension().map_or(false, |ext| ext == "md"));
+                    let has_code_changes = changed.iter().any(|p| p.extension().map_or(false, |ext| ext != "md"));
+
+                    // Refresh vault graph if md changed or in vault mode
+                    if has_md_changes || current_mode == "vault" {
+                        let scan_root = current_root.clone();
+                        if let Ok(updated_vault) = tokio::task::spawn_blocking(move || {
+                            obsidian_vault::scan_obsidian_vault(&scan_root)
+                        }).await {
+                            if let Ok(v_graph) = updated_vault {
+                                *watcher_state.vault_graph.write().await = Some(v_graph.clone());
+                                if current_mode == "vault" {
+                                    *watcher_state.graph.write().await = v_graph;
+                                    watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                }
+                            }
+                        }
+                    }
+
+                    // Refresh code graph if code changed or in code mode
+                    if has_code_changes || current_mode == "code" {
+                        let custom_excl = watcher_state.custom_exclusions.read().await.clone();
+                        let scan_root = current_root.clone();
+                        if let Ok(updated_graph) = tokio::task::spawn_blocking(move || {
+                            let scanner = ProjectScanner::default();
+                            scanner.scan_project_with_exclusions(&scan_root, &custom_excl)
+                        }).await {
+                            let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
+                            let _ = AuditWriter::write_live_audit(&current_root, &violations, file_count);
+                            *watcher_state.code_graph.write().await = Some(updated_graph.clone());
+                            if current_mode == "code" {
+                                *watcher_state.graph.write().await = updated_graph;
+                                watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            }
+                        }
                     }
                 }
             }
@@ -548,6 +843,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     let state_ai_cli = shared_state.clone();
     let state_settings = shared_state.clone();
     let state_tasks = shared_state.clone();
+    let state_project_status = shared_state.clone();
+    let state_view_mode = shared_state.clone();
     let server_port = args.port;
 
     let app = axum::Router::new()
@@ -556,8 +853,17 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             axum::routing::get(move || {
                 let state = state_viewer.clone();
                 async move {
+                    let p_type = *state.project_type.read().await;
+                    let active_view = state.active_view_mode.read().await.clone();
+                    let code_g = state.code_graph.read().await;
+                    let vault_g = state.vault_graph.read().await;
                     let g = state.graph.read().await;
-                    let html = viewer::generate_standalone_html(&g);
+                    let html = viewer::generate_dual_standalone_html(
+                        code_g.as_ref().or(Some(&*g)),
+                        vault_g.as_ref(),
+                        p_type,
+                        &active_view,
+                    );
                     (
                         [(axum::http::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")],
                         axum::response::Html(html),
@@ -640,7 +946,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 let state = state_pick_proj.clone();
                 async move {
                     let chosen = tokio::task::spawn_blocking(|| {
-                        pick_folder_dialog("SÃ©lectionnez le projet Ã  ouvrir et analyser")
+                        pick_folder_dialog("Sélectionnez le projet à ouvrir et analyser")
                     })
                     .await
                     .ok()
@@ -648,28 +954,11 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
 
                     if let Some(folder) = chosen {
                         let path_str = folder.to_string_lossy().to_string();
-                        let custom_excl = state.custom_exclusions.read().await.clone();
-                        let scan_folder = folder.clone();
-                        let new_graph = tokio::task::spawn_blocking(move || {
-                            let scanner = ProjectScanner::default();
-                            scanner.scan_project_with_exclusions(&scan_folder, &custom_excl)
-                        })
-                        .await
-                        .unwrap_or_else(|_| core_graph::graph::AetherGraph::new("Project"));
-
-                        let _ = AuditWriter::ensure_master_rules_file(&folder);
-                        let (violations, file_count) = extract_live_audit_from_graph(&new_graph);
-                        let _ = AuditWriter::write_live_audit(&folder, &violations, file_count);
-
-                        let mut g_guard = state.graph.write().await;
-                        *g_guard = new_graph.clone();
-                        let mut p_guard = state.project_root.write().await;
-                        *p_guard = folder;
-                        state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let active_graph = execute_project_pipeline(&state, folder, None).await;
                         axum::Json(PickProjectResponse {
                             status: "ok".to_string(),
                             project_path: Some(path_str),
-                            graph: Some(new_graph),
+                            graph: Some(active_graph),
                         })
                     } else {
                         axum::Json(PickProjectResponse {
@@ -697,6 +986,57 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
+        // ─────────────────────────────────────────────────────────────────────────────
+        // M2: STATUT DE PROJET & BASCULE DE MODE DE VUE DUAL-VISION
+        // ─────────────────────────────────────────────────────────────────────────────
+        .route(
+            "/api/project/status",
+            axum::routing::get({
+                let state = state_project_status.clone();
+                move || {
+                    let state = state.clone();
+                    async move {
+                        let status_resp = state.get_project_status().await;
+                        axum::Json(status_resp)
+                    }
+                }
+            }),
+        )
+        .route(
+            "/api/view_mode",
+            axum::routing::post({
+                let state = state_view_mode.clone();
+                move |axum::extract::Json(req): axum::extract::Json<api_routes::ViewModeRequest>| {
+                    let state = state.clone();
+                    async move {
+                        use axum::response::IntoResponse;
+                        match state.switch_view_mode(&req.mode).await {
+                            Ok(graph) => (
+                                axum::http::StatusCode::OK,
+                                axum::Json(serde_json::to_value(graph).unwrap_or_default()),
+                            )
+                                .into_response(),
+                            Err(api_routes::ViewModeError::InvalidMode(err)) => (
+                                axum::http::StatusCode::BAD_REQUEST,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": err
+                                })),
+                            )
+                                .into_response(),
+                            Err(api_routes::ViewModeError::GraphNotAvailable(err)) => (
+                                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": err
+                                })),
+                            )
+                                .into_response(),
+                        }
+                    }
+                }
+            }),
+        )
         .route(
             "/api/analyze",
             axum::routing::post({
@@ -711,76 +1051,9 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         } else {
                             fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
                         };
-                        let mut custom_excl = state.custom_exclusions.read().await.clone();
-                        if let Some(req_excl) = req.exclusions {
-                            custom_excl = req_excl.clone();
-                            let mut excl_guard = state.custom_exclusions.write().await;
-                            *excl_guard = req_excl;
-                        }
-                        let scan_path = path.clone();
-                        let new_graph = tokio::task::spawn_blocking(move || {
-                            let scanner = ProjectScanner::default();
-                            scanner.scan_project_with_exclusions(&scan_path, &custom_excl)
-                        })
-                        .await
-                        .unwrap_or_else(|_| core_graph::graph::AetherGraph::new("Project"));
 
-                        let _ = AuditWriter::ensure_master_rules_file(&path);
-                        let (violations, file_count) = extract_live_audit_from_graph(&new_graph);
-                        let _ = AuditWriter::write_live_audit(&path, &violations, file_count);
-
-                        let now_ms = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-                        let proj_display = path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "Projet".to_string());
-
-                        // Ã‰met un Ã©vÃ©nement de tÃ©lÃ©mÃ©trie spatiale vers le HUD du Cockpit
-                        {
-                            let mut t_guard = state.telemetry.write().await;
-                            *t_guard = Some(AiTelemetryEvent {
-                                target: proj_display.clone(),
-                                action: "Analyse AST & SAST Live".to_string(),
-                                details: {
-                                    let failles_count = violations.iter().filter(|v| v.rule_id != "RULE_MAX_LINES" && v.severity != "WARNING" && !v.cve_id.contains("ARCH-BUDGET-EXCEEDED")).count();
-                                    format!(
-                                        "Codebase actualisÃ©e : {} nÅ“uds, {} flux, {} failles SAST",
-                                        new_graph.nodes.len(),
-                                        new_graph.edges.len(),
-                                        failles_count
-                                    )
-                                },
-                                timestamp: now_ms,
-                            });
-                        }
-
-                        // Journalise l'analyse dans le chat Copilot IA
-                        {
-                            let mut chat_guard = state.chat_messages.write().await;
-                            chat_guard.push(AiChatMessage {
-                                id: format!("msg_{}", now_ms),
-                                sender: "system".to_string(),
-                                text: format!(
-                                    "âš¡ Analyse terminÃ©e pour `{}` : {} symboles, {} liaisons, {} rÃ¨gles de sÃ©curitÃ© auditÃ©es.",
-                                    proj_display,
-                                    new_graph.nodes.len(),
-                                    new_graph.edges.len(),
-                                    violations.len()
-                                ),
-                                target_symbol: Some(proj_display),
-                                timestamp: now_ms,
-                            });
-                        }
-
-                        let mut g_guard = state.graph.write().await;
-                        *g_guard = new_graph.clone();
-                        let mut p_guard = state.project_root.write().await;
-                        *p_guard = path;
-                        state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        axum::Json(new_graph)
+                        let active_graph = execute_project_pipeline(&state, path, req.exclusions).await;
+                        axum::Json(active_graph)
                     }
                 }
             })
@@ -797,71 +1070,9 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         } else {
                             fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
                         };
-                        let custom_excl = state.custom_exclusions.read().await.clone();
-                        let scan_path = path.clone();
-                        let new_graph = tokio::task::spawn_blocking(move || {
-                            let scanner = ProjectScanner::default();
-                            scanner.scan_project_with_exclusions(&scan_path, &custom_excl)
-                        })
-                        .await
-                        .unwrap_or_else(|_| core_graph::graph::AetherGraph::new("Project"));
 
-                        let _ = AuditWriter::ensure_master_rules_file(&path);
-                        let (violations, file_count) = extract_live_audit_from_graph(&new_graph);
-                        let _ = AuditWriter::write_live_audit(&path, &violations, file_count);
-
-                        let now_ms = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-                        let proj_display = path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "Projet".to_string());
-
-                        // Ã‰met un Ã©vÃ©nement de tÃ©lÃ©mÃ©trie spatiale vers le HUD du Cockpit
-                        {
-                            let mut t_guard = state.telemetry.write().await;
-                            *t_guard = Some(AiTelemetryEvent {
-                                target: proj_display.clone(),
-                                action: "Analyse AST & SAST Live".to_string(),
-                                details: {
-                                    let failles_count = violations.iter().filter(|v| v.rule_id != "RULE_MAX_LINES" && v.severity != "WARNING" && !v.cve_id.contains("ARCH-BUDGET-EXCEEDED")).count();
-                                    format!(
-                                        "Codebase actualisÃ©e : {} nÅ“uds, {} flux, {} failles SAST",
-                                        new_graph.nodes.len(),
-                                        new_graph.edges.len(),
-                                        failles_count
-                                    )
-                                },
-                                timestamp: now_ms,
-                            });
-                        }
-
-                        // Journalise l'analyse dans le chat Copilot IA
-                        {
-                            let mut chat_guard = state.chat_messages.write().await;
-                            chat_guard.push(AiChatMessage {
-                                id: format!("msg_{}", now_ms),
-                                sender: "system".to_string(),
-                                text: format!(
-                                    "âš¡ Analyse terminÃ©e pour `{}` : {} symboles, {} liaisons, {} rÃ¨gles de sÃ©curitÃ© auditÃ©es.",
-                                    proj_display,
-                                    new_graph.nodes.len(),
-                                    new_graph.edges.len(),
-                                    violations.len()
-                                ),
-                                target_symbol: Some(proj_display),
-                                timestamp: now_ms,
-                            });
-                        }
-
-                        let mut g_guard = state.graph.write().await;
-                        *g_guard = new_graph.clone();
-                        let mut p_guard = state.project_root.write().await;
-                        *p_guard = path;
-                        state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        axum::Json(new_graph)
+                        let active_graph = execute_project_pipeline(&state, path, None).await;
+                        axum::Json(active_graph)
                     }
                 }
             }),
@@ -895,7 +1106,16 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let p_root = state.project_root.read().await;
                     let target_dir = req.path.map(PathBuf::from).unwrap_or_else(|| p_root.clone());
                     let out_path = target_dir.join("aetherscope_viewer.html");
-                    let html = viewer::generate_standalone_html(&g);
+                    let p_type = *state.project_type.read().await;
+                    let active_view = state.active_view_mode.read().await.clone();
+                    let code_g = state.code_graph.read().await;
+                    let vault_g = state.vault_graph.read().await;
+                    let html = viewer::generate_dual_standalone_html(
+                        code_g.as_ref().or(Some(&*g)),
+                        vault_g.as_ref(),
+                        p_type,
+                        &active_view,
+                    );
                     let _ = fs::write(&out_path, html);
                     axum::Json(ExportResponse {
                         status: "ok".to_string(),
