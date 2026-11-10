@@ -7,7 +7,7 @@
 
 ### 📋 Catalogue des 185+ Zero-Day Patterns & CWE Rules par Famille
 
-> 📖 *L'ensemble des règles est documenté de manière exhaustive avec leurs mécanismes d'audit dans le [Catalogue Officiel CWE_CATALOG.md](./CWE_CATALOG.md).*
+
 
 ### 1. Rust Bas-Niveau, LLVM Codegen, ABI, Unwind & OS Kernel
 
