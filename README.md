@@ -1,5 +1,9 @@
 <div align="center">
 
+<p align="center">
+  <img src="./assets/aetherscope-banner-logo.png" alt="AetherScope V2 Banner Logo" width="100%" style="border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);" />
+</p>
+
 # 🪐 AetherScope V2 (`aether-engine`)
 
 ### **WebGL 2 Architectural Space Cockpit • Zero-Day SAST Linter (185+ Zero-Day Patterns & CWE Rules) • BLAKE3 Cryptographic Governance • Native MCP Server & "Zero-Shell" AI Gateway**
