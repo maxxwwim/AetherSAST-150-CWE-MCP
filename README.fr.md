@@ -807,6 +807,18 @@ Ce projet est sous **Licence Source-Available Non-Commerciale ([PolyForm Noncomm
 
 ---
 
+## ☕ Soutien & Dons (Web3 / Ethereum)
+
+Si vous trouvez **AetherScope V2** utile pour vos recherches en cybersécurité, audits de smart contracts ou visualisation d'architecture, les pourboires et cafés sont toujours les bienvenus ! 🪐
+
+[![Ethereum](https://img.shields.io/badge/Dons_Ethereum-0xdE9b...7cDE-627EEA?style=for-the-badge&logo=ethereum&logoColor=white)](https://etherscan.io/address/0xdE9b40AA6E5dcA70E8Df3cF10C64D24974227cDE)
+
+```text
+ETH / ERC-20: 0xdE9b40AA6E5dcA70E8Df3cF10C64D24974227cDE
+```
+
+---
+
 <p align="center">
   <b>Français (Archive Version)</b> • <a href="./README.md">Switch to English Version 🇬🇧</a>
 </p>
