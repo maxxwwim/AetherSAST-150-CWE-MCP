@@ -949,11 +949,72 @@ function renderFolderRelations(folderName, folderNodes, edges) {
   relContainer.innerHTML = html;
 }
 
-// Markdown & Mermaid Rendering
-function renderVisualMermaid(code) {
-  const trimmed = code.trim();
+// =========================================================================
+// AETHERSCOPE V2 - ADVANCED MARKDOWN, MERMAID & ASSET ENGINE
+// =========================================================================
+
+function escapeHtml(str) {
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeForBacktick(str) {
+  return (str || '').replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function resolveDocAssetPath(src, docFilePath) {
+  if (!src) return '';
+  const trimmed = src.trim();
+  if (/^(https?:|\/\/|data:|blob:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  let clean = trimmed.replace(/^["']|["']$/g, '').replace(/\\/g, '/');
+  if (clean.startsWith('./')) clean = clean.substring(2);
+
+  let resolved = clean;
+  if (docFilePath && docFilePath.includes('/')) {
+    const docDir = docFilePath.substring(0, docFilePath.lastIndexOf('/'));
+    const parts = (docDir + '/' + clean).split('/');
+    const stack = [];
+    for (const p of parts) {
+      if (p === '.' || p === '') continue;
+      if (p === '..') {
+        if (stack.length > 0) stack.pop();
+      } else {
+        stack.push(p);
+      }
+    }
+    resolved = stack.join('/');
+  } else {
+    resolved = clean.replace(/^\.\.\//, '');
+  }
+
+  return `/api/raw_file?path=${encodeURIComponent(resolved)}`;
+}
+window.resolveDocAssetPath = resolveDocAssetPath;
+
+window.handleDocImageError = function(img) {
+  if (!img) return;
+  const rawSrc = img.getAttribute('data-raw-src') || img.src || '';
+  const alt = img.alt || 'Image';
+  const parentCard = img.closest('.doc-image-card');
+  const fallbackHtml = `<div class="doc-img-fallback"><span>🖼️</span> <span>[Image : <strong>${escapeHtml(alt)}</strong> — <code>${escapeHtml(rawSrc)}</code> (non trouvée localement)]</span></div>`;
+  if (parentCard) {
+    const body = parentCard.querySelector('.doc-image-body');
+    if (body) body.innerHTML = fallbackHtml;
+  } else {
+    img.outerHTML = fallbackHtml;
+  }
+};
+
+function renderBuiltinVisualDiagram(code) {
+  const trimmed = (code || '').trim();
   const firstLine = trimmed.split('\n')[0].trim().toLowerCase();
 
+  // 1. Sequence Diagram
   if (firstLine.startsWith('sequencediagram')) {
     const lines = trimmed.split('\n').slice(1);
     const steps = [];
@@ -966,17 +1027,10 @@ function renderVisualMermaid(code) {
       }
     });
 
-    let cardHtml = `
-      <div class="rendered-diagram-box">
-        <div class="rendered-diagram-header">
-          <span class="rendered-diagram-title">⏱️ DIAGRAMME DE SÉQUENCE</span>
-          <span class="token-pill" style="font-size:0.62rem; color:#38bdf8;">${steps.length} étapes</span>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-    `;
+    let html = `<div style="display:flex; flex-direction:column; gap:8px; width:100%; max-width:680px;">`;
     steps.forEach((st, idx) => {
       const isReturn = st.type.includes('--');
-      cardHtml += `
+      html += `
         <div class="diagram-seq-row" style="${isReturn ? 'border-style:dashed; opacity:0.9;' : ''}">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:0.62rem; color:#64748b; font-weight:700;">#${idx+1}</span>
@@ -988,76 +1042,991 @@ function renderVisualMermaid(code) {
         </div>
       `;
     });
-    cardHtml += `</div></div>`;
-    return cardHtml;
+    html += `</div>`;
+    return html;
   }
 
-  return `<pre><code>${escapeHtml(code.trim())}</code></pre>`;
+  // 2. Flowchart / Graph (TD, LR, TB, RL)
+  if (firstLine.startsWith('flowchart') || firstLine.startsWith('graph')) {
+    const lines = trimmed.split('\n').slice(1);
+    const nodesMap = new Map();
+    const edges = [];
+
+    function parseNodeToken(token) {
+      if (!token) return null;
+      let t = token.trim();
+      let m = t.match(/^([A-Za-z0-9_.-]+)\[["']?(.*?)["']?\]$/);
+      if (m) return { id: m[1], label: m[2] || m[1], shape: 'rect' };
+      m = t.match(/^([A-Za-z0-9_.-]+)\(\[(.*?)\]\)$/);
+      if (m) return { id: m[1], label: m[2] || m[1], shape: 'stadium' };
+      m = t.match(/^([A-Za-z0-9_.-]+)\[\((.*?)\)\]$/);
+      if (m) return { id: m[1], label: m[2] || m[1], shape: 'db' };
+      m = t.match(/^([A-Za-z0-9_.-]+)\(\((.*?)\)\)$/);
+      if (m) return { id: m[1], label: m[2] || m[1], shape: 'circle' };
+      m = t.match(/^([A-Za-z0-9_.-]+)\((.*?)\)$/);
+      if (m) return { id: m[1], label: m[2] || m[1], shape: 'round' };
+      m = t.match(/^([A-Za-z0-9_.-]+)\{(.*?)\}$/);
+      if (m) return { id: m[1], label: m[2] || m[1], shape: 'diamond' };
+      m = t.match(/^([A-Za-z0-9_.-]+)$/);
+      if (m) return { id: m[1], label: m[1], shape: 'rect' };
+      return { id: t, label: t, shape: 'rect' };
+    }
+
+    lines.forEach(line => {
+      let l = line.trim();
+      if (!l || l.startsWith('%%') || l.startsWith('subgraph') || l.startsWith('end') || l.startsWith('classDef') || l.startsWith('class ')) return;
+      const edgeRegex = /(.+?)\s*(<-->|-->|---|==>|-\.->)\s*(?:\|["']?(.*?)["']?\|\s*)?(.+)/;
+      const m = l.match(edgeRegex);
+      if (m) {
+        const rawLeft = m[1].trim();
+        const arrowType = m[2].trim();
+        const edgeLabel = m[3] ? m[3].trim() : '';
+        const rawRight = m[4].trim();
+
+        const nodeA = parseNodeToken(rawLeft);
+        const nodeB = parseNodeToken(rawRight);
+        if (nodeA && nodeB) {
+          if (!nodesMap.has(nodeA.id) || (nodeA.label !== nodeA.id)) nodesMap.set(nodeA.id, nodeA);
+          if (!nodesMap.has(nodeB.id) || (nodeB.label !== nodeB.id)) nodesMap.set(nodeB.id, nodeB);
+          edges.push({ from: nodeA.id, to: nodeB.id, arrow: arrowType, label: edgeLabel });
+        }
+      } else {
+        const singleNode = parseNodeToken(l);
+        if (singleNode && !nodesMap.has(singleNode.id)) {
+          nodesMap.set(singleNode.id, singleNode);
+        }
+      }
+    });
+
+    if (edges.length > 0 || nodesMap.size > 0) {
+      let html = `<div class="visual-flow-wrapper">`;
+      edges.forEach((e, idx) => {
+        const srcNode = nodesMap.get(e.from) || { label: e.from };
+        const tgtNode = nodesMap.get(e.to) || { label: e.to };
+        const isBidi = e.arrow.includes('<');
+        const arrowSymbol = isBidi ? '◀━━━━▶' : '━━━━▶';
+
+        html += `
+          <div class="visual-flow-row">
+            <div class="visual-flow-card ${idx === 0 ? 'root-card' : ''}">
+              <span style="font-size:0.9rem;">${srcNode.shape === 'db' ? '🗄️' : (srcNode.label.includes('AI') || srcNode.label.includes('Agent') ? '🤖' : '📦')}</span>
+              <span>${escapeHtml(srcNode.label)}</span>
+            </div>
+            <div class="visual-flow-connector">
+              <span style="color:#38bdf8; font-family:var(--font-mono); font-weight:800;">${arrowSymbol}</span>
+              ${e.label ? `<span class="visual-flow-badge">${escapeHtml(e.label)}</span>` : ''}
+            </div>
+            <div class="visual-flow-card target-card">
+              <span style="font-size:0.9rem;">${tgtNode.shape === 'db' ? '🗄️' : (tgtNode.label.includes('MCP') ? '⚙️' : '🎯')}</span>
+              <span>${escapeHtml(tgtNode.label)}</span>
+            </div>
+          </div>
+        `;
+      });
+      html += `</div>`;
+      return html;
+    }
+  }
+
+  // 3. Class Diagram
+  if (firstLine.startsWith('classdiagram')) {
+    const lines = trimmed.split('\n').slice(1);
+    const classes = [];
+    let curClass = null;
+
+    lines.forEach(line => {
+      const l = line.trim();
+      if (!l || l.startsWith('%%')) return;
+      const classMatch = l.match(/class\s+([A-Za-z0-9_]+)\s*\{?/);
+      if (classMatch) {
+        curClass = { name: classMatch[1], members: [] };
+        classes.push(curClass);
+        return;
+      }
+      if (l === '}') {
+        curClass = null;
+        return;
+      }
+      if (curClass) {
+        curClass.members.push(l);
+      }
+    });
+
+    if (classes.length > 0) {
+      let html = `<div style="display:flex; flex-wrap:wrap; gap:12px; justify-content:center; width:100%;">`;
+      classes.forEach(c => {
+        html += `
+          <div style="background:#090d16; border:1px solid rgba(56,189,248,0.4); border-radius:8px; overflow:hidden; min-width:180px; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+            <div style="background:rgba(14,23,47,0.95); border-bottom:1px solid rgba(56,189,248,0.25); padding:6px 12px; text-align:center;">
+              <span style="font-size:0.58rem; color:#94a3b8; text-transform:uppercase;">«Class»</span>
+              <div style="font-weight:700; color:#38bdf8; font-size:0.75rem;">${escapeHtml(c.name)}</div>
+            </div>
+            <div style="padding:6px 10px; font-family:var(--font-mono); font-size:0.65rem; color:#cbd5e1; display:flex; flex-direction:column; gap:2px;">
+              ${c.members.map(m => `<div>${escapeHtml(m)}</div>`).join('')}
+            </div>
+          </div>
+        `;
+      });
+      html += `</div>`;
+      return html;
+    }
+  }
+
+  return `<div style="font-family:var(--font-mono); font-size:0.72rem; color:#cbd5e1; line-height:1.5;">${escapeHtml(code.trim())}</div>`;
 }
 
-function parseSimpleMarkdown(md) {
+let docDiagramCounter = 0;
+function renderVisualMermaid(code) {
+  const diagramId = 'doc-diagram-' + (++docDiagramCounter);
+  const containerId = 'doc-diagram-box-' + docDiagramCounter;
+  const rawId = containerId + '-raw';
+  const trimmed = (code || '').trim();
+  const firstLine = trimmed.split('\n')[0].trim().toLowerCase();
+
+  let diagramTypeBadge = 'Diagramme';
+  if (firstLine.startsWith('flowchart')) diagramTypeBadge = firstLine.replace('flowchart', 'Flowchart');
+  else if (firstLine.startsWith('graph')) diagramTypeBadge = firstLine.replace('graph', 'Graph');
+  else if (firstLine.startsWith('sequencediagram')) diagramTypeBadge = 'Séquence';
+  else if (firstLine.startsWith('classdiagram')) diagramTypeBadge = 'Classes UML';
+  else if (firstLine.startsWith('statediagram')) diagramTypeBadge = 'États';
+  else if (firstLine.startsWith('erdiagram')) diagramTypeBadge = 'Entités-Relations';
+
+  const visualFallback = renderBuiltinVisualDiagram(trimmed);
+
+  return `
+    <div class="doc-diagram-container" id="${containerId}" data-diagram-id="${diagramId}" data-pending="true">
+      <div class="doc-diagram-header">
+        <div class="doc-diagram-title-group">
+          <span class="doc-diagram-icon">📊</span>
+          <span class="doc-diagram-title">DIAGRAMME ARCHITECTURAL</span>
+          <span class="doc-diagram-type">${escapeHtml(diagramTypeBadge)}</span>
+        </div>
+        <div class="doc-diagram-actions">
+          <button class="doc-diagram-btn" onclick="copyDiagramCode('${diagramId}')" title="Copier le code Mermaid brut">📋 Mermaid</button>
+          <button class="doc-diagram-btn" onclick="toggleDiagramView('${containerId}')" title="Basculer entre vue Diagramme et Code source">👁️ Code</button>
+          <button class="doc-diagram-btn" onclick="zoomDiagramModal('${containerId}')" title="Agrandir en plein écran">⛶ Zoom</button>
+        </div>
+      </div>
+      <div class="doc-diagram-viewport">
+        <div class="doc-diagram-render-target" id="${diagramId}" data-code="${escapeHtml(trimmed)}">
+          ${visualFallback}
+        </div>
+      </div>
+      <div class="doc-diagram-raw-code" id="${rawId}" style="display:none;">
+        <pre><code class="language-mermaid">${escapeHtml(trimmed)}</code></pre>
+      </div>
+    </div>
+  `;
+}
+
+window.renderMermaidBlocksAsync = async function() {
+  if (!window.mermaid) return;
+  try {
+    if (!window._mermaidInitialized) {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'loose',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      });
+      window._mermaidInitialized = true;
+    }
+    const containers = document.querySelectorAll('.doc-diagram-container[data-pending="true"]');
+    for (const c of containers) {
+      const diagramId = c.getAttribute('data-diagram-id');
+      const target = document.getElementById(diagramId);
+      if (!target) continue;
+      const code = target.getAttribute('data-code');
+      if (!code) continue;
+      try {
+        const uniqueRenderId = 'mermaid-svg-' + Math.random().toString(36).substring(2, 9);
+        const { svg } = await mermaid.render(uniqueRenderId, code);
+        if (svg) {
+          target.innerHTML = svg;
+          const svgEl = target.querySelector('svg');
+          if (svgEl) {
+            svgEl.style.maxWidth = '100%';
+            svgEl.style.height = 'auto';
+          }
+          c.removeAttribute('data-pending');
+        }
+      } catch (err) {
+        console.warn('Mermaid render warning for ' + diagramId + ', keeping built-in visual:', err);
+        c.removeAttribute('data-pending');
+      }
+    }
+  } catch (err) {
+    console.warn('Erreur globale Mermaid:', err);
+  }
+};
+
+window.copyDiagramCode = function(diagramId) {
+  const target = document.getElementById(diagramId);
+  const code = target ? target.getAttribute('data-code') : '';
+  if (code) {
+    navigator.clipboard.writeText(code).then(() => {
+      showToast('📋 Code Mermaid copié dans le presse-papier !');
+    });
+  }
+};
+
+window.toggleDiagramView = function(containerId) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  const viewport = c.querySelector('.doc-diagram-viewport');
+  const raw = c.querySelector('.doc-diagram-raw-code');
+  if (viewport && raw) {
+    const isShowingRaw = raw.style.display !== 'none';
+    raw.style.display = isShowingRaw ? 'none' : 'block';
+    viewport.style.display = isShowingRaw ? 'flex' : 'none';
+  }
+};
+
+window.zoomDiagramModal = function(containerId) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  const target = c.querySelector('.doc-diagram-render-target');
+  if (!target) return;
+  const modalHtml = `
+    <div id="diagram-zoom-overlay" style="position:fixed; inset:0; z-index:9999; background:rgba(3,7,20,0.96); backdrop-filter:blur(24px); display:flex; flex-direction:column; padding:24px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid rgba(56,189,248,0.3); padding-bottom:12px;">
+        <span style="font-weight:800; color:#38bdf8; font-size:1rem; display:flex; align-items:center; gap:8px;">📊 PLEIN ÉCRAN — DIAGRAMME ARCHITECTURAL</span>
+        <button class="aether-btn primary" onclick="document.getElementById('diagram-zoom-overlay').remove()">✕ Fermer (Échap)</button>
+      </div>
+      <div style="flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:20px;">
+        ${target.innerHTML}
+      </div>
+    </div>
+  `;
+  const existing = document.getElementById('diagram-zoom-overlay');
+  if (existing) existing.remove();
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+};
+
+
+// =========================================================================
+// GITHUB STYLE CODE ENGINE (Syntax Highlighting, Diff, Gutter, Copy, Preview)
+// =========================================================================
+
+function getLanguageMeta(lang) {
+  const l = (lang || '').toLowerCase().trim();
+  const map = {
+    rust: { name: 'Rust', icon: '🦀', hljs: 'rust' },
+    rs: { name: 'Rust', icon: '🦀', hljs: 'rust' },
+    python: { name: 'Python', icon: '🐍', hljs: 'python' },
+    py: { name: 'Python', icon: '🐍', hljs: 'python' },
+    javascript: { name: 'JavaScript', icon: '⚡', hljs: 'javascript' },
+    js: { name: 'JavaScript', icon: '⚡', hljs: 'javascript' },
+    typescript: { name: 'TypeScript', icon: '🔷', hljs: 'typescript' },
+    ts: { name: 'TypeScript', icon: '🔷', hljs: 'typescript' },
+    jsx: { name: 'React JSX', icon: '⚛️', hljs: 'javascript' },
+    tsx: { name: 'React TSX', icon: '⚛️', hljs: 'typescript' },
+    bash: { name: 'Bash', icon: '💻', hljs: 'bash' },
+    sh: { name: 'Shell', icon: '💻', hljs: 'bash' },
+    shell: { name: 'Shell', icon: '💻', hljs: 'bash' },
+    zsh: { name: 'Zsh', icon: '💻', hljs: 'bash' },
+    powershell: { name: 'PowerShell', icon: '🐚', hljs: 'powershell' },
+    ps1: { name: 'PowerShell', icon: '🐚', hljs: 'powershell' },
+    json: { name: 'JSON', icon: '📋', hljs: 'json' },
+    toml: { name: 'TOML', icon: '⚙️', hljs: 'ini' },
+    yaml: { name: 'YAML', icon: '📄', hljs: 'yaml' },
+    yml: { name: 'YAML', icon: '📄', hljs: 'yaml' },
+    markdown: { name: 'Markdown', icon: '📝', hljs: 'markdown' },
+    md: { name: 'Markdown', icon: '📝', hljs: 'markdown' },
+    html: { name: 'HTML', icon: '🌐', hljs: 'xml', isPreviewable: true },
+    xml: { name: 'XML', icon: '📰', hljs: 'xml' },
+    svg: { name: 'SVG', icon: '🎨', hljs: 'xml', isPreviewable: true },
+    css: { name: 'CSS', icon: '🎨', hljs: 'css' },
+    scss: { name: 'SCSS', icon: '🎨', hljs: 'scss' },
+    sql: { name: 'SQL', icon: '🗄️', hljs: 'sql' },
+    diff: { name: 'Git Diff', icon: '🔀', hljs: 'diff', isDiff: true },
+    patch: { name: 'Git Patch', icon: '🔀', hljs: 'diff', isDiff: true },
+    c: { name: 'C', icon: '⚙️', hljs: 'c' },
+    cpp: { name: 'C++', icon: '⚙️', hljs: 'cpp' },
+    'c++': { name: 'C++', icon: '⚙️', hljs: 'cpp' },
+    csharp: { name: 'C#', icon: '🎯', hljs: 'csharp' },
+    cs: { name: 'C#', icon: '🎯', hljs: 'csharp' },
+    zig: { name: 'Zig', icon: '⚡', hljs: 'zig' },
+    go: { name: 'Go', icon: '🐹', hljs: 'go' },
+    golang: { name: 'Go', icon: '🐹', hljs: 'go' },
+    java: { name: 'Java', icon: '☕', hljs: 'java' },
+    dockerfile: { name: 'Dockerfile', icon: '🐳', hljs: 'dockerfile' }
+  };
+  return map[l] || { name: (l ? l.toUpperCase() : 'CODE'), icon: '📄', hljs: l, isDiff: l === 'diff' };
+}
+
+function highlightCodeBuiltin(rawCode, lang) {
+  const l = (lang || '').toLowerCase();
+  let code = escapeHtml(rawCode);
+
+  if (l === 'diff' || l === 'patch') {
+    return code;
+  }
+
+  // Strings
+  code = code.replace(/(".*?"|'.*?'|`.*?`)/g, '<span class="hljs-string">$1</span>');
+
+  // Comments
+  if (['rust', 'rs', 'js', 'javascript', 'ts', 'typescript', 'c', 'cpp', 'csharp', 'cs', 'zig', 'go', 'java'].includes(l)) {
+    code = code.replace(/(\/\/[^\n]*)/g, '<span class="hljs-comment">$1</span>');
+  } else if (['python', 'py', 'bash', 'sh', 'shell', 'zsh', 'yaml', 'yml', 'toml'].includes(l)) {
+    code = code.replace(/(#[^\n]*)/g, '<span class="hljs-comment">$1</span>');
+  }
+
+  // Keywords
+  const kwRust = /\b(fn|let|mut|pub|struct|enum|impl|trait|match|use|mod|crate|super|where|async|await|return|if|else|loop|while|for|in|break|continue|type|const|static|unsafe|ref|move)\b/g;
+  const kwJS = /\b(function|const|let|var|class|import|export|from|default|return|if|else|switch|case|break|continue|for|while|do|try|catch|finally|throw|new|typeof|instanceof|async|await|yield)\b/g;
+  const kwPy = /\b(def|class|import|from|return|if|elif|else|for|while|try|except|finally|with|as|pass|break|continue|yield|lambda|assert|global|nonlocal|async|await)\b/g;
+  const kwBash = /\b(echo|cd|ls|mkdir|rm|cp|mv|git|cargo|npm|npx|node|curl|wget|grep|sed|awk|cat|sudo|chmod|chown|export|if|then|else|fi|for|do|done|while|case|esac|function)\b/g;
+
+  if (['rust', 'rs'].includes(l)) {
+    code = code.replace(kwRust, '<span class="hljs-keyword">$1</span>');
+    code = code.replace(/\b(String|str|u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64|bool|char|Option|Result|Vec|Box|Rc|Arc|Some|None|Ok|Err)\b/g, '<span class="hljs-title class_">$1</span>');
+    code = code.replace(/\b([a-z_][a-z0-9_]*)\s*\(/gi, '<span class="hljs-title function_">$1</span>(');
+  } else if (['javascript', 'js', 'typescript', 'ts', 'jsx', 'tsx'].includes(l)) {
+    code = code.replace(kwJS, '<span class="hljs-keyword">$1</span>');
+    code = code.replace(/\b(true|false|null|undefined|NaN)\b/g, '<span class="hljs-literal">$1</span>');
+    code = code.replace(/\b(console|document|window|Math|Array|Object|String|Number|Boolean|Promise|Map|Set|JSON)\b/g, '<span class="hljs-built_in">$1</span>');
+    code = code.replace(/\b([a-z_$][a-z0-9_$]*)\s*\(/gi, '<span class="hljs-title function_">$1</span>(');
+  } else if (['python', 'py'].includes(l)) {
+    code = code.replace(kwPy, '<span class="hljs-keyword">$1</span>');
+    code = code.replace(/\b(True|False|None|self|cls)\b/g, '<span class="hljs-literal">$1</span>');
+    code = code.replace(/\b(print|len|range|int|str|float|list|dict|set|tuple|open|isinstance)\b/g, '<span class="hljs-built_in">$1</span>');
+    code = code.replace(/\b([a-z_][a-z0-9_]*)\s*\(/gi, '<span class="hljs-title function_">$1</span>(');
+  } else if (['bash', 'sh', 'shell', 'zsh'].includes(l)) {
+    code = code.replace(kwBash, '<span class="hljs-keyword">$1</span>');
+    code = code.replace(/(\b\$[A-Z_0-9]+|\$\{[^}]+\})/gi, '<span class="hljs-variable">$1</span>');
+    code = code.replace(/(\s-[a-zA-Z0-9_-]+)/g, '<span class="hljs-attr">$1</span>');
+  } else if (['json', 'toml', 'yaml', 'yml'].includes(l)) {
+    code = code.replace(/\b(true|false|null)\b/g, '<span class="hljs-literal">$1</span>');
+    code = code.replace(/([a-zA-Z0-9_\-\.]+)\s*:/g, '<span class="hljs-attr">$1</span>:');
+  }
+
+  // Numbers
+  code = code.replace(/\b(\d+(_\d+)*(\.\d+)?)\b/g, '<span class="hljs-number">$1</span>');
+
+  return code;
+}
+
+function renderGitHubStyleCodeBlock(rawCode, codeLang) {
+  const meta = getLanguageMeta(codeLang);
+  const trimmed = (rawCode || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const codeLines = trimmed.split('\n');
+  if (codeLines.length > 1 && codeLines[codeLines.length - 1].trim() === '') {
+    codeLines.pop();
+  }
+  const linesCount = codeLines.length;
+  const blockId = 'code-blk-' + Math.random().toString(36).substring(2, 9);
+  const isDiff = meta.isDiff;
+  const canPreview = !!meta.isPreviewable;
+
+  let tableRowsHtml = '';
+  let highlightedLines = [];
+  let usedHljs = false;
+
+  if (window.hljs && meta.hljs) {
+    try {
+      const hlResult = window.hljs.getLanguage(meta.hljs)
+        ? window.hljs.highlight(trimmed, { language: meta.hljs, ignoreIllegals: true })
+        : window.hljs.highlightAuto(trimmed);
+      if (hlResult && hlResult.value) {
+        highlightedLines = hlResult.value.split('\n');
+        usedHljs = true;
+      }
+    } catch (e) {
+      // fallback
+    }
+  }
+
+  if (!usedHljs) {
+    highlightedLines = codeLines.map(line => highlightCodeBuiltin(line, codeLang));
+  }
+
+  for (let idx = 0; idx < codeLines.length; idx++) {
+    const rawLine = codeLines[idx];
+    const highlightedLine = highlightedLines[idx] !== undefined ? highlightedLines[idx] : escapeHtml(rawLine);
+    const lineNum = idx + 1;
+
+    let trClass = 'doc-code-tr';
+    let lineContentHtml = highlightedLine || '&nbsp;';
+
+    if (isDiff) {
+      if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
+        trClass += ' diff-add';
+      } else if (rawLine.startsWith('-') && !rawLine.startsWith('---')) {
+        trClass += ' diff-del';
+      } else if (rawLine.startsWith('@@')) {
+        trClass += ' diff-hunk';
+      }
+    }
+
+    tableRowsHtml += `
+      <tr class="${trClass}">
+        <td class="doc-code-gutter" data-line-number="${lineNum}">${lineNum}</td>
+        <td class="doc-code-blob"><code>${lineContentHtml}</code></td>
+      </tr>
+    `;
+  }
+
+  let safeBase64Code = '';
+  try {
+    safeBase64Code = btoa(unescape(encodeURIComponent(trimmed)));
+  } catch (e) {
+    safeBase64Code = '';
+  }
+
+  const previewPaneHtml = canPreview ? `
+    <div class="doc-code-preview-pane" id="${blockId}-preview">
+      ${trimmed}
+    </div>
+  ` : '';
+
+  return `
+    <div class="doc-code-block" id="${blockId}" data-lang="${escapeHtml(codeLang)}" ${!usedHljs ? 'data-needs-hljs="true"' : ''}>
+      <div class="doc-code-bar">
+        <div class="doc-code-lang-info">
+          <span class="doc-code-lang-badge" title="Langage: ${escapeHtml(meta.name)}">
+            <span>${meta.icon}</span>
+            <span>${escapeHtml(meta.name)}</span>
+          </span>
+          <span class="doc-code-lines-count">${linesCount} ligne${linesCount > 1 ? 's' : ''}</span>
+        </div>
+        <div class="doc-code-actions">
+          ${canPreview ? `
+            <button class="doc-code-btn" onclick="toggleCodePreview('${blockId}')" id="${blockId}-prev-btn" title="Basculer entre code et aperçu direct">
+              👁️ Aperçu
+            </button>
+          ` : ''}
+          <button class="doc-code-btn" onclick="toggleCodeLineNumbers('${blockId}')" title="Afficher/masquer les numéros de ligne">
+            # Lignes
+          </button>
+          <button class="doc-code-copy-btn" onclick="copyCodeBlock(this, '${safeBase64Code}')" title="Copier le code brut (sans numéros de ligne)">
+            📋 Copier
+          </button>
+        </div>
+      </div>
+      <div class="doc-code-content-wrapper" id="${blockId}-content">
+        <table class="doc-code-table">
+          <tbody>
+            ${tableRowsHtml}
+          </tbody>
+        </table>
+      </div>
+      ${previewPaneHtml}
+    </div>
+  `;
+}
+
+window.copyCodeBlock = function(btn, safeBase64) {
+  let text = '';
+  try {
+    text = decodeURIComponent(escape(atob(safeBase64)));
+  } catch(e) {
+    const parent = btn.closest('.doc-code-block');
+    if (parent) {
+      const blobs = parent.querySelectorAll('.doc-code-blob code');
+      text = Array.from(blobs).map(b => b.innerText).join('\n');
+    }
+  }
+
+  if (text) {
+    navigator.clipboard.writeText(text).then(() => {
+      const originalText = btn.innerHTML;
+      btn.classList.add('copied');
+      btn.innerHTML = '✅ Copié !';
+      showToast('📋 Code copié dans le presse-papier !');
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.innerHTML = originalText;
+      }, 2000);
+    }).catch(err => {
+      showToast('⚠️ Erreur de copie: ' + err);
+    });
+  }
+};
+
+window.toggleCodeLineNumbers = function(blockId) {
+  const block = document.getElementById(blockId);
+  if (!block) return;
+  const tbl = block.querySelector('.doc-code-table');
+  if (tbl) {
+    tbl.classList.toggle('no-line-numbers');
+  }
+};
+
+window.toggleCodePreview = function(blockId) {
+  const block = document.getElementById(blockId);
+  if (!block) return;
+  const content = block.querySelector('.doc-code-content-wrapper');
+  const preview = document.getElementById(blockId + '-preview');
+  const btn = document.getElementById(blockId + '-prev-btn');
+  if (!content || !preview) return;
+
+  const isShowingPreview = preview.style.display === 'block';
+  if (isShowingPreview) {
+    preview.style.display = 'none';
+    content.style.display = 'block';
+    if (btn) btn.innerHTML = '👁️ Aperçu';
+  } else {
+    preview.style.display = 'block';
+    content.style.display = 'none';
+    if (btn) btn.innerHTML = '💻 Code';
+  }
+};
+
+window.highlightCodeBlocksAsync = function() {
+  if (!window.hljs) return;
+  try {
+    const pendingBlocks = document.querySelectorAll('.doc-code-block[data-needs-hljs="true"]');
+    for (const block of pendingBlocks) {
+      const lang = block.getAttribute('data-lang') || '';
+      const meta = getLanguageMeta(lang);
+      if (!meta.hljs) continue;
+      const blobs = block.querySelectorAll('.doc-code-blob code');
+      for (const b of blobs) {
+        try {
+          const raw = b.innerText;
+          const res = window.hljs.highlight(raw, { language: meta.hljs, ignoreIllegals: true });
+          if (res && res.value) {
+            b.innerHTML = res.value;
+          }
+        } catch(e) {}
+      }
+      block.removeAttribute('data-needs-hljs');
+    }
+  } catch(e) {
+    console.warn('highlightCodeBlocksAsync error:', e);
+  }
+};
+
+window.postProcessDocContentAsync = function() {
+  if (window.renderMermaidBlocksAsync) {
+    setTimeout(() => { if (window.renderMermaidBlocksAsync) window.renderMermaidBlocksAsync(); }, 40);
+  }
+  if (window.highlightCodeBlocksAsync) {
+    setTimeout(() => { window.highlightCodeBlocksAsync(); }, 60);
+  }
+};
+
+
+function formatRichInlineMd(str, docPath) {
+  if (!str) return '';
+  docPath = docPath || (docActiveContext && docActiveContext.filePath) || '';
+  let res = str;
+
+  // 1. Linked Badges & Images: [![alt](img_url)](link_url)
+  res = res.replace(/\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/g, (match, alt, imgSrc, linkHref) => {
+    const resolvedImg = resolveDocAssetPath(imgSrc, docPath);
+    return `<a href="${linkHref}" target="_blank" rel="noopener noreferrer" class="doc-badge-link" title="${escapeHtml(alt)}"><img src="${resolvedImg}" alt="${escapeHtml(alt)}" data-raw-src="${escapeHtml(imgSrc)}" class="doc-badge-img" loading="lazy" onerror="handleDocImageError(this)" /></a>`;
+  });
+
+  // 2. Standalone Markdown Images: ![alt](img_url "title")
+  res = res.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+["']([^"']*)["'])?\)/g, (match, alt, imgSrc, title) => {
+    const resolvedImg = resolveDocAssetPath(imgSrc, docPath);
+    const fileName = imgSrc.split('/').pop() || alt || 'Image';
+    return `
+      <div class="doc-image-card">
+        <div class="doc-image-header">
+          <span class="doc-image-tag">🖼️ Image</span>
+          <span class="doc-image-name">${escapeHtml(fileName)}</span>
+          <a href="${resolvedImg}" target="_blank" rel="noopener" class="doc-image-ext" title="Ouvrir dans un nouvel onglet">↗</a>
+        </div>
+        <div class="doc-image-body">
+          <img src="${resolvedImg}" alt="${escapeHtml(alt)}" data-raw-src="${escapeHtml(imgSrc)}" class="doc-content-img" loading="lazy" onerror="handleDocImageError(this)" />
+        </div>
+        ${(title || alt) ? `<div class="doc-image-caption">${escapeHtml(title || alt)}</div>` : ''}
+      </div>
+    `;
+  });
+
+  // 3. Obsidian Wiki-transclusions: ![[image.png]]
+  res = res.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, wikiPath, extra) => {
+    const resolvedImg = resolveDocAssetPath(wikiPath.trim(), docPath);
+    const fileName = wikiPath.trim().split('/').pop();
+    return `
+      <div class="doc-image-card">
+        <div class="doc-image-header">
+          <span class="doc-image-tag">🖼️ Transclusion Obsidian</span>
+          <span class="doc-image-name">${escapeHtml(fileName)}</span>
+          <a href="${resolvedImg}" target="_blank" rel="noopener" class="doc-image-ext">↗</a>
+        </div>
+        <div class="doc-image-body">
+          <img src="${resolvedImg}" alt="${escapeHtml(fileName)}" data-raw-src="${escapeHtml(wikiPath.trim())}" class="doc-content-img" loading="lazy" onerror="handleDocImageError(this)" />
+        </div>
+        ${extra ? `<div class="doc-image-caption">${escapeHtml(extra)}</div>` : ''}
+      </div>
+    `;
+  });
+
+  // 4. Standard Links: [text](url)
+  res = res.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, href) => {
+    const trimmedHref = href.trim();
+    if (trimmedHref.endsWith('.md') || trimmedHref.includes('.md#')) {
+      return `<a href="javascript:void(0)" onclick="jumpToDocFile('${escapeForBacktick(trimmedHref)}')" style="color:#38bdf8; text-decoration:underline; font-weight:600;" title="Ouvrir le document : ${escapeHtml(trimmedHref)}">📄 ${label}</a>`;
+    }
+    if (trimmedHref.startsWith('#')) {
+      const slug = trimmedHref.substring(1);
+      return `<a href="#${slug}" onclick="event.preventDefault(); scrollToHeading('${slug}');" style="color:#38bdf8; text-decoration:underline;">${label}</a>`;
+    }
+    return `<a href="${trimmedHref}" target="_blank" rel="noopener noreferrer" style="color:#38bdf8; text-decoration:underline;">${label}</a>`;
+  });
+
+  // 5. Inline Code
+  res = res.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // 6. Bold, Italic & Strikethrough
+  res = res.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  res = res.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  res = res.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  res = res.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  return res;
+}
+
+function parseTableBlock(lines, startIdx, docPath) {
+  let idx = startIdx;
+  const tableLines = [];
+  while (idx < lines.length && lines[idx].trim().startsWith('|') && lines[idx].trim().endsWith('|')) {
+    tableLines.push(lines[idx].trim());
+    idx++;
+  }
+  if (tableLines.length >= 2) {
+    const headerRow = tableLines[0].slice(1, -1).split('|').map(s => s.trim());
+    const alignRow = tableLines[1].slice(1, -1).split('|').map(s => s.trim());
+    const alignments = alignRow.map(a => {
+      if (a.startsWith(':') && a.endsWith(':')) return 'center';
+      if (a.endsWith(':')) return 'right';
+      return 'left';
+    });
+
+    let tableHtml = `<div class="doc-table-wrapper"><table class="doc-table"><thead><tr>`;
+    headerRow.forEach((h, i) => {
+      const align = alignments[i] || 'left';
+      tableHtml += `<th style="text-align:${align};">${formatRichInlineMd(h, docPath)}</th>`;
+    });
+    tableHtml += `</tr></thead><tbody>`;
+
+    for (let r = 2; r < tableLines.length; r++) {
+      const cells = tableLines[r].slice(1, -1).split('|').map(s => s.trim());
+      tableHtml += `<tr>`;
+      headerRow.forEach((_, i) => {
+        const val = cells[i] !== undefined ? cells[i] : '';
+        const align = alignments[i] || 'left';
+        tableHtml += `<td style="text-align:${align};">${formatRichInlineMd(val, docPath)}</td>`;
+      });
+      tableHtml += `</tr>`;
+    }
+    tableHtml += `</tbody></table></div>`;
+    return { html: tableHtml, nextIdx: idx };
+  }
+  return null;
+}
+
+function parseBlockquoteBlock(lines, startIdx, docPath) {
+  let idx = startIdx;
+  const quoteLines = [];
+  while (idx < lines.length && lines[idx].trim().startsWith('>')) {
+    let l = lines[idx].trim().substring(1).trim();
+    quoteLines.push(l);
+    idx++;
+  }
+  if (quoteLines.length === 0) return null;
+
+  const first = quoteLines[0];
+  const alertMatch = first.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
+  if (alertMatch) {
+    const type = alertMatch[1].toLowerCase();
+    const remainingText = quoteLines.slice(1).join(' ');
+    let icon = 'ℹ️', title = 'NOTE';
+    if (type === 'tip') { icon = '💡'; title = 'ASTUCE'; }
+    else if (type === 'important') { icon = '📌'; title = 'IMPORTANT'; }
+    else if (type === 'warning') { icon = '⚠️'; title = 'ATTENTION'; }
+    else if (type === 'caution') { icon = '🚨'; title = 'AVERTISSEMENT'; }
+
+    const alertHtml = `
+      <div class="doc-alert doc-alert-${type}">
+        <div class="doc-alert-header">
+          <span>${icon}</span>
+          <span>${title}</span>
+        </div>
+        <p>${formatRichInlineMd(remainingText, docPath)}</p>
+      </div>
+    `;
+    return { html: alertHtml, nextIdx: idx };
+  }
+
+  const bqHtml = `<blockquote class="doc-blockquote"><p>${formatRichInlineMd(quoteLines.join(' '), docPath)}</p></blockquote>`;
+  return { html: bqHtml, nextIdx: idx };
+}
+
+function parseSimpleMarkdown(md, docFilePath) {
   if (!md) return '<p><em>Document vide.</em></p>';
+  docFilePath = docFilePath || (docActiveContext && docActiveContext.filePath) || '';
   let html = '';
   const lines = md.split('\n');
   let inCode = false, codeBlock = '', codeLang = '';
+  let i = 0;
 
-  for (let line of lines) {
-    if (line.trim().startsWith('```')) {
+  while (i < lines.length) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    // 1. Code Blocks
+    if (trimmed.startsWith('```')) {
       if (inCode) {
         if (codeLang === 'mermaid') {
           html += renderVisualMermaid(codeBlock);
         } else {
-          html += `<pre><code>${escapeHtml(codeBlock.trim())}</code></pre>`;
+          html += renderGitHubStyleCodeBlock(codeBlock, codeLang);
         }
         codeBlock = '';
         codeLang = '';
         inCode = false;
       } else {
         inCode = true;
-        codeLang = line.trim().substring(3).trim().toLowerCase();
+        codeLang = trimmed.substring(3).trim().toLowerCase();
       }
+      i++;
       continue;
     }
     if (inCode) {
-      codeBlock += line + '\n';
+      codeBlock += rawLine + '\n';
+      i++;
       continue;
     }
 
-    const trimmed = line.trim();
-    if (trimmed.startsWith('# ')) {
-      html += `<h1>${escapeHtml(trimmed.substring(2))}</h1>`;
-    } else if (trimmed.startsWith('## ')) {
-      html += `<h2>${escapeHtml(trimmed.substring(3))}</h2>`;
-    } else if (trimmed.startsWith('### ')) {
-      html += `<h3>${escapeHtml(trimmed.substring(4))}</h3>`;
-    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      html += `<ul><li>${formatInlineMd(trimmed.substring(2))}</li></ul>`;
-    } else if (trimmed.length > 0) {
-      html += `<p>${formatInlineMd(trimmed)}</p>`;
+    // 2. Horizontal Rules
+    if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+      html += `<hr class="doc-hr" />`;
+      i++;
+      continue;
     }
+
+    // 3. Headings with Anchors
+    const hMatch = trimmed.match(/^(#{1,6})\s+(.+)/);
+    if (hMatch) {
+      const level = hMatch[1].length;
+      const text = hMatch[2].trim();
+      const slug = text.toLowerCase().replace(/[^a-z0-9à-ÿ]+/gi, '-').replace(/^-|-$/g, '') || ('heading-' + i);
+      html += `<h${level} id="${slug}" class="doc-h${level}"><a href="#${slug}" class="heading-anchor" style="color:inherit; text-decoration:none;">${formatRichInlineMd(text, docFilePath)}</a></h${level}>`;
+      i++;
+      continue;
+    }
+
+    // 4. Markdown Tables
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      const tbl = parseTableBlock(lines, i, docFilePath);
+      if (tbl) {
+        html += tbl.html;
+        i = tbl.nextIdx;
+        continue;
+      }
+    }
+
+    // 5. Blockquotes & GitHub Alerts
+    if (trimmed.startsWith('>')) {
+      const bq = parseBlockquoteBlock(lines, i, docFilePath);
+      if (bq) {
+        html += bq.html;
+        i = bq.nextIdx;
+        continue;
+      }
+    }
+
+    // 6. Lists (Unordered & Ordered & Task lists)
+    if (/^[-*+]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
+      const isOrdered = /^\d+\.\s+/.test(trimmed);
+      const tag = isOrdered ? 'ol' : 'ul';
+      html += `<${tag} style="padding-left:22px; margin-bottom:12px;">`;
+      while (i < lines.length) {
+        const itemLine = lines[i].trim();
+        const itemMatch = isOrdered ? itemLine.match(/^\d+\.\s+(.+)/) : itemLine.match(/^[-*+]\s+(.+)/);
+        if (!itemMatch) break;
+        let itemContent = itemMatch[1];
+        const taskMatch = itemContent.match(/^\[([ xX])\]\s+(.+)/);
+        if (taskMatch) {
+          const checked = taskMatch[1].toLowerCase() === 'x';
+          const taskText = taskMatch[2];
+          html += `<li class="doc-task-item"><input type="checkbox" disabled ${checked ? 'checked' : ''} class="doc-checkbox" /> <span>${formatRichInlineMd(taskText, docFilePath)}</span></li>`;
+        } else {
+          html += `<li style="margin-bottom:4px;">${formatRichInlineMd(itemContent, docFilePath)}</li>`;
+        }
+        i++;
+      }
+      html += `</${tag}>`;
+      continue;
+    }
+
+    // 7. Paragraphs
+    if (trimmed.length > 0) {
+      let pContent = trimmed;
+      while (i + 1 < lines.length && lines[i + 1].trim().length > 0 && !lines[i + 1].trim().startsWith('#') && !lines[i + 1].trim().startsWith('```') && !lines[i + 1].trim().startsWith('>') && !lines[i + 1].trim().startsWith('|') && !/^[-*+]\s+/.test(lines[i + 1].trim()) && !/^\d+\.\s+/.test(lines[i + 1].trim()) && lines[i + 1].trim() !== '---') {
+        i++;
+        pContent += ' ' + lines[i].trim();
+      }
+      html += `<p style="margin-bottom:10px; line-height:1.65;">${formatRichInlineMd(pContent, docFilePath)}</p>`;
+    }
+
+    i++;
   }
+
   return html;
 }
 
-function formatInlineMd(str) {
-  let res = escapeHtml(str);
-  res = res.replace(/`([^`]+)`/g, '<code>$1</code>');
-  res = res.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  res = res.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#38bdf8;text-decoration:underline;">$1</a>');
-  return res;
+function extractHeadingsAndMetrics(md) {
+  const lines = (md || '').split('\n');
+  const toc = [];
+  let wordsCount = 0;
+  let diagramsCount = 0;
+  let imagesCount = 0;
+
+  for (let idx = 0; idx < lines.length; idx++) {
+    const l = lines[idx].trim();
+    if (!l) continue;
+    wordsCount += l.split(/\s+/).filter(Boolean).length;
+    if (l.startsWith('```mermaid')) diagramsCount++;
+    if (/!\[.*?\]\(.*?\)/.test(l) || /!\[\[.*?\]\]/.test(l)) imagesCount++;
+
+    const m = l.match(/^(#{1,4})\s+(.+)/);
+    if (m) {
+      const level = m[1].length;
+      const text = m[2].replace(/[#*`_\[\]]/g, '').trim();
+      const slug = text.toLowerCase().replace(/[^a-z0-9à-ÿ]+/gi, '-').replace(/^-|-$/g, '') || ('sec-' + idx);
+      toc.push({ id: slug, level, text });
+    }
+  }
+
+  const readingTime = Math.max(1, Math.ceil(wordsCount / 200));
+  return {
+    toc,
+    wordsCount,
+    linesCount: lines.length,
+    readingTime,
+    diagramsCount,
+    imagesCount,
+  };
 }
 
-function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+window.scrollToHeading = function(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.style.transition = 'background 0.3s ease';
+    el.style.background = 'rgba(56, 189, 248, 0.25)';
+    setTimeout(() => { el.style.background = 'transparent'; }, 1400);
+  }
+};
 
-function escapeForBacktick(str) {
-  return (str || '').replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
-}
+window.scrollToFirstDiagram = function() {
+  const firstDiag = document.querySelector('.doc-diagram-container');
+  if (firstDiag) {
+    firstDiag.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    firstDiag.style.boxShadow = '0 0 30px rgba(56, 189, 248, 0.8)';
+    setTimeout(() => { firstDiag.style.boxShadow = ''; }, 1600);
+  }
+};
 
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+window.toggleDocToc = function() {
+  const box = document.getElementById('doc-toc-container');
+  if (box) box.classList.toggle('collapsed');
+};
+
+window.toggleDocPanelWidth = function() {
+  const panel = document.getElementById('doc-reader-panel');
+  const label = document.getElementById('doc-width-label');
+  if (!panel) return;
+  if (panel.classList.contains('doc-width-full')) {
+    panel.classList.remove('doc-width-full');
+    panel.classList.remove('doc-width-wide');
+    if (label) label.innerText = 'Largeur (520px)';
+    showToast('📐 Largeur panneau : Standard (520px)');
+  } else if (panel.classList.contains('doc-width-wide')) {
+    panel.classList.remove('doc-width-wide');
+    panel.classList.add('doc-width-full');
+    if (label) label.innerText = 'Plein écran';
+    showToast('📐 Largeur panneau : Plein écran (95vw)');
+  } else {
+    panel.classList.add('doc-width-wide');
+    if (label) label.innerText = 'Large (880px)';
+    showToast('📐 Largeur panneau : Large (880px)');
+  }
+};
+
+let docSearchMatches = [];
+let docSearchMatchIdx = -1;
+
+window.filterDocContent = function(query) {
+  const counter = document.getElementById('doc-search-counter');
+  const body = document.getElementById('doc-rendered-body');
+  if (!body) return;
+
+  if (!query || query.trim().length < 2) {
+    if (counter) counter.innerText = '';
+    docSearchMatches = [];
+    docSearchMatchIdx = -1;
+    const parsed = parseSimpleMarkdown(docActiveContext.rawContent, docActiveContext.filePath);
+    body.innerHTML = parsed;
+    window.postProcessDocContentAsync ? window.postProcessDocContentAsync() : (window.renderMermaidBlocksAsync && window.renderMermaidBlocksAsync());
+    return;
+  }
+
+  const cleanQ = query.trim();
+  const parsed = parseSimpleMarkdown(docActiveContext.rawContent, docActiveContext.filePath);
+  try {
+    const regex = new RegExp(`(${escapeRegExp(cleanQ)})`, 'gi');
+    body.innerHTML = parsed.replace(regex, '<mark class="doc-search-highlight" style="background:#fbbf24; color:#0f172a; padding:1px 4px; border-radius:3px; font-weight:700;">$1</mark>');
+    docSearchMatches = Array.from(body.querySelectorAll('.doc-search-highlight'));
+    if (counter) {
+      counter.innerText = `${docSearchMatches.length} trouvé${docSearchMatches.length > 1 ? 's' : ''}`;
+    }
+    if (docSearchMatches.length > 0) {
+      docSearchMatchIdx = 0;
+      docSearchMatches[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    window.postProcessDocContentAsync ? window.postProcessDocContentAsync() : (window.renderMermaidBlocksAsync && window.renderMermaidBlocksAsync());
+  } catch(e) {}
+};
+
+window.navDocSearch = function(dir) {
+  if (docSearchMatches.length === 0) return;
+  docSearchMatchIdx = (docSearchMatchIdx + dir + docSearchMatches.length) % docSearchMatches.length;
+  const target = docSearchMatches[docSearchMatchIdx];
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const counter = document.getElementById('doc-search-counter');
+    if (counter) counter.innerText = `${docSearchMatchIdx + 1}/${docSearchMatches.length}`;
+  }
+};
+
+window.clearDocSearch = function() {
+  const input = document.getElementById('doc-search-input');
+  if (input) input.value = '';
+  window.filterDocContent('');
+};
+
+window.jumpToDocFile = async function(targetPath) {
+  let clean = targetPath.replace(/^[./\\]+/, '').split('#')[0];
+  const nodes = state.data.nodes || [];
+  let found = nodes.find(n => (n.file_path && n.file_path.endsWith(clean)) || (n.name && n.name.toLowerCase() === clean.toLowerCase()));
+  if (found) {
+    openNodeDocReader(found, 0, true);
+    showToast(`📖 Document ouvert : ${clean}`);
+    return;
+  }
+  try {
+    const res = await fetch(`/api/file_content?path=${encodeURIComponent(clean)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === 'ok' && data.content) {
+        renderDocReaderUI(`📖 ${clean}`, 'root', clean, data.content, true, null, '', clean);
+        toggleDocReader(true);
+        showToast(`📖 Document chargé : ${clean}`);
+        return;
+      }
+    }
+  } catch(e) {}
+  showToast(`⚠️ Document introuvable : ${clean}`);
+};
 
 // Markdown Live Editor & Auto-Save
 let docSaveTimeout = null;
@@ -1093,7 +2062,10 @@ function toggleDocEditorMode() {
     if (previewBox) {
       const bodyEl = document.getElementById('doc-rendered-body');
       if (bodyEl) {
-        bodyEl.innerHTML = parseSimpleMarkdown(currentMd);
+        bodyEl.innerHTML = parseSimpleMarkdown(currentMd, docActiveContext.filePath);
+        if (window.renderMermaidBlocksAsync) {
+          setTimeout(() => { window.postProcessDocContentAsync ? window.postProcessDocContentAsync() : window.renderMermaidBlocksAsync(); }, 30);
+        }
       }
       previewBox.style.display = 'block';
     }
@@ -1681,6 +2653,7 @@ function renderDocReaderUI(title, folder, fileName, rawContent, isDoc, targetNod
   targetNode = targetNode || state.selectedNode;
   docActiveContext.folder = folder;
   docActiveContext.fileName = fileName;
+  docActiveContext.filePath = filePath || fileName;
   docActiveContext.rawContent = rawContent;
 
   const savedMode = (function() {
@@ -1697,7 +2670,9 @@ function renderDocReaderUI(title, folder, fileName, rawContent, isDoc, targetNod
   }
   setDocSaveStatus('', '💾 Prêt');
 
-  let parsed = parseSimpleMarkdown(rawContent);
+  const metrics = extractHeadingsAndMetrics(rawContent);
+  let parsed = parseSimpleMarkdown(rawContent, docActiveContext.filePath);
+
   if (!isDoc && targetNodeName) {
     try {
       const regex = new RegExp(`(<code>\\s*${escapeRegExp(targetNodeName)}\\s*<\\/code>|\\b${escapeRegExp(targetNodeName)}\\b)`, 'g');
@@ -1707,7 +2682,7 @@ function renderDocReaderUI(title, folder, fileName, rawContent, isDoc, targetNod
 
   const displayPath = filePath || fileName;
   let displayShortPath = displayPath;
-  const pathParts = displayPath.split(/[/\\]/);
+  const pathParts = displayPath.split(/[\/\\]/);
   if (pathParts.length > 2) {
     displayShortPath = '…/' + pathParts.slice(-2).join('/');
   }
@@ -1734,6 +2709,83 @@ function renderDocReaderUI(title, folder, fileName, rawContent, isDoc, targetNod
 
   const symbolHtml = showSymbol ? renderSymbolLiaisonCard(targetNode, incoming, outgoing) : '';
 
+  // KPI Bar
+  const isContractSealed = !!(state.signedContracts && state.signedContracts.has && state.signedContracts.has(folder));
+  const kpiBarHtml = `
+    <div class="doc-kpi-bar">
+      <div class="doc-kpi-chip" title="Temps de lecture estimé (200 mots/min)">
+        <span class="kpi-icon">⏱️</span>
+        <span class="kpi-val">${metrics.readingTime} min</span>
+        <span class="kpi-lbl">lecture</span>
+      </div>
+      <div class="doc-kpi-chip" title="Volume textuel">
+        <span class="kpi-icon">📝</span>
+        <span class="kpi-val">${metrics.wordsCount}</span>
+        <span class="kpi-lbl">mots (${metrics.linesCount} lig.)</span>
+      </div>
+      ${metrics.diagramsCount > 0 ? `
+        <div class="doc-kpi-chip highlight" title="${metrics.diagramsCount} diagramme(s) architectural/Mermaid interactif(s) — Cliquer pour atteindre le 1er" onclick="scrollToFirstDiagram()">
+          <span class="kpi-icon">📊</span>
+          <span class="kpi-val">${metrics.diagramsCount}</span>
+          <span class="kpi-lbl">diagramme${metrics.diagramsCount > 1 ? 's' : ''}</span>
+        </div>
+      ` : ''}
+      ${metrics.imagesCount > 0 ? `
+        <div class="doc-kpi-chip" title="${metrics.imagesCount} image(s) ou badge(s) détecté(s)">
+          <span class="kpi-icon">🖼️</span>
+          <span class="kpi-val">${metrics.imagesCount}</span>
+          <span class="kpi-lbl">image${metrics.imagesCount > 1 ? 's' : ''}</span>
+        </div>
+      ` : ''}
+      <div class="doc-kpi-chip ${isContractSealed ? 'contract-sealed' : 'contract-spec'}" title="Statut gouvernance EARS / Sceau BLAKE3">
+        <span class="kpi-icon">${isContractSealed ? '🔒' : '📜'}</span>
+        <span class="kpi-val">${isContractSealed ? 'BLAKE3 Scellé' : 'Spécification EARS'}</span>
+      </div>
+      <div class="doc-kpi-chip path-chip" title="Emplacement du fichier : ${escapeHtml(displayPath)}">
+        <span class="kpi-icon">📂</span>
+        <code class="kpi-path">${escapeHtml(displayPath)}</code>
+        <button class="doc-chip-copy-btn" onclick="navigator.clipboard.writeText('${escapeForBacktick(displayPath)}'); showToast('Chemin copié !');" title="Copier le chemin">📋</button>
+      </div>
+    </div>
+  `;
+
+  // TOC
+  let tocHtml = '';
+  if (metrics.toc.length > 2) {
+    tocHtml = `
+      <div id="doc-toc-container" class="doc-toc-box collapsed">
+        <div class="doc-toc-header" onclick="toggleDocToc()">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="toc-icon">📑</span>
+            <span class="toc-title">Sommaire interactif</span>
+            <span class="token-pill" style="font-size:0.62rem; color:#38bdf8;">${metrics.toc.length} sections</span>
+          </div>
+          <span class="toc-chevron" id="doc-toc-chevron">▼</span>
+        </div>
+        <div class="doc-toc-list" id="doc-toc-list">
+          ${metrics.toc.map(item => `
+            <a href="#${item.id}" class="doc-toc-item depth-${item.level}" onclick="event.preventDefault(); scrollToHeading('${item.id}');">
+              <span class="toc-level-dot"></span>
+              <span class="toc-text">${escapeHtml(item.text)}</span>
+            </a>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // Search Bar
+  const searchBarHtml = `
+    <div class="doc-search-bar" id="doc-search-bar">
+      <span class="doc-search-icon" style="color:#38bdf8; font-size:0.8rem; margin-right:4px;">🔍</span>
+      <input type="text" id="doc-search-input" class="doc-search-input" placeholder="Filtrer dans la documentation (mots-clés, symboles, CWE)..." oninput="filterDocContent(this.value)" />
+      <span id="doc-search-counter" class="doc-search-counter"></span>
+      <button class="doc-search-btn" onclick="navDocSearch(-1)" title="Occurrence précédente">▲</button>
+      <button class="doc-search-btn" onclick="navDocSearch(1)" title="Occurrence suivante">▼</button>
+      <button class="doc-search-btn" onclick="clearDocSearch()" title="Effacer la recherche">✕</button>
+    </div>
+  `;
+
   const actionsHtml = `
     <div class="doc-actions-bar">
       <div class="doc-actions-path">
@@ -1756,6 +2808,9 @@ function renderDocReaderUI(title, folder, fileName, rawContent, isDoc, targetNod
       ${tabsHtml}
       ${actionsHtml}
       <div id="doc-rendered-view" style="display:${isEdit ? 'none' : 'block'};">
+        ${kpiBarHtml}
+        ${searchBarHtml}
+        ${tocHtml}
         <div id="doc-rendered-body">${parsed}</div>
       </div>
       <div id="doc-live-editor-container" style="display:${isEdit ? 'flex' : 'none'}; flex-direction:column; flex:1; gap:6px;">
@@ -1792,6 +2847,13 @@ function renderDocReaderUI(title, folder, fileName, rawContent, isDoc, targetNod
 
   if (targetNode) {
     ensureNodeDocstring(targetNode);
+  }
+
+  // Trigger async Mermaid diagram rendering
+  if (window.renderMermaidBlocksAsync) {
+    setTimeout(() => {
+      window.postProcessDocContentAsync ? window.postProcessDocContentAsync() : window.renderMermaidBlocksAsync();
+    }, 50);
   }
 }
 

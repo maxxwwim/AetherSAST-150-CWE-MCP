@@ -1598,6 +1598,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_aetherscope_switch_view_mode_valid() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp_dir.path().join(".obsidian")).unwrap();
+        std::fs::create_dir_all(temp_dir.path().join("src")).unwrap();
+        std::fs::write(temp_dir.path().join("src/lib.rs"), "pub fn hello() {}").unwrap();
+        let p_str = temp_dir.path().to_str().unwrap();
+
         for mode in &["code", "vault"] {
             let req = JsonRpcRequest {
                 jsonrpc: "2.0".to_string(),
@@ -1607,11 +1613,11 @@ mod tests {
                     "name": "aetherscope_switch_view_mode",
                     "arguments": {
                         "mode": mode,
-                        "path": "."
+                        "path": p_str
                     }
                 })),
             };
-            let resp = handle_mcp_request(req, 3030, ".").await.expect("switch_view_mode response");
+            let resp = handle_mcp_request(req, 0, p_str).await.expect("switch_view_mode response");
             let res = resp.result.expect("result present");
             assert_eq!(res["isError"], false);
             let content = res["content"].as_array().expect("content array");

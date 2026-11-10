@@ -838,6 +838,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     let state_create_file = shared_state.clone();
     let state_sysprompt = shared_state.clone();
     let state_file_content = shared_state.clone();
+    let state_raw_file = shared_state.clone();
     let state_ai_cancel = shared_state.clone();
     let state_ai_session = shared_state.clone();
     let state_ai_cli = shared_state.clone();
@@ -1652,6 +1653,59 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 "path": rel_path,
                                 "message": format!("Fichier introuvable: {}", e)
                             }))
+                        }
+                    }
+                }
+            }),
+        )
+        // Flux brut binaire pour images, SVG et médias (PNG, SVG, JPG, WebP, etc.)
+        .route(
+            "/api/raw_file",
+            axum::routing::get({
+                let state = state_raw_file.clone();
+                move |axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>| {
+                    let state = state.clone();
+                    async move {
+                        use axum::http::{header, StatusCode};
+                        use axum::response::IntoResponse;
+                        let rel_path = query.get("path").cloned().unwrap_or_default();
+                        if rel_path.is_empty() {
+                            return (StatusCode::BAD_REQUEST, "Chemin manquant").into_response();
+                        }
+                        let p_root = state.project_root.read().await;
+                        let full_path = if Path::new(&rel_path).is_absolute() {
+                            PathBuf::from(&rel_path)
+                        } else {
+                            p_root.join(&rel_path)
+                        };
+                        match fs::read(&full_path) {
+                            Ok(bytes) => {
+                                let ext = full_path
+                                    .extension()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
+                                let content_type = match ext.as_str() {
+                                    "png" => "image/png",
+                                    "jpg" | "jpeg" => "image/jpeg",
+                                    "gif" => "image/gif",
+                                    "svg" => "image/svg+xml",
+                                    "webp" => "image/webp",
+                                    "ico" => "image/x-icon",
+                                    "bmp" => "image/bmp",
+                                    "pdf" => "application/pdf",
+                                    "json" => "application/json",
+                                    "md" | "txt" => "text/plain; charset=utf-8",
+                                    _ => "application/octet-stream",
+                                };
+                                (
+                                    StatusCode::OK,
+                                    [(header::CONTENT_TYPE, content_type)],
+                                    bytes,
+                                )
+                                    .into_response()
+                            }
+                            Err(_) => (StatusCode::NOT_FOUND, "Fichier introuvable").into_response(),
                         }
                     }
                 }

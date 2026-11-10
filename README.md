@@ -5,7 +5,7 @@
 ### **Cockpit Spatial d'Architecture WebGL 2  • Linter SAST Zero-Day (185+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.2.1_Zig_%26_C%23_SSA_Taint_SCA_Semgrep_Obsidian_Vault-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.2.2_GitHub_Markdown_Engine_Mermaid_Highlighter_Images_API-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -39,7 +39,8 @@
 ## 📌 Sommaire Exécutif
 
 1. [⚡ Qu'est-ce qu'AetherScope V2 ?](#-quest-ce-quaetherscope-v2-)
-2. [🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian](#-nouveautés-v221--support-zig--cnet-semgrep-communautaire-ssa-dataflow-sca-reachable--mode-vault-obsidian)
+2. [📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques](#-nouveautés-v222--moteur-de-documentation-markdown-github-grade-rendu-mermaid-interactif-coloration-syntaxique--highlighting-diff-endpoint-raw-binary-file--kpi-métriques)
+3. [🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian](#-nouveautés-v221--support-zig--cnet-semgrep-communautaire-ssa-dataflow-sca-reachable--mode-vault-obsidian)
 3. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
 4. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
 5. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 185+ Règles CWE](#-moteur-sast-chasse-zero-day--catalogue-des-185-règles-cwe)
@@ -55,6 +56,48 @@
 ---
 
 
+
+## 📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques
+
+Le panneau latéral gauche d'inspection documentaire (`#doc-reader-panel`) a été intégralement refondu en **V2.2.2** pour offrir une expérience de lecture et de spécification technique **1:1 identique à GitHub**, tout en restant 100% performant hors-ligne :
+
+```mermaid
+flowchart LR
+    A["📄 Markdown / Spécification EARS"] --> B["🔍 Tokenizer & Parser V2"]
+    B --> C["📊 Mermaid Diagrams (CDN + Fallback)"]
+    B --> D["💻 Code Blocks & Gutter GitHub Dark"]
+    B --> E["🖼️ Images & Transclusions Obsidian (/api/raw_file)"]
+    B --> F["📑 Sommaire Interactif & KPI Bar"]
+```
+
+### 1. 📊 Rendu Officiel des Diagrammes Mermaid (Flowcharts, Séquences, Classes, États)
+- **Moteur Officiel Mermaid.js v10 (CDN) :** Interprétation et rendu SVG vectoriel interactif direct des blocs ````mermaid````.
+- **Moteur Visuel Embarqué de Secours :** En cas d'environnement hors-ligne ou avant le chargement du CDN, un tokenizer visuel natif prend le relais pour convertir les déclarations de flux (`-->`), de classes et de séquences en cartes CSS spatiales interactives.
+- **Barre d'outils dédiée par diagramme :**
+  - `📋 Copier` : Copie instantanée du code Mermaid source dans le presse-papier.
+  - `👁️ Code / Rendu` : Bascule en 1 clic entre le SVG rendu et le code source brut.
+  - `🔍 Plein écran` : Modale d'agrandissement plein écran avec zoom haute résolution et flou d'arrière-plan.
+
+### 2. 💻 Coloration Syntaxique GitHub Dark & Interprétation Complète du Code
+- **Thème Officiel GitHub Dark :** Palette de jetons fidèle au design de GitHub (mots-clés `#ff7b72`, fonctions/classes `#d2a8ff`, littéraux/chiffres `#79c0ff`, chaînes `#a5d6ff`, commentaires `#8b949e`, built-ins `#ffa657`).
+- **Highlight.js CDN + Moteur Regex Autonome Embarqué :** Coloration instantanée pour plus de 14 langages majeurs (**Rust, Python, JavaScript, TypeScript, Bash/Shell, PowerShell, JSON, TOML, YAML, Diff, HTML, SVG, SQL, Zig, C#**) même sans aucune connexion internet.
+- **Numérotation des lignes (Gutter `.doc-code-gutter`) :** Numéros de ligne cliquables, non sélectionnables à la souris (`user-select: none`).
+- **Copie Chirurgicale Sans Numéros :** Le bouton `📋 Copier` extrait uniquement le code source brut, avec feedback animé `✅ Copié !` pendant 2 secondes et notification toast.
+- **Formatage Spécial Git Diff :** Les blocs ````diff```` bénéficient d'un surlignage ligne par ligne GitHub (ajouts `+` en vert translucide `#aff5b4`, suppressions `-` en rouge translucide `#ffdcd7`, métadonnées `@@` en cyan).
+- **Aperçu Direct pour HTML & SVG :** Bouton `👁️ Aperçu` pour prévisualiser instantanément le rendu d'un composant HTML ou d'un SVG dans une boîte dédiée.
+
+### 3. 🖼️ Endpoint Fichiers Binaires `/api/raw_file` & Images Locales
+- **Support des Médias Locaux :** Rendu direct des images relatives (`./assets/diagram.png`, `images/schema.svg`, etc.) et distantes (badges shields.io).
+- **Transclusions Obsidian :** Résolution native de la syntaxe de wiki-transclusion `![[nom_image.png]]` vers l'endpoint `/api/raw_file`.
+- **Gestion des Types MIME :** Détection automatique des en-têtes `image/png`, `image/svg+xml`, `image/jpeg`, `image/webp`, `text/plain`.
+
+### 4. 📑 Sommaire Interactif (TOC), Barre KPI & Recherche Instantanée
+- **Barre KPI en En-tête :** Estimation automatique du temps de lecture (200 mots/min), volume de mots et de lignes, compteurs de diagrammes et d'images, indicateur de sceau cryptographique EARS / BLAKE3, et chemin absolu cliquable.
+- **Sommaire Hiérarchique Cliquable :** Table des matières repliable générée à partir des titres `#` à `######` avec ancres fluides (`scrollToHeading`).
+- **Recherche Instantanée dans le Document :** Champ de filtre avec surlignage jaune des occurrences et navigation précédente/suivante (▲ / ▼).
+- **Redimensionnement Dynamique du Volet :** Bouton `↔️ Largeur` permettant de faire défiler la largeur du lecteur : Standard (520px) ➔ Large (880px) ➔ Plein écran (95vw).
+
+---
 
 ## 🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian
 

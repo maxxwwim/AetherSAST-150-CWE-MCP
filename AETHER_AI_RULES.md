@@ -30,32 +30,31 @@ Les commandes MCP d'AetherScope ont été **fusionnées et réduites à 8 outils
 
 ---
 
-## 🛠️ 2. RÉFÉRENTIEL DES 10 OUTILS D'ÉLITE MCP AETHERSCOPE (10 MAX — ANTI-FLOOD)
-AetherScope concentre l'intelligence architecturale sur **10 outils MCP d'élite** hautement optimisés pour éviter tout flood de contexte tout en couvrant 100% des cas d'usage :
+## 🛠️ 2. RÉFÉRENTIEL DES 8 COMMANDES MCP COMBINÉES (`aetherscope_*`)
+Spécifie toujours les paramètres exacts lors de tes appels MCP :
 
-### 🪐 Les 10 Commandes Stratégiques
-1. **`aetherscope_get_graph_summary(path?, rescan?, include_tasks?, severity?)`** *(Diagnostic Global 4-en-1)*
-   - Résumé global de l'architecture (Code AST & Vault Obsidian), violations SAST/CWE actives, liste des tâches et option de rescan à chaud.
-2. **`aetherscope_get_active_target(symbol_id, action?, details?, trace_direction?, max_depth?, path?)`** *(Inspection Cible 3-en-1)*
-   - Téléporte la caméra 3D, extrait le contrat EARS / métadonnées YAML Obsidian, et trace automatiquement les flux amont/aval ou wikilinks.
-3. **`aetherscope_search_symbols(query?, layer?, kind?, stereotype?, has_violation?, cwe_id?, severity?, file_pattern?, limit?, path?)`** *(Recherche Universelle 2-en-1)*
-   - Recherche multi-critères dans le graphe (symboles de code, notes Markdown Obsidian, tags `#tag`) ET audit ciblé des failles CWE.
-4. **`aetherscope_switch_view_mode(mode: 'code' | 'vault', path?)`** *(Bascule Vision 3D WebGL2)*
-   - Permute instantanément la vue du cockpit 3D entre la topologie de code AST (`'code'`) et le réseau de connaissances Obsidian (`'vault'`).
-5. **`aetherscope_verify_patch(files_modified, task_id?, status?, progress?, progress_note?, chat_message?)`** *(Pare-Feu IA Temps Réel 4-en-1)*
-   - Analyse incrémentale < 50ms sur `files_modified` (150+ CWEs, Reachability Source-to-Sink, contrats EARS/BLAKE3). Clôture la tâche et notifie le HUD.
-6. **`aetherscope_manage_tasks(action: 'list' | 'create' | 'update', task_id?, title?, kind?, target_symbol?, priority?, status?, progress?, progress_note?, initial_readme?, full_readme?, status_filter?)`** *(Gestionnaire Tâches 3-en-1)*
-   - Cycle complet des tâches avec mini-READMEs dans `.aether/tasks/` et alignement automatique de la caméra 3D.
-7. **`aetherscope_chat(action: 'send' | 'history', text?, thought?, target_symbol?)`** *(Console Chat Copilot 2-en-1)*
-   - Envoi de debrief Markdown avec balise `<thought>` dans le HUD du cockpit ou lecture de l'historique conversationnel.
-8. **`aetherscope_manage_plugins(action: 'list' | 'test' | 'scan' | 'upsert', target_path?, plugins_dir?, path?, ...)`** *(Moteur Plugins SAST 4-en-1)*
-   - Gestion déclarative complète des règles de sécurité YAML : inventaire, exécution des tests unitaires, audit de fichiers et upsert certifié.
-9. **`aetherscope_teleport_camera(target, action, details)`** *(Navigation Rapide 3D)*
-   - Oriente directement la caméra WebGL vers un composant, active le fil d'Ariane violet et le badge de télémétrie sans recharger l'arbre.
-10. **`aetherscope_scan_project(path?)`** *(Rescan Express)*
-   - Force une réanalyse AST/Vault ultrarapide du projet pour synchroniser immédiatement l'état sur disque avec le visualiseur 3D.
+1. **`aetherscope_get_graph_summary(path?, rescan?, include_tasks?, severity?)`** *(4-en-1)*
+   - Vue globale de l'architecture, dossiers, violations CWE filtrables par `severity` (`"critical"`, `"high"`, `"all"`), tâches actives (`include_tasks: true` par défaut) et réanalyse AST (`rescan: true` remplace `scan_project`).
+2. **`aetherscope_get_active_target(symbol_id, action?, details?, trace_direction?, max_depth?, path?)`** *(3-en-1)*
+   - Aligne la caméra 3D (`action`: `"Inspection"` | `"Analyse"` | `"Refactoring"` | `"Correction CVE"`), extrait le contrat EARS & Handshake XML, et trace le flux MVC amont/aval (`trace_direction`: `"both"` par défaut, `"upstream"`, `"downstream"`, ou `"none"`).
+3. **`aetherscope_search_symbols(query?, layer?, kind?, stereotype?, has_violation?, cwe_id?, severity?, file_pattern?, limit?, path?)`** *(2-en-1)*
+   - Combine la recherche multi-critères dans l'AST (`layer`: `"ui"` | `"action"` | `"domain"` | `"database"`, `kind`, `stereotype`) ET l'audit détaillé des violations SAST/CWE (`cwe_id`, `severity`, `file_pattern`) avec patrons de remédiation.
+4. **`aetherscope_manage_tasks(action, task_id?, title?, kind?, target_symbol?, target_file?, priority?, status?, progress?, progress_note?, initial_readme?, full_readme?, status_filter?)`** *(3-en-1)*
+   - Gère tout le cycle de vie des tâches dans `.aether/tasks/` via `action`:
+     - `"list"` : liste les tâches (`status_filter`: `"active"` | `"all"` | `"done"`).
+     - `"create"` : crée une tâche (`title`, `kind`: `"function"` | `"security_fix"` | `"arch_refactor"` | `"research"` | `"test"`, `target_symbol`, `priority`) et téléporte la caméra 3D.
+     - `"update"` : met à jour une tâche (`task_id`, `status`: `"in_progress"` | `"done"` | `"blocked"`, `progress`: `0..100`, `progress_note`).
+5. **`aetherscope_verify_patch(files_modified, task_id?, status?, progress?, progress_note?, chat_message?)`** *(4-en-1)*
+   - Pare-Feu IA Temps Réel (< 50 ms) : vérifie les fichiers modifiés (`files_modified: ["..."]`), valide les 150+ règles CWE, l'atteignabilité Source-to-Sink et les contrats `README.md` (imports interdits, max lignes, BLAKE3). Si `[PATCH_APPROVED]`, met à jour `task_id` et envoie `chat_message` dans le HUD.
+6. **`aetherscope_chat(action?, text?, thought?, target_symbol?)`** *(2-en-1)*
+   - `action: "send"` (défaut si `text` fourni) : affiche un debrief Markdown dans le Chat Copilot d'AetherScope et centre la caméra sur `target_symbol`.
+   - `action: "history"` : récupère l'historique des échanges du cockpit.
+7. **`aetherscope_manage_plugins(action, target_path?, plugins_dir?, path?, plugin_name?, rule_id?, cwe_id?, name?, severity?, description?, remediation?, file_extensions?, ...)`** *(4-en-1)*
+   - Gère les plugins déclaratifs YAML dans `.aether/plugins/` via `action`: `"list"` (inventaire), `"test"` (exécution des tests unitaires embarqués), `"scan"` (audit sur `target_path`), ou `"upsert"` (création/mise à jour certifiée d'une règle CWE).
+8. **`aetherscope_teleport_camera(target, action, details)`**
+   - Déplacement rapide de la caméra 3D WebGL et mise à jour du fil d'Ariane stellaire sans recharger le contrat complet.
 
-*(Note : les alias et commandes unitaires spécialisées restent supportés par le serveur en arrière-plan sans encombrer la mémoire de l'IA).*
+*(Note : les anciens noms d'outils unitaires restent supportés en alias rétrocompatibles par le serveur MCP, mais privilégie toujours les 8 commandes combinées ci-dessus).*
 
 ---
 
