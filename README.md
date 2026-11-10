@@ -1,7 +1,8 @@
 <div align="center">
 
 <p align="center">
-  <img src="./assets/aetherscope-banner-logo.png" alt="AetherScope V2 Banner Logo" width="100%" style="border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);" />
+  <img src="./Capture.PNG" alt="AetherScope V2 — WebGL 2 Spatial Architectural Cockpit & SAST Linter" width="100%" style="border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.3); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);" />
+
 </p>
 
 # 🪐 AetherScope V2 (`aether-engine`)
@@ -12,7 +13,7 @@
   <b>English 🇬🇧</b> | <a href="./README.fr.md">Français 🇫🇷 (Version originale)</a>
 </p>
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-MCP/)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
 [![Release](https://img.shields.io/badge/Release-v2.2.2_GitHub_Markdown_Engine_Mermaid_Highlighter_Images_API-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
@@ -25,7 +26,6 @@
 
 <br/><br/>
 
-<img src="./Capture.PNG" alt="AetherScope V2 — WebGL 2 Spatial Architectural Cockpit & SAST Linter" width="100%" style="border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.3); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);" />
 
 </div>
 
