@@ -22774,10 +22774,6 @@ const topbarSearchCount = document.getElementById('topbar-search-count');
 const topbarSearchClear = document.getElementById('btn-topbar-search-clear');
 let topbarSelectedIndex = 0;
 
-const safeEscape = (str) => {
-  if (typeof escapeHtml === 'function') return escapeHtml(String(str || ''));
-  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-};
 
 // Core query engine shared by Topbar and Modal (Full Deep Search across functions, methods, calls, fields, docs, violations)
 function querySearchNodes(q, cat) {
