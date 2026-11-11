@@ -50,6 +50,7 @@ impl HandshakePacker {
             }
         }
 
+        xml.push_str(&format!("    <in_degree total=\"{}\">\n", incoming.total()));
         render_group(&mut xml, "form_submit", &incoming.form_submits);
         render_group(&mut xml, "network_http", &incoming.network_http);
         render_group(&mut xml, "realtime_ws", &incoming.realtime_ws);

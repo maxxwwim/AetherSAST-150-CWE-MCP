@@ -22,6 +22,7 @@
 [![SAST Linter](https://img.shields.io/badge/SAST_%26_Bug_Bounty-185%2B_CWE_Rules_%26_Zero--Day_Patterns-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
 [![Catalogue CWE](https://img.shields.io/badge/Catalogue_CWE-185%2B_Règles_Officielles-fbbf24?style=for-the-badge&logo=target)](./CWE_CATALOG.md)
 [![BLAKE3](https://img.shields.io/badge/Contracts-BLAKE3_%2B_EARS_Sealed-10b981?style=for-the-badge)](#🔒-gouvernance-spec-driven-contrats-ears--sceau-blake3)
+[![Roadmap 2027](https://img.shields.io/badge/Roadmap_2027-SoA_100k_%E2%80%A2_WebGPU_%E2%80%A2_Zero--Trust_MCP-ec4899?style=for-the-badge)](./docs/roadmap_2027.md)
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-ef4444?style=for-the-badge)](#📄-licence)
 
 <br/><br/>
@@ -61,8 +62,20 @@
 11. [🕹️ Raccourcis Clavier, Compilation & Licence](#-raccourcis-clavier-compilation--licence)
 12. [📄 Licence](#-licence)
 13. [📚 Liste détaillée des règles CWE (répertoire dédié)](./cwe/)
+14. [🔭 Feuille de Route & Architecture 2027 (SoA 100k+ Nœuds, WebGPU WGSL, Dual-Pass Laser & Économie de Tokens IA)](./docs/roadmap_2027.md)
 
 ---
+
+## ✨ Mise à Jour Graphique & Sécurité (Shaders SDF 3D Volumétriques, Dual-Pass Laser Glow 120 FPS & Roadmap 2027)
+
+- **Shaders GLSL WebGL 2 Volumétriques (`webgl_shaders_physics.js`) :**
+  - **Fonctions (Étoiles) :** Croix de diffraction optique à 4 branches et scintillation stellaire continue sur GPU.
+  - **Fichiers (Planètes) :** Éclairage sphérique 3D de Fresnel et onde de plasma rotative le long de l'anneau de Saturne.
+  - **Classes (Cristaux) :** Facettes cristallines hexagonales en rotation et double halo concentrique.
+  - **Endpoints / Forms (Pulsars) :** Onde de choc radar concentrique émise périodiquement depuis le noyau.
+- **Rendu des Flux *Zero-Blur Dual-Pass Additive Laser* (`webgl_renderer.js`) :** Suppression du flou gaussien CPU (`ctx.shadowBlur`) au profit d'un rendu additif matériel en double passe (`globalCompositeOperation = 'lighter'`), multipliant par **4x à 6x** la fluidité à 120 FPS et couplé au **Hierarchical Edge Bundling (HEB)** pour les liaisons inter-modules.
+- **Durcissement Sécurité & Handshake XML v2.1 :** Arithmétique saturée anti-troncature (`CWE-190` dans `obsidian-vault`), contrat modulaire EARS scellé (`0 violation` active) et symétrie XML `<in_degree>` / `<out_degree>` dans `ai-file-bridge`.
+- **Feuille de Route Stratégique 2027 ([`docs/roadmap_2027.md`](./docs/roadmap_2027.md)) :** Architecture mémoire *Structure of Arrays* (46 octets/nœud pour 100k+ nœuds), indexation *CSR Hybride + Delta Buffer*, migration *WebGPU (WGSL)* avec physique Barnes-Hut asynchrone (30–60 Hz / rendu 120 FPS), et matrice d'allocation IA (*Argon Max* vs *Gemini 3 Max*).
 
 
 

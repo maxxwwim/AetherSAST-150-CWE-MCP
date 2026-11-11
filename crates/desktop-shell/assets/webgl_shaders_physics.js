@@ -34,11 +34,15 @@ const vsSource = `#version 300 es
   out float v_is_file;
   out float v_scale;
   out float v_spawn_progress;
+  out float v_time;
+  out float v_phase;
 
   void main() {
     v_uv = a_quad_pos;
     v_color = a_color;
     v_is_file = a_is_file;
+    v_time = u_time;
+    v_phase = fract(sin(dot(a_node_pos, vec2(12.9898, 78.233))) * 43758.5453) * 6.283185;
 
     float dt = u_time - a_birth_time;
     if (dt <= 0.0) {
@@ -84,6 +88,8 @@ const fsSource = `#version 300 es
   in float v_is_file;
   in float v_scale;
   in float v_spawn_progress;
+  in float v_time;
+  in float v_phase;
 
   out vec4 fragColor;
 
@@ -92,51 +98,62 @@ const fsSource = `#version 300 es
     float r = length(v_uv); // 0.0 at center, 1.0 at perimeter
     if (r > 1.0) discard;
 
+    float angle = atan(v_uv.y, v_uv.x);
     vec3 col = v_color.rgb;
     vec3 final_rgb = col;
     float alpha = 1.0;
 
     if (v_is_file < 0.5) {
-      // --- MINI POINT POUR FONCTION : Étincelle stellaire ultra-lumineuse, noyau blanc pur ---
-      float core = 1.0 - smoothstep(0.0, 0.32, r);
-      float halo = 1.0 - smoothstep(0.18, 0.95, r);
-      final_rgb = mix(col * 1.35, vec3(1.0, 1.0, 1.0), core * 0.90) + col * halo * 0.55;
-      alpha = clamp(core * 0.98 + halo * 0.85, 0.0, 1.0);
+      // --- MINI POINT POUR FONCTION : Étincelle stellaire avec croix de diffraction & scintillation ---
+      float twinkle = 0.90 + 0.10 * sin(v_time * 0.0045 + v_phase);
+      float core = 1.0 - smoothstep(0.0, 0.30, r);
+      float halo = (1.0 - smoothstep(0.15, 0.96, r)) * twinkle;
+      float spike_x = exp(-abs(v_uv.y) * 18.0) * exp(-abs(v_uv.x) * 3.5);
+      float spike_y = exp(-abs(v_uv.x) * 18.0) * exp(-abs(v_uv.y) * 3.5);
+      float diffraction = (spike_x + spike_y) * 0.42 * twinkle;
+      final_rgb = mix(col * 1.40, vec3(1.0, 1.0, 1.0), clamp(core + diffraction * 0.6, 0.0, 1.0)) + col * (halo * 0.60 + diffraction);
+      alpha = clamp(core * 0.98 + halo * 0.85 + diffraction * 0.75, 0.0, 1.0);
     } else if (v_is_file < 1.5) {
-      // --- PLANÈTE FICHIER : Orbe céleste avec anneau de Saturne vibrant ---
+      // --- PLANÈTE FICHIER : Orbe 3D Fresnel avec anneau orbital à onde de plasma ---
       float body = 1.0 - smoothstep(0.44, 0.56, r);
+      float z_sphere = sqrt(max(0.0, 1.0 - min(1.0, (r / 0.54) * (r / 0.54))));
+      float fresnel = pow(1.0 - z_sphere, 2.2) * body;
       float rim = 1.0 - smoothstep(0.0, 0.08, abs(r - 0.52));
-      float core = 1.0 - smoothstep(0.0, 0.22, r);
-      float outer_glow = (1.0 - smoothstep(0.50, 0.96, r)) * 0.45;
-      float ring = (1.0 - smoothstep(0.0, 0.05, abs(r - 0.78))) * 0.85;
+      float core = 1.0 - smoothstep(0.0, 0.24, r);
+      float outer_glow = (1.0 - smoothstep(0.50, 0.97, r)) * 0.48;
+      float ring_wave = 0.78 + 0.22 * sin(angle * 4.0 - v_time * 0.0035 + v_phase);
+      float ring = (1.0 - smoothstep(0.0, 0.055, abs(r - 0.78))) * 0.92 * ring_wave;
 
-      final_rgb = mix(col * 0.95, vec3(1.0), core * 0.70);
-      final_rgb += vec3(1.0) * rim * 0.95 + col * rim * 0.70;
-      final_rgb += col * outer_glow * 0.85;
-      final_rgb += mix(col, vec3(0.9, 0.96, 1.0), 0.65) * ring;
-      alpha = clamp(body * 0.95 + rim * 0.90 + outer_glow * 0.60 + ring, 0.0, 1.0);
+      final_rgb = mix(col * 0.95, vec3(1.0), core * 0.72 + fresnel * 0.35);
+      final_rgb += vec3(1.0) * rim * 0.95 + col * (rim * 0.75 + fresnel * 0.55);
+      final_rgb += col * outer_glow * 0.88;
+      final_rgb += mix(col, vec3(0.92, 0.97, 1.0), 0.70) * ring;
+      alpha = clamp(body * 0.96 + rim * 0.92 + outer_glow * 0.62 + ring, 0.0, 1.0);
     } else if (v_is_file < 2.5) {
-      // --- CLASSE : Cristal céleste avec double halo concentrique ---
+      // --- CLASSE : Cristal céleste hexagonal rotatif avec double halo concentrique ---
+      float hex_facet = 0.82 + 0.18 * cos(angle * 6.0 + v_time * 0.0022 + v_phase);
       float body = 1.0 - smoothstep(0.48, 0.58, r);
-      float rim = 1.0 - smoothstep(0.0, 0.07, abs(r - 0.52));
+      float rim = (1.0 - smoothstep(0.0, 0.07, abs(r - 0.52))) * hex_facet;
       float inner_halo = 1.0 - smoothstep(0.0, 0.06, abs(r - 0.32));
-      float core = 1.0 - smoothstep(0.0, 0.18, r);
-      float outer_glow = (1.0 - smoothstep(0.52, 0.95, r)) * 0.50;
+      float core = 1.0 - smoothstep(0.0, 0.19, r);
+      float outer_glow = (1.0 - smoothstep(0.52, 0.96, r)) * 0.52 * hex_facet;
 
-      final_rgb = mix(col, vec3(1.0), core * 0.80);
-      final_rgb += vec3(1.0) * rim * 0.95 + col * inner_halo * 0.80;
-      final_rgb += col * outer_glow * 0.80;
-      alpha = clamp(body * 0.95 + rim + inner_halo * 0.70 + outer_glow * 0.50, 0.0, 1.0);
+      final_rgb = mix(col, vec3(1.0), core * 0.82);
+      final_rgb += vec3(1.0) * rim * 0.95 + col * inner_halo * 0.85;
+      final_rgb += col * outer_glow * 0.85;
+      alpha = clamp(body * 0.95 + rim + inner_halo * 0.75 + outer_glow * 0.55, 0.0, 1.0);
     } else {
-      // --- FORM / ENDPOINT : Pulsar / Balise énergétique hyper-contrastée ---
+      // --- FORM / ENDPOINT : Pulsar énergétique avec onde de choc radar ---
+      float pulse_r = mix(0.50, 0.94, fract(v_time * 0.00075 + v_phase * 0.159));
+      float radar_wave = (1.0 - smoothstep(0.0, 0.06, abs(r - pulse_r))) * (1.0 - (pulse_r - 0.50) / 0.44);
       float body = 1.0 - smoothstep(0.46, 0.56, r);
       float rim = 1.0 - smoothstep(0.0, 0.09, abs(r - 0.50));
-      float core = 1.0 - smoothstep(0.0, 0.25, r);
-      float outer_glow = (1.0 - smoothstep(0.50, 0.98, r)) * 0.60;
+      float core = 1.0 - smoothstep(0.0, 0.26, r);
+      float outer_glow = (1.0 - smoothstep(0.50, 0.98, r)) * 0.62;
 
-      final_rgb = mix(col, vec3(1.0, 0.95, 0.80), core * 0.75);
-      final_rgb += vec3(1.0) * rim * 0.95 + col * outer_glow * 0.90;
-      alpha = clamp(body * 0.95 + rim * 0.90 + outer_glow * 0.70, 0.0, 1.0);
+      final_rgb = mix(col, vec3(1.0, 0.96, 0.84), core * 0.78);
+      final_rgb += vec3(1.0) * (rim * 0.95 + radar_wave * 0.65) + col * (outer_glow * 0.92 + radar_wave * 0.85);
+      alpha = clamp(body * 0.96 + rim * 0.92 + outer_glow * 0.72 + radar_wave * 0.80, 0.0, 1.0);
     }
 
     if (v_color.a < 0.2) {

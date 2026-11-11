@@ -203,7 +203,8 @@ pub fn create_note_bubble(rel_path: &str, doc: &ParsedNote) -> SymbolBubble {
     bubble.color_rgba = color_rgba;
     bubble.radius = radius;
     bubble.lines_count = doc.lines_count;
-    bubble.complexity = (doc.wikilinks.len() + doc.tags.len()) as u32;
+    let total_links = doc.wikilinks.len().saturating_add(doc.tags.len());
+    bubble.complexity = u32::try_from(total_links).unwrap_or(u32::MAX);
     bubble.is_dead_code = false;
 
     // Build metadata attributes for frontmatter

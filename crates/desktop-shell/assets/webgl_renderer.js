@@ -1326,11 +1326,13 @@ function render(now) {
           ? e._isCrossFolder
           : (s.folder && t.folder && s.folder !== t.folder);
 
-        // Helper to add line with optional subtle curve if cross-folder
+        // Helper to add line with Hierarchical Edge Bundling (HEB) B-Spline curve if cross-folder
         const appendLine = (path) => {
           if (isCrossFolder && normRel !== 'contains' && normRel !== 'documents') {
-            const mx = (s.x + t.x) * 0.5 - (t.y - s.y) * 0.08;
-            const my = (s.y + t.y) * 0.5 + (t.x - s.x) * 0.08;
+            const dx = t.x - s.x;
+            const dy = t.y - s.y;
+            const mx = (s.x + t.x) * 0.44 - dy * 0.11;
+            const my = (s.y + t.y) * 0.44 + dx * 0.11;
             path.moveTo(s.x, s.y);
             path.quadraticCurveTo(mx, my, t.x, t.y);
           } else {
@@ -1476,74 +1478,70 @@ function render(now) {
       ctx.restore();
     }
 
+    // Zero-Blur Dual-Pass Additive Laser Helper (replaces CPU-bound ctx.shadowBlur with 120 FPS Dual-Core Glow)
+    const strokeDualPassLaser = (path, color, coreWidth, baseAlpha, withGlow) => {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (withGlow) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.min(1.0, baseAlpha * 0.28);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = coreWidth * 2.6;
+        ctx.stroke(path);
+      }
+      ctx.globalAlpha = baseAlpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = coreWidth;
+      ctx.stroke(path);
+      ctx.restore();
+    };
+
     // Draw Batch 4a: Pipeline Step 1 — Submits (Vivid Coral-Orange #ff6b00)
     if (batch.hasSubmits) {
-      ctx.save();
-      ctx.globalAlpha = (isPipelineActive ? 1.0 : highwayAlpha) * highlightDimFactor;
-      ctx.strokeStyle = '#ff6b00';
-      ctx.lineWidth = Math.min(6.5, Math.max(1.5, (isPipelineActive ? 3.0 : 2.2) / c.zoom));
-      if (isPipelineActive) {
-        ctx.shadowColor = '#ff6b00';
-        ctx.shadowBlur = 12;
-      }
-      ctx.stroke(batch.pSubmits);
-      ctx.restore();
+      const alpha = (isPipelineActive ? 1.0 : highwayAlpha) * highlightDimFactor;
+      const lw = Math.min(6.5, Math.max(1.5, (isPipelineActive ? 3.0 : 2.2) / c.zoom));
+      strokeDualPassLaser(batch.pSubmits, '#ff6b00', lw, alpha, isPipelineActive);
     }
 
     // Draw Batch 4b: Pipeline Step 2 — Network HTTP/REST (Electric Sky Blue #00c8ff)
     if (batch.hasNetwork) {
-      ctx.save();
-      ctx.globalAlpha = (isPipelineActive ? 1.0 : highwayAlpha) * highlightDimFactor;
-      ctx.strokeStyle = '#00c8ff';
-      ctx.lineWidth = Math.min(6.5, Math.max(1.5, (isPipelineActive ? 3.0 : 2.2) / c.zoom));
-      if (isPipelineActive) {
-        ctx.shadowColor = '#00c8ff';
-        ctx.shadowBlur = 12;
-      }
-      ctx.stroke(batch.pNetwork);
-      ctx.restore();
+      const alpha = (isPipelineActive ? 1.0 : highwayAlpha) * highlightDimFactor;
+      const lw = Math.min(6.5, Math.max(1.5, (isPipelineActive ? 3.0 : 2.2) / c.zoom));
+      strokeDualPassLaser(batch.pNetwork, '#00c8ff', lw, alpha, isPipelineActive);
     }
 
     // Draw Batch 4c: Pipeline Step 3 — Realtime WS (Cyan glowing laser #00f0ff)
     if (batch.hasRealtime) {
-      ctx.save();
-      ctx.globalAlpha = (isPipelineActive ? 1.0 : highwayAlpha) * highlightDimFactor;
-      ctx.strokeStyle = '#00f0ff';
-      ctx.lineWidth = Math.min(7.0, Math.max(1.6, (isPipelineActive ? 3.4 : 2.4) / c.zoom));
-      ctx.shadowColor = '#00f0ff';
-      ctx.shadowBlur = isPipelineActive ? 16 : 8;
-      ctx.stroke(batch.pRealtime);
-      ctx.shadowBlur = 0;
-      ctx.restore();
+      const alpha = (isPipelineActive ? 1.0 : highwayAlpha) * highlightDimFactor;
+      const lw = Math.min(7.0, Math.max(1.6, (isPipelineActive ? 3.4 : 2.4) / c.zoom));
+      strokeDualPassLaser(batch.pRealtime, '#00f0ff', lw, alpha, true);
     }
 
     // Draw Batch 4d: Pipeline Step 4 — Database Queries & Persistence (Cyber Emerald #10b981)
     if (batch.hasQueries) {
-      ctx.save();
-      ctx.globalAlpha = (isPipelineActive ? 1.0 : highwayAlpha) * highlightDimFactor;
-      ctx.strokeStyle = '#10b981';
-      ctx.lineWidth = Math.min(7.0, Math.max(1.6, (isPipelineActive ? 3.4 : 2.4) / c.zoom));
-      ctx.shadowColor = '#10b981';
-      ctx.shadowBlur = isPipelineActive ? 16 : 8;
-      ctx.stroke(batch.pQueries);
-      ctx.shadowBlur = 0;
-      ctx.restore();
+      const alpha = (isPipelineActive ? 1.0 : highwayAlpha) * highlightDimFactor;
+      const lw = Math.min(7.0, Math.max(1.6, (isPipelineActive ? 3.4 : 2.4) / c.zoom));
+      strokeDualPassLaser(batch.pQueries, '#10b981', lw, alpha, true);
     }
 
     // Draw Batch 4e: Security Violates (Pulsing / Blinking Red laser)
     if (batch.hasViolation) {
       ctx.save();
       const pulseAlpha = (Math.sin(now * 0.012) * 0.35 + 0.65) * highlightDimFactor;
-      ctx.globalAlpha = pulseAlpha;
-      ctx.strokeStyle = '#f43f5e';
-      ctx.lineWidth = Math.min(6.5, Math.max(2.0, 3.2 / c.zoom));
-      ctx.shadowColor = '#ef4444';
-      ctx.shadowBlur = 14;
+      const lw = Math.min(6.5, Math.max(2.0, 3.2 / c.zoom));
       ctx.setLineDash([8 / c.zoom, 4 / c.zoom]);
       ctx.lineDashOffset = -(now * 0.035) / c.zoom;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = pulseAlpha * 0.32;
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = lw * 2.5;
+      ctx.stroke(batch.pViolation);
+      ctx.globalAlpha = pulseAlpha;
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = lw;
       ctx.stroke(batch.pViolation);
       ctx.setLineDash([]);
-      ctx.shadowBlur = 0;
       ctx.restore();
     }
 
