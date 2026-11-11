@@ -3666,6 +3666,67 @@
 
     .tt-details { font-size: 0.66rem; color: #cbd5e1; font-family: var(--font-mono); border-top: 1px solid rgba(148, 163, 184, 0.15); padding-top: 4px; display: flex; justify-content: space-between; gap: 6px; }
 
+    /* CWE Security Alert Card in Tooltip (R1) */
+    .tt-cwe-box {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      border-radius: 6px;
+      padding: 6px 8px;
+      margin: 2px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .tt-cwe-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.64rem;
+      font-weight: 800;
+    }
+
+    .tt-cwe-sev {
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+      letter-spacing: 0.04em;
+    }
+
+    .tt-cwe-badge.high .tt-cwe-sev {
+      background: rgba(249, 115, 22, 0.35);
+      color: #fdba74;
+    }
+
+    .tt-cwe-badge.medium .tt-cwe-sev,
+    .tt-cwe-badge.warning .tt-cwe-sev {
+      background: rgba(234, 179, 8, 0.35);
+      color: #fde047;
+    }
+
+    .tt-cwe-title {
+      color: #fecaca;
+      font-weight: 700;
+    }
+
+    .tt-cwe-count {
+      font-size: 0.58rem;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    .tt-cwe-msg {
+      font-size: 0.62rem;
+      color: #e2e8f0;
+      font-family: var(--font-mono);
+      line-height: 1.3;
+      word-break: break-word;
+      max-height: 48px;
+      overflow-y: auto;
+    }
+
 
 
     .insp-header {
@@ -4868,44 +4929,18 @@
 
 
 
-    /* Floating Aquatic Hydro-HUD Pill (Style Flottant Eau Live) */
-
+    /* Clean suppression of central screen status overlay (R2) */
+    #hydro-loading-hud,
     .hydro-hud-banner {
-
+      display: none !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      visibility: hidden !important;
       position: fixed;
-
       top: 126px;
-
       left: 50%;
-
       transform: translateX(-50%);
-
       z-index: 1000;
-
-      display: flex;
-
-      align-items: center;
-
-      gap: 12px;
-
-      padding: 7px 22px;
-
-      border-radius: 999px;
-
-      background: rgba(3, 14, 33, 0.82);
-
-      backdrop-filter: blur(12px);
-
-      border: 1px solid rgba(56, 189, 248, 0.55);
-
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(56, 189, 248, 0.25);
-
-      transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.45s;
-
-      pointer-events: none;
-
-      user-select: none;
-
     }
 
     .hydro-hud-banner.hidden {
@@ -6227,39 +6262,35 @@
     }
 
     .cve-badge-group {
-
       display: flex;
-
       align-items: center;
-
-      gap: 5px;
-
+      flex-wrap: wrap;
+      gap: 6px;
       min-width: 0;
-
-      overflow: hidden;
-
     }
 
     .cve-badge {
-
-      font-size: 0.66rem;
-
+      font-size: 0.68rem;
       font-family: var(--font-mono);
-
       font-weight: 800;
-
-      padding: 2px 7px;
-
+      padding: 3px 8px;
       border-radius: 4px;
-
-      white-space: nowrap;
-
-      overflow: hidden;
-
-      text-overflow: ellipsis;
-
+      white-space: normal;
+      word-break: break-word;
       letter-spacing: 0.02em;
+    }
 
+    .cve-rule-name {
+      font-size: 0.64rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: #94a3b8;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 4px;
+      padding: 2px 6px;
+      white-space: normal;
+      word-break: break-word;
     }
 
     .cve-badge.critical {

@@ -5,6 +5,17 @@
 
 // --- Node Hover Tooltip Engine ---
 const tooltipEl = document.getElementById('node-tooltip');
+
+function safeEscape(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function updateTooltip(node, mouseX, mouseY) {
   if (!tooltipEl) return;
   if (!node) {
@@ -92,14 +103,74 @@ function updateTooltip(node, mouseX, mouseY) {
     docBox.style.display = 'none';
   }
 
-  const pad = 16;
-  let x = mouseX + pad;
-  let y = mouseY + pad;
-  if (x + 390 > window.innerWidth) x = mouseX - 390;
-  if (y + 180 > window.innerHeight) y = mouseY - 180;
-  tooltipEl.style.left = `${Math.max(10, x)}px`;
-  tooltipEl.style.top = `${Math.max(10, y)}px`;
+  // CWE Security Alert / Anomalies display in tooltip (R1)
+  const cweBox = document.getElementById('tt-cwe-container');
+  const anomalies = (node.metadata && node.metadata.cve_anomalies) || [];
+  const violations = (node.metadata && node.metadata.violations) || node.violations || [];
+  const hasSecurity = Boolean(node.has_security_violation || anomalies.length > 0 || violations.length > 0);
+
+  if (cweBox) {
+    if (hasSecurity && (anomalies.length > 0 || violations.length > 0)) {
+      let html = '';
+      if (anomalies.length > 0) {
+        const primary = anomalies[0];
+        const sev = (primary.severity || 'CRITICAL').toUpperCase();
+        const cweId = primary.cve_id || primary.rule_id || 'CWE-SAST';
+        const msg = primary.message || primary.remediation || 'Vulnérabilité de sécurité détectée';
+        const count = anomalies.length > 1 ? ` <span class="tt-cwe-count">(+${anomalies.length - 1} autre${anomalies.length > 2 ? 's' : ''})</span>` : '';
+        html = `
+          <div class="tt-cwe-badge ${sev.toLowerCase()}">
+            <span class="tt-cwe-sev">🚨 ${sev}</span>
+            <span class="tt-cwe-title">${safeEscape(cweId)}</span>${count}
+          </div>
+          <div class="tt-cwe-msg">${safeEscape(msg)}</div>
+        `;
+      } else {
+        const v = violations[0];
+        html = `
+          <div class="tt-cwe-badge critical">
+            <span class="tt-cwe-sev">🚨 ALERTE</span>
+            <span class="tt-cwe-title">VIOLATION SÉCURITÉ</span>
+          </div>
+          <div class="tt-cwe-msg">${safeEscape(v)}</div>
+        `;
+      }
+      cweBox.innerHTML = html;
+      cweBox.style.display = 'flex';
+    } else {
+      cweBox.style.display = 'none';
+      cweBox.innerHTML = '';
+    }
+  }
+
+  // Dynamic non-obstructing positioning (R1)
+  // Calculate safety clearance using node screen radius so tooltip does not obscure node
+  const camZoom = (state.camera && state.camera.zoom) || 1.0;
+  const nodeScreenRadius = Math.max(20, (node.radius || 18) * camZoom);
+  const clearance = nodeScreenRadius + 20;
+
+  // Render temporarily to accurately measure bounds
   tooltipEl.classList.add('show');
+  const ttWidth = tooltipEl.offsetWidth || 340;
+  const ttHeight = tooltipEl.offsetHeight || 160;
+
+  // Horizontal position: prefer placing to the right of node, flip to left if edge reached
+  let x = mouseX + clearance;
+  if (x + ttWidth > window.innerWidth - 14) {
+    x = mouseX - clearance - ttWidth;
+  }
+  // Clamp inside window boundaries
+  x = Math.max(12, Math.min(window.innerWidth - ttWidth - 12, x));
+
+  // Vertical position: align near node center or offset vertically to avoid covering labels below
+  let y = mouseY - ttHeight * 0.4;
+  if (y + ttHeight > window.innerHeight - 14) {
+    y = window.innerHeight - ttHeight - 14;
+  }
+  y = Math.max(12, y);
+
+  tooltipEl.style.left = `${Math.round(x)}px`;
+  tooltipEl.style.top = `${Math.round(y)}px`;
 }
 
 // --- Inspector & Doc Panel Resizer Drag Engines ---
@@ -149,6 +220,8 @@ window.addEventListener('mousedown', (e) => {
   if (e.button === 1 || e.button === 2) {
     e.preventDefault();
     dragMode = e.button === 2 ? 'right_zoom' : 'plateau';
+    state.isPanning = true;
+    state.isDraggingCanvas = true;
     mouseDownPos = { x: e.clientX, y: e.clientY };
     dragStart = { x: e.clientX, y: e.clientY };
     document.body.style.cursor = e.button === 2 ? 'ns-resize' : 'grabbing';
@@ -184,6 +257,8 @@ window.addEventListener('mousedown', (e) => {
     document.body.style.cursor = 'grabbing';
   } else {
     dragMode = 'plateau';
+    state.isPanning = true;
+    state.isDraggingCanvas = true;
     document.body.style.cursor = 'grabbing';
   }
 });
@@ -339,6 +414,8 @@ window.addEventListener('mouseup', (e) => {
     dragMode = null;
     draggedNode = null;
     state.draggedNode = null;
+    state.isPanning = false;
+    state.isDraggingCanvas = false;
     if (typeof dragEndWorker === 'function') dragEndWorker();
     draggedFolder = null;
     dragFolderNodes = null;

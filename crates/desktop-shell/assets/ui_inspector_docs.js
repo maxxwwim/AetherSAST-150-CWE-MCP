@@ -514,6 +514,7 @@ function renderNodeDebrief(n, incoming, outgoing) {
               <div class="cve-card-header">
                 <div class="cve-badge-group">
                   <span class="cve-badge ${sClass}">${escapeHtml(a.cve_id || a.rule_id)}</span>
+                  ${a.rule_id && a.cve_id && a.rule_id !== a.cve_id ? `<span class="cve-rule-name">${escapeHtml(a.rule_id)}</span>` : ''}
                   <span class="cve-sev-tag ${sClass}">${escapeHtml(a.severity)}</span>
                 </div>
                 <span class="cve-line-tag">L${a.line_number}</span>

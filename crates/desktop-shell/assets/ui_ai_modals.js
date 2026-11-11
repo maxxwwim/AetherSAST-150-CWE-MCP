@@ -1092,10 +1092,10 @@ function applyAiTelemetry(telem) {
   state.aiLastTimestamp = telem.timestamp;
 
   // Update HUD banner
-  const hud = document.getElementById('ai-telemetry-hud');
+  const telemHud = document.getElementById('ai-telemetry-hud');
   const btn = document.getElementById('btn-ai-telemetry');
-  if (hud) {
-    hud.classList.remove('hidden');
+  if (telemHud) {
+    telemHud.classList.remove('hidden');
     if (btn) btn.classList.add('active');
     const targetEl = document.getElementById('ai-target-badge');
     if (targetEl) targetEl.innerText = telem.target;
@@ -1661,28 +1661,12 @@ window.loadProjects = loadProjects;
 
 let loadingTimer = null;
 function showLoadingScreen(title, stepText, folderPath) {
-  const hud = document.getElementById('hydro-loading-hud');
-  const titleEl = document.getElementById('hydro-project-title');
-  const stepEl = document.getElementById('hydro-step-text');
-  if (titleEl && title) titleEl.innerText = title;
-  if (stepEl && (folderPath || stepText)) {
-    stepEl.innerText = folderPath ? `Émergence de ${folderPath}...` : stepText;
+  // R2: Central screen status overlay is suppressed to liberate the central viewport.
+  // Clean up any existing timer to avoid unneeded background intervals.
+  if (loadingTimer) {
+    clearInterval(loadingTimer);
+    loadingTimer = null;
   }
-  if (hud) hud.classList.remove('hidden');
-
-  const steps = [
-    'Émergence aquatique des clusters de code...',
-    'Scan AST multithread & linter SAST...',
-    'Vérification des sceaux BLAKE3 et contrats EARS...',
-    'Simulation des forces quantiques d\'affiliation...',
-    'Projection spatiale WebGL 2 (120 FPS instancié)...'
-  ];
-  let stepIdx = 0;
-  if (loadingTimer) clearInterval(loadingTimer);
-  loadingTimer = setInterval(() => {
-    stepIdx = (stepIdx + 1) % steps.length;
-    if (stepEl) stepEl.innerText = steps[stepIdx];
-  }, 700);
 }
 
 function hideLoadingScreen() {
@@ -1692,9 +1676,7 @@ function hideLoadingScreen() {
   }
   const hud = document.getElementById('hydro-loading-hud');
   if (hud) {
-    setTimeout(() => {
-      hud.classList.add('hidden');
-    }, 750);
+    hud.classList.add('hidden');
   }
 }
 
@@ -1707,11 +1689,11 @@ async function analyze(path) {
     const data = await window.AetherAPI.analyze(path);
     if (typeof syncProjectStatus === 'function') syncProjectStatus();
     applyData(data);
-    hideLoadingScreen();
     showToast(`✨ ${data.nodes.length} nœuds, ${data.edges.length} liens analysés en ${data.stats.elapsed_ms}ms !`);
   } catch (e) {
-    hideLoadingScreen();
     showToast('❌ Erreur analyse serveur');
+  } finally {
+    hideLoadingScreen();
   }
 }
 window.analyze = analyze;
@@ -1804,38 +1786,14 @@ function applyData(data) {
     AudioSys.waterRipple(0.35);
   }
 
-  // Realtime Animated HUD Banner
-  const hud = document.getElementById('hydro-loading-hud');
-  const hudTitle = document.getElementById('hydro-project-title');
-  const hudStep = document.getElementById('hydro-step-text');
-
-  if (hud) {
-    hud.classList.remove('hidden');
-    if (hudTitle) hudTitle.innerText = `✨ Émergence Céleste : Vague 1 / ${totalWaves}`;
-    if (hudStep) hudStep.innerText = `Déploiement rapide des amas stellaires (${data.nodes.length} symboles)...`;
-
-    WAVES.forEach((waveFolders, wIdx) => {
-      setTimeout(() => {
-        const folder = waveFolders[0];
-        const fNodes = folderMap.get(folder) || [];
-        const label = typeof formatFolderLabel === 'function' ? formatFolderLabel(folder) : folder;
-        const extra = waveFolders.length > 1 ? ` +${waveFolders.length - 1}` : '';
-        if (hudTitle) hudTitle.innerText = `✨ Émergence Céleste : Vague ${wIdx + 1} / ${totalWaves}`;
-        if (hudStep) hudStep.innerText = `Naissance de [${label}${extra}] (${fNodes.length} symboles)...`;
-        if (window.AudioSys && typeof AudioSys.waterBubblePop === 'function') {
-          AudioSys.waterBubblePop(wIdx + 1);
-        }
-      }, 30 + wIdx * waveIntervalMs);
-    });
-
+  // Realtime Animated Emergence Sequence (Audio & Waves) - Central HUD suppressed (R2)
+  WAVES.forEach((waveFolders, wIdx) => {
     setTimeout(() => {
-      if (hudTitle) hudTitle.innerText = `✨ Émergence Complète !`;
-      if (hudStep) hudStep.innerText = `${data.nodes.length} symboles vivants • ${data.edges.length} flux quantiques`;
-      setTimeout(() => {
-        hud.classList.add('hidden');
-      }, 500);
-    }, 30 + totalWaves * waveIntervalMs + 220);
-  }
+      if (window.AudioSys && typeof AudioSys.waterBubblePop === 'function') {
+        AudioSys.waterBubblePop(wIdx + 1);
+      }
+    }, 30 + wIdx * waveIntervalMs);
+  });
 
   state.data = data;
   state.project_path = data.project_path || '';

@@ -50,16 +50,16 @@ function isSecurityVulnNode(n) {
 }
 window.isSecurityVulnNode = isSecurityVulnNode;
 
-// --- Organic Biological Cellular Bubble Renderer (12-Lobe Quadratic Spline + Bilayer + Nucleus) ---
-const _bubbleLabelCache = new Map();
-const _cellPtsX = new Float32Array(12);
-const _cellPtsY = new Float32Array(12);
+// Helper: Detect Large Project Scale (R3)
+function isLargeGraph() {
+  const nodes = state.data?.nodes || [];
+  const edges = state.data?.edges || [];
+  return Boolean(state.isLargeProject || nodes.length >= 400 || edges.length >= 1000);
+}
+window.isLargeGraph = isLargeGraph;
 
 function updateHydroHudProgress(folder, currentIdx, total) {
-  const hud = document.getElementById('hydro-loading-hud');
-  if (hud && currentIdx >= total) {
-    hud.classList.add('hidden');
-  }
+  // R2: Central screen status overlay is suppressed; no-op retained for API safety
 }
 
 // Traces a 100% smooth C1-continuous closed quadratic Bezier biological membrane (zero sharp vertices)
@@ -93,11 +93,11 @@ function traceCellularContour(ctx, radius, now, phase, lobeProfile, waveScale = 
   ctx.closePath();
 }
 
-function drawOrganicFluidBubble(ctx, fx, fy, bubbleR, now, phase, rR, rG, rB, isFolderSel, c, lodLevel, folder, count, isSubmerged = false, lobeProfile = null) {
+function drawOrganicFluidBubble(ctx, fx, fy, bubbleR, now, phase, rR, rG, rB, isFolderSel, c, lodLevel, folder, count, isSubmerged = false, lobeProfile = null, waveScale = 1.0) {
   if (state.hiddenModules && state.hiddenModules.has(folder)) return;
-  // Living harmonic cellular buoyancy float
-  const floatY = Math.sin(now * 0.0015 + phase) * 2.6;
-  const floatX = Math.cos(now * 0.0011 + phase * 0.85) * 1.8;
+  // Living harmonic cellular buoyancy float (calmed during motion on large projects)
+  const floatY = waveScale > 0 ? Math.sin(now * 0.0015 + phase) * 2.6 : 0;
+  const floatX = waveScale > 0 ? Math.cos(now * 0.0011 + phase * 0.85) * 1.8 : 0;
 
   ctx.save();
   ctx.translate(fx + floatX, fy + floatY);
@@ -116,7 +116,7 @@ function drawOrganicFluidBubble(ctx, fx, fy, bubbleR, now, phase, rR, rG, rB, is
   }
 
   // 1. OUTER ECTOPLASM HALO & EXOMEMBRANE (Smooth 12-Lobe Quadratic Spline)
-  traceCellularContour(ctx, bubbleR, now, phase, lobeProfile, 1.0, 0.0);
+  traceCellularContour(ctx, bubbleR, now, phase, lobeProfile, waveScale, 0.0);
   const topCrestY = _cellPtsY[9] || -bubbleR; // sector 9 is angle 3*PI/2 (top crest)
 
   const fillAlpha = isSubmerged ? 0.04 : (isFolderSel ? 0.16 : 0.075);
@@ -130,7 +130,7 @@ function drawOrganicFluidBubble(ctx, fx, fy, bubbleR, now, phase, rR, rG, rB, is
   ctx.stroke();
 
   // 2. INNER PHOSPHOLIPID CORTEX (Endomembrane breathing in counter-phase)
-  traceCellularContour(ctx, bubbleR * 0.90, now, phase, lobeProfile, 0.85, 2.2);
+  traceCellularContour(ctx, bubbleR * 0.90, now, phase, lobeProfile, 0.85 * waveScale, 2.2);
   ctx.fillStyle = `${colBase}, ${isFolderSel ? 0.06 : 0.032})`;
   ctx.fill();
   ctx.lineWidth = Math.min(2.2, 1.0 / c.zoom);
@@ -157,7 +157,7 @@ function drawOrganicFluidBubble(ctx, fx, fy, bubbleR, now, phase, rR, rG, rB, is
 
     // Central Cellular Nucleus (Noyau Cellulaire)
     const nucR = Math.max(14, bubbleR * 0.21);
-    traceCellularContour(ctx, nucR, now, phase * 1.3, null, 1.25, 1.1);
+    traceCellularContour(ctx, nucR, now, phase * 1.3, null, 1.25 * waveScale, 1.1);
     ctx.fillStyle = `${colBase}, ${isFolderSel ? 0.22 : 0.12})`;
     ctx.fill();
     ctx.strokeStyle = isFolderSel ? 'rgba(56, 189, 248, 0.55)' : `${colLight}, 0.30)`;
@@ -523,12 +523,18 @@ function smoothFlyTo(tx, ty, tz = null, customDuration = null) {
   const finalZoom = (tz !== null && Number.isFinite(tz)) ? tz : (startZoom < 0.75 ? 0.95 : startZoom);
 
   const dist = Math.hypot(tx - startX, ty - startY);
-  // Trajectoire cinématique naturelle : durée fluide et douce selon la distance
-  const duration = customDuration || Math.max(900, Math.min(1850, 800 + dist * 0.45));
+  const isLarge = isLargeGraph();
 
-  // Courbe d'altitude : si la caméra voyage loin dans l'espace galactique,
-  // elle prend une légère hauteur de survol en cloche (dézoom 12-22%) puis redescend délicatement
-  const altitudeFactor = dist > 250 ? Math.min(0.20, (dist / 2400) * 0.20) : 0.0;
+  // Trajectoire cinématique naturelle : durée fluide et douce selon la distance
+  const baseDuration = isLarge
+    ? Math.max(1250, Math.min(2600, 1000 + dist * 0.55))
+    : Math.max(900, Math.min(1850, 800 + dist * 0.45));
+  const duration = customDuration || baseDuration;
+
+  // Courbe d'altitude : fortement atténuée sur les graphes volumineux (R3) pour éliminer le whiplash
+  const altitudeFactor = isLarge
+    ? (dist > 300 ? Math.min(0.03, (dist / 4000) * 0.03) : 0.0)
+    : (dist > 250 ? Math.min(0.20, (dist / 2400) * 0.20) : 0.0);
 
   state.cameraFlight = {
     active: true,
@@ -539,6 +545,7 @@ function smoothFlyTo(tx, ty, tz = null, customDuration = null) {
     targetY: ty,
     targetZoom: finalZoom,
     altitudeFactor,
+    isLarge,
     startTime: performance.now(),
     duration,
   };
@@ -576,14 +583,26 @@ function render(now) {
     if (!Number.isFinite(c.zoom) || c.zoom <= 0) c.zoom = 0.65;
     c.targetZoom = Math.max(0.04, Math.min(6.0, c.targetZoom));
 
+    // Camera motion & scale detection (R3)
+    const isFlightActive = Boolean(state.cameraFlight && state.cameraFlight.active);
+    const distTarget = Math.hypot(c.targetX - c.x, c.targetY - c.y);
+    const zoomDiff = Math.abs(c.targetZoom - c.zoom);
+    const isPanning = Boolean(state.isDraggingCanvas || state.isPanning);
+    const isLerping = distTarget > 0.8 || zoomDiff > 0.002;
+    const isCameraMoving = isFlightActive || isPanning || isLerping;
+    const isLarge = isLargeGraph();
+    const suppressMovementEffects = isLarge && isCameraMoving;
+
     // Drone Flight Animation (Smooth cinematic camera flight for MCP & AI Navigation)
     if (state.cameraFlight && state.cameraFlight.active) {
       const flight = state.cameraFlight;
       const elapsed = now - flight.startTime;
       const t = Math.max(0, Math.min(1.0, elapsed / flight.duration));
 
-      // Quintic Smootherstep (Perlin smoother curve : zéro à-coup au décollage et à l'atterrissage)
-      const ease = t * t * t * (t * (t * 6 - 15) + 10);
+      // Courbe d'interpolation adoucie : cubic smootherstep sur grand graphe, quintic sur graphe standard
+      const ease = flight.isLarge
+        ? (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+        : (t * t * t * (t * (t * 6 - 15) + 10));
 
       c.x = flight.startX + (flight.targetX - flight.startX) * ease;
       c.y = flight.startY + (flight.targetY - flight.startY) * ease;
@@ -603,10 +622,16 @@ function render(now) {
         state.cameraFlight.active = false;
       }
     } else {
-      // Déplacement standard fluide avec amortissement cinématique doux (0.14)
-      c.x += (c.targetX - c.x) * 0.14;
-      c.y += (c.targetY - c.y) * 0.14;
-      c.zoom += (c.targetZoom - c.zoom) * 0.14;
+      // Déplacement standard fluide avec amortissement cinématique doux (0.08 sur grand graphe, 0.14 standard)
+      const transDamp = isLarge ? 0.08 : 0.14;
+      const zoomDamp = isLarge ? 0.07 : 0.14;
+      const maxTransStep = isLarge ? 60 : 350;
+
+      const dx = (c.targetX - c.x) * transDamp;
+      const dy = (c.targetY - c.y) * transDamp;
+      c.x += Math.sign(dx) * Math.min(Math.abs(dx), maxTransStep);
+      c.y += Math.sign(dy) * Math.min(Math.abs(dy), maxTransStep);
+      c.zoom += (c.targetZoom - c.zoom) * zoomDamp;
 
       if (Math.abs(c.targetZoom - c.zoom) < 0.0004) c.zoom = c.targetZoom;
       if (Math.abs(c.targetX - c.x) < 0.04) c.x = c.targetX;
@@ -844,24 +869,26 @@ function render(now) {
       ctx.save();
       const sfW = lineCanvas.width, sfH = lineCanvas.height;
 
-      // Deep Space Nebula Glows (2 radiant celestial dust pockets)
-      const neb1X = ((sfW * 0.25 - c.x * 0.04) % sfW + sfW) % sfW;
-      const neb1Y = ((sfH * 0.35 - c.y * 0.04) % sfH + sfH) % sfH;
-      const grad1 = ctx.createRadialGradient(neb1X, neb1Y, 0, neb1X, neb1Y, sfW * 0.45);
-      grad1.addColorStop(0, 'rgba(99, 102, 241, 0.07)');
-      grad1.addColorStop(0.5, 'rgba(56, 189, 248, 0.035)');
-      grad1.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = grad1;
-      ctx.fillRect(0, 0, sfW, sfH);
+      // Deep Space Nebula Glows (2 radiant celestial dust pockets) - bypassed during movement on large graphs (R3)
+      if (!suppressMovementEffects) {
+        const neb1X = ((sfW * 0.25 - c.x * 0.04) % sfW + sfW) % sfW;
+        const neb1Y = ((sfH * 0.35 - c.y * 0.04) % sfH + sfH) % sfH;
+        const grad1 = ctx.createRadialGradient(neb1X, neb1Y, 0, neb1X, neb1Y, sfW * 0.45);
+        grad1.addColorStop(0, 'rgba(99, 102, 241, 0.07)');
+        grad1.addColorStop(0.5, 'rgba(56, 189, 248, 0.035)');
+        grad1.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad1;
+        ctx.fillRect(0, 0, sfW, sfH);
 
-      const neb2X = ((sfW * 0.75 - c.x * 0.06) % sfW + sfW) % sfW;
-      const neb2Y = ((sfH * 0.70 - c.y * 0.06) % sfH + sfH) % sfH;
-      const grad2 = ctx.createRadialGradient(neb2X, neb2Y, 0, neb2X, neb2Y, sfW * 0.40);
-      grad2.addColorStop(0, 'rgba(168, 85, 247, 0.06)');
-      grad2.addColorStop(0.5, 'rgba(236, 72, 153, 0.025)');
-      grad2.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = grad2;
-      ctx.fillRect(0, 0, sfW, sfH);
+        const neb2X = ((sfW * 0.75 - c.x * 0.06) % sfW + sfW) % sfW;
+        const neb2Y = ((sfH * 0.70 - c.y * 0.06) % sfH + sfH) % sfH;
+        const grad2 = ctx.createRadialGradient(neb2X, neb2Y, 0, neb2X, neb2Y, sfW * 0.40);
+        grad2.addColorStop(0, 'rgba(168, 85, 247, 0.06)');
+        grad2.addColorStop(0.5, 'rgba(236, 72, 153, 0.025)');
+        grad2.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad2;
+        ctx.fillRect(0, 0, sfW, sfH);
+      }
 
       // Cosmic Constellation & Parallax Starfield
       for (let i = 0; i < starfield.length; i++) {
@@ -882,8 +909,8 @@ function render(now) {
         ctx.fillStyle = s.color.replace('ALPHA', alpha.toFixed(2));
         ctx.fill();
 
-        // Corona & 4-point diffraction cross for bright stellar beacons
-        if (s.hasCorona && alpha > 0.45) {
+        // Corona & 4-point diffraction cross for bright stellar beacons - bypassed during movement on large graphs (R3)
+        if (!suppressMovementEffects && s.hasCorona && alpha > 0.45) {
           ctx.beginPath();
           ctx.arc(sx, sy, s.r * 2.8, 0, Math.PI * 2);
           ctx.fillStyle = s.color.replace('ALPHA', (alpha * 0.22).toFixed(2));
@@ -922,30 +949,32 @@ function render(now) {
       const startGridY = Math.floor(vTop / gridSize) * gridSize;
       const endGridY = Math.ceil(vBottom / gridSize) * gridSize;
 
-      // Primary Grid Lines
-      ctx.beginPath();
-      for (let gx = startGridX; gx <= endGridX; gx += gridSize) {
-        if (gx % (gridSize * majorStep) === 0) continue;
-        ctx.moveTo(gx, vTop);
-        ctx.lineTo(gx, vBottom);
+      // Primary Grid Lines (dense sub-grid skipped during movement at low zoom on large graphs)
+      if (!suppressMovementEffects || c.zoom >= 0.45) {
+        ctx.beginPath();
+        for (let gx = startGridX; gx <= endGridX; gx += gridSize) {
+          if (gx % (gridSize * majorStep) === 0) continue;
+          ctx.moveTo(gx, vTop);
+          ctx.lineTo(gx, vBottom);
+        }
+        for (let gy = startGridY; gy <= endGridY; gy += gridSize) {
+          if (gy % (gridSize * majorStep) === 0) continue;
+          ctx.moveTo(vLeft, gy);
+          ctx.lineTo(vRight, gy);
+        }
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.055)';
+        ctx.lineWidth = 1.0 / c.zoom;
+        ctx.stroke();
       }
-      for (let gy = startGridY; gy <= endGridY; gy += gridSize) {
-        if (gy % (gridSize * majorStep) === 0) continue;
-        ctx.moveTo(vLeft, gy);
-        ctx.lineTo(vRight, gy);
-      }
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.055)';
-      ctx.lineWidth = 1.0 / c.zoom;
-      ctx.stroke();
 
       // Major Grid Lines & Coordinates
       ctx.beginPath();
-      for (let gx = startGridX; gx <= endGridX; gx += gridSize) {
+      for (let gx = startGridX; gx <= endGridX; gx += gridSize * majorStep) {
         if (gx % (gridSize * majorStep) !== 0) continue;
         ctx.moveTo(gx, vTop);
         ctx.lineTo(gx, vBottom);
       }
-      for (let gy = startGridY; gy <= endGridY; gy += gridSize) {
+      for (let gy = startGridY; gy <= endGridY; gy += gridSize * majorStep) {
         if (gy % (gridSize * majorStep) !== 0) continue;
         ctx.moveTo(vLeft, gy);
         ctx.lineTo(vRight, gy);
@@ -954,18 +983,20 @@ function render(now) {
       ctx.lineWidth = 1.8 / c.zoom;
       ctx.stroke();
 
-      // Intersection Crosshairs on Major Grid Intersections
-      ctx.beginPath();
-      const crossSize = 8 / c.zoom;
-      for (let gx = startGridX; gx <= endGridX; gx += gridSize * majorStep) {
-        for (let gy = startGridY; gy <= endGridY; gy += gridSize * majorStep) {
-          ctx.moveTo(gx - crossSize, gy); ctx.lineTo(gx + crossSize, gy);
-          ctx.moveTo(gx, gy - crossSize); ctx.lineTo(gx, gy + crossSize);
+      // Intersection Crosshairs on Major Grid Intersections - bypassed during movement on large graphs (R3)
+      if (!suppressMovementEffects) {
+        ctx.beginPath();
+        const crossSize = 8 / c.zoom;
+        for (let gx = startGridX; gx <= endGridX; gx += gridSize * majorStep) {
+          for (let gy = startGridY; gy <= endGridY; gy += gridSize * majorStep) {
+            ctx.moveTo(gx - crossSize, gy); ctx.lineTo(gx + crossSize, gy);
+            ctx.moveTo(gx, gy - crossSize); ctx.lineTo(gx, gy + crossSize);
+          }
         }
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.35)';
+        ctx.lineWidth = 1.2 / c.zoom;
+        ctx.stroke();
       }
-      ctx.strokeStyle = 'rgba(125, 211, 252, 0.35)';
-      ctx.lineWidth = 1.2 / c.zoom;
-      ctx.stroke();
 
       // Origin Coordinate Compass (0,0 Plateau Anchor)
       if (vLeft <= 0 && vRight >= 0 && vTop <= 0 && vBottom >= 0) {
@@ -1103,8 +1134,8 @@ function render(now) {
       });
     }
 
-    // Render Active Expanding Water Ripples
-    if (state.waterRipples && state.waterRipples.length > 0) {
+    // Render Active Expanding Water Ripples - bypassed during movement on large graphs (R3)
+    if (!suppressMovementEffects && state.waterRipples && state.waterRipples.length > 0) {
       const survivingRipples = [];
       for (let i = 0; i < state.waterRipples.length; i++) {
         const rip = state.waterRipples[i];
@@ -1159,7 +1190,8 @@ function render(now) {
         const rG = Math.round(colRgba[1] * 255);
         const rB = Math.round(colRgba[2] * 255);
 
-        const badgeData = drawOrganicFluidBubble(ctx, cx, cy, bubbleR, now, phase, rR, rG, rB, isFolderSel, c, lodLevel, folder, st.count, false, st.lobeProfile);
+        const waveScale = suppressMovementEffects ? 0.0 : 1.0;
+        const badgeData = drawOrganicFluidBubble(ctx, cx, cy, bubbleR, now, phase, rR, rG, rB, isFolderSel, c, lodLevel, folder, st.count, false, st.lobeProfile, waveScale);
         if (badgeData) {
           pendingFolderBadges.push(badgeData);
         }
@@ -1682,8 +1714,8 @@ function render(now) {
 
     ctx.setLineDash([]);
 
-    // Draw Animated Laser Photons
-    if ((state.showPhotons === true || isPipelineActive) && activePhotons.length > 0) {
+    // Draw Animated Laser Photons - bypassed during movement on large graphs (R3)
+    if (!suppressMovementEffects && (state.showPhotons === true || isPipelineActive) && activePhotons.length > 0) {
       for (let j = 0; j < activePhotons.length; j++) {
         const ph = activePhotons[j];
         const pulseT = ((now * 0.0016 + ph.idx * 0.22) % 1.0);
@@ -1709,15 +1741,14 @@ function render(now) {
       }
     }
 
-    // 2b. Tainted Data Laser Beams & Floating CWE Data Badges
+    // 2b. Tainted Data Laser Beams & Floating CWE Data Badges (R1)
     const violationEdges = state.violationEdges || edges.filter(e => e.relation === 'violates' || e.filter_bits === 16 || e.cve_id || (e.relation && e.relation.includes('violat')));
     if (violationEdges.length > 0 && (((state.filterBits !== undefined ? state.filterBits : 31) & 16) !== 0 || c.zoom >= 0.35 || state.selectedAnomalyNodeId)) {
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const cveScreenFontSize = 10;
-      const badgeFontSize = cveScreenFontSize / c.zoom;
-      ctx.font = `800 ${badgeFontSize}px ${FONT_MONO}`;
+      const badgeFontSize = Math.max(9, Math.min(13, 11 / c.zoom));
+      const subFontSize = Math.max(8, Math.min(11, badgeFontSize * 0.88));
 
       violationEdges.forEach((e, vIdx) => {
         const s = e._s || nodeMap.get(e.source);
@@ -1737,39 +1768,78 @@ function render(now) {
         }
         const taintedData = e.transmitted_data || 'payload';
         const taintedType = e.transmitted_type || 'Untyped';
-        let labelText = `⚠️ [${cveId}] ${taintedData}: ${taintedType} ➔ ${t.name || 'target'}`;
+        const sev = (e.severity || 'CRITICAL').toUpperCase();
+
+        let headerText = `⚠️ [${cveId}] • ${sev}`;
+        let subText = `${taintedData} (${taintedType}) ➔ ${t.name || 'target'}`;
+
         if (ruleId === 'DEFI-ASYMMETRIC-ROUNDING' || cveId.includes('ASYMMETRIC_ROUNDING_RISK')) {
-          labelText = `☣️ [CWE-682] ASYMMETRIC_ROUNDING_RISK ➔ ${t.name || 'target'}`;
+          headerText = `☣️ [CWE-682] • ASYMMETRIC ROUNDING`;
+          subText = `PAYLOAD: ${taintedData} ➔ ${t.name || 'target'}`;
         } else if (ruleId === 'DEFI-STALE-CACHE-AFTER-CALL' || cveId.includes('STALE_CACHE_TOCTOU')) {
-          labelText = `☣️ [CWE-362] STALE_CACHE_TOCTOU ➔ ${t.name || 'target'}`;
+          headerText = `☣️ [CWE-362] • TOCTOU RACE`;
+          subText = `STALE_CACHE ➔ ${t.name || 'target'}`;
         } else if (ruleId === 'EVC-HOOK-BYPASS' || cveId.includes('EVC_HOOK_BYPASS_RISK')) {
-          labelText = `☣️ [CWE-841] EVC_HOOK_BYPASS_RISK ➔ ${t.name || 'target'}`;
+          headerText = `☣️ [CWE-841] • SPEC-VIOLATION`;
+          subText = `EVC_HOOK_BYPASS ➔ ${t.name || 'target'}`;
         } else if (ruleId === 'DEFI-ORACLE-MIN-MAX-CIRCUIT-BREAKER' || cveId.includes('ORACLE_MIN_MAX_CIRCUIT_BREAKER')) {
-          labelText = `☣️ [LOGIC-CRITICAL] ORACLE_MIN_MAX_CIRCUIT_BREAKER ➔ ${t.name || 'target'}`;
+          headerText = `☣️ [LOGIC-CRITICAL] • CIRCUIT BREAKER`;
+          subText = `ORACLE_MIN_MAX ➔ ${t.name || 'target'}`;
         } else if (ruleId === 'DEFI-ORACLE-L2-SEQUENCER-RACE' || cveId.includes('L2_SEQUENCER_ORACLE_RACE')) {
-          labelText = `☣️ [LOGIC-CRITICAL] L2_SEQUENCER_ORACLE_RACE ➔ ${t.name || 'target'}`;
+          headerText = `☣️ [LOGIC-CRITICAL] • SEQUENCER RACE`;
+          subText = `L2_SEQUENCER_ORACLE ➔ ${t.name || 'target'}`;
         } else if (ruleId === 'DEFI-TWAP-SHORT-WINDOW' || cveId.includes('TWAP_SHORT_WINDOW')) {
-          labelText = `☣️ [LOGIC-CRITICAL] TWAP_SHORT_WINDOW ➔ ${t.name || 'target'}`;
+          headerText = `☣️ [LOGIC-CRITICAL] • TWAP SHORT WINDOW`;
+          subText = `TWAP_WINDOW ➔ ${t.name || 'target'}`;
         }
 
-        const tw = ctx.measureText(labelText).width;
-        const padX = 7 / c.zoom;
-        const padY = 4 / c.zoom;
-        const badgeH = badgeFontSize + padY * 2;
+        // Compute normal vector perpendicular to edge for non-obstructing positioning
+        const dx = t.x - s.x;
+        const dy = t.y - s.y;
+        const edgeLen = Math.hypot(dx, dy) || 1.0;
+        let nx = -dy / edgeLen;
+        let ny = dx / edgeLen;
+        if (ny > 0) { nx = -nx; ny = -ny; } // Prefer upward offset
+
+        ctx.font = `800 ${badgeFontSize}px ${FONT_MONO}`;
+        const w1 = ctx.measureText(headerText).width;
+        ctx.font = `600 ${subFontSize}px ${FONT_MONO}`;
+        const w2 = ctx.measureText(subText).width;
+        const tw = Math.max(w1, w2);
+
+        const padX = Math.max(5, Math.min(9, 7 / Math.max(0.5, c.zoom)));
+        const padY = Math.max(3, Math.min(6, 4 / Math.max(0.5, c.zoom)));
+        const lineSpacing = Math.max(2, 3 / Math.max(0.5, c.zoom));
+        const badgeH = badgeFontSize + subFontSize + lineSpacing + padY * 2;
         const badgeW = tw + padX * 2;
 
-        const pulseVal = Math.sin(now * 0.008 + vIdx) * 0.2 + 0.8;
-        ctx.fillStyle = `rgba(127, 29, 29, ${0.94 * pulseVal})`;
-        ctx.strokeStyle = '#f87171';
-        ctx.lineWidth = 1.3 / c.zoom;
+        // Offset perpendicularly from edge midpoint so it does not collide with s or t nodes
+        const perpDist = badgeH * 0.75 + 10 / Math.max(0.5, c.zoom);
+        const bx = mx + nx * perpDist;
+        const by = my + ny * perpDist;
 
+        const pulseVal = Math.sin(now * 0.008 + vIdx) * 0.15 + 0.85;
+        ctx.fillStyle = `rgba(35, 10, 15, ${0.93 * pulseVal})`;
+        ctx.strokeStyle = '#f87171';
+        ctx.lineWidth = Math.max(1.0, 1.3 / Math.max(0.5, c.zoom));
+
+        const cornerR = Math.max(3, 4 / Math.max(0.5, c.zoom));
         ctx.beginPath();
-        ctx.roundRect(mx - badgeW / 2, my - badgeH / 2, badgeW, badgeH, 4 / c.zoom);
+        ctx.roundRect(bx - badgeW / 2, by - badgeH / 2, badgeW, badgeH, cornerR);
         ctx.fill();
         ctx.stroke();
 
+        // Line 1: Header (CWE ID & Severity)
+        ctx.font = `800 ${badgeFontSize}px ${FONT_MONO}`;
+        ctx.fillStyle = '#fca5a5';
+        const y1 = by - badgeH / 2 + padY + badgeFontSize * 0.45;
+        ctx.fillText(headerText, bx, y1);
+
+        // Line 2: Details (Payload & Target)
+        ctx.font = `600 ${subFontSize}px ${FONT_MONO}`;
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(labelText, mx, my);
+        const y2 = y1 + badgeFontSize * 0.55 + lineSpacing + subFontSize * 0.45;
+        ctx.fillText(subText, bx, y2);
       });
       ctx.restore();
     }
@@ -1854,7 +1924,7 @@ function render(now) {
       ctx.setLineDash([8 / c.zoom, 5 / c.zoom]);
       ctx.lineDashOffset = -(now * 0.02) / c.zoom;
       ctx.shadowColor = '#c084fc';
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = suppressMovementEffects ? 0 : 10;
       ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.setLineDash([]);
@@ -1971,8 +2041,52 @@ function render(now) {
         ctx.arc(n.x, n.y, (alertR + 6 / c.zoom) * pulse, rot + Math.PI, rot + Math.PI * 1.4);
         ctx.stroke();
 
-        // Warning mini-glyph over the bubble
-        if (c.zoom >= 0.35) {
+        // Warning mini-glyph over the bubble or floating callout for vulnerable nodes (R1)
+        const isSel = selId === n.id;
+        const isHov = hovId === n.id;
+        const anomalies = (n.metadata && n.metadata.cve_anomalies) || [];
+
+        if ((isSel || isHov) && (anomalies.length > 0 || (n.violations && n.violations.length > 0))) {
+          const firstVuln = anomalies[0];
+          const cweTag = firstVuln?.cve_id || firstVuln?.rule_id || (n.violations && n.violations[0]) || 'CWE-SAST';
+          const cweSev = (firstVuln?.severity || 'CRITICAL').toUpperCase();
+          const countStr = anomalies.length > 1 ? ` (+${anomalies.length - 1})` : '';
+          const calloutText = `🚨 ${cweTag}${countStr} • ${cweSev}`;
+
+          const pillFontSize = Math.max(9, Math.min(13, 11 / c.zoom));
+          ctx.font = `800 ${pillFontSize}px ${FONT_MONO}`;
+          const pillTw = ctx.measureText(calloutText).width;
+          const pillPadX = Math.max(6, Math.min(10, 7 / Math.max(0.5, c.zoom)));
+          const pillPadY = Math.max(3, Math.min(6, 4 / Math.max(0.5, c.zoom)));
+          const pillW = pillTw + pillPadX * 2;
+          const pillH = pillFontSize + pillPadY * 2;
+
+          const pillX = n.x;
+          const calloutY = n.y - alertR - 14 / Math.max(0.5, c.zoom) - pillH / 2;
+
+          ctx.fillStyle = 'rgba(28, 8, 12, 0.95)';
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = Math.max(1.0, 1.2 / Math.max(0.5, c.zoom));
+          const pR = Math.max(3, 4 / Math.max(0.5, c.zoom));
+          ctx.beginPath();
+          ctx.roundRect(pillX - pillW / 2, calloutY - pillH / 2, pillW, pillH, pR);
+          ctx.fill();
+          ctx.stroke();
+
+          // Small indicator notch pointing down toward node
+          const notch = Math.max(3, 4 / Math.max(0.5, c.zoom));
+          ctx.beginPath();
+          ctx.moveTo(pillX - notch, calloutY + pillH / 2);
+          ctx.lineTo(pillX, calloutY + pillH / 2 + notch);
+          ctx.lineTo(pillX + notch, calloutY + pillH / 2);
+          ctx.fillStyle = '#ef4444';
+          ctx.fill();
+
+          ctx.fillStyle = '#fecaca';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(calloutText, pillX, calloutY);
+        } else if (c.zoom >= 0.35) {
           ctx.font = `900 ${10 / c.zoom}px ${FONT_MONO}`;
           ctx.fillStyle = '#ef4444';
           ctx.textAlign = 'center';
@@ -2002,7 +2116,7 @@ function render(now) {
 
         // Pass 1: Diffuse Glowing Red Halo
         ctx.shadowColor = '#ff0033';
-        ctx.shadowBlur = 18;
+        ctx.shadowBlur = suppressMovementEffects ? 0 : 18;
         ctx.strokeStyle = `rgba(239, 68, 68, ${0.9 * pulseAlpha})`;
         ctx.lineWidth = laserWidth * 1.8;
         ctx.beginPath();
@@ -2013,7 +2127,7 @@ function render(now) {
         ctx.stroke();
 
         // Pass 2: Hot Core Beam (White/Pink)
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = suppressMovementEffects ? 0 : 6;
         ctx.shadowColor = '#ffffff';
         ctx.strokeStyle = `rgba(255, 230, 230, ${0.95 * pulseAlpha})`;
         ctx.lineWidth = Math.max(1.2, laserWidth * 0.5);
