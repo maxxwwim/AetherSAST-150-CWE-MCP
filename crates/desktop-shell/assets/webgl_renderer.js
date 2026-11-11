@@ -50,6 +50,11 @@ function isSecurityVulnNode(n) {
 }
 window.isSecurityVulnNode = isSecurityVulnNode;
 
+// --- Organic Biological Cellular Bubble Renderer (12-Lobe Quadratic Spline + Bilayer + Nucleus) ---
+const _bubbleLabelCache = new Map();
+const _cellPtsX = new Float32Array(12);
+const _cellPtsY = new Float32Array(12);
+
 // Helper: Detect Large Project Scale (R3)
 function isLargeGraph() {
   const nodes = state.data?.nodes || [];
@@ -969,12 +974,12 @@ function render(now) {
 
       // Major Grid Lines & Coordinates
       ctx.beginPath();
-      for (let gx = startGridX; gx <= endGridX; gx += gridSize * majorStep) {
+      for (let gx = startGridX; gx <= endGridX; gx += gridSize) {
         if (gx % (gridSize * majorStep) !== 0) continue;
         ctx.moveTo(gx, vTop);
         ctx.lineTo(gx, vBottom);
       }
-      for (let gy = startGridY; gy <= endGridY; gy += gridSize * majorStep) {
+      for (let gy = startGridY; gy <= endGridY; gy += gridSize) {
         if (gy % (gridSize * majorStep) !== 0) continue;
         ctx.moveTo(vLeft, gy);
         ctx.lineTo(vRight, gy);
