@@ -11,16 +11,16 @@
 
 # 🪐 AetherScope V2 (`aether-engine`)
 
-### **Cockpit Spatial d'Architecture WebGL 2  • Linter SAST Zero-Day (185+ Zero-Day Patterns & CWE Rules) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
+### **Cockpit Spatial d'Architecture WebGL 2 • Linter SAST Zero-Day & Hors-CWE (200+ Patterns, Stealth Backdoors & Règles CWE) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherScope-SAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.2.2_GitHub_Markdown_Engine_Mermaid_Highlighter_Images_API-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.3.0_Gemini_4_Hydrogen_Extra-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
 [![M8ven Score](https://m8ven.ai/badge/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7)](https://m8ven.ai/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?s=readme)
-[![SAST Linter](https://img.shields.io/badge/SAST_%26_Bug_Bounty-185%2B_CWE_Rules_%26_Zero--Day_Patterns-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
-[![Catalogue CWE](https://img.shields.io/badge/Catalogue_CWE-185%2B_Règles_Officielles-fbbf24?style=for-the-badge&logo=target)](./CWE_CATALOG.md)
+[![SAST Linter](https://img.shields.io/badge/SAST_%26_Bug_Bounty-215_Règles_%26_Backdoors_Zero--Day-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
+[![Catalogue CWE](https://img.shields.io/badge/Catalogue_Règles-215_Règles_Officielles-fbbf24?style=for-the-badge&logo=target)](./CWE_CATALOG.md)
 [![BLAKE3](https://img.shields.io/badge/Contracts-BLAKE3_%2B_EARS_Sealed-10b981?style=for-the-badge)](#🔒-gouvernance-spec-driven-contrats-ears--sceau-blake3)
 [![Roadmap 2027](https://img.shields.io/badge/Roadmap_2027-SoA_100k_%E2%80%A2_WebGPU_%E2%80%A2_Zero--Trust_MCP-ec4899?style=for-the-badge)](./docs/roadmap_2027.md)
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-ef4444?style=for-the-badge)](#📄-licence)
@@ -40,7 +40,7 @@
 | ADN du Moteur | Ce qu'il remplace / transcende | Ce qu'apporte AetherScope V2 |
 | :--- | :--- | :--- |
 | 🌌 **1. Graphe Spatial Vivant** *(L'ADN Obsidian)* | Graphes statiques lents, diagrammes UML figés | **Galaxie interactive 2D/3D à 120 FPS** (Shaders SDF WebGL 2), membranes cellulaires vivantes à 12 lobes, 4 layouts mathématiques, simulation physique de Coulomb/Hooke et audio procédural. |
-| 🛡️ **2. Scanner SAST & Bug Bounty** *(L'ADN Audit Zero-Day)* | Linters lents en CI/CD, bruit massif de faux positifs | **Audit statique temps réel (< 50 ms à chaque `Ctrl+S`)** avec **185+ Zero-Day Patterns & CWE Rules** (Rust/LLVM/UB, PHP Web & API, Zig Systems & C-ABI, C# / ASP.NET Core, Smart Contracts & VMs Distribuées, DeFi, ZK-SNARKs, Python, Node/V8, C/C++), masquage lexical anti-faux-positifs, routage typé par famille de CWE et **Générateur de PoC & Scope Bug Bounty**. |
+| 🛡️ **2. Scanner SAST & Bug Bounty** *(L'ADN Audit Zero-Day)* | Linters lents en CI/CD, bruit massif de faux positifs | **Audit statique temps réel (< 50 ms à chaque `Ctrl+S`)** avec **215 Règles (Moteur Hors-CWE `AETHER-*` Backdoors/RCE + Zero-Day CWE Rules)** (Rust/LLVM/UB/rkyv, PHP Web/FFI/Runtime, Zig Systems & C-ABI, C# / ASP.NET Core, Smart Contracts & VMs Distribuées, DeFi, ZK-SNARKs, Python, Node/V8, C/C++), masquage lexical anti-faux-positifs, routage typé et **Générateur de PoC & Scope Bug Bounty**. |
 | 🏛️ **3. Cockpit IDE "Spec-Driven"** *(L'ADN Gouvernance)* | Documentation obsolète, dérive architecturale | Chaque dossier possède son contrat `README.md` (règles **EARS**, budgets de lignes, imports autorisés/interdits) **scellé cryptographiquement par BLAKE3** dans `aether.lock.toml`. Toute transgression allume un laser rouge d'alerte. |
 | 🤖 **4. Serveur MCP & Pont IA "Zero-Shell"** *(L'ADN Copilot Console)* | Context loss des LLMs, réécritures destructrices, hallucinations | **Serveur MCP natif (`aetherscope-mcp.exe`)** + **Paquets `<aether_handshake>`**. L'agent IA (Antigravity, Claude, Cursor) téléporte lui-même la caméra 3D sur les bulles qu'il édite, gère ses tâches dans `.aether/tasks/` et code par diffs chirurgicaux sans jamais perdre le contexte. |
 
@@ -49,11 +49,12 @@
 ## 📌 Sommaire Exécutif
 
 1. [⚡ Qu'est-ce qu'AetherScope V2 ?](#-quest-ce-quaetherscope-v2-)
-2. [📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques](#-nouveautés-v222--moteur-de-documentation-markdown-github-grade-rendu-mermaid-interactif-coloration-syntaxique--highlighting-diff-endpoint-raw-binary-file--kpi-métriques)
+2. [☢️ Nouveautés V2.3.0 — Gemini 4 Hydrogen Extra : Moteur Hors-CWE (`AETHER-*`), Portes Dérobées Invisibles & RCE Furtives](#-nouveautés-v230--gemini-4-hydrogen-extra--moteur-hors-cwe-aether--portes-dérobées-invisibles--rce-furtives)
+3. [📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques](#-nouveautés-v222--moteur-de-documentation-markdown-github-grade-rendu-mermaid-interactif-coloration-syntaxique--highlighting-diff-endpoint-raw-binary-file--kpi-métriques)
 3. [🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian](#-nouveautés-v221--support-zig--cnet-semgrep-communautaire-ssa-dataflow-sca-reachable--mode-vault-obsidian)
 3. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
 4. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
-5. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 185+ Règles CWE](#-moteur-sast-chasse-zero-day--catalogue-des-185-règles-cwe)
+5. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 200+ Règles (CWE + AETHER-*)](#-moteur-sast-chasse-zero-day--catalogue-des-200-règles-cwe--aether-)
 6. [🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
 7. [🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3](#-gouvernance-spec-driven-contrats-ears--sceau-blake3)
 8. [🏛️ Architecture Globale & Structure du Workspace Cargo](#-architecture-globale--structure-du-workspace-cargo)
@@ -78,6 +79,50 @@
 - **Feuille de Route Stratégique 2027 ([`docs/roadmap_2027.md`](./docs/roadmap_2027.md)) :** Architecture mémoire *Structure of Arrays* (46 octets/nœud pour 100k+ nœuds), indexation *CSR Hybride + Delta Buffer*, migration *WebGPU (WGSL)* avec physique Barnes-Hut asynchrone (30–60 Hz / rendu 120 FPS), et matrice d'allocation IA (*Argon Max* vs *Gemini 3 Max*).
 
 
+
+## ☢️ Nouveautés V2.3.0 — Gemini 4 Hydrogen Extra : Moteur Hors-CWE (`AETHER-*`), Portes Dérobées Invisibles & RCE Furtives
+
+> **Titre de Mise à Jour :** **`Gemini 4 Hydrogen Extra`** — AetherScope franchit la barre des **215 règles actives** avec l'ajout de **28 détecteurs exclusifs hors taxonomie CWE (`AETHER-*`)** dédiés aux failles runtime/compilateur inédites, pépites sémantiques Rust/PHP, portes dérobées invisibles et RCE furtives dans `crates/security-linter/src/epic_novel_rules.rs` :
+
+### 1. 🧬 Failles Sémantiques, Compilateur & Runtime (`AETHER-EXEC-*` / `TYPE-*` / `COMP-*` / `CTRL-*`)
+- **`AETHER-RUST-ASYNC-TLS-BLEED` (`AETHER-EXEC-001`) :** Détecte les accès/mutations `thread_local!` traversant un `.await` en runtime *work-stealing* (fuite d'état/tenant inter-tâches sur le même thread OS sans `tokio::task_local!`).
+- **`AETHER-RUST-SERDE-INVARIANT-ERASURE` (`AETHER-TYPE-002`) :** Signale les structures à champs privés protégées par un constructeur faillible (`new`/`try_new -> Result/Option`) mais dérivant `Deserialize`/`BorshDeserialize` sans `#[serde(try_from = ...)]`.
+- **`AETHER-RUST-ASYNC-FRAME-SECRET-RESIDENCY` (`AETHER-COMP-003`) :** Repère les secrets (`Zeroizing`, `SigningKey`, `PrivateKey`) conservés vivants à travers un `.await` sans `Box<Zeroizing<T>>` ni `drop` préalable (copie résiduelle dans l'enum coroutine).
+- **`AETHER-PHP-PERSISTENT-WORKER-BLEED` (`AETHER-EXEC-004`) :** Détecte l'état utilisateur mutable en `static $` / `self::$` / `$GLOBALS` dans les workers PHP persistants (`Octane`, `FrankenPHP`, `Swoole`, `RoadRunner`) sans `ResetInterface`.
+- **`AETHER-PHP-GENERATOR-DEFERRED-GUARD` (`AETHER-CTRL-005`) :** Repère les gardes d'accès (`throw`/`abort`/`isAdmin`) neutralisés silencieusement lorsque la fonction PHP contient un `yield` direct (générateur paresseux toujours *truthy* à l'appel).
+- **`AETHER-PHP-PCRE-BACKTRACK-FAILOPEN` (`AETHER-CTRL-006`) :** Détecte `!preg_match()` / comparaisons lâches `== 0` et `preg_replace()` filtrants sans contrôle `=== false` / `!== null` / `preg_last_error()` (contournement fail-open via `pcre.backtrack_limit`).
+
+### 2. 🕶️ Portes Dérobées Invisibles Supply-Chain (`AETHER-BACKDOOR-001..004`)
+- **`AETHER-STEALTH-UNICODE-TROJAN-SOURCE` (`AETHER-BACKDOOR-001`) :** Détecte les contrôles bidirectionnels Unicode BiDi (`U+202A..202E`, `U+2066..2069`), la stéganographie Zero-Width / Tags (`U+200B`, `U+E00xx`, BOM médian, ZWJ hors séquences emoji) et les identifiants mixtes ASCII + Cyrillique/Grec.
+- **`AETHER-RUST-PREMAIN-ELF-CONSTRUCTOR-BACKDOOR` (`AETHER-BACKDOOR-002`) :** Détecte les payloads pré-`main()`/`dlopen()` via `#[link_section = ".init_array"]`/`.ctors`/`#[ctor]` et le détournement de symboles natifs (`#[no_mangle]`/`#[export_name]` sur `memcmp`, `malloc`, `dlopen`, `pam_authenticate`, `SSL_read`).
+- **`AETHER-RUST-BUILD-RS-PROC-MACRO-BACKDOOR` (`AETHER-BACKDOOR-003`) :** Audite `build.rs` et `#[proc_macro*]` contre les connexions réseau, spawns shell, lectures de tokens CI/SSH/AWS et droppers `OUT_DIR` exécutés dès `cargo check` ou l'ouverture IDE.
+- **`AETHER-PHP-STEALTH-ENGINE-BACKDOOR` (`AETHER-BACKDOOR-004`) :** Repère `register_tick_function` / shutdown hooks dynamiques, appels `$$var` & superglobales, callbacks obfusqués (`str_rot13`/`gzinflate`/`base64_decode`) et hijacks `stream_wrapper` / `spl_autoload`.
+
+### 3. ☢️ RCE Furtives Hors-CWE Sans `eval()` ni `Command::new` (`AETHER-RCE-001..006`)
+- **`AETHER-PHP-FFI-NATIVE-BRIDGE-RCE` (`AETHER-RCE-001`) :** Détecte `FFI::cdef`/`load`/`cast`/`memcpy` exposant `libc`/`kernel32` (`system`, `execve`, `mmap`, `mprotect`, `VirtualAlloc`, `dlopen`) afin de contourner intégralement `disable_functions`.
+- **`AETHER-PHP-CRYPTO-HEADER-EXOTIC-RCE` (`AETHER-RCE-002`) :** Repère les trappes déclenchées par en-têtes HTTP chiffrés/hachés via des puits ignorés des SAST CWE : `ob_start($cb)`, `mb_ereg_replace(..., "e")`, UDF `sqliteCreateFunction`, `pcntl_exec`, `yaml_parse` non restreint et `include data://`.
+- **`AETHER-PHP-OPCACHE-USERINI-PERSIST-RCE` (`AETHER-RCE-003`) :** Détecte l'écriture ou injection dynamique sur `.user.ini` / `.htaccess` (`SetHandler`), `auto_prepend_file` / `auto_append_file` / `opcache.preload` et `opcache_compile_file()` sur chemin variable.
+- **`AETHER-RUST-FILELESS-WX-MEMFD-RCE` (`AETHER-RCE-004`) :** Détecte l'exécution *fileless* 100 % en mémoire (`PROT_EXEC`, `PAGE_EXECUTE_READWRITE`, `memfd_create` + `fexecve`, écriture `/proc/self/mem`, `transmute` vers `extern "C" fn()`).
+- **`AETHER-RUST-RKYV-UNCHECKED-RELPTR-RCE` (`AETHER-RCE-005`) :** Repère `rkyv::archived_root`, `access_unchecked` et `deserialize_unchecked` sans validation `bytecheck` (falsification réseau de `RelPtr` / discriminants `enum`).
+- **`AETHER-RUST-GLOBAL-HOOK-TRAPDOOR-RCE` (`AETHER-RCE-006`) :** Détecte les primitives réseau, shell ou W^X enfouies dans `impl GlobalAlloc`, `std::panic::set_hook` ou `sigaction` hors des routeurs applicatifs.
+
+### 4. 🧠 Pépites Sémantiques Rust Fines (`AETHER-SYNC/PATH/PANIC/NORM/CTRL/MEM-007..012`)
+- **`AETHER-RUST-EPHEMERAL-LOCK-DROP` (`AETHER-SYNC-007`) :** Détecte `let _ = mutex.lock()` / `.write()` / `.read()` détruisant immédiatement le Guard RAII avant la section critique (TOCTOU silencieux).
+- **`AETHER-RUST-PATH-JOIN-PREFIX-WIPE` (`AETHER-PATH-008`) :** Repère `Path::join` / `push` non confiné où un `/` ou préfixe Windows `\\?\` écrase toute la racine de base sans traversée `..`.
+- **`AETHER-RUST-ASSERT-UNWINDSAFE-STATE-TORN` (`AETHER-PANIC-009`) :** Détecte `AssertUnwindSafe` sur des références `&mut` dans `catch_unwind` laissant un état partiellement muté (fail-open) après panique.
+- **`AETHER-RUST-UTF8-LOSSY-SMUGGLING` (`AETHER-NORM-010`) :** Repère `String::from_utf8_lossy` en contexte auth/HMAC/filtrage créant des collisions silencieuses vers `U+FFFD`.
+- **`AETHER-RUST-UNANCHORED-REGEX-GATE` (`AETHER-CTRL-011`) :** Détecte les portes regex (`Regex::is_match`) sans ancres strictes `\A..\z` (ou avec `(?m)`) contournables par sous-chaîne/retour chariot.
+- **`AETHER-RUST-RELAXED-ATOMIC-SECURITY-GATE` (`AETHER-MEM-012`) :** Repère `Ordering::Relaxed` sur des drapeaux atomiques critiques (`auth`, `admin`, `init`, `ready`, `sealed`) sur architectures ARM64/RISC-V.
+
+### 5. 🐘 Pépites Sémantiques PHP / Zend Engine (`AETHER-ZEND-007..012`)
+- **`AETHER-PHP-LOOSE-INARRAY-BOOL-BYPASS` (`AETHER-ZEND-007`) :** Détecte `in_array()` / `array_search()` sur allowlists sans 3e paramètre `true` (type juggling PHP 8).
+- **`AETHER-PHP-PARSE-URL-DIFFERENTIAL-SSRF` (`AETHER-ZEND-008`) :** Repère le différentiel `parse_url()` vs `libcurl` / redirections sans épinglage IP (`FILTER_FLAG_NO_PRIV_RANGE` + `CURLOPT_RESOLVE`).
+- **`AETHER-PHP-ESCAPESHELLCMD-FLAG-RCE` (`AETHER-ZEND-009`) :** Détecte `escapeshellcmd()` autour des sinks système permettant l'injection de drapeaux CLI (`--checkpoint-action`, `-o`).
+- **`AETHER-PHP-JSON-DEPTH-NULL-FAILOPEN` (`AETHER-ZEND-010`) :** Repère `json_decode()` sur payloads JWT/webhook sans `JSON_THROW_ON_ERROR` ni vérification `=== null` (depth > 512 fail-open).
+- **`AETHER-PHP-PDO-EMULATED-PREPARES-SMUGGLING` (`AETHER-ZEND-011`) :** Détecte `new PDO("mysql:...")` sans `ATTR_EMULATE_PREPARES => false` (émulation client et smuggling multi-requêtes).
+- **`AETHER-PHP-CURLY-VAR-INTERPOLATION-RCE` (`AETHER-ZEND-012`) :** Détecte les évaluations complexes `{${func()}}` et `${$_SUPERGLOBAL}` cachées dans les chaînes double-quote ou heredoc.
+
+---
 
 ## 📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques
 
@@ -276,14 +321,14 @@ Le serveur Axum embarqué sert le cockpit spatial directement sur la route racin
 | `GET` / `POST /api/tasks` | Liste ou crée une tâche persistante dans `.aether/tasks/`. |
 | `POST /api/tasks/update` | Met à jour le statut, la progression (`0-100%`) et le `README.md` d'une tâche. |
 | `POST /api/tasks/delete` | Supprime une tâche et met à jour `.aether/TASKS_SUMMARY.md`. |
-| `GET` / `POST /api/settings` | Lit ou sauvegarde les exclusions et l'activation granulaire des 185+ Zero-Day Patterns & CWE Rules. |
+| `GET` / `POST /api/settings` | Lit ou sauvegarde les exclusions et l'activation granulaire des 215 règles CWE et hors-CWE `AETHER-*`. |
 | `POST /api/export` | Exporte le graphe interactif en un fichier autonome `aetherscope_viewer.html`. |
 | `GET /api/project/status` | Rapport de détection du projet (type: `PureObsidianVault`, `PureCode`, `Mixed`, mode actif, modes supportés). |
 | `POST /api/view_mode` | Permutation instantanée du graphe actif (`"code"` ou `"vault"`) sans rechargement de page. |
 
 ---
 
-## 🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 185+ Règles CWE
+## 🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 200+ Règles (CWE + AETHER-*)
 
 ### Masquage Lexical Anti-Faux-Positifs, Routage Typé CWE & Préparateur de Scope Bug Bounty
 
@@ -307,7 +352,7 @@ Contrairement aux scanners par expressions régulières classiques qui génèren
    - **Outil CLI Dédié (`aether-plugin-tool`) :** Commandes `init`, `test`, `scan`, `list` et `export` pour gérer vos catalogues de plugins en toute simplicité.
    - **Pilotage Autonome par IA (4 Outils MCP Dédiés) :** Les assistants IA peuvent lister les plugins (`aetherscope_list_plugins`), exécuter les tests unitaires (`aetherscope_test_plugins`), scanner du code (`aetherscope_scan_with_plugins`) et rédiger ou certifier de nouvelles règles à chaud (`aetherscope_upsert_plugin_rule`).
 
-### 📚 Catalogue des 185+ Règles CWE & Zero-Day Patterns
+### 📚 Catalogue des 215 Règles (CWE, Zero-Day Patterns & Non-CWE `AETHER-*`)
 
 La liste détaillée des règles, classées en 13 familles (Rust/LLVM, Consensus & Wasm, Smart Contracts EVM, DeFi, ZK, MMO, injections multi-langages, Front-End/Node, Architecture EARS, C/C++, PHP, Zig, C# / .NET), est dans le répertoire dédié :
 
@@ -376,7 +421,7 @@ Permet aux modèles et assistants de lire passivement le contexte sans invoquer 
 | URI Ressource (`uri`) | MIME Type | Description & Contenu Exposé |
 | :--- | :--- | :--- |
 | **`aether://graph/summary`** | `application/json` | Synthèse temps réel du graphe AST 3D (nœuds, arêtes, clusters, santé globale). |
-| **`aether://audit/live`** | `text/markdown` | Rapport SAST en direct (`.aether/LIVE_AUDIT.md`) répertoriant les 185+ violations CWE. |
+| **`aether://audit/live`** | `text/markdown` | Rapport SAST en direct (`.aether/LIVE_AUDIT.md`) répertoriant les 215 violations CWE et hors-CWE `AETHER-*`. |
 | **`aether://contracts/manifest`** | `application/json` | Spécification architecturale et contrats EARS (`aether.manifest.json` / `aether.lock.toml`). |
 | **`aether://tasks/active`** | `application/json` | Registre JSON de toutes les tâches d'ingénierie actives du projet (`.aether/tasks/`). |
 
@@ -537,7 +582,8 @@ aether-engine/
     │   ├── src/php_rules.rs                # 25 Règles PHP critiques/hautes (SQLi, RCE, Eval, Deser, LFI/RFI, SSRF, SSTI...)
     │   ├── src/zig_rules.rs                # 15 Règles Zig (UAF, Error Union, Wrapping Overflow, @ptrCast, C-ABI, @Vector SIMD, OS Command...)
     │   ├── src/csharp_rules.rs             # 20 Règles C# / .NET (Désérialisation, SQLi, SSRF, JWT, TLS Bypass, Mass Assignment, ReDoS, stackalloc...)
-    │   └── src/linter.rs                   # Catalogue central des 185+ Zero-Day Patterns & CWE Rules, routage typé par extension & orchestrateur d'audit
+    │   ├── src/epic_novel_rules.rs         # 28 Règles Exclusives Hors-CWE (AETHER-EXEC/TYPE/COMP/CTRL/SYNC/ZEND, Invisible Backdoors & RCE Furtives)
+    │   └── src/linter.rs                   # Catalogue central des 215 Zero-Day Patterns, Backdoors & CWE Rules, routage typé & orchestrateur d'audit
     │
     ├── ai-file-bridge/                     # 4. Passerelle IA Zero-Shell & Gestionnaire de Tâches
     │   ├── src/watcher.rs                  # FileWatcher réactif notify (< 50 ms)

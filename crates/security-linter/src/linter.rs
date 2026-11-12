@@ -977,6 +977,7 @@ impl SecurityLinter {
         rules.extend(crate::php_rules::PhpSecurityRules::definitions());
         rules.extend(crate::zig_rules::ZigSecurityRules::definitions());
         rules.extend(crate::csharp_rules::CSharpSecurityRules::definitions());
+        rules.extend(crate::epic_novel_rules::EpicNovelRules::definitions());
         rules
     }
     /// Détecte les types de fichiers ciblés en fonction du type de CWE / rule_id
@@ -1113,6 +1114,14 @@ impl SecurityLinter {
         "CVE-CS-UNSAFE-STACKALLOC-OVERFLOW",
         "CVE-CS-UNSAFE-REFLECTION-INVOKE",
         "CVE-CS-SENSITIVE-ERROR-EXPOSURE",
+        "AETHER-STEALTH-UNICODE-TROJAN-SOURCE",
+        "AETHER-RUST-PREMAIN-ELF-CONSTRUCTOR-BACKDOOR",
+        "AETHER-RUST-BUILD-RS-PROC-MACRO-BACKDOOR",
+        "AETHER-RUST-FILELESS-WX-MEMFD-RCE",
+        "AETHER-RUST-GLOBAL-HOOK-TRAPDOOR-RCE",
+        "AETHER-RUST-UNANCHORED-REGEX-GATE",
+        "AETHER-PHP-PDO-EMULATED-PREPARES-SMUGGLING",
+        "AETHER-PHP-CURLY-VAR-INTERPOLATION-RCE",
     ];
 
     /// Audit d'un fichier avec élimination des faux positifs issus de chaînes/commentaires :
@@ -1210,6 +1219,7 @@ impl SecurityLinter {
             || lower_file_name == "linter.rs"
             || lower_file_name == "rules.rs"
             || lower_file_name == "deep_rules.rs"
+            || lower_file_name == "epic_novel_rules.rs"
             || lower_file_name == "php_rules.rs"
             || lower_file_name == "zig_rules.rs"
             || lower_file_name == "csharp_rules.rs"
@@ -1372,6 +1382,12 @@ impl SecurityLinter {
             is_interface_or_types,
         ));
         violations.extend(crate::csharp_rules::CSharpSecurityRules::audit_file(
+            file_path,
+            content,
+            is_test_file,
+            is_interface_or_types,
+        ));
+        violations.extend(crate::epic_novel_rules::EpicNovelRules::audit_file(
             file_path,
             content,
             is_test_file,

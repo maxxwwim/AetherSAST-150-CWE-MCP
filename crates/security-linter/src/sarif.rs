@@ -144,6 +144,12 @@ pub fn cwe_to_help_uri(cve_id: &str, rule_id: &str) -> String {
             return format!("https://cwe.mitre.org/data/definitions/{}.html", digits);
         }
     }
+    if rule_id.starts_with("AETHER-") {
+        return format!(
+            "https://github.com/aether-engine/blob/main/CWE_CATALOG.md#{}",
+            rule_id.to_lowercase()
+        );
+    }
     format!("https://cwe.mitre.org/data/definitions/{}.html", rule_id.to_lowercase())
 }
 

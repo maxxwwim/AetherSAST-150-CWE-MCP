@@ -1,6 +1,6 @@
-# 🪐 AETHER-ENGINE — CATALOGUE OFFICIEL DES 185+ RÈGLES CWE & PATTERNS ZERO-DAY
+# 🪐 AETHER-ENGINE — CATALOGUE OFFICIEL DES 200+ RÈGLES CWE, PATTERNS ZERO-DAY & BACKDOORS AETHER-*
 > **Moteur SAST Spatial AetherScope V2**  
-> **Total des règles actives intégrées :** `187 règles d'audit profondes`  
+> **Total des règles actives intégrées :** `215 règles d'audit profondes`  
 > **Technologies auditées :** PHP (WordPress / API), Zig (Systems / C-ABI / SIMD), C# (.NET / ASP.NET Core / EF Core), Rust (Memory Unsafe / LLVM), C++ (Réseau / Protocoles), Node.js / TypeScript, Python, Java, Smart Contracts (Solidity / Move / ZK).
 
 Ce catalogue recense l'ensemble des règles statiques, vérifications de contrats EARS et détecteurs de vulnérabilités embarqués dans le moteur AetherScope V2.
@@ -37,6 +37,11 @@ Ce catalogue recense l'ensemble des règles statiques, vérifications de contrat
 - [Rust / Concurrency & LLVM Soundness (1 règles)](#rust--concurrency--llvm-soundness)
 - [Rust / OS Kernel & Storage Soundness (1 règles)](#rust--os-kernel--storage-soundness)
 - [C / C++ / FFI (1 règles)](#c--c++--ffi)
+- [Aether Novel Runtime & Compiler Soundness (6 règles)](#aether-novel-runtime--compiler-soundness)
+- [Portes Dérobées Invisibles / Stealth Backdoors (4 règles)](#portes-dérobées-invisibles--stealth-backdoors)
+- [RCE Furtives Hors-CWE / Covert Non-CWE RCE (6 règles)](#rce-furtives-hors-cwe--covert-non-cwe-rce-6-règles)
+- [Pépites Sémantiques Rust / Async & Type Soundness (6 règles)](#pépites-sémantiques-rust--async--type-soundness-6-règles)
+- [Pépites Sémantiques PHP / Zend Engine & Parseur (6 règles)](#pépites-sémantiques-php--zend-engine--parseur-6-règles)
 
 ---
 
@@ -449,3 +454,65 @@ Ce catalogue recense l'ensemble des règles statiques, vérifications de contrat
 
 ---
 
+
+## 🧬 Aether Novel Runtime & Compiler Soundness (6 règles)
+
+| Sévérité | Règle / Identifiant | Taxonomie Aether | Intitulé & Risque Technique | Description & Mécanisme de Détection |
+| :--- | :--- | :--- | :--- | :--- |
+| 🔴 **CRITICAL** | `AETHER-RUST-ASYNC-TLS-BLEED` | **AETHER-EXEC-001 / ASYNC-WORKSTEAL-TLS-CONTAMINATION** | Rust Async: Contamination Inter-Tâches via `thread_local!` à Travers `.await` | Mutation ou lecture d'un `thread_local!` dans une `async fn` traversant `.await` sans `tokio::task_local!` : fuite d'identité/tenant entre tâches sur le même thread OS. |
+| 🟠 **HIGH** | `AETHER-RUST-SERDE-INVARIANT-ERASURE` | **AETHER-TYPE-002 / SERDE-CONSTRUCTOR-INVARIANT-BYPASS** | Rust Type Soundness: Érosion de Smart Constructor par `#[derive(Deserialize)]` | Structure à champs privés protégeant des invariants via un constructeur faillible (`new`/`try_new -> Result/Option`) tout en dérivant `Deserialize` sans `#[serde(try_from = ...)]`. |
+| 🟠 **HIGH** | `AETHER-RUST-ASYNC-FRAME-SECRET-RESIDENCY` | **AETHER-COMP-003 / COROUTINE-FRAME-SECRET-GHOSTING** | Rust Compiler: Persistance de Secret dans une Frame Async à Travers `.await` | Matériel cryptographique (`Zeroizing`, `SigningKey`, `PrivateKey`) conservé vivant à travers un `.await` sans `Box<Zeroizing<T>>` ni `drop` préalable : copies résiduelles dans l'enum d'état coroutine. |
+| 🔴 **CRITICAL** | `AETHER-PHP-PERSISTENT-WORKER-BLEED` | **AETHER-EXEC-004 / SHARED-NOTHING-RUNTIME-VIOLATION** | PHP Worker: Contamination d'État Inter-Requêtes (`Octane` / `FrankenPHP` / `Swoole`) | État utilisateur/tenant mutable stocké en `static $` / `self::$` / `$GLOBALS` dans un runtime PHP persistant sans `ResetInterface` ni purge inter-requêtes. |
+| 🔴 **CRITICAL** | `AETHER-PHP-GENERATOR-DEFERRED-GUARD` | **AETHER-CTRL-005 / LAZY-YIELD-AUTH-BYPASS** | PHP Control-Flow: Effacement Paresseux de Garde de Sécurité par `yield` (`Generator`) | Garde d'autorisation/validation (`throw`/`abort`/`isAdmin`) placé dans une fonction PHP contenant `yield` direct : PHP transforme la fonction en `Generator` paresseux et n'exécute rien à l'appel. |
+| 🟠 **HIGH** | `AETHER-PHP-PCRE-BACKTRACK-FAILOPEN` | **AETHER-CTRL-006 / PCRE-LIMIT-SILENT-FAIL-OPEN** | PHP PCRE: Contournement Silencieux Fail-Open via `pcre.backtrack_limit` | Garde `!preg_match()` ou `preg_match() == 0` sans contrôle `=== false` / `preg_last_error()`, ou `preg_replace()` filtrant sans test `!== null` : un payload de ~10 Ko fait renvoyer `false`/`null` et désactive le filtre. |
+
+---
+
+## 🕶️ Portes Dérobées Invisibles / Stealth Backdoors (4 règles)
+
+| Sévérité | Règle / Identifiant | Taxonomie Aether | Intitulé & Risque Technique | Description & Mécanisme de Détection |
+| :--- | :--- | :--- | :--- | :--- |
+| 🔴 **CRITICAL** | `AETHER-STEALTH-UNICODE-TROJAN-SOURCE` | **AETHER-BACKDOOR-001 / INVISIBLE-BIDI-AND-ZERO-WIDTH-TROJAN** | Porte Dérobée Invisible: Unicode BiDi Trojan Source, Zero-Width & Homoglyphes | Détection des caractères de contrôle BiDi (`U+202A..202E`, `U+2066..2069`), invisibles/Tags (`U+200B`, `U+E00xx`, ZWJ hors emoji), et identifiants mixtes ASCII + Cyrillique/Grec. |
+| 🔴 **CRITICAL** | `AETHER-RUST-PREMAIN-ELF-CONSTRUCTOR-BACKDOOR` | **AETHER-BACKDOOR-002 / PREMAIN-LINK-SECTION-INIT-ARRAY** | Porte Dérobée Invisible Rust: Exécution Pré-main (`.init_array` / `#[ctor]`) & Hijack `#[no_mangle]` | Enregistrement de code natif exécuté avant `fn main()` ou au `dlopen()` via `#[link_section = ".init_array"]`/`.ctors`/`#[ctor]`, ou interposition de symboles critiques (`memcmp`, `malloc`, `dlopen`, `pam_authenticate`). |
+| 🔴 **CRITICAL** | `AETHER-RUST-BUILD-RS-PROC-MACRO-BACKDOOR` | **AETHER-BACKDOOR-003 / COMPILE-TIME-LATERAL-DROPPER** | Porte Dérobée Invisible Rust: Dropper / Exfiltration Compile-Time (`build.rs` / `proc_macro`) | Script `build.rs` ou `#[proc_macro]` exécutant connexions réseau, shells OS, lecture de secrets CI/SSH/AWS ou injection `OUT_DIR` dès `cargo check` ou ouverture dans l'IDE. |
+| 🔴 **CRITICAL** | `AETHER-PHP-STEALTH-ENGINE-BACKDOOR` | **AETHER-BACKDOOR-004 / PHP-TICK-AUTOLOAD-VARFUNC-STEALTH** | Porte Dérobée Invisible PHP: Ticks Zend, Variable-Function & Autoload/Stream Hijack | Exécution cachée sans `eval()`/`system()` : `register_tick_function`/`shutdown` dynamique, invocation variable-fonction sur superglobale/`$$var`/décodeur obfusqué, callback falsifié ou `stream_wrapper`/`spl_autoload` hijacké. |
+
+
+---
+
+## ☢️ RCE Furtives Hors-CWE / Covert Non-CWE RCE (6 règles)
+
+| Sévérité | Règle / Identifiant | Taxonomie Aether | Intitulé & Risque Technique | Description & Mécanisme de Détection |
+| :--- | :--- | :--- | :--- | :--- |
+| 🔴 **CRITICAL** | `AETHER-PHP-FFI-NATIVE-BRIDGE-RCE` | **AETHER-RCE-001 / PHP-FFI-SHELLCODE-LIBC-BYPASS** | RCE Furtive PHP via `FFI`: Pont `libc` / Shellcode Mémoire | Usage de `FFI::cdef`/`load`/`cast` exposant des primitives système ou mémoire exécutable (`system`, `execve`, `mmap`, `mprotect`, `VirtualAlloc`, `dlopen`) contournant `disable_functions` sans `eval()` ni `exec()`. |
+| 🔴 **CRITICAL** | `AETHER-PHP-CRYPTO-HEADER-EXOTIC-RCE` | **AETHER-RCE-002 / CRYPTO-GATED-NO-EVAL-SINK-TRAPDOOR** | RCE Furtive PHP: Trappe Crypto-Header & Puits Exotiques Sans `eval()` | Exécution via puits ignorés des SAST CWE (`ob_start($cb)`, `mb_ereg_replace` flag `'e'`, `sqliteCreateFunction`, `pcntl_exec`, `yaml_parse`, `include data://`) souvent déclenchée par en-tête HTTP chiffré/haché. |
+| 🔴 **CRITICAL** | `AETHER-PHP-OPCACHE-USERINI-PERSIST-RCE` | **AETHER-RCE-003 / INI-PREPEND-OPCACHE-STEALTH-PERSIST** | RCE Persistante PHP: `.user.ini` / `auto_prepend_file` / Opcache | Écriture ou injection dynamique sur `.user.ini`, `php.ini`, `.htaccess` (`SetHandler`), `auto_prepend_file`, `opcache.preload` ou `opcache_compile_file()` : exécution furtive avant chaque requête sans upload `.php`. |
+| 🔴 **CRITICAL** | `AETHER-RUST-FILELESS-WX-MEMFD-RCE` | **AETHER-RCE-004 / RUST-FILELESS-MMAP-MEMFD-EXEC** | RCE *Fileless* Rust: W^X `PROT_EXEC` / `memfd_create` / `/proc/self/mem` | Exécution native 100 % en mémoire sans `Command::new` ni écriture disque : pages `PROT_EXEC`/`PAGE_EXECUTE_READWRITE`, `memfd_create`+`fexecve`, écriture `/proc/self/mem` ou `transmute` vers `extern "C" fn()`. |
+| 🔴 **CRITICAL** | `AETHER-RUST-RKYV-UNCHECKED-RELPTR-RCE` | **AETHER-RCE-005 / ZERO-COPY-ARCHIVED-VTABLE-HIJACK** | RCE Zero-Copy Rust: Désérialisation `rkyv` Non Validée (`RelPtr` / Vtable) | Appel à `rkyv::archived_root`, `access_unchecked` ou `deserialize_unchecked` sans `bytecheck` (`check_archived_root`/`access`) : falsification réseau de `RelPtr` ou tags d'enum détournant le contrôle de flux. |
+| 🔴 **CRITICAL** | `AETHER-RUST-GLOBAL-HOOK-TRAPDOOR-RCE` | **AETHER-RCE-006 / GLOBAL-ALLOC-PANIC-SIGNAL-TRAPDOOR** | Trappe Ambiante Rust: `#[global_allocator]` ou `panic::set_hook` Piégé | Hook global (`impl GlobalAlloc`, `panic::set_hook`, `sigaction`) contenant des primitives réseau, shell, FFI ou W^X : backdoor activable à distance hors de tout routeur HTTP. |
+
+---
+
+## 🧠 Pépites Sémantiques Rust / Async & Type Soundness (6 règles)
+
+| Sévérité | Règle / Identifiant | Taxonomie Aether | Intitulé & Risque Technique | Description & Mécanisme de Détection |
+| :--- | :--- | :--- | :--- | :--- |
+| 🔴 **CRITICAL** | `AETHER-RUST-EPHEMERAL-LOCK-DROP` | **AETHER-SYNC-007 / EPHEMERAL-MUTEX-GUARD-DROP** | Drop Éphémère de MutexGuard/RwLockGuard (`let _ =`) | `let _ = mutex.lock()` / `.write()` / `.read()` détruit immédiatement le guard RAII avant la section critique (exclusion mutuelle annulée / TOCTOU). |
+| 🔴 **CRITICAL** | `AETHER-RUST-PATH-JOIN-PREFIX-WIPE` | **AETHER-PATH-008 / PATH-JOIN-ABSOLUTE-OVERWRITE** | Écrasement de Racine via `Path::join`/`push` Non Confiné | Un chemin attaquant commençant par `/` ou `\\?\` remplace entièrement le préfixe dans `Path::join`/`push` sans `..`, hors de tout contrôle `is_absolute`/`components()`. |
+| 🟠 **HIGH** | `AETHER-RUST-ASSERT-UNWINDSAFE-STATE-TORN` | **AETHER-PANIC-009 / ASSERT-UNWINDSAFE-MUT-CORRUPTION** | `AssertUnwindSafe` sur `&mut` dans `catch_unwind` | Capturer un état mutable via `AssertUnwindSafe` sous `catch_unwind` laisse l'état partiellement muté (déchiré) exploitable après panique. |
+| 🟠 **HIGH** | `AETHER-RUST-UTF8-LOSSY-SMUGGLING` | **AETHER-NORM-010 / UTF8-LOSSY-REPLACEMENT-COLLISION** | Collision Auth/HMAC via `String::from_utf8_lossy` (`U+FFFD`) | Normaliser des octets invalides vers `U+FFFD` en contexte auth/signature/filtrage crée des collisions entre entrées distinctes sans rejet `from_utf8()`. |
+| 🟠 **HIGH** | `AETHER-RUST-UNANCHORED-REGEX-GATE` | **AETHER-CTRL-011 / REGEX-SUBSTRING-IS-MATCH-BYPASS** | `Regex::is_match` Sans Ancres Strictes (`\A..\z`) sur Allowlist | Par défaut `Regex::is_match` cherche une sous-chaîne : une allowlist non ancrée (ou avec `(?m)^...$`) cède aux préfixes/suffixes/retours à la ligne. |
+| 🟠 **HIGH** | `AETHER-RUST-RELAXED-ATOMIC-SECURITY-GATE` | **AETHER-MEM-012 / WEAK-RELAXED-ATOMIC-SECURITY-BARRIER** | Barrière Auth/Init Atomique en `Ordering::Relaxed` | Lecture/écriture d'un drapeau critique (`auth`, `admin`, `init`, `ready`, `sealed`) en `Relaxed` sans garantie `happens-before` sur ARM64/RISC-V. |
+
+---
+
+## 🐘 Pépites Sémantiques PHP / Zend Engine & Parseur (6 règles)
+
+| Sévérité | Règle / Identifiant | Taxonomie Aether | Intitulé & Risque Technique | Description & Mécanisme de Détection |
+| :--- | :--- | :--- | :--- | :--- |
+| 🔴 **CRITICAL** | `AETHER-PHP-LOOSE-INARRAY-BOOL-BYPASS` | **AETHER-ZEND-007 / PHP8-INARRAY-BOOL-TRUE-JUGGLING** | Type Juggling PHP 8 dans `in_array()` / `array_search()` Sans `true` | Omettre le 3e argument strict `true` sur allowlist de rôles/actions/algos laisse `bool(true)` ou des casts numériques matcher des chaînes arbitraires. |
+| 🔴 **CRITICAL** | `AETHER-PHP-PARSE-URL-DIFFERENTIAL-SSRF` | **AETHER-ZEND-008 / PARSE-URL-LIBCURL-HOST-DIFFERENTIAL** | SSRF Différentiel `parse_url()` vs `libcurl` / Redirections | Validation via `parse_url()` avant `curl`/`file_get_contents` sans résolution + rejet IP privé (`FILTER_FLAG_NO_PRIV_RANGE` + `CURLOPT_RESOLVE`) ni restriction de redirection. |
+| 🔴 **CRITICAL** | `AETHER-PHP-ESCAPESHELLCMD-FLAG-RCE` | **AETHER-ZEND-009 / ESCAPESHELLCMD-ARGUMENT-FLAG-INJECTION** | Injection d'Options CLI / RCE via `escapeshellcmd()` | `escapeshellcmd()` autorise espaces et tirets : l'attaquant injecte des flags CLI (`--checkpoint-action=exec=...`, `-oProxyCommand=...`) malgré l'échappement. |
+| 🟠 **HIGH** | `AETHER-PHP-JSON-DEPTH-NULL-FAILOPEN` | **AETHER-ZEND-010 / JSON-DECODE-DEPTH512-SILENT-NULL** | Fail-Open Silencieux `json_decode()` -> `null` (>512 niveaux / UTF-8) | `json_decode()` sur payload auth/JWT/webhook sans `JSON_THROW_ON_ERROR`, `json_validate()` ni test `=== null` propage `null` silencieusement. |
+| 🟠 **HIGH** | `AETHER-PHP-PDO-EMULATED-PREPARES-SMUGGLING` | **AETHER-ZEND-011 / PDO-CLIENT-EMULATED-PREPARE-SMUGGLING** | Émulation Client PDO Active (`ATTR_EMULATE_PREPARES`) | `new PDO("mysql:...")` sans `ATTR_EMULATE_PREPARES => false` désactive les prepared statements binaires et expose au smuggling/multi-requêtes. |
+| 🔴 **CRITICAL** | `AETHER-PHP-CURLY-VAR-INTERPOLATION-RCE` | **AETHER-ZEND-012 / PHP-COMPLEX-CURLY-SYNTAX-EXEC** | RCE par Interpolation Complexe `{${func()}}` / `${$_}` | Syntaxe PHP `{${...(...)}}` ou `${$_...}` en chaîne double-quote/heredoc déclenchant l'évaluation dynamique de fonction ou de superglobale. |
