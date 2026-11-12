@@ -64,19 +64,6 @@
 14. [📚 Detailed CWE Rules List (Dedicated Directory)](./cwe/)
 15. [🔭 2027 Strategic & Technical Roadmap (SoA 100k+ Nodes, WebGPU WGSL, Dual-Pass Laser & AI Token Economy)](./docs/roadmap_2027.md)
 
----
-
-## ✨ Graphical & Security Upgrade (3D Volumetric SDF Shaders, 120 FPS Dual-Pass Laser Glow & 2027 Roadmap)
-
-- **3D Volumetric WebGL 2 GLSL Shaders (`webgl_shaders_physics.js`):**
-  - **Functions (Stars):** 4-branch optical diffraction cross and continuous GPU stellar scintillation.
-  - **Files (Planets):** 3D spherical Fresnel rim lighting and rotating orbital plasma wave along the Saturn ring.
-  - **Classes (Crystals):** Rotating 6-fold hexagonal crystal facets with dual concentric halos.
-  - **Endpoints / Forms (Pulsars):** Expanding radar shockwave rings emitted periodically from the pulsar core.
-- **Zero-Blur Dual-Pass Additive Laser Edge Rendering (`webgl_renderer.js`):** Replaced CPU-bound `ctx.shadowBlur` Gaussian rasterization with a hardware-accelerated dual-pass additive laser stroke (`globalCompositeOperation = 'lighter'`) for a **4x–6x FPS boost** at 120 FPS, paired with **Hierarchical Edge Bundling (HEB)** for cross-module synaptic highways.
-- **Security Hardening & XML v2.1 Handshake:** Checked saturating integer conversion (`CWE-190` in `obsidian-vault`), EARS module contract sealing (`0 active violations`), and symmetric `<in_degree>` / `<out_degree>` XML v2.1 tags in `ai-file-bridge`.
-- **2027 Strategic & Technical Roadmap ([`docs/roadmap_2027.md`](./docs/roadmap_2027.md)):** *Structure of Arrays* memory layout (46 bytes/node for 100k+ nodes), *Hybrid CSR + Delta Buffer* indexing, *WebGPU (WGSL)* migration with decoupled Barnes-Hut compute shaders (30–60 Hz / 120 FPS LERP), and AI model routing matrix (*Argon Max* vs *Gemini 3 Max*).
-
 ## ☢️ What's New in V2.3.0 — Gemini 4 Hydrogen Extra: Non-CWE Engine (`AETHER-*`), Invisible Backdoor & Stealth RCE Detectors
 
 > **Release Title:** **`Gemini 4 Hydrogen Extra`** — Pushing AetherScope beyond classical CWE taxonomies to **215 active rules** with **28 exclusive non-CWE semantic, stealth backdoor, and zero-trace remote execution (`AETHER-*`) detectors** in `crates/security-linter/src/epic_novel_rules.rs`:
