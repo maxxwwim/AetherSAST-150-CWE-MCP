@@ -3,6 +3,8 @@
   import AetherCanvas from './components/AetherCanvas.svelte';
   import InspectorDrawer from './components/InspectorDrawer.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
+  import VisionModesDeck from './components/VisionModesDeck.svelte';
+  import BountyModal from './components/BountyModal.svelte';
   import { cockpitState } from './state/graphState.svelte';
   import { api } from './lib/api';
   import { onMount } from 'svelte';
@@ -27,7 +29,9 @@
   <HeaderDeck />
   <div class="relative flex-1 w-full h-full overflow-hidden">
     <AetherCanvas />
+    <VisionModesDeck />
     <InspectorDrawer />
     <CommandPalette />
+    <BountyModal />
   </div>
 </div>

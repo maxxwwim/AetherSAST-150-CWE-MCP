@@ -12,6 +12,8 @@ pub const UI_INSPECTOR_DOCS_JS: &str = include_str!("../assets/ui_inspector_docs
 pub const UI_VISION_MODES_JS: &str = include_str!("../assets/ui_vision_modes.js");
 pub const UI_AI_MODALS_JS: &str = include_str!("../assets/ui_ai_modals.js");
 pub const PHYSICS_WORKER_JS: &str = include_str!("../assets/physics_worker.js");
+#[allow(dead_code)]
+pub const DIST_INDEX_HTML: &str = include_str!("../dist/index.html");
 
 /// Dual-vision graph container serialized for offline standalone bundles.
 #[derive(Debug, Clone, Serialize)]
@@ -82,6 +84,43 @@ pub fn generate_dual_standalone_html(
     assemble_bundle(&injection)
 }
 
+/// Generates a modern Svelte 5 + Vite standalone HTML bundle (ultra-lightweight ~145 KB)
+#[allow(dead_code)]
+pub fn generate_modern_standalone_html(
+    code_graph: Option<&AetherGraph>,
+    vault_graph: Option<&AetherGraph>,
+    project_type: DetectedProjectType,
+    active_view: &str,
+) -> String {
+    let code_prepared = code_graph.map(ensure_system_prompt);
+    let vault_prepared = vault_graph.map(ensure_system_prompt);
+
+    let norm_active = match active_view.trim().to_lowercase().as_str() {
+        "vault" | "notes" => "vault",
+        _ => "code",
+    };
+
+    let worker_json = serde_json::to_string(PHYSICS_WORKER_JS).unwrap_or_default();
+
+    let dual_bundle = DualGraphBundle {
+        project_type: project_type.as_str(),
+        supported_views: project_type.supported_views(),
+        active_view: norm_active,
+        code: code_prepared.as_ref(),
+        vault: vault_prepared.as_ref(),
+    };
+    let dual_json = serde_json::to_string(&dual_bundle).unwrap_or_default();
+    let safe_dual_json = dual_json.replace("</script>", "<\\/script>");
+
+    let active_key = if norm_active == "vault" { "vault" } else { "code" };
+    let injection = format!(
+        "<script>\nwindow.__AETHERSCOPE_DUAL_GRAPH__ = {};\nwindow.__PHYSICS_WORKER_CODE__ = {};\nwindow.__AETHERSCOPE_DATA__ = window.__AETHERSCOPE_DUAL_GRAPH__.{} || window.__AETHERSCOPE_DUAL_GRAPH__.code || window.__AETHERSCOPE_DUAL_GRAPH__.vault || {{ project_name: 'AetherScope', nodes: [], edges: [], stats: {{}} }};\nwindow.AETHER_GRAPH_DATA = window.__AETHERSCOPE_DATA__;\nwindow.AETHER_DUAL_GRAPH = window.__AETHERSCOPE_DUAL_GRAPH__;\n</script>",
+        safe_dual_json, worker_json, active_key
+    );
+
+    DIST_INDEX_HTML.replace("<body", &format!("{}\n<body", injection))
+}
+
 /// Backward compatible generator for single graph export.
 #[allow(dead_code)]
 pub fn generate_standalone_html(graph: &AetherGraph) -> String {
@@ -147,6 +186,23 @@ mod tests {
         assert!(!html.contains("src=\"ui_vision_modes.js\""));
         assert!(!html.contains("src=\"ui_ai_modals.js\""));
         assert!(html.len() > 100_000);
+    }
+
+    #[test]
+    fn test_generate_modern_standalone_html() {
+        let graph = AetherGraph::new("ModernProject");
+        let html = generate_modern_standalone_html(
+            Some(&graph),
+            None,
+            DetectedProjectType::PureCode,
+            "code",
+        );
+
+        assert!(html.contains("window.__AETHERSCOPE_DATA__"));
+        assert!(html.contains("window.__AETHERSCOPE_DUAL_GRAPH__"));
+        assert!(html.contains("window.AETHER_GRAPH_DATA"));
+        assert!(html.contains("aether-canvas"));
+        assert!(html.len() > 50_000);
     }
 
     #[test]

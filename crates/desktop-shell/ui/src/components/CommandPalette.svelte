@@ -44,7 +44,10 @@
     <div
       class="w-full max-w-lg bg-[#0d1117] border border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col"
       onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => { if (e.key === 'Escape') cockpitState.isCommandPaletteOpen = false; }}
       role="dialog"
+      aria-modal="true"
+      tabindex="-1"
     >
       <!-- Search Input -->
       <div class="flex items-center px-3 py-2.5 border-b border-white/10 gap-2.5">
