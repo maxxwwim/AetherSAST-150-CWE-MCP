@@ -12,6 +12,7 @@ import {
 import { PhysicsController, type FolderClusterEntry } from './physics';
 import { getLayerRgba, getFolderColor, formatFolderLabel, SEVERITY_COLORS, type RgbaColor } from './palette';
 import { normalizeEdgeRelation, type CockpitState } from '../state/graphState.svelte';
+import { playSpatialTone } from '../lib/sound';
 import type { SymbolBubble } from '../types/graph';
 
 // Precomputed 12-sector trigonometric tables for C1-continuous cellular membranes
@@ -64,6 +65,7 @@ export class AetherEngine {
   private lastLodLevel = 1;
   private lastFitTick = 0;
   private lastFocusTick = 0;
+  private lastSnapshotTick = 0;
   private lastFilterVersion = 0;
   private hoveredNodeId: string | null = null;
   private hoveredFolder: string | null = null;
@@ -628,12 +630,20 @@ export class AetherEngine {
         if (hit) {
           this.selectedFolder = hit.folder || hit.cluster_id || null;
           this.state.selectSymbol(hit.id, false);
+          const pan = (sx / Math.max(1, this.logicalWidth)) * 2 - 1;
+          playSpatialTone(
+            this.state.settings.soundEnabled,
+            hit.has_security_violation || (hit.anomalies && hit.anomalies.length > 0) ? 'alert' : 'select',
+            pan
+          );
           this.refreshVisionColors(true);
         } else {
           const folder = this.findFolderAt(sx, sy);
           this.selectedFolder = folder;
           if (folder) {
             this.state.selectFolder(folder, false);
+            const pan = (sx / Math.max(1, this.logicalWidth)) * 2 - 1;
+            playSpatialTone(this.state.settings.soundEnabled, 'action', pan);
           } else {
             this.state.clearSelection();
           }
@@ -707,8 +717,16 @@ export class AetherEngine {
       }
 
       this.updateCamera(dt);
-      this.physics.step(this.camera.zoom);
+      if (!this.state.physicsPaused) {
+        this.physics.step(this.camera.zoom);
+      }
       this.render(now);
+
+      if (this.lastSnapshotTick !== this.state.snapshotRequestTick) {
+        this.lastSnapshotTick = this.state.snapshotRequestTick;
+        this.captureSnapshot();
+      }
+
       this.animationFrameId = requestAnimationFrame(loop);
     };
     this.animationFrameId = requestAnimationFrame(loop);
@@ -754,15 +772,112 @@ export class AetherEngine {
       gl.bindVertexArray(null);
     }
 
-    // 2. 2D Overlay Canvas (Cellular Membranes, Edges, Security Beacons, Labels)
+    // 2. 2D Overlay Canvas (Thematic Layout Scenery, Cellular Membranes, Edges, Security Beacons, Labels)
     const ctx = this.lineCtx;
     ctx.clearRect(0, 0, this.logicalWidth, this.logicalHeight);
 
+    this.renderLayoutScenery(ctx);
     this.renderMembranes(ctx, now);
     this.renderEdges(ctx, now);
     this.renderSecurityBeacons(ctx, now);
     this.renderAiAgentOverlay(ctx, now);
     this.renderLabels(ctx);
+  }
+
+  private captureSnapshot() {
+    try {
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = this.canvas.width;
+      exportCanvas.height = this.canvas.height;
+      const ectx = exportCanvas.getContext('2d');
+      if (!ectx) return;
+      ectx.drawImage(this.canvas, 0, 0);
+      ectx.drawImage(this.lineCanvas, 0, 0);
+      const url = exportCanvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      const proj = (this.state.graph.project_name || 'aetherscope').replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.download = `${proj}_snapshot_${Date.now()}.png`;
+      a.click();
+      playSpatialTone(this.state.settings.soundEnabled, 'success', 0);
+    } catch {
+      // ignore security errors if tainted
+    }
+  }
+
+  private renderLayoutScenery(ctx: CanvasRenderingContext2D) {
+    const layout = this.state.activeLayout;
+    if (layout === 'Z-2') return; // Standard Galaxy cosmos uses pure nebula
+
+    const w = this.logicalWidth;
+    const h = this.logicalHeight;
+    ctx.save();
+
+    if (layout === 'Z-1') {
+      // System Architecture Horizontal Layers (UI -> Domain -> Service -> Persistence/Infra)
+      const bands = [
+        { label: 'COUCHE PRÉSENTATION / UI', color: 'rgba(56, 189, 248, 0.05)', stroke: 'rgba(56, 189, 248, 0.22)' },
+        { label: 'COUCHE DOMAINE / MÉTIER', color: 'rgba(168, 85, 247, 0.05)', stroke: 'rgba(168, 85, 247, 0.22)' },
+        { label: 'COUCHE SERVICES & INFRASTRUCTURE', color: 'rgba(16, 185, 129, 0.045)', stroke: 'rgba(16, 185, 129, 0.22)' },
+      ];
+      const bandH = h / bands.length;
+      ctx.font = '700 10px ui-monospace, "SF Mono", Consolas, monospace';
+      for (let i = 0; i < bands.length; i++) {
+        const y = i * bandH;
+        ctx.fillStyle = bands[i].color;
+        ctx.fillRect(0, y + 4, w, bandH - 8);
+        ctx.strokeStyle = bands[i].stroke;
+        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, y + 4);
+        ctx.lineTo(w, y + 4);
+        ctx.stroke();
+        ctx.fillStyle = bands[i].stroke.replace('0.22', '0.68');
+        ctx.fillText(bands[i].label, 16, y + 20);
+      }
+      ctx.setLineDash([]);
+    } else if (layout === 'Z-3') {
+      // DAG Pipeline Horizontal Flow Lanes
+      const lanes = 4;
+      const laneW = w / lanes;
+      const labels = ['INGESTION', 'TRANSFORM', 'SECURITY / TAINT', 'SINK / EXPORT'];
+      ctx.font = '700 10px ui-monospace, "SF Mono", Consolas, monospace';
+      for (let i = 0; i < lanes; i++) {
+        const x = i * laneW;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.16)';
+        ctx.setLineDash([4, 8]);
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(125, 211, 252, 0.52)';
+        ctx.fillText(`⟶ ${labels[i]}`, x + 12, 22);
+      }
+      ctx.setLineDash([]);
+    } else if (layout === 'Z-4') {
+      // UML Matrix Technical Blueprint Grid
+      const step = 48;
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.08)';
+      ctx.lineWidth = 1;
+      for (let gx = (-(this.camera.x * this.camera.zoom) % step + step) % step; gx < w; gx += step) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, h);
+        ctx.stroke();
+      }
+      for (let gy = (-(this.camera.y * this.camera.zoom) % step + step) % step; gy < h; gy += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(w, gy);
+        ctx.stroke();
+      }
+      ctx.font = '700 10px ui-monospace, "SF Mono", Consolas, monospace';
+      ctx.fillStyle = 'rgba(165, 180, 252, 0.55)';
+      ctx.fillText('MATRICE UML & RELATIONS STRUCTURELLES', 16, 22);
+    }
+
+    ctx.restore();
   }
 
   private renderSecurityBeacons(ctx: CanvasRenderingContext2D, now: number) {
@@ -943,8 +1058,109 @@ export class AetherEngine {
     return ptsY[9] ?? cy - radius;
   }
 
+  private syncLiveClusterEnvelopes() {
+    const nodes = this.state.graph.nodes;
+    if (!nodes || nodes.length === 0) return;
+
+    const disabledLayers = this.state.disabledLayers;
+    const disabledModules = this.state.disabledModules;
+    const grouped = new Map<string, SymbolBubble[]>();
+
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
+      if (disabledLayers[n.layer || 'utility']) continue;
+      const folder = n.folder || n.cluster_id || 'root';
+      if (disabledModules[folder]) continue;
+      let list = grouped.get(folder);
+      if (!list) {
+        list = [];
+        grouped.set(folder, list);
+      }
+      list.push(n);
+    }
+
+    // Remove clusters with 0 currently visible nodes
+    for (const k of Array.from(this.clusters.keys())) {
+      if (!grouped.has(k)) this.clusters.delete(k);
+    }
+
+    const TWO_PI = Math.PI * 2;
+    const padding = 36 / Math.sqrt(Math.max(0.2, Math.min(2.0, this.camera.zoom)));
+
+    grouped.forEach((list, folder) => {
+      let sumX = 0;
+      let sumY = 0;
+      for (let i = 0; i < list.length; i++) {
+        sumX += list[i].x;
+        sumY += list[i].y;
+      }
+      const cx = sumX / list.length;
+      const cy = sumY / list.length;
+
+      let maxDist = 0;
+      const rawSectors = new Float32Array(12);
+      for (let i = 0; i < list.length; i++) {
+        const nd = list[i];
+        const dx = nd.x - cx;
+        const dy = nd.y - cy;
+        const nodePad = nd.is_file || nd.is_class ? 24 : 15;
+        const d = Math.hypot(dx, dy) + nodePad;
+        if (d > maxDist) maxDist = d;
+        let ang = Math.atan2(dy, dx);
+        if (ang < 0) ang += TWO_PI;
+        const sIdx = Math.round((ang / TWO_PI) * 12) % 12;
+        if (d > rawSectors[sIdx]) rawSectors[sIdx] = d;
+        const prev = (sIdx + 11) % 12;
+        const next = (sIdx + 1) % 12;
+        if (d * 0.90 > rawSectors[prev]) rawSectors[prev] = d * 0.90;
+        if (d * 0.90 > rawSectors[next]) rawSectors[next] = d * 0.90;
+      }
+
+      const minBaseR = Math.max(54, Math.sqrt(list.length) * 32);
+      const baseR = Math.max(minBaseR, maxDist + padding);
+
+      let entry = this.clusters.get(folder);
+      if (!entry) {
+        entry = {
+          cx,
+          cy,
+          sumX,
+          sumY,
+          count: list.length,
+          computedRadius: baseR,
+          naturalRadius: baseR,
+          lobeProfile: new Float32Array(12),
+        };
+        this.clusters.set(folder, entry);
+      } else {
+        entry.cx = cx;
+        entry.cy = cy;
+        entry.sumX = sumX;
+        entry.sumY = sumY;
+        entry.count = list.length;
+        entry.computedRadius = baseR;
+        entry.naturalRadius = baseR;
+        if (entry.lobeProfile.length !== 12) entry.lobeProfile = new Float32Array(12);
+      }
+
+      const rawLobes = new Float32Array(12);
+      for (let s = 0; s < 12; s++) {
+        const neededR = rawSectors[s] > 0 ? rawSectors[s] + padding : baseR * 0.88;
+        rawLobes[s] = Math.max(0.84, Math.min(1.45, neededR / baseR));
+      }
+      for (let s = 0; s < 12; s++) {
+        const prev = rawLobes[(s + 11) % 12];
+        const next = rawLobes[(s + 1) % 12];
+        // Slight 1.06 outward factor compensates quadratic Bezier midpoint inward curve
+        entry.lobeProfile[s] = (prev * 0.25 + rawLobes[s] * 0.50 + next * 0.25) * 1.06;
+      }
+    });
+  }
+
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
     this.folderPillBounds = [];
+    this.syncLiveClusterEnvelopes();
     if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();

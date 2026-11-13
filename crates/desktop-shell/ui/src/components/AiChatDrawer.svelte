@@ -382,16 +382,27 @@
             {#each cockpitState.aiChatMessages as msg (msg.id)}
               {@const isUser = msg.sender === 'user'}
               {@const parsed = parseMessageBody(msg.text || '')}
+              {@const badgeColor = msg.color || (isUser ? '#c084fc' : '#38bdf8')}
+              {@const senderTitle = isUser ? '👤 Vous' : `🤖 ${msg.agent_name || msg.agent_id || (msg.sender && msg.sender !== 'ai' ? msg.sender : 'Copilot MCP')}`}
               <div
                 class="p-2.5 rounded-xl border space-y-1.5 {isUser
                   ? 'bg-purple-950/35 border-purple-500/35 ml-5'
                   : 'bg-[#0f172a]/90 border-sky-500/30 mr-4'}"
+                style={!isUser && msg.color ? `border-color: ${msg.color}55` : undefined}
               >
                 <div class="flex items-center justify-between gap-2 text-[10px]">
-                  <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="font-bold {isUser ? 'text-purple-200' : 'text-sky-300'}">
-                      {isUser ? '👤 Vous' : '🤖 Copilot MCP'}
+                  <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+                    <span class="font-bold flex items-center gap-1" style="color: {badgeColor}">
+                      {#if !isUser}
+                        <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color: {badgeColor}"></span>
+                      {/if}
+                      {senderTitle}
                     </span>
+                    {#if msg.recipient}
+                      <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 font-mono text-[9px]">
+                        ➔ @{msg.recipient}
+                      </span>
+                    {/if}
                     {#if msg.target_symbol}
                       <button
                         type="button"

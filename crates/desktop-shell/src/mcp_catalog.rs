@@ -35,7 +35,13 @@ pub(crate) async fn handle_catalog_request(
                     {
                         "uri": "aether://tasks/active",
                         "name": "AetherScope Active AI Tasks",
-                        "description": "Registre des tÃ¢ches d'ingÃ©nierie et de refactorisation pilotÃ©es par l'IA (.aether/tasks/).",
+                        "description": "Registre des tâches d'ingénierie et de refactorisation pilotées par l'IA (.aether/tasks/).",
+                        "mimeType": "application/json"
+                    },
+                    {
+                        "uri": "aether://agents/swarm",
+                        "name": "AetherScope Multi-Agent Swarm & Chat",
+                        "description": "État temps réel de tous les agents IA connectés (agent_id, nom, couleur, symbole inspecté, action) et derniers messages inter-agents.",
                         "mimeType": "application/json"
                     }
                 ]
@@ -146,6 +152,36 @@ pub(crate) async fn handle_catalog_request(
                             "contents": [
                                 {
                                     "uri": "aether://tasks/active",
+                                    "mimeType": "application/json",
+                                    "text": text
+                                }
+                            ]
+                        })),
+                        error: None,
+                    })
+                }
+
+                "aether://agents/swarm" => {
+                    let telem = send_http_request(server_port, "GET", "/api/ai/telemetry", None).await.ok();
+                    let chat = send_http_request(server_port, "GET", "/api/ai/chat", None).await.ok();
+                    let agents = telem.as_ref().and_then(|v| v.get("agents")).cloned().unwrap_or_else(|| json!([]));
+                    let messages: Vec<Value> = chat
+                        .as_ref()
+                        .and_then(|v| v.get("messages").and_then(|m| m.as_array()))
+                        .map(|arr| arr.iter().rev().take(20).cloned().collect::<Vec<_>>().into_iter().rev().collect())
+                        .unwrap_or_default();
+                    let text = serde_json::to_string_pretty(&json!({
+                        "agents_count": agents.as_array().map(|a| a.len()).unwrap_or(0),
+                        "agents": agents,
+                        "recent_messages": messages
+                    })).unwrap_or_else(|_| "{}".to_string());
+                    Some(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({
+                            "contents": [
+                                {
+                                    "uri": "aether://agents/swarm",
                                     "mimeType": "application/json",
                                     "text": text
                                 }
@@ -533,6 +569,18 @@ pub(crate) async fn handle_catalog_request(
                                 "path": {
                                     "type": "string",
                                     "description": "Chemin optionnel du projet cible"
+                                },
+                                "agent_id": {
+                                    "type": "string",
+                                    "description": "Identifiant unique de l'agent appelant pour la coordination multi-agents (ex: 'claude-sec-1', 'gemini-ui')"
+                                },
+                                "agent_name": {
+                                    "type": "string",
+                                    "description": "Nom lisible de l'agent affiché sur la constellation 3D (ex: 'Claude Security', 'Gemini Architect')"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Couleur hexadécimale optionnelle de l'halo de l'agent sur le graphe 3D (ex: '#f472b6', '#38bdf8')"
                                 }
                             },
                             "required": ["symbol_id"],
@@ -601,6 +649,18 @@ pub(crate) async fn handle_catalog_request(
                                 "path": {
                                     "type": "string",
                                     "description": "Chemin optionnel du projet cible"
+                                },
+                                "agent_id": {
+                                    "type": "string",
+                                    "description": "Identifiant de l'agent effectuant la recherche (partage sa zone de recherche avec les pairs)"
+                                },
+                                "agent_name": {
+                                    "type": "string",
+                                    "description": "Nom affiché de l'agent chercheur"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Couleur hexadécimale de l'agent chercheur"
                                 }
                             },
                             "required": [],
@@ -779,7 +839,7 @@ pub(crate) async fn handle_catalog_request(
                     },
                     {
                         "name": "aetherscope_chat",
-                        "description": "[COMMANDE COMBINÃ‰E 2-EN-1] Envoie un message/debrief dans le chat intÃ©grÃ© AetherScope (action='send', avec tÃ©lÃ©portation camÃ©ra optionnelle via target_symbol) OU rÃ©cupÃ¨re l'historique des Ã©changes (action='history').",
+                        "description": "[COMMANDE COMBINÉE 3-EN-1 Multi-Agents] Poste un message/hand-off dans le canal partagé (action='send', avec identité agent_id/agent_name et destinataire optionnel @recipient), lit l'historique filtrable (action='history'), ou liste l'essaim d'agents actifs (action='swarm').",
                         "readOnlyHint": false,
                         "destructiveHint": false,
                         "idempotentHint": false,
@@ -789,12 +849,12 @@ pub(crate) async fn handle_catalog_request(
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "description": "'send' (dÃ©faut si text est prÃ©sent) pour envoyer un message, ou 'history' pour lire l'historique du chat",
-                                    "enum": ["send", "history"]
+                                    "description": "'send' (défaut si text est présent) pour poster, 'history' pour lire les messages (filtrable par recipient), ou 'swarm' pour lister les agents actifs et leurs cibles",
+                                    "enum": ["send", "history", "swarm"]
                                 },
                                 "text": {
                                     "type": "string",
-                                    "description": "Contenu Markdown du message Ã  afficher dans le chat AetherScope (requis si action='send')"
+                                    "description": "Contenu Markdown du message à afficher dans le chat AetherScope (requis si action='send')"
                                 },
                                 "thought": {
                                     "type": "string",
@@ -802,7 +862,23 @@ pub(crate) async fn handle_catalog_request(
                                 },
                                 "target_symbol": {
                                     "type": "string",
-                                    "description": "Symbole ou fichier associÃ© au message (aligne aussi la camÃ©ra 3D)"
+                                    "description": "Symbole ou fichier associé au message (aligne aussi la caméra 3D)"
+                                },
+                                "agent_id": {
+                                    "type": "string",
+                                    "description": "Identifiant unique de l'agent émetteur (ex: 'claude-sec', 'codex-refactor')"
+                                },
+                                "agent_name": {
+                                    "type": "string",
+                                    "description": "Nom affiché de l'agent émetteur dans le chat partagé"
+                                },
+                                "recipient": {
+                                    "type": "string",
+                                    "description": "Agent destinataire (@mention pour hand-off en send, ou filtre d'inbox en history, ex: 'gemini-ui' ou 'all')"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Couleur badge hexadécimale de l'agent (ex: '#38bdf8')"
                                 }
                             },
                             "required": [],
@@ -915,8 +991,20 @@ pub(crate) async fn handle_catalog_request(
                                 },
                                 "details": {
                                     "type": "string",
-                                    "description": "Courte description technique de ce que vous observez ou rÃ©alisez",
-                                    "examples": ["VÃ©rification des invariants et de la non-nullabilitÃ© du token d'accÃ¨s"]
+                                    "description": "Courte description technique de ce que vous observez ou réalisez",
+                                    "examples": ["Vérification des invariants et de la non-nullabilité du token d'accès"]
+                                },
+                                "agent_id": {
+                                    "type": "string",
+                                    "description": "Identifiant unique de l'agent pour afficher son propre halo et fil d'Ariane sans écraser les autres agents"
+                                },
+                                "agent_name": {
+                                    "type": "string",
+                                    "description": "Nom court de l'agent (ex: 'Claude-Sec', 'Gemini-Arch')"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Couleur hexadécimale du halo de l'agent (ex: '#f472b6', '#34d399')"
                                 }
                             },
                             "required": ["target", "action", "details"],

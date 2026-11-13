@@ -14,23 +14,77 @@
   import CanvasTooltip from './components/CanvasTooltip.svelte';
   import AiChatDrawer from './components/AiChatDrawer.svelte';
   import McpControlModal from './components/McpControlModal.svelte';
+  import VisionModeHuds from './components/VisionModeHuds.svelte';
+  import TasksModal from './components/TasksModal.svelte';
+  import CreateFileModal from './components/CreateFileModal.svelte';
+  import IgnoredCweModal from './components/IgnoredCweModal.svelte';
   import { cockpitState } from './state/graphState.svelte';
   import { api } from './lib/api';
   import { onMount } from 'svelte';
 
-  onMount(async () => {
-    // Check if data was injected via window.__AETHERSCOPE_DATA__
-    const injected = (window as any).__AETHERSCOPE_DATA__;
-    if (injected) {
-      cockpitState.setGraph(injected);
-    } else {
-      try {
-        const g = await api.getGraph();
-        cockpitState.setGraph(g);
-      } catch (e) {
-        console.warn('Backend not responding yet:', e);
+  onMount(() => {
+    let versionTimer: ReturnType<typeof setInterval> | null = null;
+
+    (async () => {
+      // Check if data was injected via window.__AETHERSCOPE_DATA__
+      const injected = (window as any).__AETHERSCOPE_DATA__;
+      if (injected) {
+        cockpitState.setGraph(injected);
+      } else {
+        try {
+          const g = await api.getGraph();
+          cockpitState.setGraph(g);
+          cockpitState.liveConnected = true;
+        } catch (e) {
+          console.warn('Backend not responding yet:', e);
+        }
       }
-    }
+
+      // Sync saved CWE settings & tasks count from backend if online
+      try {
+        const [verRes, tasksList, settingsRes] = await Promise.allSettled([
+          api.getGraphVersion(),
+          api.getTasks(),
+          api.getSettings(),
+        ]);
+        if (verRes.status === 'fulfilled' && typeof verRes.value?.version === 'number') {
+          cockpitState.graphVersion = verRes.value.version;
+          cockpitState.liveConnected = true;
+        }
+        if (tasksList.status === 'fulfilled') {
+          cockpitState.tasks = tasksList.value;
+        }
+        if (settingsRes.status === 'fulfilled' && settingsRes.value) {
+          if (Array.isArray(settingsRes.value.ignored_cwes)) {
+            cockpitState.settings.ignoredCwes = settingsRes.value.ignored_cwes;
+          }
+        }
+      } catch {
+        // standalone offline mode
+      }
+    })();
+
+    // Live graph version watcher (polls /api/graph/version every 3s)
+    versionTimer = setInterval(async () => {
+      try {
+        const res = await api.getGraphVersion();
+        cockpitState.liveConnected = true;
+        if (typeof res?.version === 'number' && cockpitState.graphVersion > 0 && res.version !== cockpitState.graphVersion) {
+          cockpitState.graphVersion = res.version;
+          const updated = await api.getGraph();
+          cockpitState.setGraph(updated);
+          cockpitState.filterVersion += 1;
+        } else if (typeof res?.version === 'number' && cockpitState.graphVersion === 0) {
+          cockpitState.graphVersion = res.version;
+        }
+      } catch {
+        cockpitState.liveConnected = false;
+      }
+    }, 3000);
+
+    return () => {
+      if (versionTimer) clearInterval(versionTimer);
+    };
   });
 </script>
 
@@ -40,6 +94,7 @@
     <AetherCanvas />
     <CanvasTooltip />
     <VisionModesDeck />
+    <VisionModeHuds />
     <SynthesisHud />
     <InspectorDrawer />
     <CommandPalette />
@@ -51,5 +106,8 @@
     <ProjectHubModal />
     <AiChatDrawer />
     <McpControlModal />
+    <TasksModal />
+    <CreateFileModal />
+    <IgnoredCweModal />
   </div>
 </div>

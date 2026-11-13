@@ -74,52 +74,59 @@ function computeFolderClusters(zoom = 1.0) {
   const exportClusters = {};
 
   folderStats.forEach((st, folder) => {
+    const liveCx = st.sumX / st.count;
+    const liveCy = st.sumY / st.count;
     let anchor = folderAnchors.get(folder);
     if (!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) {
-      anchor = { x: st.sumX / st.count, y: st.sumY / st.count };
+      anchor = { x: liveCx, y: liveCy };
       folderAnchors.set(folder, anchor);
+    } else {
+      const followRate = activeDragId ? 0.92 : 0.65;
+      anchor.x += (liveCx - anchor.x) * followRate;
+      anchor.y += (liveCy - anchor.y) * followRate;
     }
     const cx = anchor.x;
     const cy = anchor.y;
     st.cx = cx;
     st.cy = cy;
-    st.sumX = cx * st.count;
-    st.sumY = cy * st.count;
+    st.sumX = liveCx * st.count;
+    st.sumY = liveCy * st.count;
 
     let maxDist = 0;
     let sumDist = 0;
-    const minBaseR = Math.max(110, Math.sqrt(st.count) * 58);
+    const minBaseR = Math.max(96, Math.sqrt(st.count) * 48);
     const rawSectors = new Float32Array(SECTORS);
 
     for (let ni = 0; ni < st.nodes.length; ni++) {
       const nd = st.nodes[ni];
       const dx = nd.x - cx;
       const dy = nd.y - cy;
-      const d = Math.hypot(dx, dy);
+      const nodePad = nd.is_file ? 22 : 14;
+      const d = Math.hypot(dx, dy) + nodePad;
       sumDist += d;
       if (d > maxDist) maxDist = d;
       let ang = Math.atan2(dy, dx);
       if (ang < 0) ang += TWO_PI;
-      const sIdx = Math.floor((ang / TWO_PI) * SECTORS) % SECTORS;
+      const sIdx = Math.round((ang / TWO_PI) * SECTORS) % SECTORS;
       if (d > rawSectors[sIdx]) rawSectors[sIdx] = d;
 
       const prevIdx = (sIdx + SECTORS - 1) % SECTORS;
       const nextIdx = (sIdx + 1) % SECTORS;
-      if (d * 0.90 > rawSectors[prevIdx]) rawSectors[prevIdx] = d * 0.90;
-      if (d * 0.90 > rawSectors[nextIdx]) rawSectors[nextIdx] = d * 0.90;
+      if (d * 0.92 > rawSectors[prevIdx]) rawSectors[prevIdx] = d * 0.92;
+      if (d * 0.92 > rawSectors[nextIdx]) rawSectors[nextIdx] = d * 0.92;
     }
 
     const meanDist = sumDist / Math.max(1, st.count);
-    const coreR = Math.max(meanDist * 1.55 + comfortPadding, minBaseR);
-    const baseR = Math.max(coreR, maxDist * 0.75 + comfortPadding);
-    st.computedRadius = Math.max(baseR, maxDist + comfortPadding * 0.75);
+    const coreR = Math.max(meanDist * 1.35 + comfortPadding * 0.65, minBaseR);
+    const baseR = Math.max(coreR, maxDist + comfortPadding * 0.72);
+    st.computedRadius = baseR;
     st.naturalRadius = coreR;
 
     const lobes = new Float32Array(SECTORS);
     for (let s = 0; s < SECTORS; s++) {
-      const neededR = rawSectors[s] > 0 ? (rawSectors[s] + comfortPadding) : (baseR * 0.86);
+      const neededR = rawSectors[s] > 0 ? (rawSectors[s] + comfortPadding * 0.75) : (baseR * 0.88);
       const ratio = neededR / st.computedRadius;
-      lobes[s] = Math.max(0.76, Math.min(1.42, ratio));
+      lobes[s] = Math.max(0.82, Math.min(1.48, ratio));
     }
 
     const smoothed = new Float32Array(SECTORS);
@@ -382,6 +389,11 @@ function stepWorkerPhysics(zoom = 1.0) {
     positions[i * 2] = nodes[i].x;
     positions[i * 2 + 1] = nodes[i].y;
   }
+
+  const clusterResult = computeFolderClusters(zoom);
+  exportClusters = clusterResult.exportClusters;
+  cachedExportClusters = exportClusters;
+  cachedFolderStats = clusterResult.folderStats;
 
   return {
     positions,

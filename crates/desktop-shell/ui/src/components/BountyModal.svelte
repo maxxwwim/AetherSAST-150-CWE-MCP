@@ -1,16 +1,56 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
-  import { ShieldAlert, X, Copy, Check, Terminal, ExternalLink } from '@lucide/svelte';
+  import { ShieldAlert, X, Copy, Check, Terminal, Radar } from '@lucide/svelte';
   import type { CveAnomalyRecord } from '../types/graph';
 
   let selectedAnomaly = $state<CveAnomalyRecord | null>(null);
   let filterSeverity = $state<'ALL' | 'CRITICAL' | 'HIGH'>('ALL');
+  let excludedFolders = $state<Record<string, boolean>>({});
+  let syncedNotice = $state('');
   let copied = $state(false);
 
+  const projectFolders = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const v of cockpitState.allViolations) {
+      const parts = (v.file_path || '').replace(/\\/g, '/').split('/');
+      const folder = parts.length > 1 ? parts.slice(0, Math.min(2, parts.length - 1)).join('/') : 'root';
+      counts.set(folder, (counts.get(folder) || 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([folder, count]) => ({ folder, count }));
+  });
+
+  function folderOf(a: CveAnomalyRecord): string {
+    const parts = (a.file_path || '').replace(/\\/g, '/').split('/');
+    return parts.length > 1 ? parts.slice(0, Math.min(2, parts.length - 1)).join('/') : 'root';
+  }
+
+  function autoExcludeTestsAndTools() {
+    const next: Record<string, boolean> = {};
+    for (const { folder } of projectFolders) {
+      if (/(test|tests|spec|fixture|mock|bench|docs|target|node_modules)/i.test(folder)) {
+        next[folder] = true;
+      }
+    }
+    excludedFolders = next;
+  }
+
+  function toggleFolderScope(folder: string) {
+    excludedFolders = { ...excludedFolders, [folder]: !excludedFolders[folder] };
+  }
+
+  function syncOutScopeToScanner() {
+    const outList = Object.keys(excludedFolders).filter((k) => excludedFolders[k]);
+    cockpitState.bountyOutOfScopePatterns = outList;
+    syncedNotice = `${outList.length} dossier(s) exclus synchronisé(s)`;
+    setTimeout(() => (syncedNotice = ''), 2500);
+  }
+
   const filtered = $derived(
-    filterSeverity === 'ALL'
-      ? cockpitState.allViolations
-      : cockpitState.allViolations.filter((v) => v.severity === filterSeverity)
+    cockpitState.allViolations.filter((v) => {
+      if (filterSeverity !== 'ALL' && v.severity !== filterSeverity) return false;
+      if (excludedFolders[folderOf(v)]) return false;
+      return true;
+    })
   );
 
   function selectAnomaly(a: CveAnomalyRecord) {
@@ -86,7 +126,7 @@ Rédige un script de preuve de concept (PoC) défensif démontrant l'atteignabil
               onclick={() => (filterSeverity = 'ALL')}
               class="flex-1 py-1 rounded transition-colors {filterSeverity === 'ALL' ? 'bg-white/10 text-white font-bold' : 'text-slate-400'}"
             >
-              Tous ({cockpitState.allViolations.length})
+              Tous ({filtered.length})
             </button>
             <button
               onclick={() => (filterSeverity = 'CRITICAL')}
@@ -101,6 +141,47 @@ Rédige un script de preuve de concept (PoC) défensif démontrant l'atteignabil
               Élevé
             </button>
           </div>
+
+          <!-- Interactive In-Scope / Out-of-Scope Folder Pills -->
+          {#if projectFolders.length > 0}
+            <div class="p-2 border-b border-white/10 bg-black/20 space-y-1.5">
+              <div class="flex items-center justify-between gap-1 text-[9.5px] font-mono text-slate-400">
+                <span>SCOPE DOSSIERS</span>
+                <div class="flex gap-1">
+                  <button
+                    type="button"
+                    onclick={autoExcludeTestsAndTools}
+                    class="px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 cursor-pointer"
+                  >
+                    Auto-exclure tests
+                  </button>
+                  <button
+                    type="button"
+                    onclick={syncOutScopeToScanner}
+                    class="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 cursor-pointer"
+                    title="Synchroniser exclusions vers Surface Scanner"
+                  >
+                    <Radar class="w-2.5 h-2.5" /> Sync
+                  </button>
+                </div>
+              </div>
+              {#if syncedNotice}
+                <div class="text-[9.5px] font-mono text-emerald-300">{syncedNotice}</div>
+              {/if}
+              <div class="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                {#each projectFolders as item}
+                  {@const isOut = Boolean(excludedFolders[item.folder])}
+                  <button
+                    type="button"
+                    onclick={() => toggleFolderScope(item.folder)}
+                    class="px-1.5 py-0.5 rounded text-[9.5px] font-mono border cursor-pointer {isOut ? 'bg-rose-500/15 border-rose-500/35 text-rose-300 line-through' : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'}"
+                  >
+                    {item.folder} ({item.count})
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
 
           <!-- Anomalies Items -->
           <div class="flex-1 overflow-y-auto p-2 space-y-1">

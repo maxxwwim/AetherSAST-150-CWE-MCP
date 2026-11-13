@@ -102,8 +102,15 @@ export class CockpitState {
   promptModalTab = $state<'context' | 'master' | 'sysprompt' | 'mcp'>('context');
   isSurfaceScannerOpen = $state(false);
   isTasksModalOpen = $state(false);
+  isCreateFileModalOpen = $state(false);
+  isIgnoredCweModalOpen = $state(false);
   isChatOpen = $state(false);
   isMcpModalOpen = $state(false);
+  physicsPaused = $state(false);
+  snapshotRequestTick = $state(0);
+  graphVersion = $state(0);
+  liveConnected = $state(false);
+  bountyOutOfScopePatterns = $state<string[]>([]);
 
   // Live Multi-Agent AI Swarm, MCP & Copilot Telemetry
   activeAgents = $state<{
@@ -152,6 +159,10 @@ export class CockpitState {
     text: string;
     target_symbol?: string | null;
     timestamp: number;
+    agent_id?: string | null;
+    agent_name?: string | null;
+    recipient?: string | null;
+    color?: string | null;
   }[]>([]);
   aiAgentStatus = $state<'ready' | 'thinking' | 'idle'>('ready');
   mcpConnected = $state(true);
@@ -167,7 +178,7 @@ export class CockpitState {
     return palette[hash % palette.length];
   }
 
-  private resolveTargetNode(target: string): SymbolBubble | undefined {
+  resolveTargetNode(target: string): SymbolBubble | undefined {
     const tLower = target.toLowerCase();
     return this.graph.nodes.find(
       (n) =>
@@ -390,6 +401,47 @@ export class CockpitState {
     this.isPromptModalOpen = true;
   }
 
+  requestSnapshot() {
+    this.snapshotRequestTick += 1;
+  }
+
+  togglePhysicsPaused() {
+    this.physicsPaused = !this.physicsPaused;
+  }
+
+  isCweIgnored(ruleId?: string, cveId?: string): boolean {
+    const ignored = this.settings.ignoredCwes;
+    if (!ignored || ignored.length === 0) return false;
+    const r = String(ruleId || '').toUpperCase().trim();
+    const c = String(cveId || '').toUpperCase().trim();
+    return ignored.some((item) => {
+      const ig = item.toUpperCase().trim();
+      return Boolean(ig) && (ig === r || ig === c || (r && r.includes(ig)) || (c && c.includes(ig)));
+    });
+  }
+
+  ignoreCweRule(ruleOrCve: string) {
+    const token = ruleOrCve.trim();
+    if (!token) return;
+    if (!this.settings.ignoredCwes.includes(token)) {
+      this.settings.ignoredCwes = [...this.settings.ignoredCwes, token];
+      this.saveLocalSettings();
+      this.filterVersion += 1;
+    }
+  }
+
+  unignoreCweRule(ruleOrCve: string) {
+    this.settings.ignoredCwes = this.settings.ignoredCwes.filter((r) => r !== ruleOrCve);
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+  }
+
+  restoreAllCweRules() {
+    this.settings.ignoredCwes = [];
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+  }
+
   // Derived computed states
   filteredNodes = $derived(
     this.searchQuery.trim() === ''
@@ -402,7 +454,7 @@ export class CockpitState {
         )
   );
 
-  allViolations = $derived.by(() => {
+  rawViolations = $derived.by(() => {
     const list: CveAnomalyRecord[] = [];
     for (const node of this.graph.nodes) {
       if (node.anomalies && node.anomalies.length > 0) {
@@ -414,6 +466,10 @@ export class CockpitState {
     }
     return list;
   });
+
+  allViolations = $derived(
+    this.rawViolations.filter((v) => !this.isCweIgnored(v.rule_id, v.cve_id))
+  );
 
   criticalViolations = $derived(
     this.allViolations.filter((v) => v.severity === 'CRITICAL')

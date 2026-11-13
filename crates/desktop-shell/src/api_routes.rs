@@ -174,7 +174,7 @@ pub struct AiTelemetryEvent {
     pub color: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AiChatMessage {
     pub id: String,
     pub sender: String,
@@ -183,6 +183,14 @@ pub struct AiChatMessage {
     pub target_symbol: Option<String>,
     #[serde(default)]
     pub timestamp: u64,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub recipient: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -192,6 +200,14 @@ pub struct SendChatMessageRequest {
     pub sender: Option<String>,
     #[serde(default)]
     pub target_symbol: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub recipient: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Serialize)]

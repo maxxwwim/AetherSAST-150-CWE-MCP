@@ -33,6 +33,25 @@ export class AetherApiClient {
 
   async getTasks(): Promise<TaskItem[]> {
     const res = await fetch(`${this.baseUrl}/api/tasks`);
+    const data = await res.json();
+    if (Array.isArray(data)) return data;
+    return Array.isArray(data?.tasks) ? data.tasks : [];
+  }
+
+  async createTask(payload: {
+    title: string;
+    kind?: string;
+    target_symbol?: string;
+    target_file?: string;
+    author?: string;
+    priority?: string;
+    initial_readme?: string;
+  }): Promise<{ status: string; task?: TaskItem; message?: string }> {
+    const res = await fetch(`${this.baseUrl}/api/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
     return res.json();
   }
 
@@ -60,12 +79,21 @@ export class AetherApiClient {
   async sendChatMessage(
     text: string,
     sender: 'user' | 'ai' = 'user',
-    targetSymbol?: string
+    targetSymbol?: string,
+    agent?: { agent_id?: string; agent_name?: string; recipient?: string; color?: string }
   ): Promise<{ status: string; message?: any }> {
     const res = await fetch(`${this.baseUrl}/api/ai/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, sender, target_symbol: targetSymbol }),
+      body: JSON.stringify({
+        text,
+        sender,
+        target_symbol: targetSymbol,
+        agent_id: agent?.agent_id,
+        agent_name: agent?.agent_name,
+        recipient: agent?.recipient,
+        color: agent?.color,
+      }),
     });
     return res.json();
   }
@@ -242,6 +270,73 @@ export class AetherApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
+    });
+    return res.json();
+  }
+
+  async getGraphVersion(): Promise<{ version: number }> {
+    const res = await fetch(`${this.baseUrl}/api/graph/version`);
+    return res.json();
+  }
+
+  async getProjectStatus(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/project/status`);
+    return res.json();
+  }
+
+  async saveDoc(payload: {
+    project_path: string;
+    folder: string;
+    file_name: string;
+    content: string;
+  }): Promise<{ status: string; saved_path: string; blake3_hash?: string }> {
+    const res = await fetch(`${this.baseUrl}/api/save_doc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  }
+
+  async signContracts(payload: {
+    project_path?: string;
+    folder?: string;
+  }): Promise<{ status: string; message: string; signed_count: number; blake3_hash?: string; graph?: AetherGraph }> {
+    const res = await fetch(`${this.baseUrl}/api/contracts/sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  }
+
+  async deleteTask(taskId: string): Promise<{ status: string; deleted?: boolean; message?: string }> {
+    const res = await fetch(`${this.baseUrl}/api/tasks/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: taskId }),
+    });
+    return res.json();
+  }
+
+  async createFile(payload: {
+    project_path: string;
+    file_path: string;
+    content: string;
+  }): Promise<{ status: string; file_path: string; created_symbol: string; graph?: AetherGraph }> {
+    const res = await fetch(`${this.baseUrl}/api/ai/create_file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  }
+
+  async setAiTarget(symbolId: string, actionType?: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/ai/target`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol_id: symbolId, action_type: actionType }),
     });
     return res.json();
   }

@@ -15,7 +15,12 @@
     FileText,
     FolderGit2,
     Bot,
-    Plug
+    Plug,
+    CheckSquare,
+    FilePlus2,
+    Camera,
+    Pause,
+    Play
   } from '@lucide/svelte';
 
   function onSearchClick() {
@@ -23,21 +28,25 @@
   }
 </script>
 
-<header class="h-11 px-2 border-b border-white/5 bg-[#090b10]/90 backdrop-blur-md flex items-center justify-between gap-2 select-none z-50 overflow-hidden">
+<header class="h-11 px-2 border-b border-white/5 bg-[#090b10]/90 backdrop-blur-md flex items-center justify-between gap-1.5 select-none z-50 overflow-hidden">
   <!-- Left: Brand & Project info -->
-  <div class="flex items-center gap-1.5 shrink-0 min-w-0">
-    <div class="flex items-center gap-1.5 font-bold text-xs tracking-tight text-white">
+  <div class="flex items-center gap-1.5 shrink-0">
+    <div class="flex items-center gap-1 font-bold text-xs tracking-tight text-white shrink-0">
       <span class="text-sky-400 text-sm">🪐</span>
-      <span class="bg-gradient-to-r from-sky-400 to-indigo-300 bg-clip-text text-transparent font-extrabold tracking-wide">
+      <span class="bg-gradient-to-r from-sky-400 to-indigo-300 bg-clip-text text-transparent font-extrabold tracking-wide whitespace-nowrap">
         AetherScope
       </span>
       <button
         onclick={() => (cockpitState.isHubModalOpen = true)}
         title="Hub Multi-Architectures : Créer Projet (7 Stacks), Analyser, Code/Vault, Export HTML"
-        class="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-mono bg-sky-950/70 hover:bg-sky-900/80 border border-sky-500/35 text-sky-300 max-w-[140px] truncate cursor-pointer transition-colors"
+        class="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-mono bg-sky-950/70 hover:bg-sky-900/80 border border-sky-500/35 text-sky-300 max-w-[116px] 2xl:max-w-[140px] truncate cursor-pointer transition-colors"
       >
         <FolderGit2 class="w-3 h-3 shrink-0" />
         <span class="truncate">{cockpitState.graph.project_name || 'Projet'}</span>
+        <span
+          class="w-1.5 h-1.5 rounded-full shrink-0 {cockpitState.liveConnected ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-slate-500'}"
+          title={cockpitState.liveConnected ? 'Watch Temps Réel Actif (/api/graph/version)' : 'Mode Hors-Ligne / Statique'}
+        ></span>
         <span class="text-sky-400 font-bold">+</span>
       </button>
     </div>
@@ -60,11 +69,25 @@
       >
         <Maximize2 class="w-3 h-3" />
       </button>
+      <button
+        onclick={() => cockpitState.togglePhysicsPaused()}
+        title={cockpitState.physicsPaused ? 'Reprendre la physique stellaire' : 'Mettre en pause la gravité/physique'}
+        class="p-1 rounded transition-colors cursor-pointer {cockpitState.physicsPaused ? 'bg-amber-500/25 text-amber-300' : 'text-slate-400 hover:text-white hover:bg-white/10'}"
+      >
+        {#if cockpitState.physicsPaused}<Play class="w-3 h-3" />{:else}<Pause class="w-3 h-3" />{/if}
+      </button>
+      <button
+        onclick={() => cockpitState.requestSnapshot()}
+        title="Capturer un Snapshot PNG haute résolution"
+        class="p-1 rounded text-slate-400 hover:text-emerald-300 hover:bg-white/10 transition-colors cursor-pointer"
+      >
+        <Camera class="w-3 h-3" />
+      </button>
     </div>
   </div>
 
   <!-- Center: Omnibox Command Search Trigger -->
-  <div class="flex-1 min-w-[110px] max-w-xs lg:max-w-sm mx-1">
+  <div class="flex-1 min-w-[80px] max-w-[165px] xl:max-w-[215px] mx-0.5">
     <button
       onclick={onSearchClick}
       class="w-full min-w-0 overflow-hidden flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 text-xs text-slate-400 transition-all group cursor-pointer shadow-xs"
@@ -152,7 +175,7 @@
       title="Scanner Surface Domaine / IP (DNS, Ports, Headers, .env)"
     >
       <Radar class="w-3.5 h-3.5 text-emerald-400" />
-      <span class="hidden xl:inline">Surface</span>
+      <span class="hidden 2xl:inline">Surface</span>
     </button>
 
     <!-- Bug Bounty Scope Modal Trigger -->
@@ -187,6 +210,24 @@
       <FileText class="w-3.5 h-3.5" />
     </button>
 
+    <!-- Global Tasks Board -->
+    <button
+      onclick={() => (cockpitState.isTasksModalOpen = true)}
+      class="p-1.5 rounded-md transition-colors border cursor-pointer {cockpitState.isTasksModalOpen ? 'bg-indigo-500/25 border-indigo-400 text-indigo-200' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/5'}"
+      title="Tableau des Tâches & Remédiation ({cockpitState.tasks.length})"
+    >
+      <CheckSquare class="w-3.5 h-3.5" />
+    </button>
+
+    <!-- Create File AI Modal -->
+    <button
+      onclick={() => (cockpitState.isCreateFileModalOpen = true)}
+      class="p-1.5 rounded-md transition-colors border cursor-pointer {cockpitState.isCreateFileModalOpen ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200' : 'text-slate-400 hover:text-emerald-300 hover:bg-white/5 border-white/5'}"
+      title="Créer un Fichier & Re-scanner l'AST"
+    >
+      <FilePlus2 class="w-3.5 h-3.5" />
+    </button>
+
     <!-- Full Settings Modal Trigger -->
     <button
       onclick={() => (cockpitState.isSettingsModalOpen = true)}
@@ -194,7 +235,7 @@
       title="Panneau de Configuration Complet (Affichage, Exclusions, MCP & 120+ Règles CWE)"
     >
       <Settings class="w-3.5 h-3.5 text-sky-400" />
-      <span class="hidden lg:inline">Options</span>
+      <span class="hidden 2xl:inline">Options</span>
     </button>
 
     <!-- Side Inspector Toggle -->

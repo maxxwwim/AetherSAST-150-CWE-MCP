@@ -149,6 +149,7 @@
     const pushAll = (list?: CveAnomalyRecord[]) => {
       if (!list) return;
       for (const a of list) {
+        if (cockpitState.isCweIgnored(a.rule_id, a.cve_id)) continue;
         const key = `${a.rule_id}:${a.line_number}:${a.message}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -284,12 +285,55 @@
     setTimeout(() => (mermaidCopied = false), 1500);
   }
 
-  // CVE tab scope switcher
+  // CVE tab scope, language & quick-search filters
   let cveScope = $state<'target' | 'project'>('target');
+  let cveQuery = $state('');
+  let cveLangFilter = $state<'ALL' | 'Rust' | 'Solidity' | 'TS/JS' | 'Python' | 'C#' | 'Zig'>('ALL');
+
+  function detectCveLang(a: CveAnomalyRecord): 'Rust' | 'Solidity' | 'TS/JS' | 'Python' | 'C#' | 'Zig' | 'Autre' {
+    const fp = (a.file_path || '').toLowerCase();
+    const id = (a.rule_id || a.cve_id || '').toUpperCase();
+    if (fp.endsWith('.sol') || id.includes('SOL') || id.includes('DEFI')) return 'Solidity';
+    if (fp.endsWith('.rs') || id.includes('RUST')) return 'Rust';
+    if (fp.endsWith('.ts') || fp.endsWith('.tsx') || fp.endsWith('.js') || fp.endsWith('.svelte')) return 'TS/JS';
+    if (fp.endsWith('.py') || id.includes('PY')) return 'Python';
+    if (fp.endsWith('.cs') || id.includes('CSHARP') || id.includes('DOTNET')) return 'C#';
+    if (fp.endsWith('.zig') || id.includes('ZIG')) return 'Zig';
+    return 'Autre';
+  }
+
   const displayedCves = $derived.by(() => {
-    if (cveScope === 'target' && activeAnomalies.length > 0) return activeAnomalies;
-    return cockpitState.allViolations.slice(0, 100);
+    const base = cveScope === 'target' && activeAnomalies.length > 0 ? activeAnomalies : cockpitState.allViolations;
+    const q = cveQuery.trim().toLowerCase();
+    return base
+      .filter((a) => {
+        if (cveLangFilter !== 'ALL' && detectCveLang(a) !== cveLangFilter) return false;
+        if (!q) return true;
+        return (
+          (a.cve_id || '').toLowerCase().includes(q) ||
+          (a.rule_id || '').toLowerCase().includes(q) ||
+          (a.title || '').toLowerCase().includes(q) ||
+          (a.description || a.message || '').toLowerCase().includes(q) ||
+          (a.file_path || '').toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 120);
   });
+
+  async function ignoreCve(a: CveAnomalyRecord) {
+    const key = a.rule_id || a.cve_id;
+    if (!key) return;
+    cockpitState.ignoreCweRule(key);
+    try {
+      await api.saveSettings({
+        exclusions: cockpitState.settings.exclusions,
+        active_cve_rules: cockpitState.settings.activeCveRules,
+        ignored_cwes: cockpitState.settings.ignoredCwes,
+      });
+    } catch {
+      // keep local ignore even if offline
+    }
+  }
 
   // Tasks live sync
   let tasksLoading = $state(false);
@@ -1015,24 +1059,58 @@
         </div>
 
       {:else if cockpitState.activeTab === 'cve'}
-        {#if activeAnomalies.length > 0}
-          <div class="flex gap-1.5 p-1 rounded-lg bg-black/30 border border-white/10 text-[10px]">
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            {#if activeAnomalies.length > 0}
+              <div class="flex flex-1 gap-1 p-1 rounded-lg bg-black/30 border border-white/10 text-[10px]">
+                <button
+                  type="button"
+                  onclick={() => (cveScope = 'target')}
+                  class="flex-1 py-1 rounded cursor-pointer font-semibold {cveScope === 'target' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400'}"
+                >
+                  Cible ({activeAnomalies.length})
+                </button>
+                <button
+                  type="button"
+                  onclick={() => (cveScope = 'project')}
+                  class="flex-1 py-1 rounded cursor-pointer font-semibold {cveScope === 'project' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400'}"
+                >
+                  Projet ({cockpitState.allViolations.length})
+                </button>
+              </div>
+            {/if}
             <button
               type="button"
-              onclick={() => (cveScope = 'target')}
-              class="flex-1 py-1 rounded cursor-pointer font-semibold {cveScope === 'target' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400'}"
+              onclick={() => (cockpitState.isIgnoredCweModalOpen = true)}
+              class="px-2 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-[10px] font-mono text-amber-300 cursor-pointer shrink-0"
+              title="Gérer les CWE ignorées"
             >
-              Cible ({activeAnomalies.length})
-            </button>
-            <button
-              type="button"
-              onclick={() => (cveScope = 'project')}
-              class="flex-1 py-1 rounded cursor-pointer font-semibold {cveScope === 'project' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400'}"
-            >
-              Projet ({cockpitState.allViolations.length})
+              Ignorées ({cockpitState.settings.ignoredCwes.length})
             </button>
           </div>
-        {/if}
+
+          <!-- CVE Search + Language Filters -->
+          <div class="relative">
+            <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+            <input
+              type="text"
+              bind:value={cveQuery}
+              placeholder="Filtrer CWE, règle SAST, fichier..."
+              class="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
+            />
+          </div>
+          <div class="flex flex-wrap gap-1">
+            {#each (['ALL', 'Rust', 'Solidity', 'TS/JS', 'Python', 'C#', 'Zig'] as const) as lang}
+              <button
+                type="button"
+                onclick={() => (cveLangFilter = lang)}
+                class="px-1.5 py-0.5 rounded text-[9.5px] font-mono border cursor-pointer {cveLangFilter === lang ? 'bg-rose-500/20 border-rose-500/40 text-rose-200 font-bold' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'}"
+              >
+                {lang === 'ALL' ? 'Tous' : lang}
+              </button>
+            {/each}
+          </div>
+        </div>
 
         {#if displayedCves.length === 0}
           <div class="py-10 text-center text-emerald-400 space-y-1.5">
@@ -1072,6 +1150,14 @@
                   >
                     <Bug class="w-3 h-3" /> Préparer PoC
                   </button>
+                  <button
+                    type="button"
+                    onclick={() => ignoreCve(cve)}
+                    class="flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-slate-700/60 border border-white/10 text-slate-300 text-[10px] font-medium cursor-pointer ml-auto"
+                    title="Masquer cette règle CWE/SAST"
+                  >
+                    Ignorer
+                  </button>
                 </div>
               </div>
             {/each}
@@ -1079,18 +1165,27 @@
         {/if}
 
       {:else if cockpitState.activeTab === 'tasks'}
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-2">
           <span class="text-[10px] font-mono uppercase text-slate-400">
             Tâches Actives ({cockpitState.tasks.length})
           </span>
-          <button
-            type="button"
-            onclick={refreshTasks}
-            class="flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] text-slate-300 cursor-pointer"
-          >
-            <RefreshCw class="w-3 h-3 {tasksLoading ? 'animate-spin' : ''}" />
-            Actualiser
-          </button>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              onclick={() => (cockpitState.isTasksModalOpen = true)}
+              class="px-2 py-1 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/35 text-[10px] text-indigo-200 font-semibold cursor-pointer"
+            >
+              Tableau Complet
+            </button>
+            <button
+              type="button"
+              onclick={refreshTasks}
+              class="flex items-center gap-1 px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] text-slate-300 cursor-pointer"
+            >
+              <RefreshCw class="w-3 h-3 {tasksLoading ? 'animate-spin' : ''}" />
+              Actualiser
+            </button>
+          </div>
         </div>
 
         {#if tasksError}

@@ -15,7 +15,10 @@
     Minimize2,
     Lock,
     Search,
-    ChevronRight
+    ChevronRight,
+    Pencil,
+    Save,
+    ShieldCheck
   } from '@lucide/svelte';
 
   let loadedContent = $state('');
@@ -27,6 +30,12 @@
   let showToc = $state(false);
   let wideMode = $state(false);
   let docFilter = $state('');
+  let contentSearch = $state('');
+  let editMode = $state(false);
+  let draftContent = $state('');
+  let saveStatus = $state('');
+  let mermaidRawMap = $state<Record<number, boolean>>({});
+  let copiedBlockIdx = $state<number | null>(null);
 
   // Collect unique Markdown documentation nodes / files across the whole repo
   const docLibraryFiles = $derived.by(() => {
@@ -332,6 +341,95 @@
     copied = true;
     setTimeout(() => (copied = false), 1500);
   }
+
+  function enterEditMode() {
+    if (!editMode) {
+      draftContent = loadedContent || rawMarkdown;
+      editMode = true;
+      saveStatus = '';
+    } else {
+      editMode = false;
+    }
+  }
+
+  async function saveCurrentDoc() {
+    const p = loadedPath || cockpitState.activeSymbol?.file_path || 'README.md';
+    const parts = p.split('/');
+    const fileName = parts.pop() || 'README.md';
+    const folder = parts.join('/') || '.';
+    saveStatus = 'Sauvegarde...';
+    try {
+      const res = await api.saveDoc({
+        project_path: cockpitState.graph.project_path || '.',
+        folder,
+        file_name: fileName,
+        content: draftContent,
+      });
+      loadedContent = draftContent;
+      saveStatus = res.blake3_hash ? `Enregistré (${res.blake3_hash.slice(0, 8)})` : 'Enregistré';
+      setTimeout(() => (saveStatus = ''), 3000);
+    } catch (e: any) {
+      saveStatus = e?.message || 'Erreur sauvegarde';
+    }
+  }
+
+  async function signCurrentContract() {
+    const p = loadedPath || cockpitState.selectedFolder || '';
+    const folder = p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : p || undefined;
+    saveStatus = 'Signature BLAKE3...';
+    try {
+      const res = await api.signContracts({
+        project_path: cockpitState.graph.project_path || '.',
+        folder,
+      });
+      if (res.graph) cockpitState.setGraph(res.graph);
+      saveStatus = `Signé (${res.signed_count})`;
+      setTimeout(() => (saveStatus = ''), 3000);
+    } catch (e: any) {
+      saveStatus = e?.message || 'Erreur signature';
+    }
+  }
+
+  function copyCodeSnippet(idx: number, text: string) {
+    navigator.clipboard?.writeText(text);
+    copiedBlockIdx = idx;
+    setTimeout(() => {
+      if (copiedBlockIdx === idx) copiedBlockIdx = null;
+    }, 1400);
+  }
+
+  function parseMermaidEdges(code: string): { nodes: string[]; edges: { from: string; to: string; label: string }[] } {
+    const nodesSet = new Set<string>();
+    const edges: { from: string; to: string; label: string }[] = [];
+    for (const rawLine of code.split('\n')) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('%%') || /^(graph|flowchart|sequenceDiagram|classDiagram|subgraph|end)\b/i.test(line)) {
+        continue;
+      }
+      const m = line.match(/([A-Za-z0-9_-]+)(?:\[[^\]]*\]|\([^)]*\))?\s*(?:-->|-.->|==>|->|-->>)\s*(?:\|([^|]+)\|)?\s*([A-Za-z0-9_-]+)/);
+      if (m) {
+        const from = m[1];
+        const label = (m[2] || '').trim();
+        const to = m[3];
+        nodesSet.add(from);
+        nodesSet.add(to);
+        edges.push({ from, to, label });
+      }
+    }
+    return { nodes: Array.from(nodesSet).slice(0, 12), edges: edges.slice(0, 16) };
+  }
+
+  const filteredBlocks = $derived.by(() => {
+    const q = contentSearch.trim().toLowerCase();
+    if (!q) return parsedBlocks;
+    return parsedBlocks.filter((b) => {
+      if (b.type === 'table') {
+        return b.headers.some((h) => h.toLowerCase().includes(q)) || b.rows.some((r) => r.some((c) => c.toLowerCase().includes(q)));
+      }
+      if (b.type === 'image') return b.alt.toLowerCase().includes(q);
+      return b.text.toLowerCase().includes(q);
+    });
+  });
 </script>
 
 <!-- Left Edge Docked Pill when panel is collapsed (Restores Legacy #btn-expand-doc-dock) -->
@@ -387,6 +485,26 @@
         >
           {#if wideMode}<Minimize2 class="w-3 h-3" />{:else}<Maximize2 class="w-3 h-3" />{/if}
         </button>
+        <button
+          type="button"
+          onclick={enterEditMode}
+          title="Éditer le document Markdown sur disque"
+          class="flex items-center gap-1 px-2 py-1 rounded text-[10px] border cursor-pointer {editMode ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'}"
+        >
+          <Pencil class="w-3 h-3" />
+          <span class="hidden sm:inline">{editMode ? 'Aperçu' : 'Éditer'}</span>
+        </button>
+        {#if loadedPath}
+          <button
+            type="button"
+            onclick={signCurrentContract}
+            title="Signer ce contrat README avec BLAKE3 dans aether.lock.toml"
+            class="flex items-center gap-1 px-2 py-1 rounded text-[10px] bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-emerald-300 cursor-pointer"
+          >
+            <ShieldCheck class="w-3 h-3" />
+            <span class="hidden sm:inline">Signer</span>
+          </button>
+        {/if}
         <button
           type="button"
           onclick={copyDoc}
@@ -469,6 +587,24 @@
       </div>
     {/if}
 
+    <!-- In-Doc Search + Save Status Strip -->
+    {#if cockpitState.docMode !== 'library' || loadedPath}
+      <div class="px-3 py-1.5 border-b border-white/10 bg-black/30 flex items-center gap-2">
+        <div class="relative flex-1">
+          <Search class="w-3 h-3 text-slate-500 absolute left-2 top-1.5" />
+          <input
+            type="text"
+            bind:value={contentSearch}
+            placeholder="Rechercher dans le document..."
+            class="w-full pl-6 pr-2 py-1 rounded bg-white/[0.04] border border-white/10 text-[10px] text-slate-200 focus:outline-none focus:border-sky-400"
+          />
+        </div>
+        {#if saveStatus}
+          <span class="text-[10px] font-mono text-emerald-300 shrink-0">{saveStatus}</span>
+        {/if}
+      </div>
+    {/if}
+
     <!-- Optional Collapsible TOC -->
     {#if showToc && tocHeadings.length > 0}
       <div class="px-3 py-2 border-b border-white/10 bg-sky-950/20 max-h-36 overflow-y-auto space-y-1">
@@ -485,53 +621,134 @@
       </div>
     {/if}
 
-    <!-- Rendered Content -->
-    <div class="flex-1 overflow-auto p-4 space-y-2.5 text-xs text-slate-200 leading-relaxed select-text">
-      {#each parsedBlocks as block}
-        {#if block.type === 'h1'}
-          <h1 id={block.anchor} class="text-sm font-bold text-white border-b border-white/10 pb-1.5 pt-1">{block.text}</h1>
-        {:else if block.type === 'h2'}
-          <h2 id={block.anchor} class="text-xs font-bold text-emerald-300 uppercase tracking-wider pt-2">{block.text}</h2>
-        {:else if block.type === 'h3'}
-          <h3 id={block.anchor} class="text-xs font-semibold text-sky-300 pt-1">{block.text}</h3>
-        {:else if block.type === 'quote'}
-          <blockquote class="border-l-2 border-amber-400/60 pl-3 text-[11px] text-amber-200/90 italic">{block.text}</blockquote>
-        {:else if block.type === 'list'}
-          <div class="flex gap-2 pl-2 text-[11px] text-slate-300">
-            <span class="text-emerald-400">•</span>
-            <span>{block.text}</span>
-          </div>
-        {:else if block.type === 'table'}
-          <div class="overflow-x-auto rounded-lg border border-white/10 my-2">
-            <table class="w-full text-[10.5px] text-left border-collapse">
-              <thead class="bg-white/[0.06] text-sky-300 font-mono">
-                <tr>
-                  {#each block.headers as h}
-                    <th class="px-2 py-1.5 border-b border-white/10">{h}</th>
-                  {/each}
-                </tr>
-              </thead>
-              <tbody>
-                {#each block.rows as row}
-                  <tr class="border-b border-white/5 hover:bg-white/[0.03]">
-                    {#each row as cell}
-                      <td class="px-2 py-1 text-slate-300">{cell}</td>
+    <!-- Live Editor or Rendered Content -->
+    {#if editMode}
+      <div class="flex-1 flex flex-col p-3 gap-2 overflow-hidden">
+        <textarea
+          bind:value={draftContent}
+          class="flex-1 w-full p-3 rounded-lg bg-[#05070e] border border-amber-500/35 font-mono text-[11px] text-slate-100 focus:outline-none resize-none leading-relaxed"
+        ></textarea>
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-mono text-slate-400">{draftContent.split('\n').length} lignes</span>
+          <button
+            type="button"
+            onclick={saveCurrentDoc}
+            class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-xs font-bold text-slate-950 cursor-pointer"
+          >
+            <Save class="w-3.5 h-3.5" /> Enregistrer sur Disque
+          </button>
+        </div>
+      </div>
+    {:else}
+      <div class="flex-1 overflow-auto p-4 space-y-2.5 text-xs text-slate-200 leading-relaxed select-text">
+        {#each filteredBlocks as block, bIdx}
+          {#if block.type === 'h1'}
+            <h1 id={block.anchor} class="text-sm font-bold text-white border-b border-white/10 pb-1.5 pt-1">{block.text}</h1>
+          {:else if block.type === 'h2'}
+            <h2 id={block.anchor} class="text-xs font-bold text-emerald-300 uppercase tracking-wider pt-2">{block.text}</h2>
+          {:else if block.type === 'h3'}
+            <h3 id={block.anchor} class="text-xs font-semibold text-sky-300 pt-1">{block.text}</h3>
+          {:else if block.type === 'quote'}
+            <blockquote class="border-l-2 border-amber-400/60 pl-3 text-[11px] text-amber-200/90 italic">{block.text}</blockquote>
+          {:else if block.type === 'list'}
+            <div class="flex gap-2 pl-2 text-[11px] text-slate-300">
+              <span class="text-emerald-400">•</span>
+              <span>{block.text}</span>
+            </div>
+          {:else if block.type === 'table'}
+            <div class="overflow-x-auto rounded-lg border border-white/10 my-2">
+              <table class="w-full text-[10.5px] text-left border-collapse">
+                <thead class="bg-white/[0.06] text-sky-300 font-mono">
+                  <tr>
+                    {#each block.headers as h}
+                      <th class="px-2 py-1.5 border-b border-white/10">{h}</th>
                     {/each}
                   </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {:else if block.type === 'image'}
-          <div class="p-2 rounded-lg bg-black/30 border border-white/10">
-            <img src={block.src} alt={block.alt} class="max-w-full rounded" />
-          </div>
-        {:else if block.type === 'code'}
-          <pre class="p-3 rounded-lg bg-[#06080f] border border-white/10 font-mono text-[10.5px] text-sky-100 overflow-x-auto whitespace-pre leading-snug">{block.text}</pre>
-        {:else}
-          <p class="text-[11.5px] text-slate-300">{block.text}</p>
-        {/if}
-      {/each}
-    </div>
+                </thead>
+                <tbody>
+                  {#each block.rows as row}
+                    <tr class="border-b border-white/5 hover:bg-white/[0.03]">
+                      {#each row as cell}
+                        <td class="px-2 py-1 text-slate-300">{cell}</td>
+                      {/each}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {:else if block.type === 'image'}
+            <div class="p-2 rounded-lg bg-black/30 border border-white/10">
+              <img src={block.src} alt={block.alt} class="max-w-full rounded" />
+            </div>
+          {:else if block.type === 'code'}
+            {#if block.lang?.toLowerCase() === 'mermaid' && !mermaidRawMap[bIdx]}
+              {@const mData = parseMermaidEdges(block.text)}
+              <div class="rounded-lg border border-indigo-500/35 bg-[#070b16] p-2.5 space-y-2">
+                <div class="flex items-center justify-between text-[10px] font-mono text-indigo-300">
+                  <span>Diagramme Mermaid ({mData.nodes.length} nœuds · {mData.edges.length} flux)</span>
+                  <button
+                    type="button"
+                    onclick={() => (mermaidRawMap = { ...mermaidRawMap, [bIdx]: true })}
+                    class="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-300 cursor-pointer"
+                  >
+                    Code Source
+                  </button>
+                </div>
+                {#if mData.nodes.length > 0}
+                  <svg viewBox="0 0 420 {Math.max(120, mData.nodes.length * 34 + 16)}" class="w-full font-mono text-[9px]">
+                    {#each mData.nodes as nodeName, ni}
+                      {@const y = 14 + ni * 34}
+                      <rect x="16" y={y} width="130" height="24" rx="5" fill="#0f172a" stroke="#6366f1" stroke-width="1.2" />
+                      <text x="81" y={y + 15} fill="#e2e8f0" text-anchor="middle">{nodeName.slice(0, 18)}</text>
+                    {/each}
+                    {#each mData.edges as edge, ei}
+                      {@const fromI = mData.nodes.indexOf(edge.from)}
+                      {@const toI = mData.nodes.indexOf(edge.to)}
+                      {#if fromI >= 0 && toI >= 0}
+                        {@const y1 = 26 + fromI * 34}
+                        {@const y2 = 26 + toI * 34}
+                        <path d="M 146 {y1} C {210 + (ei % 4) * 26} {y1}, {210 + (ei % 4) * 26} {y2}, 146 {y2}" fill="none" stroke="#38bdf8" stroke-width="1.3" opacity="0.8" />
+                        {#if edge.label}
+                          <text x={220 + (ei % 4) * 22} y={(y1 + y2) / 2} fill="#7dd3fc" font-size="8">{edge.label.slice(0, 20)}</text>
+                        {/if}
+                      {/if}
+                    {/each}
+                  </svg>
+                {:else}
+                  <pre class="text-[10px] font-mono text-sky-100 whitespace-pre overflow-x-auto">{block.text}</pre>
+                {/if}
+              </div>
+            {:else}
+              <div class="rounded-lg bg-[#06080f] border border-white/10 overflow-hidden">
+                <div class="flex items-center justify-between px-2.5 py-1 bg-white/[0.04] border-b border-white/5 text-[9.5px] font-mono text-slate-400">
+                  <span>{block.lang || 'text'}</span>
+                  <div class="flex items-center gap-1.5">
+                    {#if block.lang?.toLowerCase() === 'mermaid'}
+                      <button
+                        type="button"
+                        onclick={() => (mermaidRawMap = { ...mermaidRawMap, [bIdx]: false })}
+                        class="text-indigo-300 hover:underline cursor-pointer"
+                      >
+                        Vue SVG
+                      </button>
+                    {/if}
+                    <button
+                      type="button"
+                      onclick={() => copyCodeSnippet(bIdx, block.text)}
+                      class="hover:text-white cursor-pointer"
+                    >
+                      {copiedBlockIdx === bIdx ? '✓ Copié' : 'Copier'}
+                    </button>
+                  </div>
+                </div>
+                <pre class="p-3 font-mono text-[10.5px] text-sky-100 overflow-x-auto whitespace-pre leading-snug">{block.text}</pre>
+              </div>
+            {/if}
+          {:else}
+            <p class="text-[11.5px] text-slate-300">{block.text}</p>
+          {/if}
+        {/each}
+      </div>
+    {/if}
   </aside>
 {/if}

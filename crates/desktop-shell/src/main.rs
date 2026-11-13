@@ -635,6 +635,7 @@ pub async fn execute_project_pipeline(
                 ),
                 target_symbol: Some(proj_display.clone()),
                 timestamp: now_ms,
+                ..Default::default()
             });
         }
     }
@@ -667,6 +668,7 @@ pub async fn execute_project_pipeline(
                 ),
                 target_symbol: Some(proj_display.clone()),
                 timestamp: now_ms,
+                ..Default::default()
             });
         }
         obsidian_vault::DetectedProjectType::Mixed => {
@@ -699,6 +701,7 @@ pub async fn execute_project_pipeline(
                 ),
                 target_symbol: Some(proj_display.clone()),
                 timestamp: now_ms,
+                ..Default::default()
             });
         }
         obsidian_vault::DetectedProjectType::PureCode => {}
@@ -1504,6 +1507,10 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         text: req.text,
                         target_symbol: req.target_symbol,
                         timestamp: now_ms,
+                        agent_id: req.agent_id,
+                        agent_name: req.agent_name,
+                        recipient: req.recipient,
+                        color: req.color,
                     };
                     let mut msgs = state.chat_messages.write().await;
                     msgs.push(msg.clone());
@@ -1543,6 +1550,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 text: "âš ï¸ RequÃªte interrompue par l'utilisateur.".to_string(),
                                 target_symbol: None,
                                 timestamp: now_ms,
+                                ..Default::default()
                             });
                         }
                     }

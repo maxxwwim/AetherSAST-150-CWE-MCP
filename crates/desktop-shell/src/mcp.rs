@@ -78,6 +78,63 @@ pub async fn run_mcp_stdio_loop(port: u16, path: &str) -> Result<(), Box<dyn std
     Ok(())
 }
 
+fn opt_str_arg<'a>(arguments: &'a Value, key: &str) -> Option<&'a str> {
+    arguments
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn build_telemetry_payload(target: &str, action: &str, details: &str, arguments: &Value) -> Value {
+    let mut payload = json!({
+        "target": target,
+        "action": action,
+        "details": details
+    });
+    if let Some(obj) = payload.as_object_mut() {
+        for key in ["agent_id", "agent_name", "color"] {
+            if let Some(val) = opt_str_arg(arguments, key) {
+                obj.insert(key.to_string(), json!(val));
+            }
+        }
+    }
+    payload
+}
+
+async fn fetch_active_swarm_agents(server_port: u16) -> Vec<Value> {
+    match send_http_request(server_port, "GET", "/api/ai/telemetry", None).await {
+        Ok(val) => val
+            .get("agents")
+            .and_then(|a| a.as_array())
+            .cloned()
+            .unwrap_or_default(),
+        Err(_) => vec![],
+    }
+}
+
+fn format_swarm_roster(agents: &[Value], self_id: Option<&str>) -> String {
+    if agents.is_empty() {
+        return "Essaim Multi-Agents : aucun autre agent actif enregistré.".to_string();
+    }
+    let lines: Vec<String> = agents
+        .iter()
+        .map(|a| {
+            let aid = a.get("agent_id").and_then(|v| v.as_str()).unwrap_or("-");
+            let name = a.get("agent_name").and_then(|v| v.as_str()).unwrap_or(aid);
+            let target = a.get("target").and_then(|v| v.as_str()).unwrap_or("-");
+            let action = a.get("action").and_then(|v| v.as_str()).unwrap_or("-");
+            let details = a.get("details").and_then(|v| v.as_str()).unwrap_or("");
+            let tag = if self_id == Some(aid) { " (vous)" } else { "" };
+            format!(
+                "• **{}** [`{}`]{} ➔ `{}` [{}] — {}",
+                name, aid, tag, target, action, details
+            )
+        })
+        .collect();
+    format!("🌐 Essaim Multi-Agents actifs ({}):\n{}", agents.len(), lines.join("\n"))
+}
+
 pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path: &str) -> Option<JsonRpcResponse> {
     if let Some(res) = handle_catalog_request(&req, server_port, default_path).await {
         return res;
@@ -131,10 +188,10 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             "history"
                         }
                     });
-                    if act == "history" {
-                        "aetherscope_get_chat_history"
-                    } else {
-                        "aetherscope_send_chat_message"
+                    match act {
+                        "history" => "aetherscope_get_chat_history",
+                        "swarm" => "aetherscope_get_swarm_state",
+                        _ => "aetherscope_send_chat_message",
                     }
                 }
                 "aetherscope_manage_plugins" => {
@@ -153,21 +210,28 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("Inspection").to_string();
                     let details = arguments.get("details").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let payload = build_telemetry_payload(&target, &action, &details, &arguments);
 
-                    let res = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&json!({
-                        "target": target,
-                        "action": action,
-                        "details": details
-                    }))).await;
+                    let res = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&payload)).await;
+                    let self_id = opt_str_arg(&arguments, "agent_id").or_else(|| opt_str_arg(&arguments, "agent_name"));
+                    let peers = fetch_active_swarm_agents(server_port).await;
+                    let peer_note = if peers.len() > 1 {
+                        format!("\n\n{}", format_swarm_roster(&peers, self_id))
+                    } else {
+                        String::new()
+                    };
 
                     match res {
                         Ok(_) => (json!([{
                             "type": "text",
-                            "text": format!("ðŸª CamÃ©ra AetherScope alignÃ©e sur : {} ({})\nðŸ“¡ Faisceau quantique et fil d'Ariane stellaire illuminÃ©s sur le graphe 3D WebGL 2.", target, action)
+                            "text": format!(
+                                "🔭 Caméra AetherScope alignée sur : {} ({})\n📡 Faisceau quantique et fil d'Ariane stellaire illuminés sur le graphe 3D WebGL 2.{}",
+                                target, action, peer_note
+                            )
                         }]), false),
                         Err(e) => (json!([{
                             "type": "text",
-                            "text": format!("âš ï¸ TÃ©lÃ©mÃ©trie enregistrÃ©e : [{}] sur {}\n(DÃ©tails : {})", action, target, e)
+                            "text": format!("⚠️ Télémétrie enregistrée (offline) : [{}] sur {}\n(Détails : {}){}", action, target, e, peer_note)
                         }]), false),
                     }
                 }
@@ -346,11 +410,8 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     } else {
                         if let Some(ref sym) = target {
                             if !sym.trim().is_empty() {
-                                let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&json!({
-                                    "target": sym,
-                                    "action": "Debrief Chat IA",
-                                    "details": &text
-                                }))).await;
+                                let telem_payload = build_telemetry_payload(sym, "Debrief Chat IA", &text, &arguments);
+                                let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&telem_payload)).await;
                             }
                         }
 
@@ -360,25 +421,80 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             text
                         };
 
-                        let res = send_http_request(server_port, "POST", "/api/ai/chat", Some(&json!({
+                        let agent_id = opt_str_arg(&arguments, "agent_id");
+                        let agent_name = opt_str_arg(&arguments, "agent_name");
+                        let recipient = opt_str_arg(&arguments, "recipient");
+                        let color = opt_str_arg(&arguments, "color");
+                        let sender_label = agent_name.or(agent_id).unwrap_or("ai");
+
+                        let mut chat_body = json!({
                             "text": full_payload,
-                            "sender": "ai",
+                            "sender": sender_label,
                             "target_symbol": target
-                        }))).await;
+                        });
+                        if let Some(obj) = chat_body.as_object_mut() {
+                            if let Some(v) = agent_id { obj.insert("agent_id".to_string(), json!(v)); }
+                            if let Some(v) = agent_name { obj.insert("agent_name".to_string(), json!(v)); }
+                            if let Some(v) = recipient { obj.insert("recipient".to_string(), json!(v)); }
+                            if let Some(v) = color { obj.insert("color".to_string(), json!(v)); }
+                        }
+
+                        let res = send_http_request(server_port, "POST", "/api/ai/chat", Some(&chat_body)).await;
 
                         match res {
-                            Ok(_) => (json!([{ "type": "text", "text": "ðŸ’¬ Message affichÃ© dans le HUD AetherScope de l'utilisateur." }]), false),
-                            Err(e) => (json!([{ "type": "text", "text": format!("âš ï¸ Erreur envoi chat AetherScope : {}", e) }]), true),
+                            Ok(_) => (json!([{ "type": "text", "text": format!("💬 Message posté par {} dans le canal multi-agents AetherScope.", sender_label) }]), false),
+                            Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur envoi chat AetherScope : {}", e) }]), true),
                         }
                     }
                 }
 
                 "aetherscope_get_chat_history" => {
+                    let recipient_filter = opt_str_arg(&arguments, "recipient").map(|s| s.to_lowercase());
                     let res = send_http_request(server_port, "GET", "/api/ai/chat", None).await;
                     match res {
-                        Ok(val) => (json!([{ "type": "text", "text": serde_json::to_string_pretty(&val).unwrap_or_default() }]), false),
-                        Err(e) => (json!([{ "type": "text", "text": format!("âš ï¸ Erreur historique chat : {}", e) }]), true),
+                        Ok(mut val) => {
+                            if let Some(ref filter) = recipient_filter {
+                                if filter != "all" {
+                                    if let Some(msgs) = val.get("messages").and_then(|m| m.as_array()).cloned() {
+                                        let mention = format!("@{}", filter);
+                                        let filtered: Vec<Value> = msgs
+                                            .into_iter()
+                                            .filter(|m| {
+                                                let rec = m.get("recipient").and_then(|r| r.as_str()).unwrap_or("").to_lowercase();
+                                                let txt = m.get("text").and_then(|t| t.as_str()).unwrap_or("").to_lowercase();
+                                                rec == *filter || rec == "all" || txt.contains(&mention)
+                                            })
+                                            .collect();
+                                        if let Some(obj) = val.as_object_mut() {
+                                            obj.insert("messages".to_string(), json!(filtered));
+                                        }
+                                    }
+                                }
+                            }
+                            (json!([{ "type": "text", "text": serde_json::to_string_pretty(&val).unwrap_or_default() }]), false)
+                        }
+                        Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur historique chat : {}", e) }]), true),
                     }
+                }
+
+                "aetherscope_get_swarm_state" => {
+                    let self_id = opt_str_arg(&arguments, "agent_id").or_else(|| opt_str_arg(&arguments, "agent_name"));
+                    let peers = fetch_active_swarm_agents(server_port).await;
+                    let roster = format_swarm_roster(&peers, self_id);
+                    let chat_res = send_http_request(server_port, "GET", "/api/ai/chat", None).await.ok();
+                    let recent_count = chat_res
+                        .as_ref()
+                        .and_then(|v| v.get("messages").and_then(|m| m.as_array()))
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    let summary = json!({
+                        "roster_markdown": roster,
+                        "agents_count": peers.len(),
+                        "agents": peers,
+                        "chat_messages_count": recent_count,
+                        "resource_uri": "aether://agents/swarm"
+                    });
+                    (json!([{ "type": "text", "text": serde_json::to_string_pretty(&summary).unwrap_or_default() }]), false)
                 }
 
                 "aetherscope_get_active_target" => {
@@ -392,12 +508,9 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     if symbol_id.trim().is_empty() {
                         (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'symbol_id' est requis." }]), true)
                     } else {
-                        // 1. TÃ©lÃ©portation automatique de la camÃ©ra 3D + tÃ©lÃ©mÃ©trie HUD
-                        let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&json!({
-                            "target": symbol_id,
-                            "action": action,
-                            "details": details
-                        }))).await;
+                        // 1. Téléportation automatique de la caméra 3D + télémétrie multi-agents HUD
+                        let telem_payload = build_telemetry_payload(&symbol_id, action, details, &arguments);
+                        let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&telem_payload)).await;
 
                         // 2. RÃ©cupÃ©ration du contexte cible + contrat EARS + Handshake
                         let res = send_http_request(server_port, "POST", "/api/ai/target", Some(&json!({
@@ -680,6 +793,40 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         let viol_block = format_violations_response(&g, severity, cwe_id, file_pattern.or(if !query.is_empty() { Some(query) } else { None }));
                         text.push_str("\n\n---\n");
                         text.push_str(&viol_block);
+                    }
+
+                    // Coordination multi-agents lors des recherches partagées
+                    if opt_str_arg(&arguments, "agent_id").is_some() || opt_str_arg(&arguments, "agent_name").is_some() {
+                        let search_target = if !query.trim().is_empty() {
+                            query
+                        } else if let Some(fp) = file_pattern {
+                            fp
+                        } else if let Some(cwe) = cwe_id {
+                            cwe
+                        } else {
+                            "Codebase Search"
+                        };
+                        let telem_payload = build_telemetry_payload(
+                            search_target,
+                            "Recherche Collaborative",
+                            &format!("Recherche layer={:?} kind={:?} cwe={:?}", layer, kind, cwe_id),
+                            &arguments,
+                        );
+                        let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&telem_payload)).await;
+                    }
+                    let self_id = opt_str_arg(&arguments, "agent_id").or_else(|| opt_str_arg(&arguments, "agent_name"));
+                    let peers = fetch_active_swarm_agents(server_port).await;
+                    let active_others: Vec<Value> = peers
+                        .into_iter()
+                        .filter(|p| {
+                            let aid = p.get("agent_id").and_then(|v| v.as_str());
+                            let aname = p.get("agent_name").and_then(|v| v.as_str());
+                            self_id.map(|s| Some(s) != aid && Some(s) != aname).unwrap_or(true)
+                        })
+                        .collect();
+                    if !active_others.is_empty() {
+                        text.push_str("\n\n---\n");
+                        text.push_str(&format_swarm_roster(&active_others, self_id));
                     }
 
                     (json!([{ "type": "text", "text": text }]), false)
@@ -1155,12 +1302,13 @@ mod tests {
         let list_resp = handle_mcp_request(list_req, 3030, ".").await.expect("resources/list response");
         let list_res = list_resp.result.expect("result present");
         let resources = list_res["resources"].as_array().expect("resources array");
-        assert_eq!(resources.len(), 4);
+        assert_eq!(resources.len(), 5);
         let uris: Vec<&str> = resources.iter().filter_map(|r| r["uri"].as_str()).collect();
         assert!(uris.contains(&"aether://graph/summary"));
         assert!(uris.contains(&"aether://audit/live"));
         assert!(uris.contains(&"aether://contracts/manifest"));
         assert!(uris.contains(&"aether://tasks/active"));
+        assert!(uris.contains(&"aether://agents/swarm"));
 
         let read_req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -1744,5 +1892,55 @@ mod tests {
 
         assert!(text.contains("Security"), "Expected Security note found in search results");
         assert!(text.contains("«Note»") || text.contains("Note"), "Expected note stereotype/status badge");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_multiagent_swarm_and_identity_schemas() {
+        let tools_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(801)),
+            method: "tools/list".to_string(),
+            params: None,
+        };
+        let tools_resp = handle_mcp_request(tools_req, 3030, ".").await.expect("tools/list");
+        let tools = tools_resp.result.unwrap()["tools"].as_array().unwrap().clone();
+        assert_eq!(tools.len(), 10);
+
+        for tname in [
+            "aetherscope_chat",
+            "aetherscope_teleport_camera",
+            "aetherscope_search_symbols",
+            "aetherscope_get_active_target",
+        ] {
+            let t = tools.iter().find(|x| x["name"] == tname).unwrap();
+            let props = t["inputSchema"]["properties"].as_object().unwrap();
+            assert!(props.contains_key("agent_id"), "{} should declare agent_id", tname);
+            assert!(props.contains_key("agent_name"), "{} should declare agent_name", tname);
+            assert!(props.contains_key("color"), "{} should declare color", tname);
+        }
+
+        let chat_tool = tools.iter().find(|x| x["name"] == "aetherscope_chat").unwrap();
+        let chat_props = chat_tool["inputSchema"]["properties"].as_object().unwrap();
+        assert!(chat_props.contains_key("recipient"));
+        let action_enum = chat_props["action"]["enum"].as_array().unwrap();
+        assert!(action_enum.iter().any(|v| v == "swarm"));
+
+        let swarm_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(802)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_chat",
+                "arguments": {
+                    "action": "swarm",
+                    "agent_id": "claude-sec"
+                }
+            })),
+        };
+        let swarm_resp = handle_mcp_request(swarm_req, 3030, ".").await.expect("swarm action");
+        let swarm_res = swarm_resp.result.expect("result present");
+        assert_eq!(swarm_res["isError"], false);
+        let text = swarm_res["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("aether://agents/swarm"));
     }
 }
