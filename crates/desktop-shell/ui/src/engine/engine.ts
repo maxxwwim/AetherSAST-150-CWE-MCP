@@ -56,6 +56,7 @@ export class AetherEngine {
   private lastVisionMode = 'standard';
   private lastActiveSymbolId: string | null = null;
   private lastLodLevel = 1;
+  private lastFitTick = 0;
   private hoveredNodeId: string | null = null;
   private hoveredFolder: string | null = null;
   private selectedFolder: string | null = null;
@@ -518,9 +519,11 @@ export class AetherEngine {
         const hit = this.pickNode(sx, sy);
         if (hit) {
           this.selectedFolder = hit.folder || hit.cluster_id || null;
+          this.state.selectedFolder = this.selectedFolder;
           this.state.selectSymbol(hit.id);
         } else {
           this.selectedFolder = this.findFolderAt(sx, sy);
+          this.state.selectedFolder = this.selectedFolder;
         }
       }
     });
@@ -556,6 +559,11 @@ export class AetherEngine {
         this.onFps?.(fps);
         this.fpsFrames = 0;
         this.fpsLastTime = now;
+      }
+
+      if (this.lastFitTick !== this.state.fitRequestTick) {
+        this.lastFitTick = this.state.fitRequestTick;
+        this.fitCameraToGraph(false);
       }
 
       if (this.lastLodLevel !== this.state.lodLevel) {
@@ -644,7 +652,7 @@ export class AetherEngine {
   }
 
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
-    if (this.state.visionMode === 'xray' || this.clusters.size === 0) return;
+    if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();
     const breathPhase = now * 0.0012;
@@ -704,7 +712,7 @@ export class AetherEngine {
         ctx.stroke();
       }
 
-      if (isSel || (cl.count >= 4 && baseR >= 34)) {
+      if (isSel || (this.state.settings.showFolderBadges && cl.count >= 4 && baseR >= 34)) {
         badges.push({
           folder,
           label: formatFolderLabel(folder),
@@ -854,6 +862,9 @@ export class AetherEngine {
     const zoom = this.camera.zoom;
     const isXray = this.state.visionMode === 'xray' && this.activeNeighbors.size > 0;
     const activeId = this.state.activeSymbol?.id;
+    const maxLen = this.state.settings.maxLabelLength || 18;
+    const hideDense = this.state.settings.hideBubbleLabelsOver20;
+    const denseLimit = this.state.settings.clusterLabelThreshold || 20;
 
     ctx.save();
     ctx.font = '500 10.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
@@ -867,13 +878,20 @@ export class AetherEngine {
       if (!isFocus && zoom < 0.30) continue;
       if (!isFocus && zoom < 0.55 && !n.is_file && !n.is_class) continue;
 
+      if (!isFocus && hideDense) {
+        const cl = this.clusters.get(n.folder || n.cluster_id || 'root');
+        if (cl && cl.count > denseLimit) continue;
+      }
+
       const p = this.worldToScreen(n.x, n.y);
       if (p.x < -40 || p.x > this.logicalWidth + 40 || p.y < -20 || p.y > this.logicalHeight + 20) {
         continue;
       }
 
+      const rawName = n.name || '';
+      const displayName = !isFocus && rawName.length > maxLen ? rawName.slice(0, maxLen - 2) + '..' : rawName;
       ctx.fillStyle = isFocus ? '#38bdf8' : 'rgba(226, 232, 240, 0.88)';
-      ctx.fillText(n.name, p.x, p.y + Math.max(14, 22 * zoom));
+      ctx.fillText(displayName, p.x, p.y + Math.max(14, 22 * zoom));
       drawn++;
     }
     ctx.restore();

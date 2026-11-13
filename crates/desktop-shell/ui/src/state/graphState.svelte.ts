@@ -1,5 +1,53 @@
 import type { AetherGraph, SymbolBubble, TaskItem, CveAnomalyRecord } from '../types/graph';
 
+export interface CockpitSettings {
+  maxLabelLength: number;
+  hideBubbleLabelsOver20: boolean;
+  clusterLabelThreshold: number;
+  lazyReadmes: boolean;
+  fpsLimit: '60' | '120' | 'unlimited';
+  soundEnabled: boolean;
+  showFolderBadges: boolean;
+  showFolderMembranes: boolean;
+  aiAutoCam: boolean;
+  aiTrail: boolean;
+  aiCustomPrompt: string;
+  exclusions: string[];
+  activeCveRules: string[];
+  ignoredCwes: string[];
+  mcpBinaryPath: string;
+}
+
+const DEFAULT_SETTINGS: CockpitSettings = {
+  maxLabelLength: 18,
+  hideBubbleLabelsOver20: true,
+  clusterLabelThreshold: 20,
+  lazyReadmes: true,
+  fpsLimit: '120',
+  soundEnabled: true,
+  showFolderBadges: true,
+  showFolderMembranes: true,
+  aiAutoCam: true,
+  aiTrail: true,
+  aiCustomPrompt: '',
+  exclusions: ['tests', '*.spec.*', '*.test.*'],
+  activeCveRules: [],
+  ignoredCwes: [],
+  mcpBinaryPath: 'aetherscope-mcp.exe',
+};
+
+function loadSavedSettings(): CockpitSettings {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('aetherscope_settings') : null;
+    if (raw) {
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    }
+  } catch {
+    // ignore invalid localStorage
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
 export class CockpitState {
   graph = $state.raw<AetherGraph>({
     project_name: 'AetherScope',
@@ -11,12 +59,17 @@ export class CockpitState {
   });
 
   activeSymbol = $state.raw<SymbolBubble | null>(null);
+  selectedFolder = $state<string | null>(null);
   activeTab = $state<'debrief' | 'uml' | 'relations' | 'cve' | 'tasks'>('debrief');
   lodLevel = $state<1 | 2 | 3>(1);
   activeLayout = $state<'Z-1' | 'Z-2' | 'Z-3' | 'Z-4'>('Z-2');
   visionMode = $state<'standard' | 'xray' | 'heatmap' | 'deadcode'>('standard');
+  viewMode = $state<'code' | 'vault'>('code');
   searchQuery = $state('');
   tasks = $state<TaskItem[]>([]);
+  settings = $state<CockpitSettings>(loadSavedSettings());
+  cveCatalogue = $state.raw<any[]>([]);
+  fitRequestTick = $state(0);
 
   // Modals & Panels Visibility
   isInspectorOpen = $state(false);
@@ -26,6 +79,29 @@ export class CockpitState {
   isBountyModalOpen = $state(false);
   isGameServersModalOpen = $state(false);
   isSettingsModalOpen = $state(false);
+  isPromptModalOpen = $state(false);
+  promptModalTab = $state<'context' | 'master' | 'sysprompt' | 'mcp'>('context');
+  isSurfaceScannerOpen = $state(false);
+  isTasksModalOpen = $state(false);
+
+  saveLocalSettings() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('aetherscope_settings', JSON.stringify(this.settings));
+      }
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+
+  requestCameraFit() {
+    this.fitRequestTick += 1;
+  }
+
+  openPromptModal(tab: 'context' | 'master' | 'sysprompt' | 'mcp' = 'context') {
+    this.promptModalTab = tab;
+    this.isPromptModalOpen = true;
+  }
 
   // Derived computed states
   filteredNodes = $derived(

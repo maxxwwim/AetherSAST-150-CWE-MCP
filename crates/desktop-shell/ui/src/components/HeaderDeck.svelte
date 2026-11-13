@@ -2,18 +2,18 @@
   import { cockpitState } from '../state/graphState.svelte';
   import {
     Search,
-    Sliders,
     Layers,
     ShieldAlert,
     Target,
-    Bot,
-    Server,
+    Sparkles,
+    Radar,
     Settings,
     Eye,
     Flame,
     Ghost,
     Maximize2,
-    FileText
+    FileText,
+    FolderGit2
   } from '@lucide/svelte';
 
   function onSearchClick() {
@@ -29,9 +29,14 @@
       <span class="bg-gradient-to-r from-sky-400 to-indigo-300 bg-clip-text text-transparent font-extrabold tracking-wide">
         AetherScope
       </span>
-      <span class="text-[9px] px-1.5 py-0.5 rounded-full font-mono bg-sky-950/70 border border-sky-500/25 text-sky-400 max-w-[140px] truncate">
-        {cockpitState.graph.project_name || 'Codebase'}
-      </span>
+      <button
+        onclick={() => (cockpitState.isHubModalOpen = true)}
+        title="Ouvrir le Hub Projet (Analyser, Basculer Code/Vault, Export HTML)"
+        class="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-mono bg-sky-950/70 hover:bg-sky-900/80 border border-sky-500/30 text-sky-300 max-w-[150px] truncate cursor-pointer transition-colors"
+      >
+        <FolderGit2 class="w-3 h-3 shrink-0" />
+        <span class="truncate">{cockpitState.graph.project_name || 'Projet'}</span>
+      </button>
     </div>
 
     <!-- LoD Selector -->
@@ -45,6 +50,13 @@
         <option value={2} class="bg-[#0b0e17] text-white">🌐 Système Multi-Couches</option>
         <option value={3} class="bg-[#0b0e17] text-white">⚙️ Flux DAG</option>
       </select>
+      <button
+        onclick={() => cockpitState.requestCameraFit()}
+        title="Recentrer & Adapter la caméra au graphe"
+        class="p-1 rounded text-slate-400 hover:text-sky-300 hover:bg-white/10 transition-colors cursor-pointer"
+      >
+        <Maximize2 class="w-3 h-3" />
+      </button>
     </div>
   </div>
 
@@ -91,10 +103,30 @@
       </button>
     </div>
 
+    <!-- Prompt Generator & MCP Trigger -->
+    <button
+      onclick={() => cockpitState.openPromptModal('context')}
+      class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/35 text-purple-300 transition-colors shadow-xs cursor-pointer"
+      title="Générateur de Prompt IA Contextuel, Master Blueprint & Config MCP"
+    >
+      <Sparkles class="w-3.5 h-3.5 text-purple-400" />
+      <span class="hidden xl:inline">Prompts</span>
+    </button>
+
+    <!-- Surface Scanner Trigger -->
+    <button
+      onclick={() => (cockpitState.isSurfaceScannerOpen = true)}
+      class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 transition-colors shadow-xs cursor-pointer"
+      title="Scanner Surface Domaine / IP (DNS, Ports, Headers, .env)"
+    >
+      <Radar class="w-3.5 h-3.5 text-emerald-400" />
+      <span class="hidden xl:inline">Surface</span>
+    </button>
+
     <!-- Bug Bounty Scope Modal Trigger -->
     <button
       onclick={() => (cockpitState.isBountyModalOpen = true)}
-      class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 transition-colors shadow-xs"
+      class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 transition-colors shadow-xs cursor-pointer"
       title="Préparateur de Scope & PoC Bug Bounty"
     >
       <Target class="w-3.5 h-3.5 text-amber-400" />
@@ -107,7 +139,7 @@
         cockpitState.activeTab = 'cve';
         cockpitState.isInspectorOpen = true;
       }}
-      class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 transition-colors shadow-xs"
+      class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 transition-colors shadow-xs cursor-pointer"
       title="Audit SAST & Failles CWE"
     >
       <ShieldAlert class="w-3.5 h-3.5 text-rose-400" />
@@ -117,20 +149,20 @@
     <!-- Markdown Doc Reader Button -->
     <button
       onclick={() => cockpitState.toggleDocPanel()}
-      class="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-colors border border-white/5"
+      class="p-1.5 rounded-md transition-colors border cursor-pointer {cockpitState.isDocPanelOpen ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/5'}"
       title="Documentation EARS & Contrats BLAKE3"
     >
       <FileText class="w-3.5 h-3.5" />
     </button>
 
-
-    <!-- Settings Modal Trigger -->
+    <!-- Full Settings Modal Trigger -->
     <button
       onclick={() => (cockpitState.isSettingsModalOpen = true)}
-      class="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-colors border border-white/5"
-      title="Paramètres & Règles CWE"
+      class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-white/[0.04] hover:bg-white/10 border border-white/10 text-slate-200 transition-colors cursor-pointer"
+      title="Panneau de Configuration Complet (Affichage, Exclusions, MCP & 120+ Règles CWE)"
     >
-      <Settings class="w-3.5 h-3.5" />
+      <Settings class="w-3.5 h-3.5 text-sky-400" />
+      <span class="hidden lg:inline">Options</span>
     </button>
 
     <!-- Side Inspector Toggle -->

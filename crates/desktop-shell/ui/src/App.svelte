@@ -5,6 +5,11 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import VisionModesDeck from './components/VisionModesDeck.svelte';
   import BountyModal from './components/BountyModal.svelte';
+  import SettingsModal from './components/SettingsModal.svelte';
+  import PromptGeneratorModal from './components/PromptGeneratorModal.svelte';
+  import SurfaceScannerModal from './components/SurfaceScannerModal.svelte';
+  import DocReaderDrawer from './components/DocReaderDrawer.svelte';
+  import ProjectHubModal from './components/ProjectHubModal.svelte';
   import { cockpitState } from './state/graphState.svelte';
   import { api } from './lib/api';
   import { onMount } from 'svelte';
@@ -33,5 +38,10 @@
     <InspectorDrawer />
     <CommandPalette />
     <BountyModal />
+    <SettingsModal />
+    <PromptGeneratorModal />
+    <SurfaceScannerModal />
+    <DocReaderDrawer />
+    <ProjectHubModal />
   </div>
 </div>
