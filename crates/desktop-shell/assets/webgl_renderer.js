@@ -2481,7 +2481,6 @@ function renderRadar(force = false) {
   }
 
   // Camera viewport box
-  const cam = state.camera;
   const vw = Math.min(w * 2.5, (window.innerWidth / cam.zoom) * scale);
   const vh = Math.min(h * 2.5, (window.innerHeight / cam.zoom) * scale);
   const vx = cx + (cam.x - gCenterX) * scale - vw / 2;

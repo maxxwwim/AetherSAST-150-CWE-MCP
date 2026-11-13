@@ -3654,9 +3654,9 @@ function initDisplaySettingsUI() {
   const displaySettings = [
     { key: 'showFolderBadges', def: false },
     { key: 'showFolderMembranes', def: true },
-    { key: 'showGrid', def: true },
-    { key: 'showStarfield', def: true },
-    { key: 'showShadows', def: true }
+    { key: 'showGrid', def: false },
+    { key: 'showStarfield', def: false },
+    { key: 'showShadows', def: false }
   ];
   displaySettings.forEach(s => {
     if (state[s.key] === undefined) state[s.key] = s.def;
