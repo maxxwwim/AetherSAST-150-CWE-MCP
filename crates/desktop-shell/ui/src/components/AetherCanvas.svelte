@@ -7,10 +7,14 @@
   let canvasEl: HTMLCanvasElement;
   let lineCanvasEl: HTMLCanvasElement;
   let engine = $state<AetherEngine | null>(null);
+  let fps = $state(120);
 
   onMount(() => {
     if (canvasEl && lineCanvasEl) {
       engine = new AetherEngine(canvasEl, lineCanvasEl, cockpitState);
+      engine.onFps = (val) => {
+        fps = val;
+      };
       engine.start();
     }
 
@@ -68,7 +72,7 @@
     </div>
 
     <div class="flex items-center gap-3 text-[10px]">
-      <span class="text-slate-500 font-bold">120 FPS (WebGL 2)</span>
+      <span class="text-emerald-400 font-bold">{fps} FPS (WebGL 2)</span>
       <span class="text-slate-600">·</span>
       <span class="text-purple-400 font-semibold">MCP Zero-Shell</span>
     </div>
