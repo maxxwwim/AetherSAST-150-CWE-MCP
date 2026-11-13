@@ -46,3 +46,102 @@ export function parseHexColor(hex: string, alpha = 1.0): RgbaColor {
     a: alpha
   };
 }
+
+const BRANCH_HUES: Record<string, number> = {
+  'desktop-shell': 196,
+  'core-graph': 255,
+  'security-linter': 38,
+  'ast-scanner': 158,
+  'ai-file-bridge': 178,
+  'arch-templates': 282,
+  'aethercraft': 335,
+  'obsidian-vault': 168,
+  desktop: 196,
+  crates: 220,
+  apps: 325,
+  docs: 142,
+  tests: 48,
+  root: 200
+};
+
+const folderColorCache = new Map<string, RgbaColor>();
+
+function hslToRgba(h: number, s: number, l: number): RgbaColor {
+  const hue = ((h % 360) + 360) % 360;
+  const sat = Math.max(0, Math.min(1, s));
+  const lum = Math.max(0, Math.min(1, l));
+  const c = (1 - Math.abs(2 * lum - 1)) * sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = lum - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (hue < 60) { r = c; g = x; }
+  else if (hue < 120) { r = x; g = c; }
+  else if (hue < 180) { g = c; b = x; }
+  else if (hue < 240) { g = x; b = c; }
+  else if (hue < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  return { r: +(r + m).toFixed(3), g: +(g + m).toFixed(3), b: +(b + m).toFixed(3), a: 1.0 };
+}
+
+/**
+ * Computes a deterministic tree-coherent cosmic RGBA hue for a folder path.
+ */
+export function getFolderColor(folder?: string): RgbaColor {
+  const key = !folder || folder === 'root' ? 'root' : folder;
+  const cached = folderColorCache.get(key);
+  if (cached) return cached;
+  if (key === 'root') {
+    const rootCol = { r: 0.22, g: 0.78, b: 0.99, a: 1.0 };
+    folderColorCache.set(key, rootCol);
+    return rootCol;
+  }
+
+  const clean = key.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  const parts = clean.split('/').filter(Boolean);
+  let branchKey = 'root';
+  let subDepth = 0;
+  let subHash = 0;
+
+  if (parts.length >= 2 && (parts[0] === 'crates' || parts[0] === 'apps' || parts[0] === 'packages')) {
+    branchKey = parts[1];
+    subDepth = parts.length - 2;
+    const subStr = parts.slice(2).join('/');
+    for (let i = 0; i < subStr.length; i++) subHash = (subHash * 31 + subStr.charCodeAt(i)) | 0;
+  } else if (parts.length >= 1) {
+    branchKey = parts[0];
+    subDepth = parts.length - 1;
+    const subStr = parts.slice(1).join('/');
+    for (let i = 0; i < subStr.length; i++) subHash = (subHash * 31 + subStr.charCodeAt(i)) | 0;
+  }
+
+  const lowerBranch = branchKey.toLowerCase();
+  let baseHue = BRANCH_HUES[lowerBranch];
+  if (baseHue === undefined) {
+    let hHash = 0;
+    for (let i = 0; i < lowerBranch.length; i++) hHash = (hHash * 37 + lowerBranch.charCodeAt(i)) | 0;
+    baseHue = Math.abs(hHash * 137.5) % 360;
+  }
+
+  const hueShift = ((Math.abs(subHash) % 5) - 2) * 5;
+  const finalHue = (baseHue + hueShift + 360) % 360;
+  const sat = Math.max(0.70, Math.min(0.96, 0.88 - subDepth * 0.04 + (Math.abs(subHash) % 3) * 0.03));
+  const lum = Math.max(0.48, Math.min(0.68, 0.58 + (subDepth % 2 === 1 ? 0.05 : -0.03) + (Math.abs(subHash) % 3) * 0.02));
+
+  const rgba = hslToRgba(finalHue, sat, lum);
+  folderColorCache.set(key, rgba);
+  return rgba;
+}
+
+export function formatFolderLabel(folder?: string): string {
+  if (!folder || folder === 'root') return 'root';
+  const clean = folder.replace(/\\/g, '/');
+  const parts = clean.split('/').filter(Boolean);
+  if (parts.length <= 1) {
+    return clean.length > 20 ? clean.slice(0, 18) + '…' : clean;
+  }
+  const last = parts[parts.length - 1];
+  const prev = parts[parts.length - 2];
+  const shortPath = `${prev}/${last}`;
+  if (shortPath.length <= 22) return shortPath;
+  return last.length > 20 ? last.slice(0, 18) + '…' : last;
+}

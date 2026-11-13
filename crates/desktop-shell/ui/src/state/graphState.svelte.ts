@@ -1,7 +1,7 @@
 import type { AetherGraph, SymbolBubble, TaskItem, CveAnomalyRecord } from '../types/graph';
 
 export class CockpitState {
-  graph = $state<AetherGraph>({
+  graph = $state.raw<AetherGraph>({
     project_name: 'AetherScope',
     nodes: [],
     edges: [],
@@ -10,7 +10,7 @@ export class CockpitState {
     critical_count: 0,
   });
 
-  activeSymbol = $state<SymbolBubble | null>(null);
+  activeSymbol = $state.raw<SymbolBubble | null>(null);
   activeTab = $state<'debrief' | 'uml' | 'relations' | 'cve' | 'tasks'>('debrief');
   lodLevel = $state<1 | 2 | 3>(1);
   activeLayout = $state<'Z-1' | 'Z-2' | 'Z-3' | 'Z-4'>('Z-2');
@@ -35,7 +35,7 @@ export class CockpitState {
           (n) =>
             n.name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
             n.file_path.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-            n.kind.toLowerCase().includes(this.searchQuery.toLowerCase())
+            String(n.kind).toLowerCase().includes(this.searchQuery.toLowerCase())
         )
   );
 
@@ -44,6 +44,9 @@ export class CockpitState {
     for (const node of this.graph.nodes) {
       if (node.anomalies && node.anomalies.length > 0) {
         list.push(...node.anomalies);
+      }
+      if (node.violations && node.violations.length > 0) {
+        list.push(...node.violations);
       }
     }
     return list;

@@ -851,6 +851,32 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     let app = axum::Router::new()
         .route(
             "/",
+            axum::routing::get({
+                let state_modern = state_viewer.clone();
+                move || {
+                    let state = state_modern.clone();
+                    async move {
+                        let p_type = *state.project_type.read().await;
+                        let active_view = state.active_view_mode.read().await.clone();
+                        let code_g = state.code_graph.read().await;
+                        let vault_g = state.vault_graph.read().await;
+                        let g = state.graph.read().await;
+                        let html = viewer::generate_modern_standalone_html(
+                            code_g.as_ref().or(Some(&*g)),
+                            vault_g.as_ref(),
+                            p_type,
+                            &active_view,
+                        );
+                        (
+                            [(axum::http::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")],
+                            axum::response::Html(html),
+                        )
+                    }
+                }
+            }),
+        )
+        .route(
+            "/legacy",
             axum::routing::get(move || {
                 let state = state_viewer.clone();
                 async move {

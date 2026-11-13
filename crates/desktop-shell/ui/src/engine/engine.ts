@@ -5,7 +5,7 @@
 
 import { initShaderPipeline, type ShaderPipeline } from './shaders';
 import { PhysicsController, type FolderClusterEntry } from './physics';
-import { getLayerRgba, SEVERITY_COLORS } from './palette';
+import { getLayerRgba, getFolderColor, formatFolderLabel, SEVERITY_COLORS, type RgbaColor } from './palette';
 import type { CockpitState } from '../state/graphState.svelte';
 import type { SymbolBubble } from '../types/graph';
 
@@ -55,6 +55,10 @@ export class AetherEngine {
   private activeNeighbors = new Set<string>();
   private lastVisionMode = 'standard';
   private lastActiveSymbolId: string | null = null;
+  private lastLodLevel = 1;
+  private hoveredNodeId: string | null = null;
+  private hoveredFolder: string | null = null;
+  private selectedFolder: string | null = null;
 
   // Mouse interaction state
   private isDragging = false;
@@ -156,6 +160,74 @@ export class AetherEngine {
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
+  private classifyNode(n: SymbolBubble): { shaderType: number; baseRadius: number } {
+    const kind = String(n.kind || n.symbol_type || '').toLowerCase();
+    const isFunc =
+      kind === 'function' ||
+      kind === 'method' ||
+      n.stereotype === '«Function»' ||
+      n.stereotype === '«Method»';
+    if (isFunc) return { shaderType: 0.0, baseRadius: 4.6 };
+    if (n.is_file || kind === 'file') return { shaderType: 1.0, baseRadius: 13.0 };
+    if (n.is_class || kind === 'class' || kind === 'struct' || kind === 'interface' || kind === 'trait') {
+      return { shaderType: 2.0, baseRadius: 14.5 };
+    }
+    if (n.is_form || kind === 'endpoint' || n.stereotype === '«Endpoint»' || n.stereotype === '«Form»') {
+      return { shaderType: 3.0, baseRadius: 12.0 };
+    }
+    return { shaderType: 1.0, baseRadius: 9.5 };
+  }
+
+  private seedInitialClusters(nodes: SymbolBubble[]) {
+    const buckets = new Map<string, SymbolBubble[]>();
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const folder = n.folder || n.cluster_id || 'root';
+      let list = buckets.get(folder);
+      if (!list) {
+        list = [];
+        buckets.set(folder, list);
+      }
+      list.push(n);
+    }
+
+    buckets.forEach((list, folder) => {
+      let sumX = 0, sumY = 0;
+      for (const n of list) {
+        sumX += n.x || 0;
+        sumY += n.y || 0;
+      }
+      const cx = sumX / list.length;
+      const cy = sumY / list.length;
+      let maxDist = 0;
+      const sectorDist = new Float32Array(12);
+      for (const n of list) {
+        const dx = (n.x || 0) - cx;
+        const dy = (n.y || 0) - cy;
+        const d = Math.hypot(dx, dy);
+        if (d > maxDist) maxDist = d;
+        const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2);
+        const sec = Math.floor((angle / (Math.PI * 2)) * 12) % 12;
+        if (d > sectorDist[sec]) sectorDist[sec] = d;
+      }
+      const baseR = Math.max(72, Math.sqrt(list.length) * 38, maxDist + 42);
+      const lobeProfile = new Float32Array(12);
+      for (let i = 0; i < 12; i++) {
+        lobeProfile[i] = Math.max(0.86, Math.min(1.22, sectorDist[i] > 0 ? (sectorDist[i] + 44) / baseR : 0.94));
+      }
+      this.clusters.set(folder, {
+        cx,
+        cy,
+        sumX,
+        sumY,
+        count: list.length,
+        computedRadius: baseR,
+        naturalRadius: baseR,
+        lobeProfile
+      });
+    });
+  }
+
   public syncGraphToEngine() {
     const nodes = this.state.graph.nodes;
     this.nodeMap.clear();
@@ -166,30 +238,66 @@ export class AetherEngine {
       this.instanceData = new Float32Array(floatCount);
     }
 
-    const now = performance.now();
+    const birthStamp = Math.max(0, performance.now() - 16);
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
+      if (!Number.isFinite(n.x)) n.x = (Math.random() - 0.5) * 800;
+      if (!Number.isFinite(n.y)) n.y = (Math.random() - 0.5) * 800;
       this.nodeMap.set(n.id, n);
 
       const offset = i * 9;
-      const isFile = n.kind === 'File' ? 1.0 : n.kind === 'Class' ? 2.0 : n.kind === 'Endpoint' ? 3.0 : 0.0;
-      const radius = isFile > 0.5 ? 24.0 : 16.0;
+      const { shaderType, baseRadius } = this.classifyNode(n);
 
-      this.instanceData[offset + 0] = n.x || (Math.random() - 0.5) * 800;
-      this.instanceData[offset + 1] = n.y || (Math.random() - 0.5) * 800;
-      this.instanceData[offset + 2] = radius;
-      this.instanceData[offset + 7] = isFile;
-      this.instanceData[offset + 8] = now;
+      this.instanceData[offset + 0] = n.x;
+      this.instanceData[offset + 1] = n.y;
+      this.instanceData[offset + 2] = baseRadius;
+      this.instanceData[offset + 7] = shaderType;
+      this.instanceData[offset + 8] = birthStamp;
     }
 
+    this.seedInitialClusters(nodes);
     this.refreshVisionColors(false);
+    this.fitCameraToGraph(true);
 
     const { gl, pipeline } = this;
     gl.bindBuffer(gl.ARRAY_BUFFER, pipeline.instanceVbo);
     gl.bufferData(gl.ARRAY_BUFFER, this.instanceData, gl.DYNAMIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
-    this.physics.sendGraph(nodes, this.state.graph.edges);
+    this.physics.sendGraph(nodes, this.state.graph.edges, this.state.lodLevel);
+  }
+
+  public fitCameraToGraph(immediate = false) {
+    const nodes = this.state.graph.nodes;
+    if (!nodes || nodes.length === 0) return;
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    }
+    if (!Number.isFinite(minX)) return;
+
+    const spanX = Math.max(400, maxX - minX);
+    const spanY = Math.max(400, maxY - minY);
+    const fitZoom = Math.max(
+      0.06,
+      Math.min(1.1, Math.min(this.logicalWidth / (spanX + 240), this.logicalHeight / (spanY + 240)))
+    );
+
+    this.camera.targetX = (minX + maxX) * 0.5;
+    this.camera.targetY = (minY + maxY) * 0.5;
+    this.camera.targetZoom = fitZoom;
+    if (immediate) {
+      this.camera.x = this.camera.targetX;
+      this.camera.y = this.camera.targetY;
+      this.camera.zoom = this.camera.targetZoom;
+    }
   }
 
   public refreshVisionColors(upload = true) {
@@ -198,8 +306,10 @@ export class AetherEngine {
 
     const mode = this.state.visionMode;
     const activeId = this.state.activeSymbol?.id || null;
+    const lod = this.state.lodLevel;
     this.lastVisionMode = mode;
     this.lastActiveSymbolId = activeId;
+    this.lastLodLevel = lod;
 
     this.activeNeighbors.clear();
     if (mode === 'xray' && activeId) {
@@ -213,8 +323,14 @@ export class AetherEngine {
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       const offset = i * 9;
-      let col = getLayerRgba(n.layer);
+      const { baseRadius } = this.classifyNode(n);
+      const folder = n.folder || n.cluster_id || 'root';
+      let col: RgbaColor = lod <= 2 ? getFolderColor(folder) : getLayerRgba(n.layer);
       let alpha = 1.0;
+      let r = baseRadius;
+
+      if (n.id === activeId) r *= 1.65;
+      else if (n.id === this.hoveredNodeId) r *= 1.35;
 
       if (mode === 'heatmap') {
         const cc = n.cyclomatic_complexity || 1;
@@ -226,19 +342,30 @@ export class AetherEngine {
         const isOrphan = n.is_orphan || (n.in_degree === 0 && n.out_degree === 0);
         if (isOrphan) {
           col = SEVERITY_COLORS.CRITICAL;
+          r *= 1.35;
         } else {
-          alpha = 0.12;
+          alpha = 0.08;
+          r *= 0.55;
         }
       } else if (mode === 'xray' && activeId) {
         if (!this.activeNeighbors.has(n.id)) {
-          alpha = 0.08;
+          alpha = 0.07;
+          r *= 0.55;
+        } else if (n.id === activeId) {
+          col = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
         }
       }
 
-      if (n.anomalies && n.anomalies.length > 0 && mode === 'standard') {
+      const hasVuln =
+        n.has_security_violation ||
+        (n.anomalies && n.anomalies.length > 0) ||
+        (n.violations && n.violations.length > 0);
+      if (hasVuln && mode === 'standard') {
         col = SEVERITY_COLORS.CRITICAL;
+        r *= 1.3;
       }
 
+      this.instanceData[offset + 2] = r;
       this.instanceData[offset + 3] = col.r;
       this.instanceData[offset + 4] = col.g;
       this.instanceData[offset + 5] = col.b;
@@ -310,7 +437,7 @@ export class AetherEngine {
       e.preventDefault();
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
       const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-      const newZoom = Math.max(0.12, Math.min(3.2, this.camera.targetZoom * zoomFactor));
+      const newZoom = Math.max(0.06, Math.min(3.5, this.camera.targetZoom * zoomFactor));
 
       const mouseWorldBefore = this.screenToWorld(sx, sy);
       this.camera.targetZoom = newZoom;
@@ -361,6 +488,15 @@ export class AetherEngine {
         this.camera.targetY = this.camera.y;
         this.dragStartX = sx;
         this.dragStartY = sy;
+      } else if (e.target === this.canvas) {
+        const hit = this.pickNode(sx, sy);
+        const prevHov = this.hoveredNodeId;
+        this.hoveredNodeId = hit ? hit.id : null;
+        this.hoveredFolder = hit ? (hit.folder || hit.cluster_id || 'root') : this.findFolderAt(sx, sy);
+        this.canvas.style.cursor = hit || this.hoveredFolder ? 'pointer' : 'grab';
+        if (prevHov !== this.hoveredNodeId) {
+          this.refreshVisionColors(true);
+        }
       }
     });
 
@@ -381,10 +517,28 @@ export class AetherEngine {
       if (dist < 4 && (wasDraggingNode || e.target === this.canvas)) {
         const hit = this.pickNode(sx, sy);
         if (hit) {
+          this.selectedFolder = hit.folder || hit.cluster_id || null;
           this.state.selectSymbol(hit.id);
+        } else {
+          this.selectedFolder = this.findFolderAt(sx, sy);
         }
       }
     });
+  }
+
+  private findFolderAt(sx: number, sy: number): string | null {
+    const world = this.screenToWorld(sx, sy);
+    let best: string | null = null;
+    let bestR = Infinity;
+    this.clusters.forEach((cl, folder) => {
+      const r = cl.computedRadius || 100;
+      const dist = Math.hypot(world.x - cl.cx, world.y - cl.cy);
+      if (dist <= r && r < bestR) {
+        best = folder;
+        bestR = r;
+      }
+    });
+    return best;
   }
 
   public start() {
@@ -404,7 +558,10 @@ export class AetherEngine {
         this.fpsLastTime = now;
       }
 
-      if (
+      if (this.lastLodLevel !== this.state.lodLevel) {
+        this.physics.setDepth(this.state.lodLevel);
+        this.refreshVisionColors(true);
+      } else if (
         this.lastVisionMode !== this.state.visionMode ||
         this.lastActiveSymbolId !== (this.state.activeSymbol?.id || null)
       ) {
@@ -457,71 +614,172 @@ export class AetherEngine {
     this.renderLabels(ctx);
   }
 
+  private traceMembraneSpline(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    radius: number,
+    lobeProfile: Float32Array | undefined,
+    breathPhase: number,
+    phaseShift: number
+  ): number {
+    const ptsX = new Float32Array(12);
+    const ptsY = new Float32Array(12);
+    for (let i = 0; i < 12; i++) {
+      const prof = lobeProfile && lobeProfile[i] ? lobeProfile[i] : 1.0;
+      const harmonic = 1.0 + 0.032 * Math.sin(breathPhase + phaseShift + i * 1.618);
+      const r = radius * prof * harmonic;
+      ptsX[i] = cx + _COS12[i] * r;
+      ptsY[i] = cy + _SIN12[i] * r;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo((ptsX[11] + ptsX[0]) * 0.5, (ptsY[11] + ptsY[0]) * 0.5);
+    for (let i = 0; i < 12; i++) {
+      const next = (i + 1) % 12;
+      ctx.quadraticCurveTo(ptsX[i], ptsY[i], (ptsX[i] + ptsX[next]) * 0.5, (ptsY[i] + ptsY[next]) * 0.5);
+    }
+    ctx.closePath();
+    return ptsY[9] ?? cy - radius;
+  }
+
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
     if (this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();
     const breathPhase = now * 0.0012;
-    const ptsX = new Float32Array(12);
-    const ptsY = new Float32Array(12);
+    const badges: { folder: string; label: string; count: number; cx: number; topY: number; rgb: string; sel: boolean }[] = [];
 
-    this.clusters.forEach((cl) => {
+    this.clusters.forEach((cl, folder) => {
       if (cl.count <= 0) return;
       const center = this.worldToScreen(cl.cx, cl.cy);
       const baseR = (cl.computedRadius || 100) * this.camera.zoom;
 
       if (
-        center.x + baseR < -40 ||
-        center.x - baseR > this.logicalWidth + 40 ||
-        center.y + baseR < -40 ||
-        center.y - baseR > this.logicalHeight + 40
+        center.x + baseR < -60 ||
+        center.x - baseR > this.logicalWidth + 60 ||
+        center.y + baseR < -60 ||
+        center.y - baseR > this.logicalHeight + 60
       ) {
         return;
       }
 
-      for (let i = 0; i < 12; i++) {
-        const prof = cl.lobeProfile && cl.lobeProfile[i] ? cl.lobeProfile[i] : 1.0;
-        const harmonic = 1.0 + 0.035 * Math.sin(breathPhase + i * 1.618);
-        const r = baseR * prof * harmonic;
-        ptsX[i] = center.x + _COS12[i] * r;
-        ptsY[i] = center.y + _SIN12[i] * r;
-      }
+      const col = getFolderColor(folder);
+      const rR = Math.round(col.r * 255);
+      const rG = Math.round(col.g * 255);
+      const rB = Math.round(col.b * 255);
+      const lR = Math.min(255, rR + 85);
+      const lG = Math.min(255, rG + 85);
+      const lB = Math.min(255, rB + 100);
+      const isSel = folder === this.selectedFolder || folder === this.hoveredFolder;
 
-      ctx.beginPath();
-      const startMidX = (ptsX[11] + ptsX[0]) * 0.5;
-      const startMidY = (ptsY[11] + ptsY[0]) * 0.5;
-      ctx.moveTo(startMidX, startMidY);
-      for (let i = 0; i < 12; i++) {
-        const next = (i + 1) % 12;
-        const midX = (ptsX[i] + ptsX[next]) * 0.5;
-        const midY = (ptsY[i] + ptsY[next]) * 0.5;
-        ctx.quadraticCurveTo(ptsX[i], ptsY[i], midX, midY);
-      }
-      ctx.closePath();
-
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.035)';
+      // 1. Outer Exomembrane Halo
+      const topCrestY = this.traceMembraneSpline(ctx, center.x, center.y, baseR, cl.lobeProfile, breathPhase, 0.0);
+      ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isSel ? 0.14 : 0.065})`;
       ctx.fill();
-      ctx.lineWidth = Math.max(0.8, 1.3 * this.camera.zoom);
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
+      ctx.lineWidth = Math.min(3.5, Math.max(1.0, (isSel ? 2.4 : 1.45)));
+      ctx.strokeStyle = isSel ? '#38bdf8' : `rgba(${lR}, ${lG}, ${lB}, 0.45)`;
       ctx.stroke();
+
+      // 2. Inner Phospholipid Bilayer Cortex
+      if (baseR >= 26) {
+        this.traceMembraneSpline(ctx, center.x, center.y, baseR * 0.90, cl.lobeProfile, breathPhase * 0.85, 2.2);
+        ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isSel ? 0.055 : 0.025})`;
+        ctx.fill();
+        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 0.95;
+        ctx.strokeStyle = `rgba(${lR}, ${lG}, ${lB}, ${isSel ? 0.40 : 0.20})`;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // 3. LoD 2 Nucleus Core
+      if ((this.state.lodLevel === 2 || isSel) && baseR >= 45) {
+        const nucR = Math.max(12, baseR * 0.20);
+        this.traceMembraneSpline(ctx, center.x, center.y, nucR, undefined, breathPhase * 1.25, 1.1);
+        ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isSel ? 0.20 : 0.10})`;
+        ctx.fill();
+        ctx.lineWidth = 1.0;
+        ctx.strokeStyle = `rgba(${lR}, ${lG}, ${lB}, 0.30)`;
+        ctx.stroke();
+      }
+
+      if (isSel || (cl.count >= 4 && baseR >= 34)) {
+        badges.push({
+          folder,
+          label: formatFolderLabel(folder),
+          count: cl.count,
+          cx: center.x,
+          topY: topCrestY,
+          rgb: `${lR}, ${lG}, ${lB}`,
+          sel: isSel
+        });
+      }
     });
 
+    this.renderFolderBadges(ctx, badges);
     ctx.restore();
+  }
+
+  private renderFolderBadges(
+    ctx: CanvasRenderingContext2D,
+    badges: { folder: string; label: string; count: number; cx: number; topY: number; rgb: string; sel: boolean }[]
+  ) {
+    if (badges.length === 0) return;
+    ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, sans-serif';
+    ctx.textBaseline = 'middle';
+
+    const maxDraw = Math.min(badges.length, 32);
+    for (let i = 0; i < maxDraw; i++) {
+      const b = badges[i];
+      const text = `${b.label}`;
+      const countText = `${b.count}`;
+      const textW = ctx.measureText(text).width;
+      const countW = ctx.measureText(countText).width;
+      const pillW = textW + countW + 26;
+      const pillH = 20;
+      const pillX = b.cx - pillW * 0.5;
+      const pillY = b.topY - pillH - 8;
+
+      // Tether line from cellular crest to pill badge
+      ctx.beginPath();
+      ctx.moveTo(b.cx, b.topY);
+      ctx.lineTo(b.cx, pillY + pillH);
+      ctx.strokeStyle = b.sel ? '#38bdf8' : `rgba(${b.rgb}, 0.55)`;
+      ctx.lineWidth = 1.0;
+      ctx.stroke();
+
+      ctx.fillStyle = b.sel ? 'rgba(12, 74, 110, 0.92)' : 'rgba(11, 14, 23, 0.86)';
+      ctx.strokeStyle = b.sel ? '#38bdf8' : `rgba(${b.rgb}, 0.55)`;
+      ctx.beginPath();
+      ctx.roundRect(pillX, pillY, pillW, pillH, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.textAlign = 'left';
+      ctx.fillText(text, pillX + 8, pillY + pillH * 0.5);
+
+      ctx.fillStyle = `rgba(${b.rgb}, 0.95)`;
+      ctx.textAlign = 'right';
+      ctx.fillText(countText, pillX + pillW - 7, pillY + pillH * 0.5);
+    }
   }
 
   private renderEdges(ctx: CanvasRenderingContext2D) {
     const edges = this.state.graph.edges;
     if (!edges || edges.length === 0) return;
 
-    ctx.save();
-    ctx.lineWidth = Math.max(0.8, 1.2 * this.camera.zoom);
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
-    ctx.beginPath();
-
     const isXray = this.state.visionMode === 'xray' && this.state.activeSymbol;
     const activeId = this.state.activeSymbol?.id;
 
-    const maxDraw = Math.min(edges.length, 1200);
+    const pCalls = new Path2D();
+    const pQueries = new Path2D();
+    const pViolates = new Path2D();
+    const pRealtime = new Path2D();
+    let hasCalls = false, hasQueries = false, hasViolates = false, hasRealtime = false;
+
+    const maxDraw = Math.min(edges.length, 1500);
     for (let i = 0; i < maxDraw; i++) {
       const e = edges[i];
       if (isXray && e.source !== activeId && e.target !== activeId) continue;
@@ -532,35 +790,91 @@ export class AetherEngine {
 
       const p1 = this.worldToScreen(s.x, s.y);
       const p2 = this.worldToScreen(t.x, t.y);
+      if (
+        Math.max(p1.x, p2.x) < -40 ||
+        Math.min(p1.x, p2.x) > this.logicalWidth + 40 ||
+        Math.max(p1.y, p2.y) < -40 ||
+        Math.min(p1.y, p2.y) > this.logicalHeight + 40
+      ) {
+        continue;
+      }
 
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
+      const rel = String(e.relation || e.edge_type || 'calls').toLowerCase();
+      const sFolder = s.folder || s.cluster_id;
+      const tFolder = t.folder || t.cluster_id;
+      const isCross = sFolder && tFolder && sFolder !== tFolder;
+
+      let targetPath = pCalls;
+      if (rel.includes('violat')) { targetPath = pViolates; hasViolates = true; }
+      else if (rel === 'queries' || t.layer === 'database') { targetPath = pQueries; hasQueries = true; }
+      else if (rel.includes('realtime') || rel === 'submits') { targetPath = pRealtime; hasRealtime = true; }
+      else { hasCalls = true; }
+
+      targetPath.moveTo(p1.x, p1.y);
+      if (isCross && rel !== 'contains') {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const cx = (p1.x + p2.x) * 0.5 - dy * 0.14;
+        const cy = (p1.y + p2.y) * 0.5 + dx * 0.14;
+        targetPath.quadraticCurveTo(cx, cy, p2.x, p2.y);
+      } else {
+        targetPath.lineTo(p2.x, p2.y);
+      }
     }
-    ctx.stroke();
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    const w = Math.max(0.75, Math.min(2.0, 1.15 * Math.sqrt(this.camera.zoom)));
+
+    if (hasCalls) {
+      ctx.lineWidth = w;
+      ctx.strokeStyle = isXray ? 'rgba(56, 189, 248, 0.55)' : 'rgba(56, 189, 248, 0.16)';
+      ctx.stroke(pCalls);
+    }
+    if (hasQueries) {
+      ctx.lineWidth = w * 1.25;
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.42)';
+      ctx.stroke(pQueries);
+    }
+    if (hasRealtime) {
+      ctx.lineWidth = w * 1.3;
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.48)';
+      ctx.stroke(pRealtime);
+    }
+    if (hasViolates) {
+      ctx.lineWidth = w * 1.65;
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.78)';
+      ctx.stroke(pViolates);
+    }
     ctx.restore();
   }
 
   private renderLabels(ctx: CanvasRenderingContext2D) {
-    if (this.camera.zoom < 0.45) return;
-
     const nodes = this.state.graph.nodes;
-    ctx.save();
-    ctx.font = '10px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
-
+    const zoom = this.camera.zoom;
     const isXray = this.state.visionMode === 'xray' && this.activeNeighbors.size > 0;
-    const maxLabels = Math.min(nodes.length, 300);
+    const activeId = this.state.activeSymbol?.id;
 
-    for (let i = 0; i < maxLabels; i++) {
+    ctx.save();
+    ctx.font = '500 10.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+    ctx.textAlign = 'center';
+
+    let drawn = 0;
+    for (let i = 0; i < nodes.length && drawn < 220; i++) {
       const n = nodes[i];
+      const isFocus = n.id === activeId || n.id === this.hoveredNodeId;
       if (isXray && !this.activeNeighbors.has(n.id)) continue;
+      if (!isFocus && zoom < 0.30) continue;
+      if (!isFocus && zoom < 0.55 && !n.is_file && !n.is_class) continue;
 
       const p = this.worldToScreen(n.x, n.y);
       if (p.x < -40 || p.x > this.logicalWidth + 40 || p.y < -20 || p.y > this.logicalHeight + 20) {
         continue;
       }
-      ctx.fillText(n.name, p.x, p.y + 24 * this.camera.zoom);
+
+      ctx.fillStyle = isFocus ? '#38bdf8' : 'rgba(226, 232, 240, 0.88)';
+      ctx.fillText(n.name, p.x, p.y + Math.max(14, 22 * zoom));
+      drawn++;
     }
     ctx.restore();
   }

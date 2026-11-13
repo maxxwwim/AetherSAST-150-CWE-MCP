@@ -61,6 +61,18 @@ export class PhysicsController {
     }
   }
 
+  private clonePlainLayouts(layouts: any) {
+    if (!layouts || typeof layouts !== 'object') return undefined;
+    const out: Record<string, { x: number; y: number }> = {};
+    for (const k of ['obsidian', 'system', 'flow', 'classes']) {
+      const pt = layouts[k];
+      if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
+        out[k] = { x: Number(pt.x), y: Number(pt.y) };
+      }
+    }
+    return out;
+  }
+
   public sendGraph(nodes: SymbolBubble[], edges: AffiliationEdge[], depth = 1) {
     if (!this.worker || nodes.length === 0) return;
     this.isSleeping = false;
@@ -68,23 +80,25 @@ export class PhysicsController {
       type: 'INIT',
       payload: {
         nodes: nodes.map((n) => ({
-          id: n.id,
-          name: n.name,
-          x: n.x || 0,
-          y: n.y || 0,
+          id: String(n.id),
+          name: String(n.name || ''),
+          x: Number(n.x) || 0,
+          y: Number(n.y) || 0,
           vx: 0,
           vy: 0,
-          folder: (n as any).folder || 'root',
-          layer: n.layer || 'domain',
-          loc: n.loc || 10,
-          is_file: n.kind === 'File'
+          folder: String(n.folder || n.cluster_id || 'root'),
+          layer: String(n.layer || 'domain'),
+          loc: Number(n.loc) || 10,
+          is_file: Boolean(n.is_file || n.kind === 'File'),
+          layouts: this.clonePlainLayouts(n.layouts)
         })),
         edges: edges.map((e) => ({
-          source: e.source,
-          target: e.target,
-          type: e.edge_type
+          source: String(e.source),
+          target: String(e.target),
+          type: e.edge_type ? String(e.edge_type) : 'Call',
+          relation: String(e.relation || e.edge_type || 'calls')
         })),
-        depth
+        depth: Number(depth) || 1
       }
     });
   }

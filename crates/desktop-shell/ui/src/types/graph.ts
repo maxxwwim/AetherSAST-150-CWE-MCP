@@ -41,9 +41,23 @@ export interface CveAnomalyRecord {
 export interface SymbolBubble {
   id: string;
   name: string;
-  kind: SymbolKind;
+  kind: SymbolKind | string;
   layer: string;
   file_path: string;
+  folder?: string;
+  symbol_type?: string;
+  stereotype?: string;
+  is_file?: boolean;
+  is_class?: boolean;
+  is_form?: boolean;
+  has_security_violation?: boolean;
+  birth_time?: number;
+  layouts?: {
+    obsidian?: { x: number; y: number };
+    system?: { x: number; y: number };
+    flow?: { x: number; y: number };
+    classes?: { x: number; y: number };
+  };
   line_number: number;
   loc: number;
   cyclomatic_complexity: number;
@@ -52,7 +66,8 @@ export interface SymbolBubble {
   docstring?: string;
   methods: AstMethod[];
   attributes: AstAttribute[];
-  anomalies: CveAnomalyRecord[];
+  anomalies?: CveAnomalyRecord[];
+  violations?: CveAnomalyRecord[];
   is_orphan: boolean;
   x: number;
   y: number;
@@ -63,8 +78,9 @@ export interface SymbolBubble {
 export interface AffiliationEdge {
   source: string;
   target: string;
-  edge_type: 'Call' | 'Import' | 'Data' | 'Error' | 'Test' | 'Layout';
-  weight: number;
+  edge_type?: 'Call' | 'Import' | 'Data' | 'Error' | 'Test' | 'Layout';
+  relation?: string;
+  weight?: number;
 }
 
 export interface AetherGraph {
