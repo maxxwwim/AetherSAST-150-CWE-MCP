@@ -21,9 +21,9 @@
   }
 </script>
 
-<header class="h-11 px-3 border-b border-white/5 bg-[#090b10]/90 backdrop-blur-md flex items-center justify-between gap-3 select-none z-50">
+<header class="h-11 px-2 border-b border-white/5 bg-[#090b10]/90 backdrop-blur-md flex items-center justify-between gap-2 select-none z-50 overflow-hidden">
   <!-- Left: Brand & Project info -->
-  <div class="flex items-center gap-2.5 shrink-0">
+  <div class="flex items-center gap-1.5 shrink-0 min-w-0">
     <div class="flex items-center gap-1.5 font-bold text-xs tracking-tight text-white">
       <span class="text-sky-400 text-sm">🪐</span>
       <span class="bg-gradient-to-r from-sky-400 to-indigo-300 bg-clip-text text-transparent font-extrabold tracking-wide">
@@ -32,7 +32,7 @@
       <button
         onclick={() => (cockpitState.isHubModalOpen = true)}
         title="Ouvrir le Hub Projet (Analyser, Basculer Code/Vault, Export HTML)"
-        class="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-mono bg-sky-950/70 hover:bg-sky-900/80 border border-sky-500/30 text-sky-300 max-w-[150px] truncate cursor-pointer transition-colors"
+        class="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-mono bg-sky-950/70 hover:bg-sky-900/80 border border-sky-500/30 text-sky-300 max-w-[115px] truncate cursor-pointer transition-colors"
       >
         <FolderGit2 class="w-3 h-3 shrink-0" />
         <span class="truncate">{cockpitState.graph.project_name || 'Projet'}</span>
@@ -61,23 +61,23 @@
   </div>
 
   <!-- Center: Omnibox Command Search Trigger -->
-  <div class="flex-1 max-w-md mx-2">
+  <div class="flex-1 min-w-[110px] max-w-xs lg:max-w-sm mx-1">
     <button
       onclick={onSearchClick}
-      class="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 text-xs text-slate-400 transition-all group cursor-pointer shadow-xs"
+      class="w-full min-w-0 overflow-hidden flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 text-xs text-slate-400 transition-all group cursor-pointer shadow-xs"
     >
-      <div class="flex items-center gap-2">
-        <Search class="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-400 transition-colors" />
-        <span class="truncate">Rechercher symboles, routes, règles CWE...</span>
+      <div class="flex items-center gap-1.5 min-w-0 flex-1">
+        <Search class="w-3.5 h-3.5 shrink-0 text-slate-400 group-hover:text-sky-400 transition-colors" />
+        <span class="truncate">Rechercher symboles, CWE...</span>
       </div>
-      <kbd class="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono rounded bg-white/10 text-slate-300 border border-white/10">
+      <kbd class="hidden xl:inline-block shrink-0 px-1.5 py-0.5 text-[10px] font-mono rounded bg-white/10 text-slate-300 border border-white/10">
         ⌘K
       </kbd>
     </button>
   </div>
 
   <!-- Right: Tooling & Quick Modals -->
-  <div class="flex items-center gap-1.5 shrink-0">
+  <div class="flex items-center gap-1 shrink-0">
     <!-- Vision Modes -->
     <div class="hidden lg:flex items-center bg-white/[0.03] border border-white/10 rounded-md p-0.5 gap-0.5">
       <button

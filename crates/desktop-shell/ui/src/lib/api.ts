@@ -122,12 +122,12 @@ export class AetherApiClient {
   }
 
   async getFileContent(path: string): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/file_content`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    });
+    const res = await fetch(`${this.baseUrl}/api/file_content?path=${encodeURIComponent(path)}`);
     return res.json();
+  }
+
+  getRawFileUrl(path: string): string {
+    return `${this.baseUrl}/api/raw_file?path=${encodeURIComponent(path)}`;
   }
 
   async surfaceScan(req: {

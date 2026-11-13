@@ -57,9 +57,12 @@ export class AetherEngine {
   private lastActiveSymbolId: string | null = null;
   private lastLodLevel = 1;
   private lastFitTick = 0;
+  private lastFocusTick = 0;
+  private lastFilterVersion = 0;
   private hoveredNodeId: string | null = null;
   private hoveredFolder: string | null = null;
   private selectedFolder: string | null = null;
+  private folderPillBounds: { folder: string; x: number; y: number; w: number; h: number }[] = [];
 
   // Mouse interaction state
   private isDragging = false;
@@ -67,6 +70,10 @@ export class AetherEngine {
   private draggedNodeId: string | null = null;
   private dragStartX = 0;
   private dragStartY = 0;
+  private pointerDownX = 0;
+  private pointerDownY = 0;
+  private pointerDownHitId: string | null = null;
+  private pointerDownOnCanvas = false;
   private resizeHandler = () => this.handleResize();
 
   constructor(
@@ -308,9 +315,11 @@ export class AetherEngine {
     const mode = this.state.visionMode;
     const activeId = this.state.activeSymbol?.id || null;
     const lod = this.state.lodLevel;
+    const disabledLayers = this.state.disabledLayers;
     this.lastVisionMode = mode;
     this.lastActiveSymbolId = activeId;
     this.lastLodLevel = lod;
+    this.lastFilterVersion = this.state.filterVersion;
 
     this.activeNeighbors.clear();
     if (mode === 'xray' && activeId) {
@@ -366,6 +375,11 @@ export class AetherEngine {
         r *= 1.3;
       }
 
+      if (disabledLayers[n.layer || 'utility']) {
+        alpha = 0.04;
+        r *= 0.45;
+      }
+
       this.instanceData[offset + 2] = r;
       this.instanceData[offset + 3] = col.r;
       this.instanceData[offset + 4] = col.g;
@@ -415,20 +429,54 @@ export class AetherEngine {
   }
 
   private pickNode(sx: number, sy: number): SymbolBubble | null {
-    const world = this.screenToWorld(sx, sy);
     const nodes = this.state.graph.nodes;
-    const hitRadius = 28 / this.camera.zoom;
-    const hitRadius2 = hitRadius * hitRadius;
+    if (!nodes || nodes.length === 0) return null;
 
-    for (let i = nodes.length - 1; i >= 0; i--) {
+    const zoom = this.camera.zoom;
+    const zoomFactor = Math.max(0.85, Math.min(2.5, 1.0 / Math.sqrt(Math.max(0.08, Math.min(3.5, zoom)))));
+    const activeId = this.state.activeSymbol?.id || null;
+    const disabledLayers = this.state.disabledLayers;
+    const isXray = this.state.visionMode === 'xray' && this.activeNeighbors.size > 0;
+
+    let bestNode: SymbolBubble | null = null;
+    let bestScore = Infinity;
+
+    for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
-      const dx = n.x - world.x;
-      const dy = n.y - world.y;
-      if (dx * dx + dy * dy <= hitRadius2) {
-        return n;
+      if (disabledLayers[n.layer || 'utility']) continue;
+      if (isXray && !this.activeNeighbors.has(n.id)) continue;
+
+      const p = this.worldToScreen(n.x, n.y);
+      if (p.x < -60 || p.x > this.logicalWidth + 60 || p.y < -60 || p.y > this.logicalHeight + 60) {
+        continue;
+      }
+
+      const { baseRadius } = this.classifyNode(n);
+      const scaleMult = n.id === activeId ? 1.65 : n.id === this.hoveredNodeId ? 1.35 : 1.0;
+      const visualR = baseRadius * scaleMult * 2.8 * zoomFactor * zoom;
+      const hitPx = Math.max(13, visualR + 8);
+      const d = Math.hypot(p.x - sx, p.y - sy);
+      if (d <= hitPx) {
+        const priorityBias = n.id === activeId ? 0.65 : n.is_file || n.is_class ? 0.8 : 1.0;
+        const score = d * priorityBias;
+        if (score < bestScore) {
+          bestScore = score;
+          bestNode = n;
+        }
       }
     }
-    return null;
+    return bestNode;
+  }
+
+  public focusSymbol(symbolId: string) {
+    const node = this.nodeMap.get(symbolId);
+    if (!node) return;
+    this.camera.targetX = node.x;
+    this.camera.targetY = node.y;
+    if (this.camera.targetZoom < 0.72) {
+      this.camera.targetZoom = 0.85;
+    }
+    this.physics.wake(30);
   }
 
   private setupMouseEvents() {
@@ -454,23 +502,54 @@ export class AetherEngine {
     }, { passive: false });
 
     this.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (e.button !== 0) return;
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
       this.dragStartX = sx;
       this.dragStartY = sy;
+      this.pointerDownX = sx;
+      this.pointerDownY = sy;
+      this.pointerDownOnCanvas = true;
+      const hit = this.pickNode(sx, sy);
+      this.pointerDownHitId = hit ? hit.id : null;
+    });
 
+    this.canvas.addEventListener('dblclick', (e: MouseEvent) => {
+      const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
       const hit = this.pickNode(sx, sy);
       if (hit) {
-        this.isDraggingNode = true;
-        this.draggedNodeId = hit.id;
-        const world = this.screenToWorld(sx, sy);
-        this.physics.drag(hit.id, world.x, world.y);
-      } else {
-        this.isDragging = true;
+        this.selectedFolder = hit.folder || hit.cluster_id || null;
+        this.state.selectSymbol(hit.id, true);
+        this.refreshVisionColors(true);
+        return;
+      }
+      const folder = this.findFolderAt(sx, sy);
+      if (folder) {
+        this.selectedFolder = folder;
+        const cl = this.clusters.get(folder);
+        if (cl) {
+          this.camera.targetX = cl.cx;
+          this.camera.targetY = cl.cy;
+          if (this.camera.targetZoom < 0.55) this.camera.targetZoom = 0.65;
+        }
+        this.state.selectFolder(folder, true);
       }
     });
 
     window.addEventListener('pointermove', (e: PointerEvent) => {
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
+
+      if (this.pointerDownOnCanvas && !this.isDraggingNode && !this.isDragging) {
+        if (Math.hypot(sx - this.pointerDownX, sy - this.pointerDownY) >= 6) {
+          if (this.pointerDownHitId) {
+            this.isDraggingNode = true;
+            this.draggedNodeId = this.pointerDownHitId;
+            const world = this.screenToWorld(sx, sy);
+            this.physics.drag(this.pointerDownHitId, world.x, world.y);
+          } else {
+            this.isDragging = true;
+          }
+        }
+      }
 
       if (this.isDraggingNode && this.draggedNodeId) {
         const world = this.screenToWorld(sx, sy);
@@ -502,8 +581,10 @@ export class AetherEngine {
     });
 
     window.addEventListener('pointerup', (e: PointerEvent) => {
+      if (!this.pointerDownOnCanvas && !this.isDraggingNode && !this.isDragging) return;
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
-      const wasDraggingNode = this.isDraggingNode;
+      const wasDownOnCanvas = this.pointerDownOnCanvas;
+      const downHitId = this.pointerDownHitId;
 
       if (this.isDraggingNode) {
         this.isDraggingNode = false;
@@ -513,23 +594,37 @@ export class AetherEngine {
       if (this.isDragging) {
         this.isDragging = false;
       }
+      this.pointerDownOnCanvas = false;
+      this.pointerDownHitId = null;
 
-      const dist = Math.hypot(sx - this.dragStartX, sy - this.dragStartY);
-      if (dist < 4 && (wasDraggingNode || e.target === this.canvas)) {
-        const hit = this.pickNode(sx, sy);
+      const dist = Math.hypot(sx - this.pointerDownX, sy - this.pointerDownY);
+      if (wasDownOnCanvas && dist < 7) {
+        const hit = this.pickNode(sx, sy) || (downHitId ? this.nodeMap.get(downHitId) || null : null);
         if (hit) {
           this.selectedFolder = hit.folder || hit.cluster_id || null;
-          this.state.selectedFolder = this.selectedFolder;
-          this.state.selectSymbol(hit.id);
+          this.state.selectSymbol(hit.id, false);
+          this.refreshVisionColors(true);
         } else {
-          this.selectedFolder = this.findFolderAt(sx, sy);
-          this.state.selectedFolder = this.selectedFolder;
+          const folder = this.findFolderAt(sx, sy);
+          this.selectedFolder = folder;
+          if (folder) {
+            this.state.selectFolder(folder, false);
+          } else {
+            this.state.clearSelection();
+          }
+          this.refreshVisionColors(true);
         }
       }
     });
   }
 
   private findFolderAt(sx: number, sy: number): string | null {
+    for (let i = this.folderPillBounds.length - 1; i >= 0; i--) {
+      const b = this.folderPillBounds[i];
+      if (sx >= b.x && sx <= b.x + b.w && sy >= b.y && sy <= b.y + b.h) {
+        return b.folder;
+      }
+    }
     const world = this.screenToWorld(sx, sy);
     let best: string | null = null;
     let bestR = Infinity;
@@ -566,12 +661,22 @@ export class AetherEngine {
         this.fitCameraToGraph(false);
       }
 
+      if (this.lastFocusTick !== this.state.focusRequestTick) {
+        this.lastFocusTick = this.state.focusRequestTick;
+        if (this.state.focusTargetId) {
+          this.focusSymbol(this.state.focusTargetId);
+        }
+      }
+
+      this.selectedFolder = this.state.selectedFolder;
+
       if (this.lastLodLevel !== this.state.lodLevel) {
         this.physics.setDepth(this.state.lodLevel);
         this.refreshVisionColors(true);
       } else if (
         this.lastVisionMode !== this.state.visionMode ||
-        this.lastActiveSymbolId !== (this.state.activeSymbol?.id || null)
+        this.lastActiveSymbolId !== (this.state.activeSymbol?.id || null) ||
+        this.lastFilterVersion !== this.state.filterVersion
       ) {
         this.refreshVisionColors(true);
       }
@@ -652,6 +757,7 @@ export class AetherEngine {
   }
 
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
+    this.folderPillBounds = [];
     if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();
@@ -748,6 +854,7 @@ export class AetherEngine {
       const pillH = 20;
       const pillX = b.cx - pillW * 0.5;
       const pillY = b.topY - pillH - 8;
+      this.folderPillBounds.push({ folder: b.folder, x: pillX, y: pillY, w: pillW, h: pillH });
 
       // Tether line from cellular crest to pill badge
       ctx.beginPath();
@@ -780,6 +887,8 @@ export class AetherEngine {
 
     const isXray = this.state.visionMode === 'xray' && this.state.activeSymbol;
     const activeId = this.state.activeSymbol?.id;
+    const disabledLayers = this.state.disabledLayers;
+    const disabledRelations = this.state.disabledRelations;
 
     const pCalls = new Path2D();
     const pQueries = new Path2D();
@@ -795,6 +904,20 @@ export class AetherEngine {
       const s = this.nodeMap.get(e.source);
       const t = this.nodeMap.get(e.target);
       if (!s || !t) continue;
+      if (disabledLayers[s.layer || 'utility'] || disabledLayers[t.layer || 'utility']) continue;
+
+      const rel = String(e.relation || e.edge_type || 'calls').toLowerCase();
+      if (rel.includes('violat') || e.cve_id) {
+        if (disabledRelations['violates']) continue;
+      } else if (rel === 'queries' || t.layer === 'database') {
+        if (disabledRelations['queries']) continue;
+      } else if (rel.includes('realtime') || rel === 'submits') {
+        if (disabledRelations['imports']) continue;
+      } else if (rel.includes('import') || rel === 'contains') {
+        if (disabledRelations['imports']) continue;
+      } else {
+        if (disabledRelations['calls']) continue;
+      }
 
       const p1 = this.worldToScreen(s.x, s.y);
       const p2 = this.worldToScreen(t.x, t.y);
@@ -807,13 +930,12 @@ export class AetherEngine {
         continue;
       }
 
-      const rel = String(e.relation || e.edge_type || 'calls').toLowerCase();
       const sFolder = s.folder || s.cluster_id;
       const tFolder = t.folder || t.cluster_id;
       const isCross = sFolder && tFolder && sFolder !== tFolder;
 
       let targetPath = pCalls;
-      if (rel.includes('violat')) { targetPath = pViolates; hasViolates = true; }
+      if (rel.includes('violat') || e.cve_id) { targetPath = pViolates; hasViolates = true; }
       else if (rel === 'queries' || t.layer === 'database') { targetPath = pQueries; hasQueries = true; }
       else if (rel.includes('realtime') || rel === 'submits') { targetPath = pRealtime; hasRealtime = true; }
       else { hasCalls = true; }
@@ -871,8 +993,10 @@ export class AetherEngine {
     ctx.textAlign = 'center';
 
     let drawn = 0;
+    const disabledLayers = this.state.disabledLayers;
     for (let i = 0; i < nodes.length && drawn < 220; i++) {
       const n = nodes[i];
+      if (disabledLayers[n.layer || 'utility']) continue;
       const isFocus = n.id === activeId || n.id === this.hoveredNodeId;
       if (isXray && !this.activeNeighbors.has(n.id)) continue;
       if (!isFocus && zoom < 0.30) continue;

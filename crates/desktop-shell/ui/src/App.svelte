@@ -10,6 +10,7 @@
   import SurfaceScannerModal from './components/SurfaceScannerModal.svelte';
   import DocReaderDrawer from './components/DocReaderDrawer.svelte';
   import ProjectHubModal from './components/ProjectHubModal.svelte';
+  import SynthesisHud from './components/SynthesisHud.svelte';
   import { cockpitState } from './state/graphState.svelte';
   import { api } from './lib/api';
   import { onMount } from 'svelte';
@@ -35,6 +36,7 @@
   <div class="relative flex-1 w-full h-full overflow-hidden">
     <AetherCanvas />
     <VisionModesDeck />
+    <SynthesisHud />
     <InspectorDrawer />
     <CommandPalette />
     <BountyModal />

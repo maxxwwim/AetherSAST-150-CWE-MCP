@@ -65,15 +65,22 @@ export class CockpitState {
   activeLayout = $state<'Z-1' | 'Z-2' | 'Z-3' | 'Z-4'>('Z-2');
   visionMode = $state<'standard' | 'xray' | 'heatmap' | 'deadcode'>('standard');
   viewMode = $state<'code' | 'vault'>('code');
+  docMode = $state<'system' | 'symbol' | 'folder'>('system');
   searchQuery = $state('');
   tasks = $state<TaskItem[]>([]);
   settings = $state<CockpitSettings>(loadSavedSettings());
   cveCatalogue = $state.raw<any[]>([]);
   fitRequestTick = $state(0);
+  focusTargetId = $state<string | null>(null);
+  focusRequestTick = $state(0);
+  disabledLayers = $state<Record<string, boolean>>({});
+  disabledRelations = $state<Record<string, boolean>>({});
+  filterVersion = $state(0);
 
   // Modals & Panels Visibility
   isInspectorOpen = $state(false);
   isDocPanelOpen = $state(false);
+  isSynthesisOpen = $state(false);
   isCommandPaletteOpen = $state(false);
   isHubModalOpen = $state(false);
   isBountyModalOpen = $state(false);
@@ -96,6 +103,41 @@ export class CockpitState {
 
   requestCameraFit() {
     this.fitRequestTick += 1;
+  }
+
+  requestFocusSymbol(symbolId: string) {
+    this.focusTargetId = symbolId;
+    this.focusRequestTick += 1;
+  }
+
+  toggleLayer(layer: string) {
+    this.disabledLayers = {
+      ...this.disabledLayers,
+      [layer]: !this.disabledLayers[layer],
+    };
+    this.filterVersion += 1;
+  }
+
+  toggleRelation(category: string) {
+    this.disabledRelations = {
+      ...this.disabledRelations,
+      [category]: !this.disabledRelations[category],
+    };
+    this.filterVersion += 1;
+  }
+
+  resetFilters() {
+    this.disabledLayers = {};
+    this.disabledRelations = {};
+    this.filterVersion += 1;
+  }
+
+  openDoc(mode?: 'system' | 'symbol' | 'folder') {
+    if (mode) this.docMode = mode;
+    else if (this.activeSymbol) this.docMode = 'symbol';
+    else if (this.selectedFolder) this.docMode = 'folder';
+    else this.docMode = 'system';
+    this.isDocPanelOpen = true;
   }
 
   openPromptModal(tab: 'context' | 'master' | 'sysprompt' | 'mcp' = 'context') {
@@ -142,18 +184,90 @@ export class CockpitState {
 
   // Actions
   setGraph(g: AetherGraph) {
-    this.graph = g;
-    if (g.nodes.length > 0 && !this.activeSymbol) {
-      this.activeSymbol = g.nodes[0];
+    const rawNodes = Array.isArray(g?.nodes) ? g.nodes : [];
+    const normalizedNodes = rawNodes.map((rawNode) => {
+      const meta = rawNode.metadata || {};
+      const methods = (rawNode.methods && rawNode.methods.length > 0 ? rawNode.methods : meta.methods || []).map((m) => ({
+        ...m,
+        signature:
+          m.signature ||
+          `${m.is_async ? 'async ' : ''}${m.name}(${m.args || ''})${m.returns ? ` -> ${m.returns}` : ''}`,
+        visibility: m.visibility || '+',
+        line: m.line ?? rawNode.line_number ?? 1,
+      }));
+      const attributes = (rawNode.attributes && rawNode.attributes.length > 0
+        ? rawNode.attributes
+        : meta.attributes || []
+      ).map((a) => ({
+        ...a,
+        attr_type: a.attr_type || a.type || 'any',
+        visibility: a.visibility || '+',
+      }));
+      const rawAnomalies =
+        rawNode.anomalies && rawNode.anomalies.length > 0 ? rawNode.anomalies : meta.cve_anomalies || [];
+      const anomalies = rawAnomalies.map((a) => ({
+        ...a,
+        cwe_class: a.cwe_class || a.cve_id || a.rule_id || 'CWE',
+        title: a.title || a.rule_id || a.cve_id || 'Security Alert',
+        description: a.description || a.message || '',
+      }));
+
+      return {
+        ...rawNode,
+        folder: rawNode.folder || rawNode.cluster_id || 'root',
+        cluster_id: rawNode.cluster_id || rawNode.folder || 'root',
+        loc: rawNode.loc || rawNode.lines_count || meta.lines || 1,
+        cyclomatic_complexity: rawNode.cyclomatic_complexity || rawNode.complexity || 1,
+        is_orphan: Boolean(
+          rawNode.is_orphan ?? rawNode.is_dead_code ?? (rawNode.in_degree === 0 && rawNode.out_degree === 0)
+        ),
+        methods,
+        attributes,
+        anomalies,
+      };
+    });
+
+    this.graph = {
+      ...g,
+      nodes: normalizedNodes,
+      edges: Array.isArray(g?.edges) ? g.edges : [],
+      clusters: g?.clusters || {},
+    };
+    if (normalizedNodes.length > 0 && !this.activeSymbol) {
+      this.activeSymbol = normalizedNodes[0];
     }
   }
 
-  selectSymbol(symbolId: string) {
+  selectSymbol(symbolId: string, focusCamera = false) {
     const found = this.graph.nodes.find((n) => n.id === symbolId);
     if (found) {
       this.activeSymbol = found;
+      this.selectedFolder = found.folder || found.cluster_id || null;
       this.isInspectorOpen = true;
+      if (this.docMode !== 'system') {
+        this.docMode = 'symbol';
+      }
+      if (focusCamera) {
+        this.requestFocusSymbol(symbolId);
+      }
     }
+  }
+
+  selectFolder(folderName: string, openDoc = false) {
+    this.selectedFolder = folderName;
+    this.activeSymbol = null;
+    this.isInspectorOpen = true;
+    if (openDoc) {
+      this.docMode = 'folder';
+      this.isDocPanelOpen = true;
+    } else if (this.docMode !== 'system') {
+      this.docMode = 'folder';
+    }
+  }
+
+  clearSelection() {
+    this.activeSymbol = null;
+    this.selectedFolder = null;
   }
 
   toggleInspector() {
@@ -161,6 +275,9 @@ export class CockpitState {
   }
 
   toggleDocPanel() {
+    if (!this.isDocPanelOpen) {
+      this.docMode = this.activeSymbol ? 'symbol' : this.selectedFolder ? 'folder' : 'system';
+    }
     this.isDocPanelOpen = !this.isDocPanelOpen;
   }
 }

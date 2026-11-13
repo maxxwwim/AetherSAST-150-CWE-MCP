@@ -14,34 +14,60 @@ export type SymbolKind =
 
 export interface AstMethod {
   name: string;
-  signature: string;
-  visibility: string;
-  line: number;
+  signature?: string;
+  args?: string;
+  returns?: string;
+  is_async?: boolean;
+  calls?: string[];
+  docstring?: string;
+  visibility?: string;
+  line?: number;
 }
 
 export interface AstAttribute {
   name: string;
-  attr_type: string;
-  visibility: string;
+  attr_type?: string;
+  type?: string;
+  visibility?: string;
 }
 
 export interface CveAnomalyRecord {
+  rule_id?: string;
   cve_id: string;
-  cwe_class: string;
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
-  title: string;
-  description: string;
+  cwe_class?: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | string;
+  title?: string;
+  description?: string;
+  message?: string;
   remediation: string;
   file_path: string;
   line_number: number;
   snippet?: string;
   transgression_data?: string;
+  transmitted_data?: string;
+  transmitted_type?: string;
+  is_reachable?: boolean;
+  exploit_path?: string[];
+}
+
+export interface SymbolMetadata {
+  lines?: number;
+  file_type?: string;
+  methods?: AstMethod[];
+  attributes?: AstAttribute[];
+  raw_content?: string;
+  blake3_hash?: string;
+  lock_verified?: boolean;
+  ears_count?: number;
+  violations?: string[];
+  cve_anomalies?: CveAnomalyRecord[];
 }
 
 export interface SymbolBubble {
   id: string;
   name: string;
   kind: SymbolKind | string;
+  galaxy?: string;
   layer: string;
   file_path: string;
   folder?: string;
@@ -50,6 +76,7 @@ export interface SymbolBubble {
   is_file?: boolean;
   is_class?: boolean;
   is_form?: boolean;
+  is_dead_code?: boolean;
   has_security_violation?: boolean;
   birth_time?: number;
   layouts?: {
@@ -60,7 +87,9 @@ export interface SymbolBubble {
   };
   line_number: number;
   loc: number;
+  lines_count?: number;
   cyclomatic_complexity: number;
+  complexity?: number;
   in_degree: number;
   out_degree: number;
   docstring?: string;
@@ -68,6 +97,7 @@ export interface SymbolBubble {
   attributes: AstAttribute[];
   anomalies?: CveAnomalyRecord[];
   violations?: CveAnomalyRecord[];
+  metadata?: SymbolMetadata;
   is_orphan: boolean;
   x: number;
   y: number;
@@ -78,9 +108,12 @@ export interface SymbolBubble {
 export interface AffiliationEdge {
   source: string;
   target: string;
-  edge_type?: 'Call' | 'Import' | 'Data' | 'Error' | 'Test' | 'Layout';
+  edge_type?: 'Call' | 'Import' | 'Data' | 'Error' | 'Test' | 'Layout' | string;
   relation?: string;
   weight?: number;
+  cve_id?: string;
+  severity?: string;
+  transmitted_data?: string;
 }
 
 export interface AetherGraph {
