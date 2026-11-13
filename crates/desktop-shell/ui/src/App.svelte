@@ -11,6 +11,9 @@
   import DocReaderDrawer from './components/DocReaderDrawer.svelte';
   import ProjectHubModal from './components/ProjectHubModal.svelte';
   import SynthesisHud from './components/SynthesisHud.svelte';
+  import CanvasTooltip from './components/CanvasTooltip.svelte';
+  import AiChatDrawer from './components/AiChatDrawer.svelte';
+  import McpControlModal from './components/McpControlModal.svelte';
   import { cockpitState } from './state/graphState.svelte';
   import { api } from './lib/api';
   import { onMount } from 'svelte';
@@ -35,6 +38,7 @@
   <HeaderDeck />
   <div class="relative flex-1 w-full h-full overflow-hidden">
     <AetherCanvas />
+    <CanvasTooltip />
     <VisionModesDeck />
     <SynthesisHud />
     <InspectorDrawer />
@@ -45,5 +49,7 @@
     <SurfaceScannerModal />
     <DocReaderDrawer />
     <ProjectHubModal />
+    <AiChatDrawer />
+    <McpControlModal />
   </div>
 </div>

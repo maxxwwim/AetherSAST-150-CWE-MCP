@@ -57,26 +57,123 @@ export class AetherApiClient {
     return res.json();
   }
 
-  async sendChatMessage(text: string, thought?: string, targetSymbol?: string): Promise<any> {
+  async sendChatMessage(
+    text: string,
+    sender: 'user' | 'ai' = 'user',
+    targetSymbol?: string
+  ): Promise<{ status: string; message?: any }> {
     const res = await fetch(`${this.baseUrl}/api/ai/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, thought, target_symbol: targetSymbol }),
+      body: JSON.stringify({ text, sender, target_symbol: targetSymbol }),
     });
     return res.json();
   }
 
-  async getChatHistory(): Promise<any[]> {
+  async getChatHistory(): Promise<{ messages: any[]; agent_status: string }> {
     const res = await fetch(`${this.baseUrl}/api/ai/chat`);
     return res.json();
   }
 
-  async teleportCamera(target: string, action?: string, details?: string): Promise<any> {
+  async clearChatHistory(): Promise<{ status: string }> {
+    const res = await fetch(`${this.baseUrl}/api/ai/chat/clear`, { method: 'POST' });
+    return res.json();
+  }
+
+  async getTelemetry(): Promise<{
+    telemetry: {
+      target: string;
+      action: string;
+      details: string;
+      timestamp: number;
+      agent_id?: string;
+      agent_name?: string;
+      color?: string;
+    } | null;
+    agents?: {
+      target: string;
+      action: string;
+      details: string;
+      timestamp: number;
+      agent_id?: string;
+      agent_name?: string;
+      color?: string;
+    }[];
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/ai/telemetry`);
+    return res.json();
+  }
+
+  async clearTelemetry(): Promise<{ status: string }> {
+    const res = await fetch(`${this.baseUrl}/api/ai/telemetry`, { method: 'DELETE' });
+    return res.json();
+  }
+
+  async cancelAi(): Promise<{ status: string; message?: string }> {
+    const res = await fetch(`${this.baseUrl}/api/ai/cancel`, { method: 'POST' });
+    return res.json();
+  }
+
+  async newAiSession(): Promise<{ status: string; message?: string }> {
+    const res = await fetch(`${this.baseUrl}/api/ai/new_session`, { method: 'POST' });
+    return res.json();
+  }
+
+  async getAiStatus(): Promise<{ status: string }> {
+    const res = await fetch(`${this.baseUrl}/api/ai/status`);
+    return res.json();
+  }
+
+  async launchCli(tool: string, projectPath?: string, prompt?: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/ai/launch_cli`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool, project_path: projectPath, prompt }),
+    });
+    return res.json();
+  }
+
+  async teleportCamera(
+    target: string,
+    action?: string,
+    details?: string,
+    agent?: { agent_id?: string; agent_name?: string; color?: string }
+  ): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/ai/telemetry`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target, action, details }),
+      body: JSON.stringify({
+        target,
+        action,
+        details,
+        agent_id: agent?.agent_id,
+        agent_name: agent?.agent_name,
+        color: agent?.color,
+      }),
     });
+    return res.json();
+  }
+
+  async initProject(
+    path: string,
+    stack: string,
+    topology: 'local' | 'dissociated' = 'local'
+  ): Promise<{ status: string; message: string; created_dirs: string[] }> {
+    const res = await fetch(`${this.baseUrl}/api/init_project`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, stack, topology }),
+    });
+    return res.json();
+  }
+
+  async pickWorkspace(): Promise<{ status: string; workspace?: string }> {
+    const res = await fetch(`${this.baseUrl}/api/dialog/pick_workspace`, { method: 'POST' });
+    return res.json();
+  }
+
+  async pickProject(): Promise<{ status: string; project_path?: string; graph?: AetherGraph }> {
+    const res = await fetch(`${this.baseUrl}/api/dialog/pick_project`, { method: 'POST' });
     return res.json();
   }
 

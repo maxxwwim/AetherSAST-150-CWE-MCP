@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cockpitState } from '../state/graphState.svelte';
+  import { cockpitState, normalizeEdgeRelation } from '../state/graphState.svelte';
   import { api } from '../lib/api';
   import type { AffiliationEdge, CveAnomalyRecord, SymbolBubble, TaskItem } from '../types/graph';
   import {
@@ -20,7 +20,10 @@
     RefreshCw,
     Lock,
     Search,
-    Layers
+    Layers,
+    Copy,
+    Check,
+    Radio
   } from '@lucide/svelte';
 
   const symbol = $derived(cockpitState.activeSymbol);
@@ -41,7 +44,7 @@
 
   const isFolderMode = $derived(!symbol && Boolean(selectedFolder));
 
-  // Symbol incident edges
+  // Symbol or Folder incident edges
   const incomingEdges = $derived.by(() => {
     const edges = cockpitState.graph.edges;
     if (symbol) {
@@ -76,44 +79,151 @@
     if (!symbol?.file_path) return [] as SymbolBubble[];
     return cockpitState.graph.nodes
       .filter((n) => n.file_path === symbol.file_path && n.id !== symbol.id)
-      .slice(0, 24);
+      .slice(0, 32);
   });
 
   const folderFiles = $derived.by(() => folderNodes.filter((n) => n.is_file || n.kind === 'File'));
   const folderClasses = $derived.by(() => folderNodes.filter((n) => n.is_class || n.kind === 'Class' || n.kind === 'Struct'));
   const folderTotalLoc = $derived.by(() => folderNodes.reduce((acc, n) => acc + (n.loc || n.lines_count || 0), 0));
 
+  // Lazy AST comment extraction when active symbol has no preloaded docstring
+  let lazyAstComment = $state('');
+  let lazyLoadedForId = $state('');
+
+  $effect(() => {
+    const sym = cockpitState.activeSymbol;
+    if (!sym || sym.docstring || !sym.file_path || sym.is_file) {
+      lazyAstComment = '';
+      lazyLoadedForId = sym?.id || '';
+      return;
+    }
+    if (lazyLoadedForId === sym.id) return;
+    lazyLoadedForId = sym.id;
+    api
+      .getFileContent(sym.file_path)
+      .then((res) => {
+        if (res?.status !== 'ok' || !res.content || !sym.line_number) return;
+        const lines = String(res.content).split('\n');
+        const idx = Math.min(lines.length - 1, sym.line_number - 1);
+        const out: string[] = [];
+        for (let i = idx - 1; i >= 0 && i >= idx - 25; i--) {
+          const t = lines[i].trim();
+          if (!t) {
+            if (out.length > 0) break;
+            continue;
+          }
+          if (t.startsWith('#[') || t.startsWith('#![')) continue;
+          if (t.startsWith('///') || t.startsWith('//!')) out.push(t.slice(3).trim());
+          else if (t.startsWith('//')) out.push(t.slice(2).trim());
+          else if (t.startsWith('*') || t.startsWith('/**') || t.startsWith('*/')) {
+            const c = t.replace(/^\/?\*+\/?/, '').trim();
+            if (c) out.push(c);
+          } else if (t.startsWith('#')) out.push(t.slice(1).trim());
+          else break;
+        }
+        lazyAstComment = out.reverse().join('\n');
+      })
+      .catch(() => {});
+  });
+
+  // Rich reconstructed signature for Functions / Methods / Classes
+  const fullDeclaration = $derived.by(() => {
+    if (!symbol) return '';
+    if (symbol.methods && symbol.methods.length > 0 && !symbol.is_class && !symbol.is_file) {
+      const m = symbol.methods[0];
+      return `${m.is_async ? 'async ' : ''}fn ${m.name}(${m.args || ''})${m.returns ? ` -> ${m.returns}` : ''}`;
+    }
+    if (symbol.is_class) {
+      return `${symbol.stereotype || 'class'} ${symbol.name}  // ${symbol.attributes?.length || 0} attributs, ${symbol.methods?.length || 0} méthodes`;
+    }
+    if (!symbol.is_file) {
+      return `${symbol.stereotype || symbol.kind} ${symbol.name}()  // L${symbol.line_number || 1}`;
+    }
+    return '';
+  });
+
+  // Security alerts attached to active target, child symbols in the same file, or folder
+  const activeAnomalies = $derived.by(() => {
+    const out: CveAnomalyRecord[] = [];
+    const seen = new Set<string>();
+    const pushAll = (list?: CveAnomalyRecord[]) => {
+      if (!list) return;
+      for (const a of list) {
+        const key = `${a.rule_id}:${a.line_number}:${a.message}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          out.push(a);
+        }
+      }
+    };
+    if (symbol) {
+      pushAll(symbol.anomalies);
+      if (symbol.is_file && symbol.file_path) {
+        for (const n of cockpitState.graph.nodes) {
+          if (n.file_path === symbol.file_path) pushAll(n.anomalies);
+        }
+        for (const e of outgoingEdges) {
+          const child = nodeMap.get(e.target);
+          if (child) pushAll(child.anomalies);
+        }
+      }
+      return out;
+    }
+    if (isFolderMode) {
+      for (const n of folderNodes) pushAll(n.anomalies);
+      return out;
+    }
+    return out;
+  });
+
+  const hasSecurityAlert = $derived(
+    activeAnomalies.length > 0 ||
+      Boolean(symbol?.has_security_violation) ||
+      (Boolean(symbol?.is_file) && siblingSymbols.some((s) => s.has_security_violation))
+  );
+
   // Relations filter inside Flux tab
   let relationQuery = $state('');
+  let relationTypeFilter = $state('all');
+
+  const availableRelTypes = $derived.by(() => {
+    const set = new Set<string>();
+    for (const e of incomingEdges) set.add(normalizeEdgeRelation(e.relation || e.edge_type));
+    for (const e of outgoingEdges) set.add(normalizeEdgeRelation(e.relation || e.edge_type));
+    return Array.from(set);
+  });
+
   const filteredIncoming = $derived.by(() => {
     const q = relationQuery.trim().toLowerCase();
-    const list = incomingEdges;
-    if (!q) return list;
-    return list.filter((e) => {
+    return incomingEdges.filter((e) => {
+      const rel = normalizeEdgeRelation(e.relation || e.edge_type);
+      if (relationTypeFilter !== 'all' && rel !== relationTypeFilter) return false;
+      if (!q) return true;
       const n = nodeMap.get(e.source);
       return (
         e.source.toLowerCase().includes(q) ||
         (n?.name || '').toLowerCase().includes(q) ||
-        (e.relation || '').toLowerCase().includes(q)
+        rel.includes(q)
       );
     });
   });
 
   const filteredOutgoing = $derived.by(() => {
     const q = relationQuery.trim().toLowerCase();
-    const list = outgoingEdges;
-    if (!q) return list;
-    return list.filter((e) => {
+    return outgoingEdges.filter((e) => {
+      const rel = normalizeEdgeRelation(e.relation || e.edge_type);
+      if (relationTypeFilter !== 'all' && rel !== relationTypeFilter) return false;
+      if (!q) return true;
       const n = nodeMap.get(e.target);
       return (
         e.target.toLowerCase().includes(q) ||
         (n?.name || '').toLowerCase().includes(q) ||
-        (e.relation || '').toLowerCase().includes(q)
+        rel.includes(q)
       );
     });
   });
 
-  // Mini-DAG top callers & callees
+  // Mini-DAG top callers & callees (up to 5 each, with relation label)
   const miniInNodes = $derived.by(() => {
     const seen = new Set<string>();
     const res: { id: string; label: string; rel: string }[] = [];
@@ -124,9 +234,9 @@
       res.push({
         id: e.source,
         label: n?.name || e.source.split('::').pop()?.replace('file::', '') || e.source,
-        rel: e.relation || 'calls',
+        rel: normalizeEdgeRelation(e.relation || e.edge_type),
       });
-      if (res.length >= 4) break;
+      if (res.length >= 5) break;
     }
     return res;
   });
@@ -141,33 +251,47 @@
       res.push({
         id: e.target,
         label: n?.name || e.target.split('::').pop()?.replace('file::', '') || e.target,
-        rel: e.relation || 'calls',
+        rel: normalizeEdgeRelation(e.relation || e.edge_type),
       });
-      if (res.length >= 4) break;
+      if (res.length >= 5) break;
     }
     return res;
   });
 
-  // CVE tab filtering
-  let cveScope = $state<'target' | 'project'>('target');
-  const activeAnomalies = $derived.by(() => {
-    if (symbol?.anomalies && symbol.anomalies.length > 0) return symbol.anomalies;
-    if (isFolderMode) {
-      const list: CveAnomalyRecord[] = [];
-      for (const n of folderNodes) {
-        if (n.anomalies) list.push(...n.anomalies);
+  let mermaidCopied = $state(false);
+  function copyMermaidDiagram() {
+    const centerName = (symbol?.name || selectedFolder || 'Module').replace(/[^A-Za-z0-9_]/g, '_');
+    let code = `classDiagram\n  class ${centerName} {\n`;
+    if (symbol) {
+      for (const a of symbol.attributes || []) {
+        code += `    ${a.visibility || '+'}${a.attr_type || 'any'} ${a.name}\n`;
       }
-      return list;
+      for (const m of symbol.methods || []) {
+        code += `    ${m.visibility || '+'}${m.name}(${m.args || ''}) ${m.returns || ''}\n`;
+      }
     }
-    return [] as CveAnomalyRecord[];
-  });
+    code += `  }\n`;
+    for (const e of incomingEdges.slice(0, 12)) {
+      const s = (nodeMap.get(e.source)?.name || e.source).replace(/[^A-Za-z0-9_]/g, '_');
+      code += `  ${s} --> ${centerName} : ${e.relation || 'calls'}\n`;
+    }
+    for (const e of outgoingEdges.slice(0, 12)) {
+      const t = (nodeMap.get(e.target)?.name || e.target).replace(/[^A-Za-z0-9_]/g, '_');
+      code += `  ${centerName} --> ${t} : ${e.relation || 'calls'}\n`;
+    }
+    navigator.clipboard?.writeText(code);
+    mermaidCopied = true;
+    setTimeout(() => (mermaidCopied = false), 1500);
+  }
 
+  // CVE tab scope switcher
+  let cveScope = $state<'target' | 'project'>('target');
   const displayedCves = $derived.by(() => {
     if (cveScope === 'target' && activeAnomalies.length > 0) return activeAnomalies;
-    return cockpitState.allViolations.slice(0, 80);
+    return cockpitState.allViolations.slice(0, 100);
   });
 
-  // Tasks tab live sync
+  // Tasks live sync
   let tasksLoading = $state(false);
   let tasksError = $state('');
 
@@ -209,10 +333,11 @@
   }
 
   function formatRelColor(rel?: string): string {
-    const r = (rel || '').toLowerCase();
-    if (r.includes('violat')) return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+    const r = normalizeEdgeRelation(rel);
+    if (r === 'violates') return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
     if (r === 'queries') return 'bg-purple-500/20 text-purple-300 border-purple-500/40';
-    if (r.includes('import')) return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+    if (r === 'imports' || r === 'contains') return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+    if (r === 'realtime' || r === 'documents') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
     return 'bg-sky-500/15 text-sky-300 border-sky-500/35';
   }
 </script>
@@ -238,6 +363,11 @@
               <FolderOpen class="w-2.5 h-2.5" />
               {symbol.folder || symbol.cluster_id || 'root'}
             </button>
+            {#if activeAnomalies.length > 0 || symbol.has_security_violation}
+              <span class="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-rose-500/25 text-rose-200 border border-rose-500/50 animate-pulse">
+                🚨 {activeAnomalies.length || 1} CWE
+              </span>
+            {/if}
           </div>
           <h2 class="text-sm font-bold text-white truncate mt-1" title={symbol.name}>{symbol.name}</h2>
           <p class="text-[10px] font-mono text-slate-400 truncate" title={symbol.file_path}>
@@ -262,6 +392,14 @@
 
       <div class="flex items-center gap-1 shrink-0">
         {#if symbol}
+          <button
+            type="button"
+            onclick={() => (cockpitState.visionMode = cockpitState.visionMode === 'xray' ? 'standard' : 'xray')}
+            title="Activer / Couper le Tunnel X-Ray sur ce nœud"
+            class="p-1.5 rounded border cursor-pointer {cockpitState.visionMode === 'xray' ? 'bg-purple-500/25 border-purple-500/50 text-purple-200' : 'bg-white/5 hover:bg-purple-500/20 text-slate-300 border-white/10'}"
+          >
+            <Radio class="w-3.5 h-3.5" />
+          </button>
           <button
             type="button"
             onclick={() => cockpitState.requestFocusSymbol(symbol.id)}
@@ -311,35 +449,35 @@
       <button
         type="button"
         onclick={() => (cockpitState.activeTab = 'debrief')}
-        class="flex-1 py-2 px-1.5 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'debrief' ? 'border-sky-400 text-sky-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
+        class="flex-1 py-2 px-1 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'debrief' ? 'border-sky-400 text-sky-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
       >
         Débrief
       </button>
       <button
         type="button"
         onclick={() => (cockpitState.activeTab = 'uml')}
-        class="flex-1 py-2 px-1.5 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'uml' ? 'border-indigo-400 text-indigo-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
+        class="flex-1 py-2 px-1 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'uml' ? 'border-indigo-400 text-indigo-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
       >
         UML
       </button>
       <button
         type="button"
         onclick={() => (cockpitState.activeTab = 'relations')}
-        class="flex-1 py-2 px-1.5 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'relations' ? 'border-cyan-400 text-cyan-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
+        class="flex-1 py-2 px-1 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'relations' ? 'border-cyan-400 text-cyan-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
       >
         Flux ({incomingEdges.length + outgoingEdges.length})
       </button>
       <button
         type="button"
         onclick={() => (cockpitState.activeTab = 'cve')}
-        class="flex-1 py-2 px-1.5 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'cve' ? 'border-rose-400 text-rose-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
+        class="flex-1 py-2 px-1 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'cve' ? 'border-rose-400 text-rose-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
       >
         CVE ({activeAnomalies.length || cockpitState.allViolations.length})
       </button>
       <button
         type="button"
         onclick={() => (cockpitState.activeTab = 'tasks')}
-        class="flex-1 py-2 px-1.5 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'tasks' ? 'border-emerald-400 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
+        class="flex-1 py-2 px-1 border-b-2 transition-colors cursor-pointer {cockpitState.activeTab === 'tasks' ? 'border-emerald-400 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200'}"
       >
         Tâches
       </button>
@@ -349,7 +487,65 @@
     <div class="flex-1 overflow-y-auto p-3.5 space-y-3 text-xs select-text">
       {#if cockpitState.activeTab === 'debrief'}
         {#if symbol}
-          <!-- Symbol badges -->
+          <!-- Immediate CWE Security Alert Box when clicking a blinking/vulnerable file or function -->
+          {#if hasSecurityAlert}
+            <div class="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/60 space-y-2 shadow-lg">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] font-extrabold text-rose-200 flex items-center gap-1.5">
+                  <ShieldAlert class="w-4 h-4 text-rose-400" />
+                  🚨 ALERTE CWE & SAST ({activeAnomalies.length || 1})
+                </span>
+                <button
+                  type="button"
+                  onclick={() => (cockpitState.activeTab = 'cve')}
+                  class="px-1.5 py-0.5 rounded bg-rose-500/25 hover:bg-rose-500/40 text-rose-100 text-[9.5px] font-mono cursor-pointer"
+                >
+                  Détails ➔
+                </button>
+              </div>
+              {#if activeAnomalies.length === 0}
+                <div class="p-2 rounded-lg bg-black/45 border border-rose-500/35 space-y-1">
+                  <div class="text-[11px] text-rose-100">Violation SAST / CWE détectée dans ce fichier ou l'un de ses symboles.</div>
+                  <div class="pt-0.5 flex gap-1.5">
+                    <button
+                      type="button"
+                      onclick={() => (cockpitState.isBountyModalOpen = true)}
+                      class="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[10px] font-semibold cursor-pointer"
+                    >
+                      <Bug class="w-3 h-3" /> 🧪 PoC Bug Bounty
+                    </button>
+                  </div>
+                </div>
+              {/if}
+              {#each activeAnomalies.slice(0, 3) as alert}
+                <div class="p-2 rounded-lg bg-black/45 border border-rose-500/35 space-y-1">
+                  <div class="flex items-center justify-between gap-1.5">
+                    <span class="px-1.5 py-0.5 rounded bg-rose-500/30 text-rose-200 font-mono text-[10px] font-bold">
+                      {alert.cve_id || alert.rule_id}
+                    </span>
+                    <span class="text-[9.5px] font-mono text-rose-300">{alert.severity} • L{alert.line_number}</span>
+                  </div>
+                  <p class="text-[11px] text-slate-200 leading-snug">{alert.description || alert.message}</p>
+                  {#if alert.transmitted_data}
+                    <div class="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                      📦 Vecteur : {alert.transmitted_data}
+                    </div>
+                  {/if}
+                  <div class="pt-0.5 flex gap-1.5">
+                    <button
+                      type="button"
+                      onclick={() => (cockpitState.isBountyModalOpen = true)}
+                      class="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[10px] font-semibold cursor-pointer"
+                    >
+                      <Bug class="w-3 h-3" /> 🧪 PoC Bug Bounty
+                    </button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          <!-- Layer & BLAKE3 seals -->
           <div class="flex flex-wrap gap-1.5 items-center">
             <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-white/5 border border-white/10 text-slate-300">
               Couche: {symbol.layer}
@@ -369,7 +565,7 @@
               <div class="text-base font-bold text-white font-mono">{symbol.loc || 1}</div>
             </div>
             <div class="p-2.5 rounded-lg bg-white/[0.03] border border-white/10">
-              <div class="text-[10px] text-slate-400 uppercase font-mono">Complexité</div>
+              <div class="text-[10px] text-slate-400 uppercase font-mono">Complexité McCabe</div>
               <div class="text-base font-bold font-mono {(symbol.cyclomatic_complexity || 1) >= 10 ? 'text-amber-400' : 'text-sky-300'}">
                 {symbol.cyclomatic_complexity || 1}
               </div>
@@ -384,19 +580,77 @@
             </div>
           </div>
 
-          {#if symbol.docstring}
-            <div class="p-2.5 rounded-lg bg-slate-900/80 border border-white/10">
-              <div class="text-[10px] font-mono uppercase text-emerald-400 mb-1">Spécification / Docstring</div>
-              <p class="text-[11px] text-slate-200 whitespace-pre-wrap leading-relaxed">{symbol.docstring}</p>
+          <!-- Function / Class Declaration & Signature + Docstring -->
+          {#if fullDeclaration || symbol.docstring || lazyAstComment}
+            <div class="p-2.5 rounded-lg bg-slate-900/85 border border-sky-500/30 space-y-2">
+              <div class="text-[10px] font-mono uppercase text-sky-400">⚡ Déclaration & Contrat AST</div>
+              {#if fullDeclaration}
+                <pre class="p-2 rounded bg-black/55 border border-white/10 font-mono text-[10.5px] text-sky-200 overflow-x-auto whitespace-pre-wrap break-all">{fullDeclaration}</pre>
+              {/if}
+              {#if symbol.docstring || lazyAstComment}
+                <p class="text-[11px] text-slate-200 border-l-2 border-emerald-400/60 pl-2 whitespace-pre-wrap leading-relaxed">
+                  {symbol.docstring || lazyAstComment}
+                </p>
+              {/if}
+              {#if symbol.methods?.[0]?.calls && symbol.methods[0].calls.length > 0}
+                <div class="flex flex-wrap gap-1 pt-0.5">
+                  <span class="text-[9.5px] font-mono text-slate-400">Appels internes :</span>
+                  {#each symbol.methods[0].calls.slice(0, 12) as c}
+                    <span class="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-[9.5px] text-cyan-300">{c}</span>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Inline Callers & Callees right in Débrief for fast inspection -->
+          {#if !symbol.is_file && (incomingEdges.length > 0 || outgoingEdges.length > 0)}
+            <div class="space-y-2">
+              {#if incomingEdges.length > 0}
+                <div>
+                  <div class="text-[10px] font-mono uppercase text-purple-300 mb-1">📥 Appelants ({incomingEdges.length})</div>
+                  <div class="space-y-1 max-h-28 overflow-y-auto pr-1">
+                    {#each incomingEdges.slice(0, 8) as e}
+                      {@const src = nodeMap.get(e.source)}
+                      <button
+                        type="button"
+                        onclick={() => jumpToSymbol(e.source)}
+                        class="w-full flex items-center justify-between px-2 py-1 rounded bg-white/[0.03] hover:bg-purple-500/15 border border-white/5 text-left cursor-pointer"
+                      >
+                        <span class="font-mono text-[10.5px] text-slate-200 truncate">{src?.name || e.source}</span>
+                        <span class="text-[9.5px] text-purple-300 shrink-0 ml-2">{e.relation || 'calls'}</span>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+              {#if outgoingEdges.length > 0}
+                <div>
+                  <div class="text-[10px] font-mono uppercase text-sky-300 mb-1">📤 Sous-Appels ({outgoingEdges.length})</div>
+                  <div class="space-y-1 max-h-28 overflow-y-auto pr-1">
+                    {#each outgoingEdges.slice(0, 8) as e}
+                      {@const tgt = nodeMap.get(e.target)}
+                      <button
+                        type="button"
+                        onclick={() => jumpToSymbol(e.target)}
+                        class="w-full flex items-center justify-between px-2 py-1 rounded bg-white/[0.03] hover:bg-sky-500/15 border border-white/5 text-left cursor-pointer"
+                      >
+                        <span class="font-mono text-[10.5px] text-slate-200 truncate">{tgt?.name || e.target}</span>
+                        <span class="text-[9.5px] text-sky-300 shrink-0 ml-2">{e.relation || 'calls'}</span>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             </div>
           {/if}
 
           {#if siblingSymbols.length > 0}
             <div>
               <div class="text-[10px] font-mono uppercase text-slate-400 mb-1.5">
-                Symboles liés dans ce fichier ({siblingSymbols.length})
+                Symboles contenus / frères dans ce fichier ({siblingSymbols.length})
               </div>
-              <div class="space-y-1 max-h-48 overflow-y-auto pr-1">
+              <div class="space-y-1 max-h-44 overflow-y-auto pr-1">
                 {#each siblingSymbols as sub}
                   <button
                     type="button"
@@ -404,7 +658,7 @@
                     class="w-full flex items-center justify-between px-2.5 py-1.5 rounded bg-white/[0.03] hover:bg-sky-500/15 border border-white/5 hover:border-sky-500/35 text-left cursor-pointer transition-colors"
                   >
                     <span class="truncate font-mono text-[11px] text-slate-200">
-                      {sub.is_class ? '🏛️' : '⚡'} {sub.name}
+                      {sub.has_security_violation ? '🚨' : sub.is_class ? '🏛️' : '⚡'} {sub.name}
                     </span>
                     <span class="text-[10px] text-sky-400 shrink-0 ml-2">{sub.stereotype || sub.kind}</span>
                   </button>
@@ -413,6 +667,18 @@
             </div>
           {/if}
         {:else if isFolderMode}
+          {#if activeAnomalies.length > 0}
+            <div class="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/50 space-y-1">
+              <div class="text-[11px] font-bold text-rose-200">🚨 {activeAnomalies.length} Alerte(s) CWE dans ce dossier</div>
+              <button
+                type="button"
+                onclick={() => (cockpitState.activeTab = 'cve')}
+                class="text-[10.5px] text-rose-300 underline cursor-pointer"
+              >
+                Voir toutes les vulnérabilités ➔
+              </button>
+            </div>
+          {/if}
           <div class="grid grid-cols-2 gap-2">
             <div class="p-2.5 rounded-lg bg-white/[0.03] border border-white/10">
               <div class="text-[10px] text-slate-400 uppercase font-mono">Fichiers</div>
@@ -437,14 +703,14 @@
               Contenu du dossier ({folderNodes.length})
             </div>
             <div class="space-y-1 max-h-72 overflow-y-auto pr-1">
-              {#each folderNodes.slice(0, 40) as item}
+              {#each folderNodes.slice(0, 45) as item}
                 <button
                   type="button"
                   onclick={() => jumpToSymbol(item.id)}
                   class="w-full flex items-center justify-between px-2.5 py-1.5 rounded bg-white/[0.03] hover:bg-sky-500/15 border border-white/5 hover:border-sky-500/35 text-left cursor-pointer"
                 >
                   <span class="truncate font-mono text-[11px] text-slate-200">
-                    {item.is_file ? '📄' : item.is_class ? '🏛️' : '⚡'} {item.name}
+                    {item.has_security_violation ? '🚨' : item.is_file ? '📄' : item.is_class ? '🏛️' : '⚡'} {item.name}
                   </span>
                   <span class="text-[10px] text-slate-400 shrink-0 ml-2">{item.layer}</span>
                 </button>
@@ -461,9 +727,18 @@
 
       {:else if cockpitState.activeTab === 'uml'}
         {#if symbol || isFolderMode}
-          <!-- UML Structured Card -->
+          <!-- UML Structured Card + Mermaid Copy -->
+          <div class="flex justify-end">
+            <button
+              type="button"
+              onclick={copyMermaidDiagram}
+              class="flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/35 text-indigo-300 text-[10px] font-semibold cursor-pointer"
+            >
+              {#if mermaidCopied}<Check class="w-3 h-3 text-emerald-400" /><span>Mermaid Copié</span>{:else}<Copy class="w-3 h-3" /><span>📋 Copier Mermaid UML</span>{/if}
+            </button>
+          </div>
+
           <div class="rounded-xl border border-indigo-500/35 bg-[#090d16] overflow-hidden shadow-lg">
-            <!-- Stereotype & Name Compartment -->
             <div class="px-3.5 py-2.5 bg-indigo-950/50 border-b border-indigo-500/30 text-center">
               <div class="text-[10px] font-mono text-indigo-300">
                 {symbol ? (symbol.stereotype || `«${symbol.kind}»`) : '«Module / Dossier»'}
@@ -471,11 +746,16 @@
               <div class="text-sm font-bold text-white truncate">
                 {symbol ? symbol.name : `📁 ${selectedFolder}`}
               </div>
+              {#if symbol?.galaxy}
+                <div class="text-[9.5px] font-mono text-slate-400 mt-0.5">
+                  galaxy:{symbol.galaxy} • layer:{symbol.layer}
+                </div>
+              {/if}
             </div>
 
             <!-- Attributes / Properties Compartment -->
             <div class="px-3 py-2 border-b border-indigo-500/20 space-y-1 font-mono text-[11px]">
-              <div class="text-[9px] uppercase tracking-wider text-slate-500 mb-1">Attributs & Métadonnées</div>
+              <div class="text-[9px] uppercase tracking-wider text-slate-500 mb-1">Attributs & Signatures</div>
               {#if symbol?.attributes && symbol.attributes.length > 0}
                 {#each symbol.attributes as attr}
                   <div class="flex items-center justify-between gap-2 text-slate-200">
@@ -485,60 +765,62 @@
                 {/each}
               {:else if symbol}
                 <div class="flex items-center justify-between text-slate-300">
-                  <span><span class="text-emerald-400">+</span> layer</span>
-                  <span class="text-sky-300">: {symbol.layer}</span>
+                  <span><span class="text-emerald-400">+</span> file_path</span>
+                  <span class="text-sky-300 truncate max-w-[190px]">: {symbol.file_path}</span>
                 </div>
                 <div class="flex items-center justify-between text-slate-300">
-                  <span><span class="text-emerald-400">+</span> lines_count</span>
-                  <span class="text-sky-300">: {symbol.loc || 1}</span>
-                </div>
-                <div class="flex items-center justify-between text-slate-300">
-                  <span><span class="text-emerald-400">+</span> complexity</span>
-                  <span class="text-amber-300">: {symbol.cyclomatic_complexity || 1}</span>
+                  <span><span class="text-emerald-400">+</span> lines_count / complexity</span>
+                  <span class="text-amber-300">: {symbol.loc || 1} LOC / CC {symbol.cyclomatic_complexity || 1}</span>
                 </div>
               {:else}
                 <div class="flex items-center justify-between text-slate-300">
-                  <span><span class="text-emerald-400">+</span> fichiers</span>
-                  <span class="text-sky-300">: {folderFiles.length}</span>
-                </div>
-                <div class="flex items-center justify-between text-slate-300">
-                  <span><span class="text-emerald-400">+</span> classes</span>
-                  <span class="text-sky-300">: {folderClasses.length}</span>
+                  <span><span class="text-emerald-400">+</span> fichiers / classes</span>
+                  <span class="text-sky-300">: {folderFiles.length} / {folderClasses.length}</span>
                 </div>
               {/if}
             </div>
 
             <!-- Methods / Operations Compartment -->
-            <div class="px-3 py-2 space-y-1 font-mono text-[11px]">
-              <div class="text-[9px] uppercase tracking-wider text-slate-500 mb-1">
-                {symbol ? 'Méthodes & Opérations' : 'Fichiers du Module'}
+            <div class="px-3 py-2 space-y-1.5 font-mono text-[11px]">
+              <div class="text-[9px] uppercase tracking-wider text-slate-500">
+                {symbol ? 'Opérations, Paramètres & Appels AST' : 'Fichiers du Module'}
               </div>
               {#if symbol?.methods && symbol.methods.length > 0}
                 {#each symbol.methods.slice(0, 20) as m}
-                  <div class="flex items-center justify-between gap-2 text-slate-200">
-                    <span class="truncate"><span class="text-purple-400">{m.visibility || '+'}</span> {m.signature || `${m.name}()`}</span>
-                    {#if m.returns}
-                      <span class="text-[10px] text-emerald-300 shrink-0">{m.returns}</span>
+                  <div class="p-1.5 rounded bg-white/[0.025] border border-white/5 space-y-1">
+                    <div class="flex items-center justify-between gap-2 text-slate-100">
+                      <span class="truncate">
+                        <span class="text-purple-400">{m.visibility || '+'}</span>
+                        <span class="text-sky-300">{m.is_async ? 'async ' : ''}</span>{m.name}({m.args || ''})
+                      </span>
+                      {#if m.returns}
+                        <span class="text-[10px] text-emerald-300 shrink-0">-> {m.returns}</span>
+                      {/if}
+                    </div>
+                    {#if m.calls && m.calls.length > 0}
+                      <div class="text-[9.5px] text-slate-400 truncate">
+                        ↳ appelle : {m.calls.slice(0, 6).join(', ')}
+                      </div>
                     {/if}
                   </div>
                 {/each}
               {:else if symbol && siblingSymbols.length > 0}
-                {#each siblingSymbols.slice(0, 8) as sub}
+                {#each siblingSymbols.slice(0, 12) as sub}
                   <button
                     type="button"
                     onclick={() => jumpToSymbol(sub.id)}
-                    class="w-full flex items-center justify-between text-left hover:text-sky-300 text-slate-300 cursor-pointer"
+                    class="w-full flex items-center justify-between text-left hover:text-sky-300 text-slate-300 cursor-pointer py-0.5"
                   >
-                    <span class="truncate"><span class="text-purple-400">+</span> {sub.name}()</span>
-                    <span class="text-[10px] text-slate-500 shrink-0">{sub.stereotype || sub.kind}</span>
+                    <span class="truncate"><span class="text-purple-400">+</span> {sub.methods?.[0]?.signature || `${sub.name}()`}</span>
+                    <span class="text-[10px] text-slate-500 shrink-0 ml-1">{sub.stereotype || sub.kind}</span>
                   </button>
                 {/each}
               {:else if isFolderMode}
-                {#each folderFiles.slice(0, 10) as f}
+                {#each folderFiles.slice(0, 12) as f}
                   <button
                     type="button"
                     onclick={() => jumpToSymbol(f.id)}
-                    class="w-full flex items-center justify-between text-left hover:text-sky-300 text-slate-300 cursor-pointer"
+                    class="w-full flex items-center justify-between text-left hover:text-sky-300 text-slate-300 cursor-pointer py-0.5"
                   >
                     <span class="truncate"><span class="text-sky-400">+</span> {f.name}</span>
                     <span class="text-[10px] text-slate-500 shrink-0">{f.layer}</span>
@@ -552,15 +834,15 @@
             </div>
           </div>
 
-          <!-- Interactive SVG Mini-DAG -->
+          <!-- Interactive SVG Mini-DAG with relation labels -->
           <div class="rounded-xl border border-white/10 bg-[#070a12] p-2.5">
             <div class="flex items-center justify-between mb-1.5">
               <span class="text-[10px] font-mono uppercase text-sky-400 flex items-center gap-1">
-                <GitBranch class="w-3 h-3" /> Mini-DAG Interactif
+                <GitBranch class="w-3 h-3" /> Mini-DAG Flux & Relations
               </span>
-              <span class="text-[10px] text-slate-500">Cliquer pour naviguer</span>
+              <span class="text-[10px] text-slate-500">Entrants ({incomingEdges.length}) • Sortants ({outgoingEdges.length})</span>
             </div>
-            <svg viewBox="0 0 360 132" class="w-full h-32 font-mono text-[9px]">
+            <svg viewBox="0 0 360 154" class="w-full h-36 font-mono text-[9px]">
               <defs>
                 <marker id="uml-arrow-in" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
                   <path d="M 0 1 L 9 5 L 0 9 z" fill="#c084fc" />
@@ -573,7 +855,7 @@
               <!-- Inbound nodes (Left) -->
               {#if miniInNodes.length > 0}
                 {#each miniInNodes as src, idx}
-                  {@const y = (132 - miniInNodes.length * 28) / 2 + idx * 28 + 2}
+                  {@const y = (154 - miniInNodes.length * 29) / 2 + idx * 29 + 3}
                   <g
                     class="cursor-pointer"
                     onclick={() => jumpToSymbol(src.id)}
@@ -581,28 +863,29 @@
                     role="button"
                     tabindex="0"
                   >
-                    <path d="M 96 {y + 11} L 128 66" fill="none" stroke="#c084fc" stroke-width="1.2" stroke-dasharray="3,2" marker-end="url(#uml-arrow-in)" />
-                    <rect x="6" y={y} width="90" height="22" rx="4" fill="#0f172a" stroke="#a855f7" stroke-width="1" />
-                    <text x="51" y={y + 14} fill="#e2e8f0" text-anchor="middle">{truncateSvg(src.label, 12)}</text>
+                    <path d="M 96 {y + 11} L 128 77" fill="none" stroke={src.rel === 'violates' ? '#ef4444' : '#c084fc'} stroke-width="1.2" stroke-dasharray="3,2" marker-end="url(#uml-arrow-in)" />
+                    <text x="112" y={y + 8} fill="#a78bfa" font-size="7" text-anchor="middle">{src.rel}</text>
+                    <rect x="4" y={y} width="92" height="22" rx="4" fill="#0f172a" stroke="#a855f7" stroke-width="1" />
+                    <text x="50" y={y + 14} fill="#e2e8f0" text-anchor="middle">{truncateSvg(src.label, 12)}</text>
                   </g>
                 {/each}
               {:else}
-                <text x="50" y="68" fill="#64748b" font-style="italic" text-anchor="middle">[Entrée]</text>
+                <text x="50" y="80" fill="#64748b" font-style="italic" text-anchor="middle">[Entrée]</text>
               {/if}
 
               <!-- Center Node -->
-              <rect x="130" y="42" width="100" height="48" rx="6" fill="#0c192c" stroke="#38bdf8" stroke-width="1.8" />
-              <text x="180" y="62" fill="#ffffff" font-weight="bold" font-size="10" text-anchor="middle">
+              <rect x="130" y="52" width="100" height="50" rx="6" fill="#0c192c" stroke="#38bdf8" stroke-width="1.8" />
+              <text x="180" y="72" fill="#ffffff" font-weight="bold" font-size="10" text-anchor="middle">
                 {truncateSvg(symbol ? symbol.name : selectedFolder || 'Root', 13)}
               </text>
-              <text x="180" y="77" fill="#38bdf8" font-size="8" text-anchor="middle">
+              <text x="180" y="88" fill="#38bdf8" font-size="8" text-anchor="middle">
                 {truncateSvg(symbol ? (symbol.stereotype || symbol.kind) : 'Folder', 14)}
               </text>
 
               <!-- Outbound nodes (Right) -->
               {#if miniOutNodes.length > 0}
                 {#each miniOutNodes as tgt, idx}
-                  {@const y = (132 - miniOutNodes.length * 28) / 2 + idx * 28 + 2}
+                  {@const y = (154 - miniOutNodes.length * 29) / 2 + idx * 29 + 3}
                   <g
                     class="cursor-pointer"
                     onclick={() => jumpToSymbol(tgt.id)}
@@ -610,13 +893,14 @@
                     role="button"
                     tabindex="0"
                   >
-                    <path d="M 230 66 L 262 {y + 11}" fill="none" stroke="#38bdf8" stroke-width="1.2" marker-end="url(#uml-arrow-out)" />
-                    <rect x="264" y={y} width="90" height="22" rx="4" fill="#0f172a" stroke="#38bdf8" stroke-width="1" />
-                    <text x="309" y={y + 14} fill="#e2e8f0" text-anchor="middle">{truncateSvg(tgt.label, 12)}</text>
+                    <path d="M 230 77 L 262 {y + 11}" fill="none" stroke={tgt.rel === 'violates' ? '#ef4444' : '#38bdf8'} stroke-width="1.2" marker-end="url(#uml-arrow-out)" />
+                    <text x="246" y={y + 8} fill="#7dd3fc" font-size="7" text-anchor="middle">{tgt.rel}</text>
+                    <rect x="264" y={y} width="92" height="22" rx="4" fill="#0f172a" stroke="#38bdf8" stroke-width="1" />
+                    <text x="310" y={y + 14} fill="#e2e8f0" text-anchor="middle">{truncateSvg(tgt.label, 12)}</text>
                   </g>
                 {/each}
               {:else}
-                <text x="310" y="68" fill="#64748b" font-style="italic" text-anchor="middle">[Feuille]</text>
+                <text x="310" y="80" fill="#64748b" font-style="italic" text-anchor="middle">[Feuille]</text>
               {/if}
             </svg>
           </div>
@@ -625,15 +909,37 @@
         {/if}
 
       {:else if cockpitState.activeTab === 'relations'}
-        <!-- Relation Filter -->
-        <div class="relative">
-          <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
-          <input
-            type="text"
-            bind:value={relationQuery}
-            placeholder="Filtrer les flux entrants / sortants..."
-            class="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-slate-200 focus:outline-none focus:border-sky-500/50"
-          />
+        <!-- Relation Filter & Type Chips -->
+        <div class="space-y-2">
+          <div class="relative">
+            <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+            <input
+              type="text"
+              bind:value={relationQuery}
+              placeholder="Filtrer les flux entrants / sortants..."
+              class="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs text-slate-200 focus:outline-none focus:border-sky-500/50"
+            />
+          </div>
+          {#if availableRelTypes.length > 1}
+            <div class="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onclick={() => (relationTypeFilter = 'all')}
+                class="px-2 py-0.5 rounded text-[10px] font-mono border cursor-pointer {relationTypeFilter === 'all' ? 'bg-sky-500/20 border-sky-500/40 text-sky-200' : 'bg-white/5 border-white/10 text-slate-400'}"
+              >
+                Tous
+              </button>
+              {#each availableRelTypes as rt}
+                <button
+                  type="button"
+                  onclick={() => (relationTypeFilter = rt)}
+                  class="px-2 py-0.5 rounded text-[10px] font-mono border cursor-pointer {relationTypeFilter === rt ? formatRelColor(rt) : 'bg-white/5 border-white/10 text-slate-400'}"
+                >
+                  {rt}
+                </button>
+              {/each}
+            </div>
+          {/if}
         </div>
 
         <!-- Inbound Callers -->
@@ -654,14 +960,17 @@
                 >
                   <div class="min-w-0">
                     <div class="text-[11px] font-mono text-slate-100 truncate">
-                      {src?.name || edge.source.replace('file::', '')}
+                      {src?.has_security_violation ? '🚨 ' : ''}{src?.name || edge.source.replace('file::', '')}
                     </div>
-                    {#if src?.file_path}
-                      <div class="text-[9px] text-slate-500 truncate">{src.file_path}</div>
+                    <div class="text-[9.5px] text-slate-400 truncate">
+                      {src ? `${src.layer} • ${src.file_path}:${src.line_number || 1}` : edge.source}
+                    </div>
+                    {#if edge.transmitted_data}
+                      <div class="text-[9.5px] font-mono text-amber-300 truncate">📦 {edge.transmitted_data}</div>
                     {/if}
                   </div>
                   <span class="px-1.5 py-0.5 rounded text-[9px] font-mono border shrink-0 {formatRelColor(edge.relation)}">
-                    {edge.relation || edge.edge_type || 'calls'}
+                    {normalizeEdgeRelation(edge.relation || edge.edge_type)}
                   </span>
                 </button>
               {/each}
@@ -687,14 +996,17 @@
                 >
                   <div class="min-w-0">
                     <div class="text-[11px] font-mono text-slate-100 truncate">
-                      {tgt?.name || edge.target.replace('file::', '')}
+                      {tgt?.has_security_violation ? '🚨 ' : ''}{tgt?.name || edge.target.replace('file::', '')}
                     </div>
-                    {#if tgt?.file_path}
-                      <div class="text-[9px] text-slate-500 truncate">{tgt.file_path}</div>
+                    <div class="text-[9.5px] text-slate-400 truncate">
+                      {tgt ? `${tgt.layer} • ${tgt.file_path}:${tgt.line_number || 1}` : edge.target}
+                    </div>
+                    {#if edge.transmitted_data}
+                      <div class="text-[9.5px] font-mono text-amber-300 truncate">📦 {edge.transmitted_data}</div>
                     {/if}
                   </div>
                   <span class="px-1.5 py-0.5 rounded text-[9px] font-mono border shrink-0 {formatRelColor(edge.relation)}">
-                    {edge.relation || edge.edge_type || 'calls'}
+                    {normalizeEdgeRelation(edge.relation || edge.edge_type)}
                   </span>
                 </button>
               {/each}
@@ -741,6 +1053,16 @@
                 </div>
                 <div class="text-[11px] font-semibold text-white">{cve.title || cve.rule_id}</div>
                 <p class="text-[11px] text-slate-300 leading-snug">{cve.description || cve.message}</p>
+                {#if cve.transmitted_data}
+                  <div class="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                    📦 Donnée transmise : {cve.transmitted_data} ({cve.transmitted_type || 'Untyped'})
+                  </div>
+                {/if}
+                {#if cve.remediation}
+                  <div class="text-[10px] text-emerald-300/90 bg-emerald-500/10 px-2 py-1 rounded">
+                    🛡️ {cve.remediation}
+                  </div>
+                {/if}
                 <div class="text-[10px] font-mono text-slate-500 truncate">{cve.file_path}</div>
                 <div class="flex gap-1.5 pt-1">
                   <button

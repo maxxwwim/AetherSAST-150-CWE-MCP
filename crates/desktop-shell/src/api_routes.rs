@@ -143,7 +143,9 @@ pub struct AiTargetResponse {
 pub struct InitProjectRequest {
     pub path: String,
     #[serde(default = "default_stack")]
-    pub stack: String, // "rust" | "python" | "ts" | "hybrid"
+    pub stack: String, // "rust" | "python" | "ts" | "hybrid" | "mvc" | "roblox" | "minecraft"
+    #[serde(default)]
+    pub topology: Option<String>, // "local" | "dissociated"
 }
 
 fn default_stack() -> String {
@@ -157,13 +159,19 @@ pub struct InitProjectResponse {
     pub created_dirs: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AiTelemetryEvent {
     pub target: String,
     pub action: String,
     pub details: String,
     #[serde(default)]
     pub timestamp: u64,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -317,6 +325,7 @@ pub struct AppState {
     pub graph: RwLock<AetherGraph>,
     pub project_root: RwLock<PathBuf>,
     pub telemetry: RwLock<Option<AiTelemetryEvent>>,
+    pub active_agents: RwLock<std::collections::HashMap<String, AiTelemetryEvent>>,
     pub chat_messages: RwLock<Vec<AiChatMessage>>,
     pub graph_version: std::sync::atomic::AtomicU64,
     pub custom_exclusions: RwLock<Vec<String>>,
@@ -345,6 +354,7 @@ impl AppState {
             graph: RwLock::new(graph),
             project_root: RwLock::new(project_root),
             telemetry: RwLock::new(None),
+            active_agents: RwLock::new(std::collections::HashMap::new()),
             chat_messages: RwLock::new(Vec::new()),
             graph_version: std::sync::atomic::AtomicU64::new(1),
             custom_exclusions: RwLock::new(Vec::new()),
@@ -528,6 +538,7 @@ impl AppState {
             action: action_title.to_string(),
             details: details_msg,
             timestamp: now_ms,
+            ..Default::default()
         });
 
         Ok(target_graph)
@@ -677,6 +688,14 @@ pub fn sign_project_contracts(base: &Path, folder_filter: Option<&str>) -> Resul
 }
 
 pub fn init_project_structure(base: &Path, stack_str: &str) -> Vec<String> {
+    init_project_structure_with_topology(base, stack_str, None)
+}
+
+pub fn init_project_structure_with_topology(
+    base: &Path,
+    stack_str: &str,
+    topology_str: Option<&str>,
+) -> Vec<String> {
     let _ = fs::create_dir_all(base);
 
     let stack = match stack_str.to_lowercase().as_str() {
@@ -689,8 +708,13 @@ pub fn init_project_structure(base: &Path, stack_str: &str) -> Vec<String> {
         _ => StackType::HybridMmoWeb3,
     };
 
+    let topology = match topology_str.unwrap_or("local").to_lowercase().as_str() {
+        "dissociated" | "distributed" => TopologyMode::Dissociated,
+        _ => TopologyMode::MonorepoLocal,
+    };
+
     let proj_name = base.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "project".to_string());
-    let manifest = ArchScaffolder::create_manifest(&proj_name, stack.clone(), TopologyMode::MonorepoLocal);
+    let manifest = ArchScaffolder::create_manifest(&proj_name, stack.clone(), topology);
 
     let lock_file = base.join("aether.lock.toml");
     if let Ok(lock_str) = toml::to_string_pretty(&manifest) {

@@ -48,6 +48,13 @@ function loadSavedSettings(): CockpitSettings {
   return { ...DEFAULT_SETTINGS };
 }
 
+export function normalizeEdgeRelation(raw?: string): string {
+  const r = String(raw || 'calls').toLowerCase().trim();
+  if (r === 'realtime_ws' || r === 'realtimews') return 'realtime';
+  if (r === 'security_violation' || r === 'security_violates' || r === 'violation') return 'violates';
+  return r;
+}
+
 export class CockpitState {
   graph = $state.raw<AetherGraph>({
     project_name: 'AetherScope',
@@ -59,13 +66,16 @@ export class CockpitState {
   });
 
   activeSymbol = $state.raw<SymbolBubble | null>(null);
+  hoveredSymbol = $state.raw<SymbolBubble | null>(null);
+  hoverScreenPos = $state<{ x: number; y: number }>({ x: 0, y: 0 });
   selectedFolder = $state<string | null>(null);
   activeTab = $state<'debrief' | 'uml' | 'relations' | 'cve' | 'tasks'>('debrief');
   lodLevel = $state<1 | 2 | 3>(1);
   activeLayout = $state<'Z-1' | 'Z-2' | 'Z-3' | 'Z-4'>('Z-2');
   visionMode = $state<'standard' | 'xray' | 'heatmap' | 'deadcode'>('standard');
   viewMode = $state<'code' | 'vault'>('code');
-  docMode = $state<'system' | 'symbol' | 'folder'>('system');
+  docMode = $state<'library' | 'folder' | 'symbol' | 'system'>('library');
+  docSelectedPath = $state<string | null>(null);
   searchQuery = $state('');
   tasks = $state<TaskItem[]>([]);
   settings = $state<CockpitSettings>(loadSavedSettings());
@@ -75,6 +85,8 @@ export class CockpitState {
   focusRequestTick = $state(0);
   disabledLayers = $state<Record<string, boolean>>({});
   disabledRelations = $state<Record<string, boolean>>({});
+  disabledModules = $state<Record<string, boolean>>({});
+  pipelineHighlight = $state(false);
   filterVersion = $state(0);
 
   // Modals & Panels Visibility
@@ -90,6 +102,182 @@ export class CockpitState {
   promptModalTab = $state<'context' | 'master' | 'sysprompt' | 'mcp'>('context');
   isSurfaceScannerOpen = $state(false);
   isTasksModalOpen = $state(false);
+  isChatOpen = $state(false);
+  isMcpModalOpen = $state(false);
+
+  // Live Multi-Agent AI Swarm, MCP & Copilot Telemetry
+  activeAgents = $state<{
+    agentId: string;
+    agentName: string;
+    color: string;
+    target: string;
+    action: string;
+    details: string;
+    timestamp: number;
+    nodeId?: string;
+  }[]>([]);
+  agentTrails = $state<Record<string, {
+    target: string;
+    action: string;
+    details: string;
+    timestamp: number;
+    nodeId?: string;
+    x?: number;
+    y?: number;
+  }[]>>({});
+  aiTelemetry = $state<{
+    target: string;
+    action: string;
+    details: string;
+    timestamp: number;
+    nodeId?: string;
+    agentName?: string;
+    agentId?: string;
+    color?: string;
+  } | null>(null);
+  aiTrail = $state<{
+    target: string;
+    action: string;
+    details: string;
+    timestamp: number;
+    nodeId?: string;
+    agentName?: string;
+    color?: string;
+    x?: number;
+    y?: number;
+  }[]>([]);
+  aiChatMessages = $state<{
+    id: string;
+    sender: string;
+    text: string;
+    target_symbol?: string | null;
+    timestamp: number;
+  }[]>([]);
+  aiAgentStatus = $state<'ready' | 'thinking' | 'idle'>('ready');
+  mcpConnected = $state(true);
+  lastTelemetryTs = $state(0);
+
+  private resolveAgentColor(agentId: string, customColor?: string): string {
+    if (customColor) return customColor;
+    const palette = ['#c084fc', '#38bdf8', '#34d399', '#f59e0b', '#f472b6', '#a3e635'];
+    let hash = 0;
+    for (let i = 0; i < agentId.length; i++) {
+      hash = (hash * 31 + agentId.charCodeAt(i)) >>> 0;
+    }
+    return palette[hash % palette.length];
+  }
+
+  private resolveTargetNode(target: string): SymbolBubble | undefined {
+    const tLower = target.toLowerCase();
+    return this.graph.nodes.find(
+      (n) =>
+        n.name.toLowerCase() === tLower ||
+        n.id.toLowerCase() === tLower ||
+        (n.file_path && n.file_path.toLowerCase().includes(tLower))
+    );
+  }
+
+  recordAiTelemetry(
+    ev: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string },
+    agentsList?: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[]
+  ) {
+    const incoming = agentsList && agentsList.length > 0 ? agentsList : ev?.target ? [ev] : [];
+    if (incoming.length === 0) return;
+
+    let anyNew = false;
+    let latestAutoFocusId: string | null = null;
+    const nextTrails = { ...this.agentTrails };
+    const nextActive: typeof this.activeAgents = [];
+    const mergedGlobalTrail = [...this.aiTrail];
+
+    for (const item of incoming) {
+      if (!item?.target) continue;
+      const agentId = item.agent_id || item.agent_name || (
+        item.action?.toLowerCase().includes('claude') ? 'claude-mcp'
+          : item.action?.toLowerCase().includes('gemini') ? 'gemini-mcp'
+            : item.action?.toLowerCase().includes('cursor') ? 'cursor-mcp'
+              : 'primary-agent'
+      );
+      const agentName = item.agent_name || agentId;
+      const color = this.resolveAgentColor(agentId, item.color);
+      const hit = this.resolveTargetNode(item.target);
+
+      nextActive.push({
+        agentId,
+        agentName,
+        color,
+        target: item.target,
+        action: item.action || 'Inspection',
+        details: item.details || '',
+        timestamp: item.timestamp,
+        nodeId: hit?.id,
+      });
+
+      const prevAgentTrail = nextTrails[agentId] || [];
+      if (!prevAgentTrail.some((p) => p.timestamp === item.timestamp && p.target === item.target)) {
+        anyNew = true;
+        if (hit && incoming.length === 1) {
+          latestAutoFocusId = hit.id;
+        }
+        nextTrails[agentId] = [
+          ...prevAgentTrail,
+          {
+            target: item.target,
+            action: item.action || 'Inspection',
+            details: item.details || '',
+            timestamp: item.timestamp,
+            nodeId: hit?.id,
+            x: hit?.x,
+            y: hit?.y,
+          },
+        ].slice(-18);
+
+        if (!mergedGlobalTrail.some((p) => p.timestamp === item.timestamp && p.target === item.target && p.agentName === agentName)) {
+          mergedGlobalTrail.push({
+            target: item.target,
+            action: item.action || 'Inspection',
+            details: item.details || '',
+            timestamp: item.timestamp,
+            nodeId: hit?.id,
+            agentName,
+            color,
+            x: hit?.x,
+            y: hit?.y,
+          });
+        }
+      }
+    }
+
+    this.activeAgents = nextActive.sort((a, b) => b.timestamp - a.timestamp);
+    this.agentTrails = nextTrails;
+    this.aiTrail = mergedGlobalTrail.slice(-36);
+
+    const head = this.activeAgents[0];
+    if (head) {
+      this.aiTelemetry = {
+        target: head.target,
+        action: head.action,
+        details: head.details,
+        timestamp: head.timestamp,
+        nodeId: head.nodeId,
+        agentName: head.agentName,
+        agentId: head.agentId,
+        color: head.color,
+      };
+      this.lastTelemetryTs = head.timestamp;
+    }
+
+    if (anyNew && latestAutoFocusId && this.settings.aiAutoCam) {
+      this.requestFocusSymbol(latestAutoFocusId);
+    }
+  }
+
+  clearAiTrail() {
+    this.aiTrail = [];
+    this.agentTrails = {};
+    this.activeAgents = [];
+    this.aiTelemetry = null;
+  }
 
   saveLocalSettings() {
     try {
@@ -118,25 +306,82 @@ export class CockpitState {
     this.filterVersion += 1;
   }
 
+  setAllLayers(enableAll: boolean) {
+    if (enableAll) {
+      this.disabledLayers = {};
+    } else {
+      const next: Record<string, boolean> = {};
+      for (const l of ['ui', 'action', 'domain', 'database', 'config', 'utility', 'docs']) {
+        next[l] = true;
+      }
+      this.disabledLayers = next;
+    }
+    this.filterVersion += 1;
+  }
+
+  toggleModule(folder: string) {
+    this.disabledModules = {
+      ...this.disabledModules,
+      [folder]: !this.disabledModules[folder],
+    };
+    this.filterVersion += 1;
+  }
+
+  setAllModules(enableAll: boolean) {
+    if (enableAll) {
+      this.disabledModules = {};
+    } else {
+      const next: Record<string, boolean> = {};
+      for (const n of this.graph.nodes) {
+        next[n.folder || n.cluster_id || 'root'] = true;
+      }
+      this.disabledModules = next;
+    }
+    this.filterVersion += 1;
+  }
+
   toggleRelation(category: string) {
+    const key = normalizeEdgeRelation(category);
     this.disabledRelations = {
       ...this.disabledRelations,
-      [category]: !this.disabledRelations[category],
+      [key]: !this.disabledRelations[key],
     };
+    this.filterVersion += 1;
+  }
+
+  setAllRelations(enableAll: boolean, keys: string[] = []) {
+    if (enableAll) {
+      this.disabledRelations = {};
+    } else {
+      const next: Record<string, boolean> = {};
+      for (const k of keys) next[normalizeEdgeRelation(k)] = true;
+      this.disabledRelations = next;
+    }
+    this.filterVersion += 1;
+  }
+
+  togglePipelineHighlight() {
+    this.pipelineHighlight = !this.pipelineHighlight;
     this.filterVersion += 1;
   }
 
   resetFilters() {
     this.disabledLayers = {};
     this.disabledRelations = {};
+    this.disabledModules = {};
+    this.pipelineHighlight = false;
     this.filterVersion += 1;
   }
 
-  openDoc(mode?: 'system' | 'symbol' | 'folder') {
+  openDoc(mode?: 'library' | 'folder' | 'symbol' | 'system', filePath?: string) {
+    if (filePath) {
+      this.docSelectedPath = filePath;
+    }
     if (mode) this.docMode = mode;
+    else if (filePath) this.docMode = 'library';
     else if (this.activeSymbol) this.docMode = 'symbol';
     else if (this.selectedFolder) this.docMode = 'folder';
-    else this.docMode = 'system';
+    else this.docMode = 'library';
     this.isDocPanelOpen = true;
   }
 
@@ -205,12 +450,26 @@ export class CockpitState {
       }));
       const rawAnomalies =
         rawNode.anomalies && rawNode.anomalies.length > 0 ? rawNode.anomalies : meta.cve_anomalies || [];
-      const anomalies = rawAnomalies.map((a) => ({
+      let anomalies = rawAnomalies.map((a) => ({
         ...a,
         cwe_class: a.cwe_class || a.cve_id || a.rule_id || 'CWE',
         title: a.title || a.rule_id || a.cve_id || 'Security Alert',
         description: a.description || a.message || '',
       }));
+      if (anomalies.length === 0 && meta.violations && meta.violations.length > 0) {
+        anomalies = meta.violations.map((msg) => ({
+          rule_id: 'SAST-VIOLATION',
+          cve_id: 'CWE-SAST',
+          cwe_class: 'CWE-SAST',
+          severity: 'HIGH',
+          title: 'Violation SAST / Contrat',
+          description: msg,
+          message: msg,
+          remediation: 'Inspecter la source et sceller les entrées/sorties.',
+          file_path: rawNode.file_path,
+          line_number: rawNode.line_number || 1,
+        }));
+      }
 
       return {
         ...rawNode,
@@ -276,7 +535,7 @@ export class CockpitState {
 
   toggleDocPanel() {
     if (!this.isDocPanelOpen) {
-      this.docMode = this.activeSymbol ? 'symbol' : this.selectedFolder ? 'folder' : 'system';
+      this.docMode = this.activeSymbol ? 'symbol' : this.selectedFolder ? 'folder' : 'library';
     }
     this.isDocPanelOpen = !this.isDocPanelOpen;
   }

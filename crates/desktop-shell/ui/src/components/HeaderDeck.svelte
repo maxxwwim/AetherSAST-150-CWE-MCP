@@ -13,7 +13,9 @@
     Ghost,
     Maximize2,
     FileText,
-    FolderGit2
+    FolderGit2,
+    Bot,
+    Plug
   } from '@lucide/svelte';
 
   function onSearchClick() {
@@ -31,11 +33,12 @@
       </span>
       <button
         onclick={() => (cockpitState.isHubModalOpen = true)}
-        title="Ouvrir le Hub Projet (Analyser, Basculer Code/Vault, Export HTML)"
-        class="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-mono bg-sky-950/70 hover:bg-sky-900/80 border border-sky-500/30 text-sky-300 max-w-[115px] truncate cursor-pointer transition-colors"
+        title="Hub Multi-Architectures : Créer Projet (7 Stacks), Analyser, Code/Vault, Export HTML"
+        class="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-mono bg-sky-950/70 hover:bg-sky-900/80 border border-sky-500/35 text-sky-300 max-w-[140px] truncate cursor-pointer transition-colors"
       >
         <FolderGit2 class="w-3 h-3 shrink-0" />
         <span class="truncate">{cockpitState.graph.project_name || 'Projet'}</span>
+        <span class="text-sky-400 font-bold">+</span>
       </button>
     </div>
 
@@ -103,14 +106,43 @@
       </button>
     </div>
 
-    <!-- Prompt Generator & MCP Trigger -->
+    <!-- MCP IA Bridge & Agents Config -->
+    <button
+      onclick={() => (cockpitState.isMcpModalOpen = true)}
+      class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-sky-500/12 hover:bg-sky-500/22 border border-sky-500/35 text-sky-300 transition-colors shadow-xs cursor-pointer"
+      title="Module MCP IA, 10 Outils & Configuration Antigravity / Claude / Cursor"
+    >
+      <Plug class="w-3.5 h-3.5 text-sky-400" />
+      <span class="hidden lg:inline">MCP</span>
+    </button>
+
+    <!-- AI Copilot Chat & Live Multi-Agents -->
+    <button
+      onclick={() => (cockpitState.isChatOpen = !cockpitState.isChatOpen)}
+      class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition-colors shadow-xs cursor-pointer {cockpitState.isChatOpen ? 'bg-purple-500/30 border-purple-400 text-purple-100' : 'bg-purple-500/12 hover:bg-purple-500/22 border-purple-500/35 text-purple-200'}"
+      title="Affichage Multi-Agents IA, Trajectoire & Chat Copilot (C)"
+    >
+      <Bot class="w-3.5 h-3.5 text-purple-300" />
+      <span class="hidden lg:inline">Chat IA</span>
+      {#if cockpitState.activeAgents.length > 0}
+        <span class="px-1 rounded-full bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 font-mono text-[10px]" title="Agents actifs simultanés">
+          {cockpitState.activeAgents.length}
+        </span>
+      {:else if cockpitState.aiChatMessages.length > 0}
+        <span class="px-1 rounded-full bg-purple-400/25 text-purple-100 font-mono text-[10px]">
+          {cockpitState.aiChatMessages.length}
+        </span>
+      {/if}
+    </button>
+
+    <!-- Prompt Generator Trigger -->
     <button
       onclick={() => cockpitState.openPromptModal('context')}
-      class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/35 text-purple-300 transition-colors shadow-xs cursor-pointer"
-      title="Générateur de Prompt IA Contextuel, Master Blueprint & Config MCP"
+      class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-indigo-500/12 hover:bg-indigo-500/22 border border-indigo-500/35 text-indigo-300 transition-colors shadow-xs cursor-pointer"
+      title="Générateur de Prompt IA Contextuel & Master Blueprint"
     >
-      <Sparkles class="w-3.5 h-3.5 text-purple-400" />
-      <span class="hidden xl:inline">Prompts</span>
+      <Sparkles class="w-3.5 h-3.5 text-indigo-400" />
+      <span class="hidden 2xl:inline">Prompts</span>
     </button>
 
     <!-- Surface Scanner Trigger -->

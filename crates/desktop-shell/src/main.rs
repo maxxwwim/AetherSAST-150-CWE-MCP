@@ -619,6 +619,7 @@ pub async fn execute_project_pipeline(
                     failles_count
                 ),
                 timestamp: now_ms,
+                ..Default::default()
             });
 
             let mut chat_guard = state.chat_messages.write().await;
@@ -651,6 +652,7 @@ pub async fn execute_project_pipeline(
                     active_graph.edges.len()
                 ),
                 timestamp: now_ms,
+                ..Default::default()
             });
 
             let mut chat_guard = state.chat_messages.write().await;
@@ -682,6 +684,7 @@ pub async fn execute_project_pipeline(
                     final_mode
                 ),
                 timestamp: now_ms,
+                ..Default::default()
             });
 
             let mut chat_guard = state.chat_messages.write().await;
@@ -1004,7 +1007,11 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 let _state = state_init_proj.clone();
                 async move {
                     let base = Path::new(&req.path);
-                    let created = init_project_structure(base, &req.stack);
+                    let created = api_routes::init_project_structure_with_topology(
+                        base,
+                        &req.stack,
+                        req.topology.as_deref(),
+                    );
                     axum::Json(InitProjectResponse {
                         status: "ok".to_string(),
                         message: format!("Projet initialisÃ© avec {} dossiers et contrats README.md signÃ©s BLAKE3", created.len()),
@@ -1411,14 +1418,17 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // TÃ©lÃ©metrie IA
+        // TÃ©lÃ©mÃ©trie IA Multi-Agents SimultanÃ©s
         .route(
             "/api/ai/telemetry",
             axum::routing::get({
                 let state = state_telemetry.clone();
                 move || async move {
                     let t = state.telemetry.read().await;
-                    axum::Json(serde_json::json!({ "telemetry": *t }))
+                    let agents_map = state.active_agents.read().await;
+                    let mut agents: Vec<AiTelemetryEvent> = agents_map.values().cloned().collect();
+                    agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+                    axum::Json(serde_json::json!({ "telemetry": *t, "agents": agents }))
                 }
             })
             .post({
@@ -1430,8 +1440,41 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             .unwrap_or_default()
                             .as_millis() as u64;
                     }
+                    let agent_key = event
+                        .agent_id
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                        .or_else(|| event.agent_name.clone().filter(|s| !s.trim().is_empty()))
+                        .unwrap_or_else(|| "primary-agent".to_string());
+                    if event.agent_id.is_none() {
+                        event.agent_id = Some(agent_key.clone());
+                    }
+                    if event.agent_name.is_none() {
+                        event.agent_name = Some(agent_key.clone());
+                    }
+                    {
+                        let mut agents_map = state.active_agents.write().await;
+                        agents_map.insert(agent_key, event.clone());
+                        if agents_map.len() > 24 {
+                            if let Some(oldest_k) = agents_map
+                                .iter()
+                                .min_by_key(|(_, v)| v.timestamp)
+                                .map(|(k, _)| k.clone())
+                            {
+                                agents_map.remove(&oldest_k);
+                            }
+                        }
+                    }
                     let mut t = state.telemetry.write().await;
                     *t = Some(event);
+                    axum::Json(serde_json::json!({ "status": "ok" }))
+                }
+            })
+            .delete({
+                let state = state_telemetry.clone();
+                move || async move {
+                    state.active_agents.write().await.clear();
+                    *state.telemetry.write().await = None;
                     axum::Json(serde_json::json!({ "status": "ok" }))
                 }
             }),
@@ -1514,6 +1557,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 move || async move {
                     let mut msgs = state.chat_messages.write().await;
                     msgs.clear();
+                    state.active_agents.write().await.clear();
                     let mut t = state.telemetry.write().await;
                     *t = None;
                     axum::Json(serde_json::json!({ "status": "ok", "message": "Nouvelle session dÃ©marrÃ©e" }))
@@ -1847,6 +1891,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                     report.findings.len()
                                 ),
                                 timestamp: now_ms,
+                                ..Default::default()
                             });
                         }
                         axum::Json(report)
