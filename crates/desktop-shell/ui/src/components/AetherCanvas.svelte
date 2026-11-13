@@ -1,33 +1,49 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
+  import { AetherEngine } from '../engine/engine';
+  import RadarMinimap from './RadarMinimap.svelte';
   import { onMount } from 'svelte';
 
   let canvasEl: HTMLCanvasElement;
-  let fps = $state(120);
+  let lineCanvasEl: HTMLCanvasElement;
+  let engine = $state<AetherEngine | null>(null);
 
   onMount(() => {
-    // Canvas setup hook
-    const handleResize = () => {
-      if (canvasEl) {
-        canvasEl.width = window.innerWidth * window.devicePixelRatio;
-        canvasEl.height = window.innerHeight * window.devicePixelRatio;
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    handleResize();
+    if (canvasEl && lineCanvasEl) {
+      engine = new AetherEngine(canvasEl, lineCanvasEl, cockpitState);
+      engine.start();
+    }
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      engine?.destroy();
+      engine = null;
     };
+  });
+
+  $effect(() => {
+    if (engine && cockpitState.graph.nodes.length > 0) {
+      engine.syncGraphToEngine();
+    }
   });
 </script>
 
-<div class="relative w-full h-[calc(100vh-44px)] overflow-hidden">
+<div class="relative w-full h-[calc(100vh-44px)] overflow-hidden bg-[#07090e]">
+  <!-- WebGL 2 Instanced Celestial Canvas -->
   <canvas
     bind:this={canvasEl}
     id="aether-canvas"
-    class="w-full h-full block bg-[#07090e]"
+    class="w-full h-full block absolute top-0 left-0 z-10"
   ></canvas>
+
+  <!-- 2D Overlay Canvas (Membranes, Lines, Lasers & Starfield) -->
+  <canvas
+    bind:this={lineCanvasEl}
+    id="line-canvas"
+    class="w-full h-full block absolute top-0 left-0 z-20 pointer-events-none"
+  ></canvas>
+
+  <!-- Radar Minimap -->
+  <RadarMinimap {engine} />
 
   <!-- Bottom Telemetry Status Bar -->
   <footer

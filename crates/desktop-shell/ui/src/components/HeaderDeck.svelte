@@ -37,7 +37,7 @@
     <!-- LoD Selector -->
     <div class="hidden md:flex items-center p-0.5 bg-white/[0.03] border border-white/10 rounded-md gap-0.5 text-[11px] font-mono">
       <select
-        onchange={(e) => (cockpitState.lodLevel = parseInt(e.currentTarget.value, 10))}
+        onchange={(e) => (cockpitState.lodLevel = parseInt(e.currentTarget.value, 10) as 1 | 2 | 3)}
         class="bg-transparent border-none text-sky-300 font-medium text-[11px] focus:outline-none cursor-pointer py-0.5 px-1"
         value={cockpitState.lodLevel}
       >
