@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
+  import { api } from '../lib/api';
   import {
     Search,
     Layers,
@@ -14,6 +15,8 @@
     Maximize2,
     FileText,
     FolderGit2,
+    FolderOpen,
+    RefreshCw,
     Bot,
     Plug,
     CheckSquare,
@@ -22,6 +25,48 @@
     Pause,
     Play
   } from '@lucide/svelte';
+
+  let folderInput = $state('');
+  let isAnalyzingBar = $state(false);
+
+  $effect(() => {
+    const p = cockpitState.graph.project_path;
+    if (p) folderInput = p;
+  });
+
+  async function analyzeFolderFromBar(e?: Event) {
+    e?.preventDefault();
+    const target = folderInput.trim() || cockpitState.graph.project_path || '.';
+    if (isAnalyzingBar) return;
+    isAnalyzingBar = true;
+    try {
+      const g = await api.analyzeProject(target, cockpitState.settings.exclusions);
+      if (g && Array.isArray(g.nodes)) {
+        cockpitState.setGraph(g);
+        cockpitState.requestCameraFit();
+      }
+    } finally {
+      isAnalyzingBar = false;
+    }
+  }
+
+  async function browseFolderFromBar() {
+    if (isAnalyzingBar) return;
+    isAnalyzingBar = true;
+    try {
+      const res = await api.pickProject();
+      if (res?.project_path) folderInput = res.project_path;
+      if (res?.graph && Array.isArray(res.graph.nodes)) {
+        cockpitState.setGraph(res.graph);
+        cockpitState.requestCameraFit();
+      }
+    } catch {
+      // Fallback: open hub modal if native OS dialog unavailable
+      cockpitState.isHubModalOpen = true;
+    } finally {
+      isAnalyzingBar = false;
+    }
+  }
 
   function onSearchClick() {
     cockpitState.isCommandPaletteOpen = true;
@@ -86,17 +131,48 @@
     </div>
   </div>
 
-  <!-- Center: Omnibox Command Search Trigger -->
-  <div class="flex-1 min-w-[80px] max-w-[165px] xl:max-w-[215px] mx-0.5">
+  <!-- Center: Folder Path + Analyser + Omnibox Command Search -->
+  <div class="flex items-center gap-1.5 flex-1 min-w-0 mx-0.5">
+    <form
+      onsubmit={analyzeFolderFromBar}
+      class="flex items-center flex-1 min-w-[140px] max-w-[320px] rounded-lg bg-white/[0.04] border border-white/10 focus-within:border-sky-400/60 px-1 py-0.5 gap-1 shadow-xs"
+      title="Chemin du dossier ou dépôt à analyser"
+    >
+      <button
+        type="button"
+        onclick={browseFolderFromBar}
+        disabled={isAnalyzingBar}
+        title="Parcourir un dossier local..."
+        class="p-1 rounded text-slate-400 hover:text-sky-300 hover:bg-white/10 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+      >
+        <FolderOpen class="w-3.5 h-3.5" />
+      </button>
+      <input
+        type="text"
+        bind:value={folderInput}
+        placeholder="Chemin / URL du dossier..."
+        class="flex-1 min-w-0 bg-transparent border-none outline-none text-[11px] font-mono text-slate-200 placeholder:text-slate-500 px-1"
+      />
+      <button
+        type="submit"
+        disabled={isAnalyzingBar}
+        title="Analyser / Re-scanner ce dossier"
+        class="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-200 text-[10.5px] font-semibold transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+      >
+        <RefreshCw class="w-3 h-3 {isAnalyzingBar ? 'animate-spin' : ''}" />
+        <span>{isAnalyzingBar ? '...' : 'Analyser'}</span>
+      </button>
+    </form>
+
     <button
       onclick={onSearchClick}
-      class="w-full min-w-0 overflow-hidden flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 text-xs text-slate-400 transition-all group cursor-pointer shadow-xs"
+      class="w-28 xl:w-44 shrink-0 overflow-hidden flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/10 text-xs text-slate-400 transition-all group cursor-pointer shadow-xs"
     >
-      <div class="flex items-center gap-1.5 min-w-0 flex-1">
+      <div class="flex items-center gap-1 min-w-0 flex-1">
         <Search class="w-3.5 h-3.5 shrink-0 text-slate-400 group-hover:text-sky-400 transition-colors" />
-        <span class="truncate">Rechercher symboles, CWE...</span>
+        <span class="truncate text-[11px]">Symboles...</span>
       </div>
-      <kbd class="hidden xl:inline-block shrink-0 px-1.5 py-0.5 text-[10px] font-mono rounded bg-white/10 text-slate-300 border border-white/10">
+      <kbd class="hidden xl:inline-block shrink-0 px-1 py-0.5 text-[9.5px] font-mono rounded bg-white/10 text-slate-300 border border-white/10">
         ⌘K
       </kbd>
     </button>

@@ -437,12 +437,18 @@ export class AetherEngine {
     };
   }
 
+  private getNodeScreenRadius(n: SymbolBubble, activeId: string | null): number {
+    const zoom = this.camera.zoom;
+    const zoomFactor = Math.max(0.85, Math.min(2.5, 1.0 / Math.sqrt(Math.max(0.08, Math.min(3.5, zoom)))));
+    const { baseRadius } = this.classifyNode(n);
+    const scaleMult = n.id === activeId ? 1.65 : n.id === this.hoveredNodeId ? 1.35 : 1.0;
+    return baseRadius * scaleMult * 2.8 * zoomFactor * zoom;
+  }
+
   private pickNode(sx: number, sy: number): SymbolBubble | null {
     const nodes = this.state.graph.nodes;
     if (!nodes || nodes.length === 0) return null;
 
-    const zoom = this.camera.zoom;
-    const zoomFactor = Math.max(0.85, Math.min(2.5, 1.0 / Math.sqrt(Math.max(0.08, Math.min(3.5, zoom)))));
     const activeId = this.state.activeSymbol?.id || null;
     const disabledLayers = this.state.disabledLayers;
     const disabledModules = this.state.disabledModules;
@@ -462,9 +468,7 @@ export class AetherEngine {
         continue;
       }
 
-      const { baseRadius } = this.classifyNode(n);
-      const scaleMult = n.id === activeId ? 1.65 : n.id === this.hoveredNodeId ? 1.35 : 1.0;
-      const visualR = baseRadius * scaleMult * 2.8 * zoomFactor * zoom;
+      const visualR = this.getNodeScreenRadius(n, activeId);
       const hitPx = Math.max(13, visualR + 8);
       const d = Math.hypot(p.x - sx, p.y - sy);
       if (d <= hitPx) {
@@ -1287,16 +1291,57 @@ export class AetherEngine {
     }
   }
 
+  private getRelationVisual(rel: string, isViolation: boolean, isDbTarget: boolean, isIncoming: boolean) {
+    if (isViolation) return { color: '#f87171', dashed: false, tag: 'SAST' };
+    if (rel === 'submits') return { color: '#ff7a18', dashed: false, tag: 'FORM' };
+    if (rel === 'network') return { color: '#22d3ee', dashed: false, tag: 'NET' };
+    if (rel === 'realtime') return { color: '#34d399', dashed: false, tag: 'WS' };
+    if (rel === 'queries' || isDbTarget) return { color: '#c084fc', dashed: false, tag: 'DATA' };
+    if (rel === 'imports' || rel === 'inherits' || rel === 'contains') {
+      const tag = rel === 'inherits' ? 'EXTENDS' : rel === 'contains' ? 'MEMBRE' : 'IMPORT';
+      return { color: '#fbbf24', dashed: true, tag };
+    }
+    return isIncoming
+      ? { color: '#34d399', dashed: false, tag: '← APPEL' }
+      : { color: '#38bdf8', dashed: false, tag: '➔ APPEL' };
+  }
+
+  private drawEdgeArrow(
+    ctx: CanvasRenderingContext2D,
+    tipX: number,
+    tipY: number,
+    angle: number,
+    size: number,
+    fillColor: string
+  ) {
+    const spread = 0.44;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX - Math.cos(angle - spread) * size, tipY - Math.sin(angle - spread) * size);
+    ctx.lineTo(tipX - Math.cos(angle + spread) * size * 0.72, tipY - Math.sin(angle + spread) * size * 0.72);
+    ctx.lineTo(tipX - Math.cos(angle + spread) * size, tipY - Math.sin(angle + spread) * size);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.shadowColor = fillColor;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.restore();
+  }
+
   private renderEdges(ctx: CanvasRenderingContext2D, now: number) {
     const edges = this.state.graph.edges;
     if (!edges || edges.length === 0) return;
 
+    const activeId = this.state.activeSymbol?.id || null;
+    const focusId = this.hoveredNodeId || activeId;
+    const isHoverFocus = Boolean(this.hoveredNodeId);
     const isXray = this.state.visionMode === 'xray' && this.state.activeSymbol;
-    const activeId = this.state.activeSymbol?.id;
     const disabledLayers = this.state.disabledLayers;
     const disabledModules = this.state.disabledModules;
     const disabledRelations = this.state.disabledRelations;
     const pipe = this.state.pipelineHighlight;
+    const zoom = this.camera.zoom;
 
     const pCalls = new Path2D();
     const pImports = new Path2D();
@@ -1307,11 +1352,24 @@ export class AetherEngine {
     const pSubmits = new Path2D();
     let hasCalls = false, hasImports = false, hasQueries = false, hasViolates = false, hasRealtime = false, hasNetwork = false, hasSubmits = false;
     const pulseParticles: { x: number; y: number; color: string }[] = [];
+    const midChevrons: { x: number; y: number; angle: number; color: string }[] = [];
+    const focusEdges: {
+      sourceNode: SymbolBubble;
+      targetNode: SymbolBubble;
+      p1: { x: number; y: number };
+      p2: { x: number; y: number };
+      cx: number | null;
+      cy: number | null;
+      rel: string;
+      isViolation: boolean;
+      isIncoming: boolean;
+    }[] = [];
 
-    const maxDraw = Math.min(edges.length, 1800);
-    for (let i = 0; i < maxDraw; i++) {
+    for (let i = 0; i < edges.length; i++) {
       const e = edges[i];
-      if (isXray && e.source !== activeId && e.target !== activeId) continue;
+      const isIncident = Boolean(focusId && (e.source === focusId || e.target === focusId));
+      if (!isIncident && i >= 2200) continue;
+      if (isXray && e.source !== activeId && e.target !== activeId && !isIncident) continue;
 
       const s = this.nodeMap.get(e.source);
       const t = this.nodeMap.get(e.target);
@@ -1325,17 +1383,38 @@ export class AetherEngine {
       const p1 = this.worldToScreen(s.x, s.y);
       const p2 = this.worldToScreen(t.x, t.y);
       if (
-        Math.max(p1.x, p2.x) < -40 ||
-        Math.min(p1.x, p2.x) > this.logicalWidth + 40 ||
-        Math.max(p1.y, p2.y) < -40 ||
-        Math.min(p1.y, p2.y) > this.logicalHeight + 40
+        !isIncident &&
+        (Math.max(p1.x, p2.x) < -60 ||
+          Math.min(p1.x, p2.x) > this.logicalWidth + 60 ||
+          Math.max(p1.y, p2.y) < -60 ||
+          Math.min(p1.y, p2.y) > this.logicalHeight + 60)
       ) {
         continue;
       }
 
       const sFolder = s.folder || s.cluster_id;
       const tFolder = t.folder || t.cluster_id;
-      const isCross = sFolder && tFolder && sFolder !== tFolder;
+      const isCross = Boolean(sFolder && tFolder && sFolder !== tFolder);
+      const isCurved = isCross && rel !== 'contains';
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const dist = Math.hypot(dx, dy);
+      const cx = isCurved ? (p1.x + p2.x) * 0.5 - dy * 0.14 : null;
+      const cy = isCurved ? (p1.y + p2.y) * 0.5 + dx * 0.14 : null;
+
+      if (isIncident && focusEdges.length < 64) {
+        focusEdges.push({
+          sourceNode: s,
+          targetNode: t,
+          p1,
+          p2,
+          cx,
+          cy,
+          rel,
+          isViolation: rel === 'violates' || Boolean(e.cve_id),
+          isIncoming: e.target === focusId && e.source !== focusId,
+        });
+      }
 
       let targetPath = pCalls;
       if (rel === 'violates' || e.cve_id) { targetPath = pViolates; hasViolates = true; }
@@ -1347,14 +1426,9 @@ export class AetherEngine {
       else { hasCalls = true; }
 
       targetPath.moveTo(p1.x, p1.y);
-      if (isCross && rel !== 'contains') {
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const cx = (p1.x + p2.x) * 0.5 - dy * 0.14;
-        const cy = (p1.y + p2.y) * 0.5 + dx * 0.14;
+      if (isCurved && cx !== null && cy !== null) {
         targetPath.quadraticCurveTo(cx, cy, p2.x, p2.y);
 
-        // Living synaptic vesicles drifting along active connections
         if (pulseParticles.length < 48 && (isXray || pipe || i % 7 === 0)) {
           const u = ((now * 0.00032 + i * 0.17) % 1 + 1) % 1;
           const inv = 1 - u;
@@ -1367,48 +1441,65 @@ export class AetherEngine {
       } else {
         targetPath.lineTo(p2.x, p2.y);
       }
+
+      // Subtle mid-edge directional chevrons on visible non-focus call/data edges when zoomed in
+      if (!focusId && zoom >= 1.15 && dist >= 44 && midChevrons.length < 180) {
+        const mx = isCurved && cx !== null && cy !== null ? 0.25 * p1.x + 0.5 * cx + 0.25 * p2.x : (p1.x + p2.x) * 0.5;
+        const my = isCurved && cx !== null && cy !== null ? 0.25 * p1.y + 0.5 * cy + 0.25 * p2.y : (p1.y + p2.y) * 0.5;
+        midChevrons.push({
+          x: mx,
+          y: my,
+          angle: Math.atan2(dy, dx),
+          color: rel === 'imports' ? 'rgba(251, 191, 36, 0.55)' : rel === 'queries' ? 'rgba(192, 132, 252, 0.65)' : 'rgba(56, 189, 248, 0.55)',
+        });
+      }
     }
 
     ctx.save();
     ctx.lineCap = 'round';
-    const w = Math.max(0.75, Math.min(2.0, 1.15 * Math.sqrt(this.camera.zoom)));
+    const w = Math.max(0.75, Math.min(2.0, 1.15 * Math.sqrt(zoom)));
+    const bgDim = isHoverFocus && focusEdges.length > 0 ? 0.45 : 1.0;
 
     if (hasImports) {
       ctx.lineWidth = w * 0.85;
       ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = pipe ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.16)';
+      ctx.strokeStyle = `rgba(245, 158, 11, ${(pipe ? 0.08 : 0.16) * bgDim})`;
       ctx.stroke(pImports);
       ctx.setLineDash([]);
     }
     if (hasCalls) {
       ctx.lineWidth = w;
-      ctx.strokeStyle = isXray ? 'rgba(56, 189, 248, 0.58)' : (pipe ? 'rgba(56, 189, 248, 0.08)' : 'rgba(56, 189, 248, 0.18)');
+      ctx.strokeStyle = `rgba(56, 189, 248, ${(isXray ? 0.58 : pipe ? 0.08 : 0.19) * bgDim})`;
       ctx.stroke(pCalls);
     }
     if (hasSubmits) {
       ctx.lineWidth = pipe ? w * 2.1 : w * 1.4;
-      ctx.strokeStyle = pipe ? 'rgba(255, 107, 0, 0.85)' : 'rgba(255, 107, 0, 0.45)';
+      ctx.strokeStyle = `rgba(255, 107, 0, ${(pipe ? 0.85 : 0.45) * bgDim})`;
       ctx.stroke(pSubmits);
     }
     if (hasNetwork) {
       ctx.lineWidth = pipe ? w * 2.1 : w * 1.4;
-      ctx.strokeStyle = pipe ? 'rgba(0, 200, 255, 0.88)' : 'rgba(0, 200, 255, 0.45)';
+      ctx.strokeStyle = `rgba(0, 200, 255, ${(pipe ? 0.88 : 0.45) * bgDim})`;
       ctx.stroke(pNetwork);
     }
     if (hasQueries) {
       ctx.lineWidth = pipe ? w * 2.1 : w * 1.3;
-      ctx.strokeStyle = pipe ? 'rgba(168, 85, 247, 0.88)' : 'rgba(168, 85, 247, 0.45)';
+      ctx.strokeStyle = `rgba(168, 85, 247, ${(pipe ? 0.88 : 0.45) * bgDim})`;
       ctx.stroke(pQueries);
     }
     if (hasRealtime) {
       ctx.lineWidth = pipe ? w * 2.1 : w * 1.35;
-      ctx.strokeStyle = pipe ? 'rgba(52, 211, 153, 0.90)' : 'rgba(52, 211, 153, 0.48)';
+      ctx.strokeStyle = `rgba(52, 211, 153, ${(pipe ? 0.90 : 0.48) * bgDim})`;
       ctx.stroke(pRealtime);
     }
     if (hasViolates) {
       ctx.lineWidth = w * 1.55;
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
+      ctx.strokeStyle = `rgba(239, 68, 68, ${0.65 * bgDim})`;
       ctx.stroke(pViolates);
+    }
+    for (let i = 0; i < midChevrons.length; i++) {
+      const ch = midChevrons[i];
+      this.drawEdgeArrow(ctx, ch.x, ch.y, ch.angle, 6.5, ch.color);
     }
     for (let i = 0; i < pulseParticles.length; i++) {
       const pt = pulseParticles[i];
@@ -1417,6 +1508,111 @@ export class AetherEngine {
       ctx.fillStyle = pt.color;
       ctx.fill();
     }
+
+    // Highlighted directional links, arrowheads & relation badges for hovered or active node
+    if (focusEdges.length > 0) {
+      const showPillLabels = isHoverFocus && focusEdges.length <= 16;
+      const neighborSet = new Map<string, { node: SymbolBubble; p: { x: number; y: number }; color: string }>();
+
+      for (let i = 0; i < focusEdges.length; i++) {
+        const fe = focusEdges[i];
+        const dist = Math.hypot(fe.p2.x - fe.p1.x, fe.p2.y - fe.p1.y);
+        if (dist < 4) continue;
+
+        const meta = this.getRelationVisual(fe.rel, fe.isViolation, fe.targetNode.layer === 'database', fe.isIncoming);
+        const tangentX = fe.cx !== null ? fe.p2.x - fe.cx : fe.p2.x - fe.p1.x;
+        const tangentY = fe.cy !== null ? fe.p2.y - fe.cy : fe.p2.y - fe.p1.y;
+        const tLen = Math.hypot(tangentX, tangentY) || 1;
+        const angle = Math.atan2(tangentY, tangentX);
+
+        const targetR = this.getNodeScreenRadius(fe.targetNode, activeId);
+        const tipOffset = Math.min(dist * 0.45, Math.max(8, targetR * 0.42 + 5));
+        const tipX = fe.p2.x - (tangentX / tLen) * tipOffset;
+        const tipY = fe.p2.y - (tangentY / tLen) * tipOffset;
+
+        ctx.save();
+        ctx.strokeStyle = meta.color;
+        ctx.lineWidth = isHoverFocus ? Math.max(1.8, w * 1.75) : Math.max(1.4, w * 1.35);
+        ctx.shadowColor = meta.color;
+        ctx.shadowBlur = isHoverFocus ? 10 : 5;
+        if (meta.dashed) ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(fe.p1.x, fe.p1.y);
+        if (fe.cx !== null && fe.cy !== null) {
+          ctx.quadraticCurveTo(fe.cx, fe.cy, fe.p2.x, fe.p2.y);
+        } else {
+          ctx.lineTo(fe.p2.x, fe.p2.y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Directional arrowhead pointing caller -> callee / importer -> imported / source -> data
+        this.drawEdgeArrow(ctx, tipX, tipY, angle, isHoverFocus ? 10.5 : 8.5, meta.color);
+
+        // Animated flow bead traveling strictly in call direction (source -> target)
+        const u = ((now * 0.00095 + i * 0.21) % 1 + 1) % 1;
+        const inv = 1 - u;
+        const bx = fe.cx !== null && fe.cy !== null
+          ? inv * inv * fe.p1.x + 2 * inv * u * fe.cx + u * u * fe.p2.x
+          : fe.p1.x + (fe.p2.x - fe.p1.x) * u;
+        const by = fe.cx !== null && fe.cy !== null
+          ? inv * inv * fe.p1.y + 2 * inv * u * fe.cy + u * u * fe.p2.y
+          : fe.p1.y + (fe.p2.y - fe.p1.y) * u;
+        ctx.beginPath();
+        ctx.arc(bx, by, 3.0, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        if (fe.sourceNode.id !== focusId && !neighborSet.has(fe.sourceNode.id)) {
+          neighborSet.set(fe.sourceNode.id, { node: fe.sourceNode, p: fe.p1, color: meta.color });
+        }
+        if (fe.targetNode.id !== focusId && !neighborSet.has(fe.targetNode.id)) {
+          neighborSet.set(fe.targetNode.id, { node: fe.targetNode, p: fe.p2, color: meta.color });
+        }
+
+        if (showPillLabels && dist >= 72) {
+          const mx = fe.cx !== null && fe.cy !== null
+            ? 0.25 * fe.p1.x + 0.5 * fe.cx + 0.25 * fe.p2.x
+            : (fe.p1.x + fe.p2.x) * 0.5;
+          const my = fe.cx !== null && fe.cy !== null
+            ? 0.25 * fe.p1.y + 0.5 * fe.cy + 0.25 * fe.p2.y
+            : (fe.p1.y + fe.p2.y) * 0.5;
+          ctx.font = '700 8.5px ui-monospace, monospace';
+          const tw = ctx.measureText(meta.tag).width + 8;
+          ctx.fillStyle = 'rgba(7, 10, 18, 0.88)';
+          ctx.beginPath();
+          ctx.roundRect(mx - tw * 0.5, my - 7, tw, 14, 4);
+          ctx.fill();
+          ctx.strokeStyle = meta.color;
+          ctx.lineWidth = 0.85;
+          ctx.stroke();
+          ctx.fillStyle = meta.color;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(meta.tag, mx, my + 0.5);
+        }
+      }
+
+      // Ring & label connected peers on hover even if overall zoom hides normal labels
+      if (isHoverFocus) {
+        ctx.font = '600 9.5px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        for (const item of neighborSet.values()) {
+          ctx.beginPath();
+          ctx.arc(item.p.x, item.p.y, Math.max(9, this.getNodeScreenRadius(item.node, activeId) * 0.55 + 4), 0, Math.PI * 2);
+          ctx.strokeStyle = item.color;
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+          if (zoom < 0.55) {
+            ctx.fillStyle = item.color;
+            ctx.fillText(item.node.name, item.p.x, item.p.y - 12);
+          }
+        }
+      }
+    }
+
     ctx.restore();
   }
 

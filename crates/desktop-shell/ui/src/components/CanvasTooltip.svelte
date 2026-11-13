@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { cockpitState } from '../state/graphState.svelte';
-  import { ShieldAlert, FileCode2 } from '@lucide/svelte';
+  import { cockpitState, normalizeEdgeRelation } from '../state/graphState.svelte';
+  import { ShieldAlert, FileCode2, ArrowRight, ArrowLeft } from '@lucide/svelte';
 
   const node = $derived(cockpitState.hoveredSymbol);
   const pos = $derived(cockpitState.hoverScreenPos);
@@ -10,6 +10,54 @@
   const hasSec = $derived(
     Boolean(node && (node.has_security_violation || anomaliesCount > 0 || (node.violations && node.violations.length > 0)))
   );
+
+  const nodeById = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const n of cockpitState.graph.nodes) {
+      map.set(n.id, n.name);
+    }
+    return map;
+  });
+
+  const hoverLinks = $derived.by(() => {
+    if (!node) {
+      return { incoming: [] as { name: string; rel: string }[], outgoing: [] as { name: string; rel: string }[], callsIn: 0, callsOut: 0, imports: 0, data: 0 };
+    }
+    const incoming: { name: string; rel: string }[] = [];
+    const outgoing: { name: string; rel: string }[] = [];
+    let callsIn = 0;
+    let callsOut = 0;
+    let imports = 0;
+    let data = 0;
+    const seenIn = new Set<string>();
+    const seenOut = new Set<string>();
+
+    for (const e of cockpitState.graph.edges) {
+      if (e.source !== node.id && e.target !== node.id) continue;
+      const rel = normalizeEdgeRelation(e.relation || e.edge_type);
+      if (rel === 'imports' || rel === 'inherits' || rel === 'contains') imports++;
+      else if (rel === 'queries' || rel === 'submits' || rel === 'network' || rel === 'realtime') data++;
+
+      if (e.target === node.id && e.source !== node.id) {
+        if (rel === 'calls') callsIn++;
+        const srcName = nodeById.get(e.source) || e.source.split('::').pop() || e.source;
+        const key = `${srcName}:${rel}`;
+        if (!seenIn.has(key) && incoming.length < 4) {
+          seenIn.add(key);
+          incoming.push({ name: srcName, rel });
+        }
+      } else if (e.source === node.id && e.target !== node.id) {
+        if (rel === 'calls') callsOut++;
+        const dstName = nodeById.get(e.target) || e.target.split('::').pop() || e.target;
+        const key = `${dstName}:${rel}`;
+        if (!seenOut.has(key) && outgoing.length < 4) {
+          seenOut.add(key);
+          outgoing.push({ name: dstName, rel });
+        }
+      }
+    }
+    return { incoming, outgoing, callsIn, callsOut, imports, data };
+  });
 
   const signaturePreview = $derived.by(() => {
     if (!node) return '';
@@ -29,8 +77,8 @@
   const stylePos = $derived.by(() => {
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
     const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-    const w = 320;
-    const h = 190;
+    const w = 336;
+    const h = 235;
     let x = pos.x + 24;
     if (x + w > vw - 16) x = pos.x - w - 24;
     x = Math.max(12, Math.min(vw - w - 12, x));
@@ -44,7 +92,7 @@
 
 {#if node}
   <div
-    class="fixed z-50 w-80 pointer-events-none rounded-xl bg-[#090d16]/95 backdrop-blur-xl border shadow-[0_14px_40px_rgba(0,0,0,0.85)] p-3 space-y-2 text-xs transition-transform duration-75 {hasSec ? 'border-rose-500/70' : 'border-sky-500/40'}"
+    class="fixed z-50 w-[336px] pointer-events-none rounded-xl bg-[#090d16]/95 backdrop-blur-xl border shadow-[0_14px_40px_rgba(0,0,0,0.85)] p-3 space-y-2 text-xs transition-transform duration-75 {hasSec ? 'border-rose-500/70' : 'border-sky-500/40'}"
     style={stylePos}
   >
     <div class="flex items-start justify-between gap-2">
@@ -77,6 +125,49 @@
 
     {#if cleanSummary}
       <p class="text-[11px] text-slate-300 italic line-clamp-2 border-l-2 border-sky-400/50 pl-2">{cleanSummary}</p>
+    {/if}
+
+    {#if hoverLinks.incoming.length > 0 || hoverLinks.outgoing.length > 0}
+      <div class="pt-1 border-t border-white/10 space-y-1">
+        <div class="flex flex-wrap items-center gap-1.5 text-[9.5px] font-mono">
+          <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            ← {hoverLinks.callsIn} appelants
+          </span>
+          <span class="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+            ➔ {hoverLinks.callsOut} appels
+          </span>
+          {#if hoverLinks.imports > 0}
+            <span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              📦 {hoverLinks.imports} imports
+            </span>
+          {/if}
+          {#if hoverLinks.data > 0}
+            <span class="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">
+              🗄️ {hoverLinks.data} flux
+            </span>
+          {/if}
+        </div>
+        {#if hoverLinks.incoming.length > 0}
+          <div class="flex flex-wrap items-center gap-1 text-[9.5px] font-mono text-emerald-200/90">
+            <ArrowLeft class="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+            {#each hoverLinks.incoming as item}
+              <span class="px-1 py-0.2 rounded bg-emerald-950/60 border border-emerald-500/25 truncate max-w-[96px]">
+                {item.name}
+              </span>
+            {/each}
+          </div>
+        {/if}
+        {#if hoverLinks.outgoing.length > 0}
+          <div class="flex flex-wrap items-center gap-1 text-[9.5px] font-mono text-sky-200/90">
+            <ArrowRight class="w-2.5 h-2.5 text-sky-400 shrink-0" />
+            {#each hoverLinks.outgoing as item}
+              <span class="px-1 py-0.2 rounded bg-sky-950/60 border border-sky-500/25 truncate max-w-[96px]">
+                {item.name}
+              </span>
+            {/each}
+          </div>
+        {/if}
+      </div>
     {/if}
 
     {#if hasSec}
