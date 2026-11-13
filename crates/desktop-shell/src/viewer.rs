@@ -59,21 +59,6 @@ pub fn generate_dual_standalone_html(
         _ => "code",
     };
 
-    // Determine initial active graph for immediate WebGL hydration
-    let active_graph = match norm_active {
-        "vault" => vault_prepared
-            .as_ref()
-            .or(code_prepared.as_ref())
-            .cloned()
-            .unwrap_or_else(|| AetherGraph::new("AetherScope Vault")),
-        _ => code_prepared
-            .as_ref()
-            .or(vault_prepared.as_ref())
-            .cloned()
-            .unwrap_or_else(|| AetherGraph::new("AetherScope")),
-    };
-
-    let active_json = serde_json::to_string(&active_graph).unwrap_or_default();
     let worker_json = serde_json::to_string(PHYSICS_WORKER_JS).unwrap_or_default();
 
     let dual_bundle = DualGraphBundle {
@@ -86,12 +71,12 @@ pub fn generate_dual_standalone_html(
     let dual_json = serde_json::to_string(&dual_bundle).unwrap_or_default();
 
     // Prevent premature </script> closing in HTML
-    let safe_active_json = active_json.replace("</script>", "<\\/script>");
     let safe_dual_json = dual_json.replace("</script>", "<\\/script>");
 
+    let active_key = if norm_active == "vault" { "vault" } else { "code" };
     let injection = format!(
-        "<script>\nwindow.__AETHERSCOPE_DATA__ = {};\nwindow.__PHYSICS_WORKER_CODE__ = {};\nwindow.__AETHERSCOPE_DUAL_GRAPH__ = {};\nwindow.AETHER_GRAPH_DATA = window.__AETHERSCOPE_DATA__;\nwindow.AETHER_DUAL_GRAPH = window.__AETHERSCOPE_DUAL_GRAPH__;\n</script>",
-        safe_active_json, worker_json, safe_dual_json
+        "<script>\nwindow.__AETHERSCOPE_DUAL_GRAPH__ = {};\nwindow.__PHYSICS_WORKER_CODE__ = {};\nwindow.__AETHERSCOPE_DATA__ = window.__AETHERSCOPE_DUAL_GRAPH__.{} || window.__AETHERSCOPE_DUAL_GRAPH__.code || window.__AETHERSCOPE_DUAL_GRAPH__.vault || {{ project_name: 'AetherScope', nodes: [], edges: [], stats: {{}} }};\nwindow.AETHER_GRAPH_DATA = window.__AETHERSCOPE_DATA__;\nwindow.AETHER_DUAL_GRAPH = window.__AETHERSCOPE_DUAL_GRAPH__;\n</script>",
+        safe_dual_json, worker_json, active_key
     );
 
     assemble_bundle(&injection)

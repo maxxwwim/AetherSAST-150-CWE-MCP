@@ -16,6 +16,9 @@ let physicsRunning = true;
 let physicsSleeping = false;
 let physicsCooldown = 120;
 let isBusy = false;
+let stepCount = 0;
+let cachedExportClusters = null;
+let cachedFolderStats = null;
 
 const SECTORS = 12;
 const TWO_PI = Math.PI * 2;
@@ -202,9 +205,17 @@ function stepWorkerPhysics(zoom = 1.0) {
   // 2b. Cellular Membrane Confinement in Obsidian Galaxy View
   let exportClusters = null;
   if (d === 1) {
-    const clusterRes = computeFolderClusters(zoom);
-    exportClusters = clusterRes.exportClusters;
-    const folderStats = clusterRes.folderStats;
+    stepCount = (stepCount + 1) & 0xfff;
+    const shouldUpdateClusters = (stepCount % 2 === 0) || physicsCooldown < 10 || !cachedExportClusters;
+    if (shouldUpdateClusters) {
+      const clusterRes = computeFolderClusters(zoom);
+      exportClusters = clusterRes.exportClusters;
+      cachedExportClusters = exportClusters;
+      cachedFolderStats = clusterRes.folderStats;
+    } else {
+      exportClusters = cachedExportClusters;
+    }
+    const folderStats = cachedFolderStats || computeFolderClusters(zoom).folderStats;
 
     // Intra-cellular node anti-stick & comfort spacing
     folderStats.forEach((st) => {
@@ -219,7 +230,9 @@ function stepWorkerPhysics(zoom = 1.0) {
         for (let j = i + 1; j < count; j += innerStep) {
           const nb = st.nodes[j];
           const bdx = nb.x - na.x;
+          if (Math.abs(bdx) >= minD) continue;
           const bdy = nb.y - na.y;
+          if (Math.abs(bdy) >= minD) continue;
           const bdist2 = bdx * bdx + bdy * bdy;
           if (bdist2 < minD2 && bdist2 > 0.0001) {
             const bdist = Math.sqrt(bdist2);
@@ -261,11 +274,14 @@ function stepWorkerPhysics(zoom = 1.0) {
         const rB = cB.computedRadius || 120;
 
         const cdx = cxB - cxA;
-        const cdy = cyB - cyA;
-        const cdist = Math.hypot(cdx, cdy) || 1;
-        // Espacement mass-aware : les gros amas d'étoiles sont bien plus espacés
         const massPadding = Math.max(160, Math.sqrt(cA.count + cB.count) * 26);
         const safeClusterDist = rA + rB + massPadding;
+        if (Math.abs(cdx) >= safeClusterDist) continue;
+
+        const cdy = cyB - cyA;
+        if (Math.abs(cdy) >= safeClusterDist) continue;
+
+        const cdist = Math.hypot(cdx, cdy) || 1;
 
         if (cdist < safeClusterDist) {
           const overlap = safeClusterDist - cdist;
@@ -302,7 +318,9 @@ function stepWorkerPhysics(zoom = 1.0) {
       for (let j = i + 1; j < Math.min(count, i + 48); j++) {
         const nb = nodes[j];
         const bdx = nb.x - na.x;
+        if (Math.abs(bdx) >= minD) continue;
         const bdy = nb.y - na.y;
+        if (Math.abs(bdy) >= minD) continue;
         const bdist2 = bdx * bdx + bdy * bdy;
         if (bdist2 < minD2 && bdist2 > 0.0001) {
           const bdist = Math.sqrt(bdist2);

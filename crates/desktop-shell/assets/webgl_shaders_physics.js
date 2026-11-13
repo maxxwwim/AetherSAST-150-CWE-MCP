@@ -5,7 +5,7 @@
 
 // --- WebGL 2 GPU Instanced Engine ---
 const canvas = document.getElementById('aether-canvas');
-const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -250,6 +250,13 @@ const starPalettes = [
   'rgba(192, 132, 252, ALPHA)',   // 15% Celestial Lavender
   'rgba(253, 224, 71, ALPHA)'     // 10% Warm Topaz Gold
 ];
+const starSolidColors = [
+  '#ffffff',
+  '#ffffff',
+  '#38bdf8',
+  '#c084fc',
+  '#fde047'
+];
 
 for (let i = 0; i < 650; i++) {
   const isMajor = i < 40; // Top 40 major stellar beacons with diffraction spike
@@ -265,6 +272,7 @@ for (let i = 0; i < 650; i++) {
     twinkleSpeed: 0.001 + Math.random() * 0.003,
     twinklePhase: Math.random() * Math.PI * 2,
     color: starPalettes[colIdx],
+    solidColor: starSolidColors[colIdx],
     hasCorona: isMajor
   });
 }
@@ -408,23 +416,45 @@ function initPhysicsWorker() {
         }
 
         if (clusters) {
-          const map = new Map();
+          let map = state.cachedFolderStats;
+          if (!map) {
+            map = new Map();
+            state.cachedFolderStats = map;
+            state.folderClusters = map;
+          }
           for (const k in clusters) {
             const cl = clusters[k];
-            map.set(k, {
-              cx: cl.cx,
-              cy: cl.cy,
-              sumX: cl.sumX,
-              sumY: cl.sumY,
-              count: cl.count,
-              computedRadius: cl.computedRadius,
-              naturalRadius: cl.naturalRadius,
-              lobeProfile: new Float32Array(cl.lobeProfile),
-              nodes: state.cachedFolderStats?.get(k)?.nodes || []
-            });
+            let entry = map.get(k);
+            if (!entry) {
+              entry = {
+                cx: cl.cx,
+                cy: cl.cy,
+                sumX: cl.sumX,
+                sumY: cl.sumY,
+                count: cl.count,
+                computedRadius: cl.computedRadius,
+                naturalRadius: cl.naturalRadius,
+                lobeProfile: new Float32Array(cl.lobeProfile),
+                nodes: []
+              };
+              map.set(k, entry);
+            } else {
+              entry.cx = cl.cx;
+              entry.cy = cl.cy;
+              entry.sumX = cl.sumX;
+              entry.sumY = cl.sumY;
+              entry.count = cl.count;
+              entry.computedRadius = cl.computedRadius;
+              entry.naturalRadius = cl.naturalRadius;
+              if (cl.lobeProfile) {
+                if (!entry.lobeProfile || entry.lobeProfile.length !== 12) {
+                  entry.lobeProfile = new Float32Array(cl.lobeProfile);
+                } else {
+                  entry.lobeProfile.set(cl.lobeProfile);
+                }
+              }
+            }
           }
-          state.cachedFolderStats = map;
-          state.folderClusters = map;
         }
 
         if (isSleeping) {
@@ -611,7 +641,9 @@ function stepPhysics() {
           for (let j = i + 1; j < count; j += innerStep) {
             const nb = st.nodes[j];
             const bdx = nb.x - na.x;
+            if (Math.abs(bdx) >= minD) continue;
             const bdy = nb.y - na.y;
+            if (Math.abs(bdy) >= minD) continue;
             const bdist2 = bdx * bdx + bdy * bdy;
             if (bdist2 < minD2 && bdist2 > 0.0001) {
               const bdist = Math.sqrt(bdist2);
@@ -689,10 +721,13 @@ function stepPhysics() {
           const rB = cB.computedRadius || 120;
 
           const cdx = cxB - cxA;
-          const cdy = cyB - cyA;
-          const cdist = Math.hypot(cdx, cdy) || 1;
           const massPadding = Math.max(160, Math.sqrt(cA.count + cB.count) * 26);
           const safeClusterDist = rA + rB + massPadding;
+          if (Math.abs(cdx) >= safeClusterDist) continue;
+          const cdy = cyB - cyA;
+          if (Math.abs(cdy) >= safeClusterDist) continue;
+
+          const cdist = Math.hypot(cdx, cdy) || 1;
 
           if (cdist < safeClusterDist) {
             const overlap = safeClusterDist - cdist;
@@ -728,7 +763,9 @@ function stepPhysics() {
       for (let j = i + 1; j < Math.min(count, i + 32); j++) {
         const nb = nodes[j];
         const bdx = nb.x - na.x;
+        if (Math.abs(bdx) >= 38) continue;
         const bdy = nb.y - na.y;
+        if (Math.abs(bdy) >= 38) continue;
         const bdist2 = bdx * bdx + bdy * bdy;
         const minD = 38;
         if (bdist2 < minD * minD && bdist2 > 0.01) {

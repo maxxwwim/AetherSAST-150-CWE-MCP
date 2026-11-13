@@ -14,7 +14,7 @@
 </p>
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.3.0_Gemini_4_Hydrogen_Extra-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherScope-SAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.3.0_Gemini_4_Hydrogen_Extra-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)

@@ -54,6 +54,13 @@ window.isSecurityVulnNode = isSecurityVulnNode;
 const _bubbleLabelCache = new Map();
 const _cellPtsX = new Float32Array(12);
 const _cellPtsY = new Float32Array(12);
+const _COS12 = new Float32Array(12);
+const _SIN12 = new Float32Array(12);
+for (let i = 0; i < 12; i++) {
+  const a = (i / 12) * Math.PI * 2;
+  _COS12[i] = Math.cos(a);
+  _SIN12[i] = Math.sin(a);
+}
 
 // Helper: Detect Large Project Scale (R3)
 function isLargeGraph() {
@@ -70,19 +77,28 @@ function updateHydroHudProgress(folder, currentIdx, total) {
 // Traces a 100% smooth C1-continuous closed quadratic Bezier biological membrane (zero sharp vertices)
 function traceCellularContour(ctx, radius, now, phase, lobeProfile, waveScale = 1.0, phaseShift = 0.0) {
   const N = 12;
-  const t = now * 0.0018 + phase + phaseShift;
-  for (let i = 0; i < N; i++) {
-    const angle = (i / N) * Math.PI * 2;
-    const lobeFactor = lobeProfile ? lobeProfile[i] : 1.0;
-    // Multi-harmonic amoeboid pseudopod respiration (2-lobe elongation + 3-lobe & 5-lobe cellular ripple)
-    const bioWave = (
-      Math.sin(angle * 2.0 + t * 0.9) * 0.042 +
-      Math.cos(angle * 3.0 - t * 1.15 + phase) * 0.034 +
-      Math.sin(angle * 5.0 + t * 1.45) * 0.016
-    ) * waveScale;
-    const r = radius * (lobeFactor + bioWave);
-    _cellPtsX[i] = Math.cos(angle) * r;
-    _cellPtsY[i] = Math.sin(angle) * r;
+  if (waveScale > 0) {
+    const t = now * 0.0018 + phase + phaseShift;
+    for (let i = 0; i < N; i++) {
+      const angle = (i / N) * Math.PI * 2;
+      const lobeFactor = lobeProfile ? lobeProfile[i] : 1.0;
+      // Multi-harmonic amoeboid pseudopod respiration (2-lobe elongation + 3-lobe & 5-lobe cellular ripple)
+      const bioWave = (
+        Math.sin(angle * 2.0 + t * 0.9) * 0.042 +
+        Math.cos(angle * 3.0 - t * 1.15 + phase) * 0.034 +
+        Math.sin(angle * 5.0 + t * 1.45) * 0.016
+      ) * waveScale;
+      const r = radius * (lobeFactor + bioWave);
+      _cellPtsX[i] = _COS12[i] * r;
+      _cellPtsY[i] = _SIN12[i] * r;
+    }
+  } else {
+    for (let i = 0; i < N; i++) {
+      const lobeFactor = lobeProfile ? lobeProfile[i] : 1.0;
+      const r = radius * lobeFactor;
+      _cellPtsX[i] = _COS12[i] * r;
+      _cellPtsY[i] = _SIN12[i] * r;
+    }
   }
 
   ctx.beginPath();
@@ -107,18 +123,23 @@ function drawOrganicFluidBubble(ctx, fx, fy, bubbleR, now, phase, rR, rG, rB, is
   ctx.save();
   ctx.translate(fx + floatX, fy + floatY);
 
-  const colBase = `rgba(${rR}, ${rG}, ${rB}`;
-  const lightR = Math.min(255, rR + 90);
-  const lightG = Math.min(255, rG + 90);
-  const lightB = Math.min(255, rB + 110);
-  const colLight = `rgba(${lightR}, ${lightG}, ${lightB}`;
-
   let cachedLbl = _bubbleLabelCache.get(folder);
   if (!cachedLbl || cachedLbl.count !== count) {
     const shortName = typeof formatFolderLabel === 'function' ? formatFolderLabel(folder) : folder;
-    cachedLbl = { shortName, count };
+    const lightR = Math.min(255, rR + 90);
+    const lightG = Math.min(255, rG + 90);
+    const lightB = Math.min(255, rB + 110);
+    cachedLbl = {
+      shortName,
+      count,
+      colBase: `rgba(${rR}, ${rG}, ${rB}`,
+      colLight: `rgba(${lightR}, ${lightG}, ${lightB}`
+    };
     _bubbleLabelCache.set(folder, cachedLbl);
   }
+
+  const colBase = cachedLbl.colBase;
+  const colLight = cachedLbl.colLight;
 
   // 1. OUTER ECTOPLASM HALO & EXOMEMBRANE (Smooth 12-Lobe Quadratic Spline)
   traceCellularContour(ctx, bubbleR, now, phase, lobeProfile, waveScale, 0.0);
@@ -144,8 +165,8 @@ function drawOrganicFluidBubble(ctx, fx, fy, bubbleR, now, phase, rR, rG, rB, is
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // 3. CELLULAR NUCLEUS & CYTOSKELETON FILAMENTS (Visible in LoD 1/2 or when selected)
-  if (lodLevel <= 2 || isFolderSel) {
+  // 3. CELLULAR NUCLEUS & CYTOSKELETON FILAMENTS (Visible in LoD 2 or when selected; skipped in macro LoD 1)
+  if (lodLevel === 2 || isFolderSel) {
     // Cytoskeleton organic filaments radiating from nucleus to outer lobes
     ctx.beginPath();
     for (let k = 0; k < 12; k += 2) {
@@ -276,17 +297,12 @@ function drawFolderBadges(ctx, badges, c, lodLevel) {
     // Glowing chromatic border matching folder palette
     ctx.strokeStyle = b.isFolderSel ? '#38bdf8' : `${b.colLight}, 0.85)`;
     ctx.lineWidth = borderWidth;
-    ctx.shadowColor = b.isFolderSel ? 'rgba(56, 189, 248, 0.75)' : `${b.colLight}, 0.45)`;
-    ctx.shadowBlur = 6 / c.zoom;
     ctx.stroke();
-    ctx.shadowBlur = 0;
 
     // Folder Name Text (left-aligned)
     const leftX = -badgeW * 0.5 + padX;
     ctx.fillStyle = b.isFolderSel ? '#38bdf8' : '#ffffff';
     ctx.textAlign = 'left';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
-    ctx.shadowBlur = 3 / c.zoom;
     ctx.fillText(folderDisplay, leftX, 0);
 
     // Count Token Pill (right-aligned)
@@ -377,10 +393,7 @@ function drawSystemArchitectureScenery(ctx, c, vLeft, vRight, vTop, vBottom, now
     ctx.stroke();
 
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = layer.border;
-    ctx.shadowBlur = 8;
     ctx.fillText(headerText, layer.x, headerY);
-    ctx.shadowBlur = 0;
 
     ctx.restore();
   }
@@ -444,10 +457,7 @@ function drawDagPipelineScenery(ctx, c, vLeft, vRight, vTop, vBottom, now, nodes
     ctx.stroke();
 
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = st.border;
-    ctx.shadowBlur = 10;
     ctx.fillText(headerText, st.x, headerY);
-    ctx.shadowBlur = 0;
 
     // Subtitle description below header
     const subSize = Math.round(10 / Math.max(0.4, Math.min(1.4, c.zoom)));
@@ -511,10 +521,7 @@ function drawUmlMatrixScenery(ctx, c, vLeft, vRight, vTop, vBottom, now, nodes) 
   ctx.stroke();
 
   ctx.fillStyle = '#f5d0fe';
-  ctx.shadowColor = '#c084fc';
-  ctx.shadowBlur = 8;
   ctx.fillText(titleText, 0, titleY);
-  ctx.shadowBlur = 0;
 
   ctx.restore();
 }
@@ -846,7 +853,12 @@ function render(now) {
       }
 
       gl.bindBuffer(gl.ARRAY_BUFFER, instanceVbo);
-      gl.bufferData(gl.ARRAY_BUFFER, instanceData, gl.DYNAMIC_DRAW);
+      if (gl._cachedInstanceCapacity === instanceData.byteLength) {
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData);
+      } else {
+        gl.bufferData(gl.ARRAY_BUFFER, instanceData, gl.DYNAMIC_DRAW);
+        gl._cachedInstanceCapacity = instanceData.byteLength;
+      }
     }
 
     // 1. WebGL 2 GPU Render (1 Draw Call for all nodes!)
@@ -895,7 +907,8 @@ function render(now) {
         ctx.fillRect(0, 0, sfW, sfH);
       }
 
-      // Cosmic Constellation & Parallax Starfield
+      // Cosmic Constellation & Parallax Starfield (zero-allocation fast rendering)
+      let currentSolid = '';
       for (let i = 0; i < starfield.length; i++) {
         const s = starfield[i];
         const driftX = Math.sin(now * 0.0008 + s.twinklePhase) * 4.0;
@@ -909,19 +922,30 @@ function render(now) {
         const tw = Math.sin(now * s.twinkleSpeed + s.twinklePhase);
         const alpha = Math.max(0.15, Math.min(0.95, s.baseAlpha * (0.7 + 0.3 * tw)));
 
-        ctx.beginPath();
-        ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = s.color.replace('ALPHA', alpha.toFixed(2));
-        ctx.fill();
+        const col = s.solidColor || '#ffffff';
+        if (currentSolid !== col) {
+          ctx.fillStyle = col;
+          currentSolid = col;
+        }
+        ctx.globalAlpha = alpha;
+
+        if (s.r <= 1.4) {
+          ctx.fillRect(sx - s.r, sy - s.r, s.r * 2, s.r * 2);
+        } else {
+          ctx.beginPath();
+          ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
 
         // Corona & 4-point diffraction cross for bright stellar beacons - bypassed during movement on large graphs (R3)
         if (!suppressMovementEffects && s.hasCorona && alpha > 0.45) {
           ctx.beginPath();
           ctx.arc(sx, sy, s.r * 2.8, 0, Math.PI * 2);
-          ctx.fillStyle = s.color.replace('ALPHA', (alpha * 0.22).toFixed(2));
+          ctx.globalAlpha = alpha * 0.22;
           ctx.fill();
 
-          ctx.strokeStyle = s.color.replace('ALPHA', (alpha * 0.40).toFixed(2));
+          ctx.strokeStyle = col;
+          ctx.globalAlpha = alpha * 0.40;
           ctx.lineWidth = 1;
           const spike = s.r * 3.5;
           ctx.beginPath();
@@ -930,6 +954,7 @@ function render(now) {
           ctx.stroke();
         }
       }
+      ctx.globalAlpha = 1.0;
       ctx.restore();
     }
 
@@ -1271,7 +1296,9 @@ function render(now) {
     const pipelineKey = state.dataPipelineMode ? '1' : '0';
     const cacheKey = `${lodLevel}|${edges.length}|${layersKey}|${modulesKey}|${relsKey}|${filterBitsKey}|${xrayKey}|${pipelineKey}`;
 
-    let batch = (!isSpawning && state.physicsSleeping && state.cachedEdgePaths && state.cachedEdgePaths.key === cacheKey)
+    const canReuseBatch = state.cachedEdgePaths && state.cachedEdgePaths.key === cacheKey;
+    const needsBakeForPhysics = !state.physicsSleeping && (now - (state._lastEdgeBakeTime || 0) > 33);
+    let batch = (canReuseBatch && (state.physicsSleeping || !needsBakeForPhysics))
       ? state.cachedEdgePaths
       : null;
 
@@ -1446,9 +1473,8 @@ function render(now) {
         hasContains, countCalls, hasInterModule, hasImports, hasSubmits, hasNetwork, hasRealtime, hasQueries, hasViolation, hasWarning, hasRenders, hasInherits, hasDocs, hasBinds, hasXrayUp, hasXrayDown,
         samplePhotons
       };
-      if (state.physicsSleeping) {
-        state.cachedEdgePaths = batch;
-      }
+      state.cachedEdgePaths = batch;
+      state._lastEdgeBakeTime = now;
     }
 
     const isPipelineActive = state.dataPipelineMode === true;
@@ -1925,13 +1951,19 @@ function render(now) {
         else ctx.lineTo(pt.x, pt.y);
       }
       ctx.strokeStyle = '#c084fc';
-      ctx.lineWidth = Math.max(1.8, 2.6 / c.zoom);
+      const trailLw = Math.max(1.8, 2.6 / c.zoom);
+      ctx.lineWidth = trailLw;
       ctx.setLineDash([8 / c.zoom, 5 / c.zoom]);
       ctx.lineDashOffset = -(now * 0.02) / c.zoom;
-      ctx.shadowColor = '#c084fc';
-      ctx.shadowBlur = suppressMovementEffects ? 0 : 10;
+      // Dual-pass additive laser glow (zero raster blur overhead)
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = trailLw * 2.4;
       ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1.0;
+      ctx.lineWidth = trailLw;
+      ctx.stroke();
       ctx.setLineDash([]);
 
       for (let tIdx = 0; tIdx < state.aiTrail.length; tIdx++) {
@@ -2119,11 +2151,10 @@ function render(now) {
         const pulseAlpha = Math.sin(now * 0.008) * 0.25 + 0.75;
         const laserWidth = Math.min(8.0, Math.max(2.4, 4.0 / c.zoom));
 
-        // Pass 1: Diffuse Glowing Red Halo
-        ctx.shadowColor = '#ff0033';
-        ctx.shadowBlur = suppressMovementEffects ? 0 : 18;
-        ctx.strokeStyle = `rgba(239, 68, 68, ${0.9 * pulseAlpha})`;
-        ctx.lineWidth = laserWidth * 1.8;
+        // Pass 1: Diffuse Glowing Red Halo (additive, zero raster blur)
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = `rgba(239, 68, 68, ${0.40 * pulseAlpha})`;
+        ctx.lineWidth = laserWidth * 2.8;
         ctx.beginPath();
         ctx.moveTo(pathNodes[0].x, pathNodes[0].y);
         for (let i = 1; i < pathNodes.length; i++) {
@@ -2132,8 +2163,7 @@ function render(now) {
         ctx.stroke();
 
         // Pass 2: Hot Core Beam (White/Pink)
-        ctx.shadowBlur = suppressMovementEffects ? 0 : 6;
-        ctx.shadowColor = '#ffffff';
+        ctx.globalCompositeOperation = 'source-over';
         ctx.strokeStyle = `rgba(255, 230, 230, ${0.95 * pulseAlpha})`;
         ctx.lineWidth = Math.max(1.2, laserWidth * 0.5);
         ctx.stroke();
@@ -2152,8 +2182,13 @@ function render(now) {
           const px = nA.x + (nB.x - nA.x) * segT;
           const py = nA.y + (nB.y - nA.y) * segT;
 
-          ctx.shadowColor = '#ff2255';
-          ctx.shadowBlur = 14;
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = 'rgba(255, 34, 85, 0.45)';
+          ctx.beginPath();
+          ctx.arc(px, py, 7.5 / c.zoom, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.globalCompositeOperation = 'source-over';
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
           ctx.arc(px, py, 4.5 / c.zoom, 0, Math.PI * 2);
@@ -2389,8 +2424,20 @@ function renderRadar(force = false) {
   const nodes = state.data.nodes || [];
   if (nodes.length === 0) return;
 
+  const cam = state.camera;
+  const isCamDirty = Math.abs(cam.x - (radarCanvas._lastCamX || 0)) > 0.5 ||
+                     Math.abs(cam.y - (radarCanvas._lastCamY || 0)) > 0.5 ||
+                     Math.abs(cam.zoom - (radarCanvas._lastCamZoom || 0)) > 0.005;
+
+  if (!force && state.physicsSleeping && !state.instanceDataDirty && !isCamDirty) {
+    return;
+  }
+  radarCanvas._lastCamX = cam.x;
+  radarCanvas._lastCamY = cam.y;
+  radarCanvas._lastCamZoom = cam.zoom;
+
   radarFrameCount++;
-  if (!force && nodes.length > 600 && (radarFrameCount % 6 !== 0)) {
+  if (!force && (radarFrameCount % 4 !== 0)) {
     const zEl = document.getElementById('radar-zoom-level');
     if (zEl) zEl.innerText = `${state.camera.zoom.toFixed(2)}x`;
     return;
