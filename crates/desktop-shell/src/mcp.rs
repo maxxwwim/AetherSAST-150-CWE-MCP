@@ -1,4 +1,4 @@
-﻿#[path = "mcp_catalog.rs"]
+#[path = "mcp_catalog.rs"]
 mod mcp_catalog;
 pub use mcp_catalog::*;
 
@@ -769,67 +769,138 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let file_pattern = arguments.get("file_pattern").and_then(|v| v.as_str());
                     let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(15) as usize;
                     let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+                    let scope_mode = arguments.get("scope_mode").and_then(|v| v.as_str()).unwrap_or("all");
 
                     let p_buf = resolve_project_root(req_path);
                     let is_vault_project = obsidian_vault::detect_project_type(&p_buf)
                         .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
                         .unwrap_or(false);
-                    let g = if is_vault_project {
+                    let mut g = if is_vault_project {
                         obsidian_vault::scan_obsidian_vault(&p_buf)
                             .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
                     } else {
                         ast_scanner::ProjectScanner::default().scan_project(&p_buf)
                     };
 
-                    let effective_has_violation = if cwe_id.is_some() || severity.is_some() {
-                        Some(true)
-                    } else {
-                        has_violation
-                    };
-
-                    let mut text = format_search_symbols_response(&g, query, layer, kind, stereotype, effective_has_violation, limit);
-
-                    if cwe_id.is_some() || severity.is_some() || file_pattern.is_some() {
-                        let viol_block = format_violations_response(&g, severity, cwe_id, file_pattern.or(if !query.is_empty() { Some(query) } else { None }));
-                        text.push_str("\n\n---\n");
-                        text.push_str(&viol_block);
-                    }
-
-                    // Coordination multi-agents lors des recherches partagées
-                    if opt_str_arg(&arguments, "agent_id").is_some() || opt_str_arg(&arguments, "agent_name").is_some() {
-                        let search_target = if !query.trim().is_empty() {
-                            query
-                        } else if let Some(fp) = file_pattern {
-                            fp
-                        } else if let Some(cwe) = cwe_id {
-                            cwe
+                    if scope_mode == "recommend_scope" {
+                        let (cfg, recs) = load_or_recommend_bounty_scope(&p_buf, &g);
+                        let summary = format_bounty_scope_summary(&cfg, &recs);
+                        (json!([{ "type": "text", "text": summary }]), false)
+                    } else if scope_mode == "configure_scope" {
+                        let (_, recs) = load_or_recommend_bounty_scope(&p_buf, &g);
+                        let in_arr: Option<Vec<String>> = arguments
+                            .get("in_scope")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect());
+                        let out_arr: Option<Vec<String>> = arguments
+                            .get("out_of_scope")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect());
+                        let updated_by = opt_str_arg(&arguments, "agent_name")
+                            .or_else(|| opt_str_arg(&arguments, "agent_id"))
+                            .map(|s| s.to_string());
+                        let rationale = opt_str_arg(&arguments, "scope_rationale").map(|s| s.to_string());
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let cfg = if in_arr.is_some() || out_arr.is_some() {
+                            BountyScopeConfig {
+                                in_scope: in_arr.unwrap_or_default(),
+                                out_of_scope: out_arr.unwrap_or_default(),
+                                mode: "mcp_synced".to_string(),
+                                updated_by: Some(updated_by.unwrap_or_else(|| "MCP Security Agent".to_string())),
+                                rationale,
+                                timestamp: now_ms,
+                            }
                         } else {
-                            "Codebase Search"
+                            build_recommended_scope_config(&recs, updated_by, rationale)
                         };
+                        save_bounty_scope(&p_buf, &cfg);
+                        let _ = send_http_request(
+                            server_port,
+                            "POST",
+                            "/api/bounty/scope",
+                            Some(&serde_json::to_value(&cfg).unwrap_or_default()),
+                        )
+                        .await;
                         let telem_payload = build_telemetry_payload(
-                            search_target,
-                            "Recherche Collaborative",
-                            &format!("Recherche layer={:?} kind={:?} cwe={:?}", layer, kind, cwe_id),
+                            "Bug Bounty Scope",
+                            "Scope PoC Configuré",
+                            &format!("In-Scope: {} · Out-of-Scope: {}", cfg.in_scope.len(), cfg.out_of_scope.len()),
                             &arguments,
                         );
                         let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&telem_payload)).await;
-                    }
-                    let self_id = opt_str_arg(&arguments, "agent_id").or_else(|| opt_str_arg(&arguments, "agent_name"));
-                    let peers = fetch_active_swarm_agents(server_port).await;
-                    let active_others: Vec<Value> = peers
-                        .into_iter()
-                        .filter(|p| {
-                            let aid = p.get("agent_id").and_then(|v| v.as_str());
-                            let aname = p.get("agent_name").and_then(|v| v.as_str());
-                            self_id.map(|s| Some(s) != aid && Some(s) != aname).unwrap_or(true)
-                        })
-                        .collect();
-                    if !active_others.is_empty() {
-                        text.push_str("\n\n---\n");
-                        text.push_str(&format_swarm_roster(&active_others, self_id));
-                    }
+                        let summary = format_bounty_scope_summary(&cfg, &recs);
+                        (json!([{ "type": "text", "text": summary }]), false)
+                    } else {
+                        let mut scope_banner = String::new();
+                        if scope_mode == "in_scope_only" || scope_mode == "out_of_scope_only" {
+                            let (cfg, _) = load_or_recommend_bounty_scope(&p_buf, &g);
+                            let want_in = scope_mode == "in_scope_only";
+                            g.nodes.retain(|n| is_path_in_bounty_scope(&n.file_path, &cfg) == want_in);
+                            scope_banner = format!(
+                                "🎯 **[Filtre Scope PoC actif : `{}` — In-Scope: {} dossier(s), Out-of-Scope: {} dossier(s)]**\n\n",
+                                scope_mode,
+                                cfg.in_scope.len(),
+                                cfg.out_of_scope.len()
+                            );
+                        }
 
-                    (json!([{ "type": "text", "text": text }]), false)
+                        let effective_has_violation = if cwe_id.is_some() || severity.is_some() {
+                            Some(true)
+                        } else {
+                            has_violation
+                        };
+
+                        let mut text = format!(
+                            "{}{}",
+                            scope_banner,
+                            format_search_symbols_response(&g, query, layer, kind, stereotype, effective_has_violation, limit)
+                        );
+
+                        if cwe_id.is_some() || severity.is_some() || file_pattern.is_some() {
+                            let viol_block = format_violations_response(&g, severity, cwe_id, file_pattern.or(if !query.is_empty() { Some(query) } else { None }));
+                            text.push_str("\n\n---\n");
+                            text.push_str(&viol_block);
+                        }
+
+                        // Coordination multi-agents lors des recherches partagées
+                        if opt_str_arg(&arguments, "agent_id").is_some() || opt_str_arg(&arguments, "agent_name").is_some() {
+                            let search_target = if !query.trim().is_empty() {
+                                query
+                            } else if let Some(fp) = file_pattern {
+                                fp
+                            } else if let Some(cwe) = cwe_id {
+                                cwe
+                            } else {
+                                "Codebase Search"
+                            };
+                            let telem_payload = build_telemetry_payload(
+                                search_target,
+                                "Recherche Collaborative",
+                                &format!("Recherche layer={:?} kind={:?} cwe={:?} scope={}", layer, kind, cwe_id, scope_mode),
+                                &arguments,
+                            );
+                            let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&telem_payload)).await;
+                        }
+                        let self_id = opt_str_arg(&arguments, "agent_id").or_else(|| opt_str_arg(&arguments, "agent_name"));
+                        let peers = fetch_active_swarm_agents(server_port).await;
+                        let active_others: Vec<Value> = peers
+                            .into_iter()
+                            .filter(|p| {
+                                let aid = p.get("agent_id").and_then(|v| v.as_str());
+                                let aname = p.get("agent_name").and_then(|v| v.as_str());
+                                self_id.map(|s| Some(s) != aid && Some(s) != aname).unwrap_or(true)
+                            })
+                            .collect();
+                        if !active_others.is_empty() {
+                            text.push_str("\n\n---\n");
+                            text.push_str(&format_swarm_roster(&active_others, self_id));
+                        }
+
+                        (json!([{ "type": "text", "text": text }]), false)
+                    }
                 }
 
                 "aetherscope_trace_flow" => {
@@ -1942,5 +2013,22 @@ mod tests {
         assert_eq!(swarm_res["isError"], false);
         let text = swarm_res["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("aether://agents/swarm"));
+
+        let scope_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(803)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_search_symbols",
+                "arguments": {
+                    "scope_mode": "recommend_scope"
+                }
+            })),
+        };
+        let scope_resp = handle_mcp_request(scope_req, 3030, ".").await.expect("recommend_scope");
+        let scope_res = scope_resp.result.expect("result present");
+        assert_eq!(scope_res["isError"], false);
+        let scope_text = scope_res["content"][0]["text"].as_str().unwrap();
+        assert!(scope_text.contains("Périmètre Bug Bounty & PoC"));
     }
 }

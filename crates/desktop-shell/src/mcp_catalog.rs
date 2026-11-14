@@ -661,6 +661,25 @@ pub(crate) async fn handle_catalog_request(
                                 "color": {
                                     "type": "string",
                                     "description": "Couleur hexadécimale de l'agent chercheur"
+                                },
+                                "scope_mode": {
+                                    "type": "string",
+                                    "description": "Mode Bug Bounty PoC Scope : 'all' (défaut), 'in_scope_only' (filtre les cibles In-Scope), 'out_of_scope_only', 'recommend_scope' (calcule les recommandations In-Scope/Out-Scope selon la surface d'attaque AST/CWE), ou 'configure_scope' (met à jour le scope PoC du projet)",
+                                    "enum": ["all", "in_scope_only", "out_of_scope_only", "recommend_scope", "configure_scope"]
+                                },
+                                "in_scope": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Liste des dossiers/modules à placer en In-Scope (pour scope_mode='configure_scope')"
+                                },
+                                "out_of_scope": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Liste des dossiers/modules à exclure en Out-of-Scope (pour scope_mode='configure_scope')"
+                                },
+                                "scope_rationale": {
+                                    "type": "string",
+                                    "description": "Justification de l'IA sur le choix du périmètre In-Scope / Out-of-Scope"
                                 }
                             },
                             "required": [],
@@ -1969,4 +1988,236 @@ pub(crate) fn format_violations_response(
     }
     out
 }
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct FolderScopeRecommendation {
+    pub folder: String,
+    pub status: String, // "in_scope" | "out_of_scope"
+    pub critical_count: usize,
+    pub high_count: usize,
+    pub total_violations: usize,
+    pub entrypoints_count: usize,
+    pub score: i32,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct BountyScopeConfig {
+    #[serde(default)]
+    pub in_scope: Vec<String>,
+    #[serde(default)]
+    pub out_of_scope: Vec<String>,
+    #[serde(default)]
+    pub mode: String, // "manual" | "ai_recommended" | "mcp_synced"
+    #[serde(default)]
+    pub updated_by: Option<String>,
+    #[serde(default)]
+    pub rationale: Option<String>,
+    #[serde(default)]
+    pub timestamp: u64,
+}
+
+pub fn extract_scope_folder(file_path: &str) -> String {
+    let norm = file_path.replace('\\', "/");
+    let parts: Vec<&str> = norm.split('/').filter(|s| !s.is_empty() && *s != ".").collect();
+    if parts.len() > 1 {
+        parts[..parts.len().min(2).min(parts.len() - 1)].join("/")
+    } else {
+        "root".to_string()
+    }
+}
+
+pub fn is_noise_or_test_folder(folder: &str) -> bool {
+    let lower = folder.to_lowercase();
+    [
+        "test", "tests", "spec", "fixture", "mock", "bench", "docs", "doc",
+        "example", "examples", "target", "node_modules", "dist", "vendor",
+    ]
+    .iter()
+    .any(|kw| {
+        lower == *kw
+            || lower.starts_with(&format!("{}/", kw))
+            || lower.ends_with(&format!("/{}", kw))
+            || lower.contains(&format!("/{}/", kw))
+    })
+}
+
+pub fn compute_scope_recommendations(g: &core_graph::graph::AetherGraph) -> Vec<FolderScopeRecommendation> {
+    use std::collections::BTreeMap;
+    #[derive(Default)]
+    struct Acc {
+        crit: usize,
+        high: usize,
+        total_v: usize,
+        entry: usize,
+        domain_db: usize,
+        nodes: usize,
+    }
+    let mut map: BTreeMap<String, Acc> = BTreeMap::new();
+    for n in &g.nodes {
+        if n.file_path.is_empty() {
+            continue;
+        }
+        let folder = extract_scope_folder(&n.file_path);
+        let entry = map.entry(folder).or_default();
+        entry.nodes += 1;
+        let layer_l = n.layer.to_lowercase();
+        let st_l = n.stereotype.to_lowercase();
+        if layer_l == "action" || layer_l == "ui" || st_l.contains("endpoint") || st_l.contains("controller") || st_l.contains("route") {
+            entry.entry += 1;
+        }
+        if layer_l == "domain" || layer_l == "database" {
+            entry.domain_db += 1;
+        }
+        for a in &n.metadata.cve_anomalies {
+            entry.total_v += 1;
+            match a.severity.to_uppercase().as_str() {
+                "CRITICAL" => entry.crit += 1,
+                "HIGH" => entry.high += 1,
+                _ => {}
+            }
+        }
+    }
+
+    let mut recs: Vec<FolderScopeRecommendation> = map
+        .into_iter()
+        .filter(|(_, acc)| acc.total_v > 0 || acc.entry > 0 || acc.nodes >= 2)
+        .map(|(folder, acc)| {
+            let is_noise = is_noise_or_test_folder(&folder);
+            let mut score: i32 = (acc.crit as i32) * 30
+                + (acc.high as i32) * 15
+                + (acc.total_v as i32) * 4
+                + (acc.entry as i32) * 8
+                + (acc.domain_db as i32) * 3;
+            if is_noise {
+                score -= 120;
+            }
+            let status = if !is_noise && (acc.total_v > 0 || acc.entry > 0 || score >= 10) {
+                "in_scope".to_string()
+            } else {
+                "out_of_scope".to_string()
+            };
+            let reason = if is_noise {
+                "Hors surface prod (Tests / Fixtures / Docs / Build)".to_string()
+            } else if acc.crit > 0 || acc.high > 0 {
+                format!(
+                    "Surface critique : {} CRITICAL, {} HIGH ({} point(s) d'entrée)",
+                    acc.crit, acc.high, acc.entry
+                )
+            } else if acc.entry > 0 {
+                format!("Surface exposée : {} point(s) d'entrée / routes ({} alerte(s))", acc.entry, acc.total_v)
+            } else if acc.total_v > 0 {
+                format!("Module interne avec {} alerte(s) SAST", acc.total_v)
+            } else {
+                "Aucune alerte SAST ni point d'entrée exposé".to_string()
+            };
+            FolderScopeRecommendation {
+                folder,
+                status,
+                critical_count: acc.crit,
+                high_count: acc.high,
+                total_violations: acc.total_v,
+                entrypoints_count: acc.entry,
+                score,
+                reason,
+            }
+        })
+        .collect();
+
+    recs.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.folder.cmp(&b.folder)));
+    recs
+}
+
+pub fn build_recommended_scope_config(
+    recs: &[FolderScopeRecommendation],
+    updated_by: Option<String>,
+    rationale: Option<String>,
+) -> BountyScopeConfig {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let in_scope = recs
+        .iter()
+        .filter(|r| r.status == "in_scope")
+        .map(|r| r.folder.clone())
+        .collect();
+    let out_of_scope = recs
+        .iter()
+        .filter(|r| r.status == "out_of_scope")
+        .map(|r| r.folder.clone())
+        .collect();
+    BountyScopeConfig {
+        in_scope,
+        out_of_scope,
+        mode: "ai_recommended".to_string(),
+        updated_by: Some(updated_by.unwrap_or_else(|| "AetherScope AI Recommender".to_string())),
+        rationale: Some(rationale.unwrap_or_else(|| {
+            "Priorisation automatique des modules exposés (UI/Action/Endpoints) et des CWE CRITICAL/HIGH ; exclusion des tests, fixtures et docs.".to_string()
+        })),
+        timestamp: now_ms,
+    }
+}
+
+pub fn load_or_recommend_bounty_scope(
+    project_root: &Path,
+    g: &core_graph::graph::AetherGraph,
+) -> (BountyScopeConfig, Vec<FolderScopeRecommendation>) {
+    let recs = compute_scope_recommendations(g);
+    let scope_file = project_root.join(".aether").join("bounty_scope.json");
+    if scope_file.exists() {
+        if let Ok(raw) = std::fs::read_to_string(&scope_file) {
+            if let Ok(cfg) = serde_json::from_str::<BountyScopeConfig>(&raw) {
+                return (cfg, recs);
+            }
+        }
+    }
+    let cfg = build_recommended_scope_config(&recs, None, None);
+    (cfg, recs)
+}
+
+pub fn save_bounty_scope(project_root: &Path, cfg: &BountyScopeConfig) {
+    let dir = project_root.join(".aether");
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(json_str) = serde_json::to_string_pretty(cfg) {
+        let _ = std::fs::write(dir.join("bounty_scope.json"), json_str);
+    }
+}
+
+pub fn is_path_in_bounty_scope(file_path: &str, cfg: &BountyScopeConfig) -> bool {
+    let folder = extract_scope_folder(file_path);
+    let norm = file_path.replace('\\', "/");
+    if cfg.out_of_scope.iter().any(|p| p == &folder || norm.starts_with(p)) {
+        return false;
+    }
+    if !cfg.in_scope.is_empty() {
+        return cfg.in_scope.iter().any(|p| p == &folder || norm.starts_with(p));
+    }
+    true
+}
+
+pub fn format_bounty_scope_summary(
+    cfg: &BountyScopeConfig,
+    recs: &[FolderScopeRecommendation],
+) -> String {
+    let mut out = format!(
+        "🎯 **Périmètre Bug Bounty & PoC (`mode: {}`)**\n- Mis à jour par : `{}`\n- Justification : {}\n- **In-Scope ({})** : {}\n- **Out-of-Scope ({})** : {}\n\n### 🤖 Recommandations AST / Surface d'Attaque :\n",
+        if cfg.mode.is_empty() { "ai_recommended" } else { &cfg.mode },
+        cfg.updated_by.as_deref().unwrap_or("auto"),
+        cfg.rationale.as_deref().unwrap_or("-"),
+        cfg.in_scope.len(),
+        if cfg.in_scope.is_empty() { "*(Tous hors exclusions)*".to_string() } else { cfg.in_scope.iter().map(|s| format!("`{}`", s)).collect::<Vec<_>>().join(", ") },
+        cfg.out_of_scope.len(),
+        if cfg.out_of_scope.is_empty() { "*(Aucun)*".to_string() } else { cfg.out_of_scope.iter().map(|s| format!("`{}`", s)).collect::<Vec<_>>().join(", ") },
+    );
+    for r in recs.iter().take(20) {
+        let badge = if r.status == "in_scope" { "🎯 IN-SCOPE" } else { "🚫 OUT-SCOPE" };
+        out.push_str(&format!(
+            "- **{}** `{}` (score `{}`) — {}\n",
+            badge, r.folder, r.score, r.reason
+        ));
+    }
+    out
+}
+
 

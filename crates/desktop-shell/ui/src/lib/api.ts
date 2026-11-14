@@ -340,6 +340,47 @@ export class AetherApiClient {
     });
     return res.json();
   }
+
+  async getBountyScope(): Promise<{
+    status: string;
+    scope: {
+      in_scope: string[];
+      out_of_scope: string[];
+      mode: string;
+      updated_by?: string;
+      rationale?: string;
+      timestamp: number;
+    };
+    recommendations: {
+      folder: string;
+      status: string;
+      critical_count: number;
+      high_count: number;
+      total_violations: number;
+      entrypoints_count: number;
+      score: number;
+      reason: string;
+    }[];
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/bounty/scope`);
+    return res.json();
+  }
+
+  async updateBountyScope(payload: {
+    action?: 'set' | 'auto_recommend';
+    in_scope?: string[];
+    out_of_scope?: string[];
+    mode?: string;
+    updated_by?: string;
+    rationale?: string;
+  }): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/bounty/scope`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  }
 }
 
 export const api = new AetherApiClient();

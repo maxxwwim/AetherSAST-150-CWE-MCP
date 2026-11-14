@@ -1736,6 +1736,82 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
+        .route(
+            "/api/bounty/scope",
+            axum::routing::get({
+                let state = state_file_content.clone();
+                move || {
+                    let state = state.clone();
+                    async move {
+                        let p_root = state.project_root.read().await.clone();
+                        let g = state.graph.read().await.clone();
+                        let (cfg, recs) = crate::mcp::load_or_recommend_bounty_scope(&p_root, &g);
+                        axum::Json(serde_json::json!({
+                            "status": "ok",
+                            "scope": cfg,
+                            "recommendations": recs
+                        }))
+                    }
+                }
+            })
+            .post({
+                let state = state_file_content.clone();
+                move |axum::extract::Json(payload): axum::extract::Json<serde_json::Value>| {
+                    let state = state.clone();
+                    async move {
+                        let p_root = state.project_root.read().await.clone();
+                        let g = state.graph.read().await.clone();
+                        let recs = crate::mcp::compute_scope_recommendations(&g);
+                        let action = payload.get("action").and_then(|v| v.as_str()).unwrap_or("set");
+                        let updated_by = payload
+                            .get("updated_by")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let rationale = payload
+                            .get("rationale")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let cfg = if action == "auto_recommend" {
+                            crate::mcp::build_recommended_scope_config(&recs, updated_by, rationale)
+                        } else {
+                            let in_scope: Vec<String> = payload
+                                .get("in_scope")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                                .unwrap_or_default();
+                            let out_of_scope: Vec<String> = payload
+                                .get("out_of_scope")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                                .unwrap_or_default();
+                            let mode = payload
+                                .get("mode")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("manual")
+                                .to_string();
+                            crate::mcp::BountyScopeConfig {
+                                in_scope,
+                                out_of_scope,
+                                mode,
+                                updated_by: Some(updated_by.unwrap_or_else(|| "User / MCP".to_string())),
+                                rationale,
+                                timestamp: now_ms,
+                            }
+                        };
+                        crate::mcp::save_bounty_scope(&p_root, &cfg);
+                        axum::Json(serde_json::json!({
+                            "status": "ok",
+                            "scope": cfg,
+                            "recommendations": recs
+                        }))
+                    }
+                }
+            }),
+        )
         // Flux brut binaire pour images, SVG et médias (PNG, SVG, JPG, WebP, etc.)
         .route(
             "/api/raw_file",
