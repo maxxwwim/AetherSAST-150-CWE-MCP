@@ -131,6 +131,9 @@
       case 'b':
         cockpitState.isBountyModalOpen = !cockpitState.isBountyModalOpen;
         break;
+      case 'u':
+        cockpitState.isSurfaceScannerOpen = !cockpitState.isSurfaceScannerOpen;
+        break;
       case 'm':
         cockpitState.toggleDocPanel();
         break;
@@ -183,8 +186,10 @@
       }
     })();
 
-    // Live graph version watcher, Git diff & AI agent telemetry (polls every 2s)
+    // Live graph version watcher, Git diff, tasks & AI agent telemetry (polls every 2s)
+    let tickCount = 0;
     versionTimer = setInterval(async () => {
+      tickCount++;
       try {
         const res = await api.getGraphVersion();
         cockpitState.liveConnected = true;
@@ -206,11 +211,23 @@
       // Continuous AI telemetry poll so agent avatars orbit and animate on WebGL canvas even when AI chat drawer is closed
       try {
         const teleRes = await api.getTelemetry();
-        if (teleRes && (teleRes.telemetry || teleRes.agents)) {
-          cockpitState.recordAiTelemetry(teleRes.telemetry as any, teleRes.agents);
+        if (teleRes && (teleRes.telemetry || teleRes.agents || teleRes.history)) {
+          cockpitState.recordAiTelemetry(teleRes.telemetry as any, teleRes.agents, teleRes.history);
         }
       } catch {
         // offline or quiet telemetry
+      }
+
+      // Periodic tasks poll (every 4s) so AI agent tasks appear in UI automatically
+      if (tickCount % 2 === 0) {
+        try {
+          const tasks = await api.getTasks();
+          if (Array.isArray(tasks)) {
+            cockpitState.tasks = tasks;
+          }
+        } catch {
+          // offline or quiet tasks
+        }
       }
     }, 2000);
 

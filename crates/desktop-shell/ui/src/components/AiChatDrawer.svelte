@@ -80,8 +80,8 @@
         api.getTelemetry().catch(() => null),
         api.getChatHistory().catch(() => null),
       ]);
-      if (telemRes?.agents?.length || telemRes?.telemetry?.target) {
-        cockpitState.recordAiTelemetry(telemRes.telemetry as any, telemRes.agents);
+      if (telemRes?.agents?.length || telemRes?.telemetry?.target || telemRes?.history?.length) {
+        cockpitState.recordAiTelemetry(telemRes.telemetry as any, telemRes.agents, telemRes.history);
       }
       if (chatRes && Array.isArray(chatRes.messages)) {
         const prevLen = cockpitState.aiChatMessages.length;
@@ -605,6 +605,10 @@
                   </button>
                 {/each}
               </div>
+            {:else}
+              <div class="p-3 rounded-lg bg-black/30 border border-white/5 text-center text-slate-400 text-[10.5px]">
+                En attente d'activité MCP / CLI. Plusieurs agents peuvent se connecter simultanément avec des identités et couleurs distinctes.
+              </div>
             {/if}
 
             <div class="grid grid-cols-2 gap-1.5 text-[10.5px]">
@@ -669,7 +673,7 @@
 
             {#if cockpitState.aiTrail.length === 0}
               <div class="p-4 rounded-xl bg-white/[0.02] border border-white/10 text-center text-[11px] text-slate-400">
-                Aucun déplacement enregistré pour cette session. Appelez <code class="text-sky-300">aetherscope_teleport_camera</code> ou cliquez sur Tester dans le module MCP.
+                Aucun déplacement enregistré pour cette session. Appelez <code class="text-sky-300">aetherscope_teleport_camera</code> ou connectez un agent MCP.
               </div>
             {:else}
               <div class="space-y-1.5">
@@ -677,14 +681,26 @@
                   <button
                     type="button"
                     onclick={() => focusSymbolByName(step.target)}
-                    class="w-full text-left p-2 rounded-lg bg-black/35 hover:bg-purple-950/35 border border-white/10 hover:border-purple-500/40 transition-colors cursor-pointer space-y-0.5"
+                    class="w-full text-left p-2 rounded-lg bg-black/35 hover:bg-white/[0.05] border transition-colors cursor-pointer space-y-1"
+                    style="border-color: {step.color ? step.color + '44' : 'rgba(255,255,255,0.1)'}"
                   >
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="font-mono font-bold text-purple-200 truncate">📍 {step.target}</span>
-                      <span class="text-[9.5px] font-mono text-sky-300 shrink-0">{step.action}</span>
+                    <div class="flex items-center justify-between gap-1.5">
+                      <div class="flex items-center gap-1.5 truncate">
+                        <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {step.color || '#a855f7'}"></span>
+                        {#if step.author}
+                          <span
+                            class="px-1.5 py-0.2 rounded text-[9px] font-semibold truncate"
+                            style="background-color: {step.color || '#a855f7'}22; color: {step.color || '#a855f7'}; border: 1px solid {step.color || '#a855f7'}44;"
+                          >
+                            🤖 {step.author}
+                          </span>
+                        {/if}
+                        <span class="font-mono font-bold text-white text-[10.5px] truncate">📍 {step.target}</span>
+                      </div>
+                      <span class="text-[9px] font-mono text-sky-300 shrink-0">{step.action}</span>
                     </div>
                     {#if step.details}
-                      <div class="text-[10.5px] text-slate-400 truncate">{step.details}</div>
+                      <div class="text-[10px] text-slate-400 truncate pl-3.5">{step.details}</div>
                     {/if}
                   </button>
                 {/each}

@@ -13,7 +13,7 @@
     ShieldCheck
   } from '@lucide/svelte';
 
-  let clientTab = $state<'antigravity' | 'claude' | 'cursor' | 'http'>('antigravity');
+  let clientTab = $state<'antigravity' | 'claude' | 'cursor' | 'multi-agent' | 'http'>('antigravity');
   let copied = $state(false);
   let testOutput = $state('');
   let testingTool = $state('');
@@ -29,13 +29,55 @@
         ? '%APPDATA%\\Claude\\claude_desktop_config.json (Claude Desktop)'
         : clientTab === 'cursor'
           ? '.cursor/mcp.json (Cursor / Windsurf IDE)'
-          : `http://127.0.0.1:${serverPort}/api/* (Pont REST Local Sans-Shell)`
+          : clientTab === 'multi-agent'
+            ? 'Exemple Multi-IA : Claude + Antigravity + Swarm avec couleurs uniques persistées'
+            : `http://127.0.0.1:${serverPort}/api/* (Pont REST Local Sans-Shell)`
   );
 
   const configSnippet = $derived.by(() => {
     const bin = cockpitState.settings.mcpBinaryPath || 'aetherscope-mcp.exe';
     if (clientTab === 'http') {
       return `# Test rapide Pont Télémétrie & Caméra 3D :\ncurl -X POST http://127.0.0.1:${serverPort}/api/ai/telemetry \\\n  -H "Content-Type: application/json" \\\n  -d '{"target":"${cockpitState.activeSymbol?.name || 'main'}","action":"Inspect","details":"Vérification pont MCP"}'\n\n# Envoyer un message au Chat IA :\ncurl -X POST http://127.0.0.1:${serverPort}/api/ai/chat \\\n  -H "Content-Type: application/json" \\\n  -d '{"sender":"ai","text":"Audit prêt","target_symbol":"${cockpitState.activeSymbol?.name || 'main'}"}'`;
+    }
+    if (clientTab === 'multi-agent') {
+      return JSON.stringify(
+        {
+          mcpServers: {
+            "aetherscope-auditor": {
+              command: bin,
+              args: [
+                '--port', serverPort,
+                '--path', cockpitState.graph.project_path || '.',
+                '--agent-id', 'agent-auditor',
+                '--agent-name', 'SAST Auditor',
+                '--color', '#f43f5e'
+              ],
+            },
+            "aetherscope-refactor": {
+              command: bin,
+              args: [
+                '--port', serverPort,
+                '--path', cockpitState.graph.project_path || '.',
+                '--agent-id', 'agent-refactor',
+                '--agent-name', 'Refactor Lead',
+                '--color', '#10b981'
+              ],
+            },
+            "aetherscope-doc": {
+              command: bin,
+              args: [
+                '--port', serverPort,
+                '--path', cockpitState.graph.project_path || '.',
+                '--agent-id', 'agent-doc',
+                '--agent-name', 'Doc Scribe',
+                '--color', '#38bdf8'
+              ],
+            },
+          },
+        },
+        null,
+        2
+      );
     }
     return JSON.stringify(
       {
@@ -231,6 +273,13 @@
               class="px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer {clientTab === 'cursor' ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'}"
             >
               ⚡ Cursor / Windsurf
+            </button>
+            <button
+              type="button"
+              onclick={() => (clientTab = 'multi-agent')}
+              class="px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer {clientTab === 'multi-agent' ? 'bg-fuchsia-500/20 border-fuchsia-400 text-fuchsia-200' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'}"
+            >
+              👥 Multi-Agents Swarm
             </button>
             <button
               type="button"

@@ -53,7 +53,7 @@ export const vsSource = `#version 300 es
     float scale = clamp(ease_out + breath_overshoot, 0.0, 1.15);
     v_scale = scale;
 
-    float zoom_factor = clamp(1.0 / sqrt(clamp(u_zoom, 0.001, 5.0)), 0.85, 4.5);
+    float zoom_factor = clamp(1.0 / sqrt(clamp(u_zoom, 0.0001, 12.0)), 0.85, 6.0);
     float breath = 1.0 + 0.038 * sin(u_time * 0.0016 + v_phase);
     float git_margin = (a_git_status > 0.5) ? 1.16 : 1.0;
     float actual_r = a_radius * scale * breath * 2.85 * zoom_factor * git_margin;
@@ -63,8 +63,9 @@ export const vsSource = `#version 300 es
     float buoy_y = cos(u_time * 0.0009 + v_phase * 1.3) * 1.5;
     vec2 dynamic_pos = a_node_pos + vec2(buoy_x, buoy_y);
 
-    // Guaranteed minimum screen-space radius (2.0px) for infinite dezoom without vanishing
-    float screen_r = max(2.0, actual_r * u_zoom);
+    // Guaranteed minimum screen-space radius (1.8px to 2.6px) for infinite dezoom without vanishing
+    float min_px = (a_is_file > 0.5) ? 2.6 : 1.8;
+    float screen_r = max(min_px, actual_r * u_zoom);
     vec2 screen_center = (dynamic_pos - u_camera_pos) * u_zoom + u_resolution * 0.5;
     vec2 screen_pos = screen_center + a_quad_pos * screen_r;
     vec2 clip_pos = (screen_pos / u_resolution) * 2.0 - 1.0;
@@ -385,7 +386,7 @@ export const bgFsSource = `#version 300 es
     vec2 aspectUv = (gl_FragCoord.xy - 0.5 * u_resolution) / minDim;
     float t = u_time * 0.001;
     vec2 camShift = u_camera_pos * 0.00032;
-    float zoomParallax = 1.0 + (u_zoom - 0.65) * 0.06;
+    float zoomParallax = 1.0 + (clamp(u_zoom, 0.0001, 12.0) - 0.65) * 0.06;
     vec2 nebUv = aspectUv / clamp(zoomParallax, 0.78, 1.4) + camShift * 0.45;
 
     // Domain-warped cosmic nebula ("style nébuleuse")

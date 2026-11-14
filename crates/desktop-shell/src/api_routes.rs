@@ -298,6 +298,12 @@ pub struct CreateTaskApiRequest {
     #[serde(default)]
     pub author: Option<String>,
     #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
     pub priority: Option<String>,
     #[serde(default)]
     pub initial_readme: Option<String>,
@@ -307,6 +313,14 @@ pub struct CreateTaskApiRequest {
 pub struct UpdateTaskApiRequest {
     pub task_id: String,
     #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub target_symbol: Option<String>,
+    #[serde(default)]
+    pub target_file: Option<String>,
+    #[serde(default)]
+    pub priority: Option<String>,
+    #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
     pub progress: Option<u8>,
@@ -314,6 +328,160 @@ pub struct UpdateTaskApiRequest {
     pub progress_note: Option<String>,
     #[serde(default)]
     pub full_readme: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+pub const AI_AGENT_PALETTE: &[&str] = &[
+    "#38bdf8", // Cyan (Sky)
+    "#c084fc", // Purple
+    "#34d399", // Emerald
+    "#f472b6", // Pink
+    "#f59e0b", // Amber
+    "#a3e635", // Lime
+    "#22d3ee", // Bright Cyan
+    "#fb7185", // Rose
+    "#818cf8", // Indigo
+    "#fb923c", // Orange
+    "#2dd4bf", // Teal
+    "#e879f9", // Fuchsia
+];
+
+pub fn assign_agent_color(agent_id: &str, agent_name: Option<&str>, explicit_color: Option<&str>) -> String {
+    if let Some(c) = explicit_color.map(str::trim).filter(|s| !s.is_empty()) {
+        return c.to_string();
+    }
+    let key = agent_id.trim();
+    let key_lower = key.to_lowercase();
+    let name_lower = agent_name.unwrap_or("").trim().to_lowercase();
+
+    // Compute a deterministic hash from the full agent_id + agent_name so multiple instances
+    // (e.g. claude-1, claude-2, gemini-arch, cursor-sec) get distinct colors
+    let seed = if !key.is_empty() {
+        format!("{}:{}", key_lower, name_lower)
+    } else {
+        name_lower.clone()
+    };
+    if seed.is_empty() || seed == "primary-agent:" {
+        return AI_AGENT_PALETTE[0].to_string();
+    }
+    let mut hash: u64 = 14695981039346656037;
+    for b in seed.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(1099511628211);
+    }
+    let idx = (hash as usize) % AI_AGENT_PALETTE.len();
+    AI_AGENT_PALETTE[idx].to_string()
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AiTelemetryCache {
+    #[serde(default)]
+    pub telemetry: Option<AiTelemetryEvent>,
+    #[serde(default)]
+    pub agents: Vec<AiTelemetryEvent>,
+    #[serde(default)]
+    pub history: Vec<AiTelemetryEvent>,
+}
+
+pub fn ai_telemetry_cache_path(project_root: &Path) -> PathBuf {
+    project_root.join(".aether").join("ai_telemetry_cache.json")
+}
+
+pub fn load_ai_telemetry_cache(project_root: &Path) -> AiTelemetryCache {
+    let path = ai_telemetry_cache_path(project_root);
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(mut cache) = serde_json::from_str::<AiTelemetryCache>(&content) {
+            for ag in &mut cache.agents {
+                let id = ag.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
+                ag.color = Some(assign_agent_color(&id, ag.agent_name.as_deref(), ag.color.as_deref()));
+            }
+            for ev in &mut cache.history {
+                let id = ev.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
+                ev.color = Some(assign_agent_color(&id, ev.agent_name.as_deref(), ev.color.as_deref()));
+            }
+            if let Some(ref mut t) = cache.telemetry {
+                let id = t.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
+                t.color = Some(assign_agent_color(&id, t.agent_name.as_deref(), t.color.as_deref()));
+            }
+            return cache;
+        }
+    }
+    AiTelemetryCache::default()
+}
+
+pub fn save_ai_telemetry_cache(project_root: &Path, cache: &AiTelemetryCache) {
+    let aether_dir = project_root.join(".aether");
+    let _ = std::fs::create_dir_all(&aether_dir);
+    let path = aether_dir.join("ai_telemetry_cache.json");
+    if let Ok(json_str) = serde_json::to_string_pretty(cache) {
+        let _ = std::fs::write(path, json_str);
+    }
+}
+
+pub fn clear_ai_telemetry_cache(project_root: &Path) {
+    let path = ai_telemetry_cache_path(project_root);
+    let _ = std::fs::remove_file(path);
+}
+
+#[allow(dead_code)]
+pub fn record_offline_ai_telemetry(project_root: &Path, mut event: AiTelemetryEvent) {
+    let mut cache = load_ai_telemetry_cache(project_root);
+    let now_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if event.timestamp == 0 {
+        event.timestamp = now_ts;
+    }
+    let agent_key = event
+        .agent_id
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "primary-agent".to_string());
+    event.agent_id = Some(agent_key.clone());
+
+    let existing_color = cache
+        .agents
+        .iter()
+        .find(|a| a.agent_id.as_deref() == Some(agent_key.as_str()))
+        .and_then(|a| a.color.clone());
+    let resolved_color = assign_agent_color(
+        &agent_key,
+        event.agent_name.as_deref(),
+        event.color.as_deref().or(existing_color.as_deref()),
+    );
+    event.color = Some(resolved_color);
+
+    if let Some(pos) = cache.agents.iter().position(|a| a.agent_id.as_deref() == Some(agent_key.as_str())) {
+        if event.agent_name.is_none() {
+            event.agent_name = cache.agents[pos].agent_name.clone();
+        }
+        cache.agents[pos] = event.clone();
+    } else {
+        cache.agents.push(event.clone());
+    }
+    cache.agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    let is_dup = cache.history.first().map(|last| {
+        last.agent_id == event.agent_id
+            && last.target == event.target
+            && last.action == event.action
+            && event.timestamp.saturating_sub(last.timestamp) <= 1
+    }).unwrap_or(false);
+
+    if !is_dup {
+        cache.history.insert(0, event.clone());
+        if cache.history.len() > 250 {
+            cache.history.truncate(250);
+        }
+    }
+    cache.telemetry = Some(event);
+    save_ai_telemetry_cache(project_root, &cache);
 }
 
 #[derive(Deserialize)]
@@ -412,6 +580,7 @@ pub struct AppState {
     pub project_root: RwLock<PathBuf>,
     pub telemetry: RwLock<Option<AiTelemetryEvent>>,
     pub active_agents: RwLock<std::collections::HashMap<String, AiTelemetryEvent>>,
+    pub telemetry_history: RwLock<Vec<AiTelemetryEvent>>,
     pub chat_messages: RwLock<Vec<AiChatMessage>>,
     pub graph_version: std::sync::atomic::AtomicU64,
     pub custom_exclusions: RwLock<Vec<String>>,
@@ -436,11 +605,18 @@ impl AppState {
         vault_graph: Option<AetherGraph>,
         detection_report: Option<ProjectDetectionReport>,
     ) -> Self {
+        let cached = load_ai_telemetry_cache(&project_root);
+        let mut initial_agents = std::collections::HashMap::new();
+        for ag in cached.agents {
+            let key = ag.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
+            initial_agents.insert(key, ag);
+        }
         Self {
             graph: RwLock::new(graph),
             project_root: RwLock::new(project_root),
-            telemetry: RwLock::new(None),
-            active_agents: RwLock::new(std::collections::HashMap::new()),
+            telemetry: RwLock::new(cached.telemetry),
+            active_agents: RwLock::new(initial_agents),
+            telemetry_history: RwLock::new(cached.history),
             chat_messages: RwLock::new(Vec::new()),
             graph_version: std::sync::atomic::AtomicU64::new(1),
             custom_exclusions: RwLock::new(Vec::new()),
@@ -452,6 +628,94 @@ impl AppState {
             vault_graph: RwLock::new(vault_graph),
             detection_report: RwLock::new(detection_report),
         }
+    }
+
+    pub async fn record_telemetry(&self, mut event: AiTelemetryEvent) -> AiTelemetryEvent {
+        let now_ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if event.timestamp == 0 {
+            event.timestamp = now_ts;
+        }
+        let agent_key = event
+            .agent_id
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "primary-agent".to_string());
+        event.agent_id = Some(agent_key.clone());
+
+        let mut agents = self.active_agents.write().await;
+        let existing_color = agents.get(&agent_key).and_then(|a| a.color.clone());
+        let existing_name = agents.get(&agent_key).and_then(|a| a.agent_name.clone());
+        if event.agent_name.as_deref().map(str::trim).unwrap_or("").is_empty() {
+            event.agent_name = existing_name;
+        }
+        let resolved_color = assign_agent_color(
+            &agent_key,
+            event.agent_name.as_deref(),
+            event.color.as_deref().or(existing_color.as_deref()),
+        );
+        event.color = Some(resolved_color);
+        agents.insert(agent_key, event.clone());
+
+        let mut agents_vec: Vec<AiTelemetryEvent> = agents.values().cloned().collect();
+        agents_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        drop(agents);
+
+        let mut history = self.telemetry_history.write().await;
+        let is_dup = history.first().map(|last| {
+            last.agent_id == event.agent_id
+                && last.target == event.target
+                && last.action == event.action
+                && event.timestamp.saturating_sub(last.timestamp) <= 1
+        }).unwrap_or(false);
+
+        if !is_dup {
+            history.insert(0, event.clone());
+            if history.len() > 250 {
+                history.truncate(250);
+            }
+        }
+        let history_clone = history.clone();
+        drop(history);
+
+        {
+            let mut t = self.telemetry.write().await;
+            *t = Some(event.clone());
+        }
+
+        let proj_root = self.project_root.read().await.clone();
+        save_ai_telemetry_cache(
+            &proj_root,
+            &AiTelemetryCache {
+                telemetry: Some(event.clone()),
+                agents: agents_vec,
+                history: history_clone,
+            },
+        );
+        event
+    }
+
+    pub async fn reload_telemetry_cache(&self, project_root: &Path) {
+        let cached = load_ai_telemetry_cache(project_root);
+        let mut agents = self.active_agents.write().await;
+        agents.clear();
+        for ag in cached.agents {
+            let key = ag.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
+            agents.insert(key, ag);
+        }
+        drop(agents);
+        *self.telemetry.write().await = cached.telemetry;
+        *self.telemetry_history.write().await = cached.history;
+    }
+
+    pub async fn clear_telemetry(&self) {
+        self.active_agents.write().await.clear();
+        *self.telemetry.write().await = None;
+        self.telemetry_history.write().await.clear();
+        let proj_root = self.project_root.read().await.clone();
+        clear_ai_telemetry_cache(&proj_root);
     }
 
     pub async fn get_active_view_mode(&self) -> String {

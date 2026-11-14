@@ -24,6 +24,10 @@ for (let i = 0; i < 12; i++) {
   _SIN12[i] = Math.sin(a);
 }
 
+// Infinite Galaxy Dezoom & Cellular Precision Zoom Bounds
+export const MIN_GALAXY_ZOOM = 0.0001;
+export const MAX_GALAXY_ZOOM = 12.0;
+
 export class AetherEngine {
   private gl: WebGL2RenderingContext;
   private lineCtx: CanvasRenderingContext2D;
@@ -349,11 +353,19 @@ export class AetherEngine {
     }
     if (!Number.isFinite(minX)) return;
 
+    this.clusters.forEach((cl) => {
+      const r = cl.computedRadius || 100;
+      if (cl.cx - r < minX) minX = cl.cx - r;
+      if (cl.cx + r > maxX) maxX = cl.cx + r;
+      if (cl.cy - r < minY) minY = cl.cy - r;
+      if (cl.cy + r > maxY) maxY = cl.cy + r;
+    });
+
     const spanX = Math.max(400, maxX - minX);
     const spanY = Math.max(400, maxY - minY);
     const fitZoom = Math.max(
-      0.04,
-      Math.min(1.1, Math.min(this.logicalWidth / (spanX + 240), this.logicalHeight / (spanY + 240)))
+      MIN_GALAXY_ZOOM,
+      Math.min(1.15, Math.min(this.logicalWidth / (spanX + 240), this.logicalHeight / (spanY + 240)))
     );
 
     this.camera.targetX = (minX + maxX) * 0.5;
@@ -479,7 +491,7 @@ export class AetherEngine {
   }
 
   public zoomAtScreenPoint(factor: number, sx: number, sy: number) {
-    const clampedZoom = Math.max(0.04, Math.min(5.0, this.camera.targetZoom * factor));
+    const clampedZoom = Math.max(MIN_GALAXY_ZOOM, Math.min(MAX_GALAXY_ZOOM, this.camera.targetZoom * factor));
     const focalWorld = this.screenToWorld(sx, sy);
     this.camera.targetZoom = clampedZoom;
     this.camera.targetX = focalWorld.x - (sx - this.logicalWidth / 2) / clampedZoom;
@@ -487,11 +499,11 @@ export class AetherEngine {
     this.physics.wake(60);
   }
 
-  public zoomIn(factor = 1.25) {
+  public zoomIn(factor = 1.28) {
     this.zoomAtScreenPoint(factor, this.logicalWidth / 2, this.logicalHeight / 2);
   }
 
-  public zoomOut(factor = 0.8) {
+  public zoomOut(factor = 0.78) {
     this.zoomAtScreenPoint(factor, this.logicalWidth / 2, this.logicalHeight / 2);
   }
 
@@ -524,11 +536,11 @@ export class AetherEngine {
 
   private getNodeScreenRadius(n: SymbolBubble, activeId: string | null): number {
     const zoom = this.camera.zoom;
-    const zoomFactor = Math.max(0.85, Math.min(4.5, 1.0 / Math.sqrt(Math.max(0.001, Math.min(5.0, zoom)))));
-    const { baseRadius } = this.classifyNode(n);
+    const zoomFactor = Math.max(0.85, Math.min(6.0, 1.0 / Math.sqrt(Math.max(MIN_GALAXY_ZOOM, Math.min(MAX_GALAXY_ZOOM, zoom)))));
+    const { baseRadius, shaderType } = this.classifyNode(n);
     const scaleMult = n.id === activeId ? 1.65 : n.id === this.hoveredNodeId ? 1.35 : 1.0;
     const rawR = baseRadius * scaleMult * 2.85 * zoomFactor * zoom;
-    return Math.max(2.0, rawR);
+    return Math.max(shaderType > 0.5 ? 2.6 : 1.8, rawR);
   }
 
   private pickNode(sx: number, sy: number): SymbolBubble | null {
@@ -606,7 +618,8 @@ export class AetherEngine {
       e.preventDefault();
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
       const normalizedDelta = e.deltaMode === 1 ? e.deltaY * 24 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-      const zoomFactor = Math.exp(-normalizedDelta * 0.0018);
+      const speed = e.shiftKey ? 0.0042 : 0.0022;
+      const zoomFactor = Math.exp(-normalizedDelta * speed);
       this.zoomAtScreenPoint(zoomFactor, sx, sy);
     }, { passive: false });
 
@@ -681,7 +694,7 @@ export class AetherEngine {
 
         if (this.initialPinchDist > 8 && currentDist > 8) {
           const scale = currentDist / this.initialPinchDist;
-          const newTargetZoom = Math.max(0.04, Math.min(5.0, this.initialPinchZoom * scale));
+          const newTargetZoom = Math.max(MIN_GALAXY_ZOOM, Math.min(MAX_GALAXY_ZOOM, this.initialPinchZoom * scale));
           this.camera.targetZoom = newTargetZoom;
 
           const panDx = (currentCenter.x - this.initialPinchCenter.x) / newTargetZoom;
@@ -1280,37 +1293,84 @@ export class AetherEngine {
 
     for (let idx = 0; idx < agents.length; idx++) {
       const ag = agents[idx];
-      let agColor = ag.color || '#c084fc';
       const agNameLower = (ag.agentName || ag.agentId || '').toLowerCase();
-      if (agNameLower.includes('claude')) agColor = '#f97316';
-      else if (agNameLower.includes('gemini')) agColor = '#38bdf8';
-      else if (agNameLower.includes('cursor')) agColor = '#10b981';
+      let agColor = ag.color;
+      if (!agColor || agColor.trim() === '') {
+        if (agNameLower.includes('claude')) agColor = '#f97316';
+        else if (agNameLower.includes('gemini')) agColor = '#38bdf8';
+        else if (agNameLower.includes('cursor')) agColor = '#10b981';
+        else if (agNameLower.includes('antigravity')) agColor = '#a3e635';
+        else agColor = '#c084fc';
+      }
 
-      // 1. Trail path rendering
+      // 1. Trail path & waypoint nodes rendering
       const agTrail = trails[ag.agentId] || [];
-      if (this.state.settings.aiTrail && agTrail.length > 1) {
-        ctx.beginPath();
-        let started = false;
+      if (this.state.settings.aiTrail && agTrail.length > 0) {
+        const validPoints: { s: { x: number; y: number }; pt: typeof agTrail[0]; step: number }[] = [];
+        let stepCount = 0;
         for (const pt of agTrail) {
           const node = pt.nodeId ? this.nodeMap.get(pt.nodeId) : null;
           const wx = node ? node.x : pt.x;
           const wy = node ? node.y : pt.y;
           if (wx == null || wy == null) continue;
-          const s = this.worldToScreen(wx, wy);
-          if (!started) {
-            ctx.moveTo(s.x, s.y);
-            started = true;
-          } else {
-            ctx.lineTo(s.x, s.y);
+          stepCount++;
+          validPoints.push({ s: this.worldToScreen(wx, wy), pt, step: stepCount });
+        }
+
+        if (validPoints.length > 1) {
+          // Pass 1: Glowing under-line
+          ctx.beginPath();
+          ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
+          for (let i = 1; i < validPoints.length; i++) {
+            ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
+          }
+          ctx.strokeStyle = agColor;
+          ctx.lineWidth = Math.max(2.5, 4.0 * Math.sqrt(zoom));
+          ctx.shadowColor = agColor;
+          ctx.shadowBlur = 8;
+          ctx.globalAlpha = 0.25;
+          ctx.stroke();
+
+          // Pass 2: Animated dashed core
+          ctx.beginPath();
+          ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
+          for (let i = 1; i < validPoints.length; i++) {
+            ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
+          }
+          ctx.setLineDash([7, 5]);
+          ctx.lineDashOffset = -(now * 0.024);
+          ctx.strokeStyle = agColor;
+          ctx.shadowColor = agColor;
+          ctx.shadowBlur = 4;
+          ctx.globalAlpha = 0.85;
+          ctx.lineWidth = Math.max(1.4, 2.2 * Math.sqrt(zoom));
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // Pass 3: Draw waypoint markers on visited locations
+        for (let i = 0; i < validPoints.length; i++) {
+          const wp = validPoints[i];
+          const isLatest = i === validPoints.length - 1;
+          const wpRadius = isLatest ? 4.5 : 3.0;
+
+          ctx.beginPath();
+          ctx.arc(wp.s.x, wp.s.y, wpRadius, 0, Math.PI * 2);
+          ctx.fillStyle = isLatest ? '#ffffff' : agColor;
+          ctx.shadowColor = agColor;
+          ctx.shadowBlur = isLatest ? 8 : 4;
+          ctx.globalAlpha = isLatest ? 0.95 : 0.65;
+          ctx.fill();
+
+          if (isLatest) {
+            ctx.beginPath();
+            ctx.arc(wp.s.x, wp.s.y, wpRadius + 2.5 + Math.sin(now * 0.005) * 1.2, 0, Math.PI * 2);
+            ctx.strokeStyle = agColor;
+            ctx.lineWidth = 1.0;
+            ctx.globalAlpha = 0.75;
+            ctx.stroke();
           }
         }
-        ctx.setLineDash([6, 5]);
-        ctx.lineDashOffset = -(now * 0.018);
-        ctx.strokeStyle = agColor;
-        ctx.globalAlpha = 0.55;
-        ctx.lineWidth = Math.max(1.2, 1.8 * Math.sqrt(zoom));
-        ctx.stroke();
-        ctx.setLineDash([]);
         ctx.globalAlpha = 1.0;
       }
 
@@ -1347,12 +1407,25 @@ export class AetherEngine {
       const xRot = xPlane * cosPsi - yPlane * sinPsi;
       const yRot = xPlane * sinPsi + yPlane * cosPsi;
 
-      const xOrbWorld = targetNode.x + xRot;
-      const yOrbWorld = targetNode.y + yRot;
+      let anchorX = targetNode.x;
+      let anchorY = targetNode.y;
+      if (ag.prevX !== undefined && ag.prevY !== undefined && ag.moveStartTs) {
+        const elapsed = now - ag.moveStartTs;
+        const duration = 650;
+        if (elapsed < duration) {
+          const progress = Math.min(1, Math.max(0, elapsed / duration));
+          const ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+          anchorX = ag.prevX * (1 - ease) + targetNode.x * ease;
+          anchorY = ag.prevY * (1 - ease) + targetNode.y * ease;
+        }
+      }
+
+      const xOrbWorld = anchorX + xRot;
+      const yOrbWorld = anchorY + yRot;
 
       // 4. Smoothly project to screen coordinates using worldToScreen
       const pOrb = this.worldToScreen(xOrbWorld, yOrbWorld);
-      const pNode = this.worldToScreen(targetNode.x, targetNode.y);
+      const pNode = this.worldToScreen(anchorX, anchorY);
 
       // Culling
       if (
@@ -1481,6 +1554,7 @@ export class AetherEngine {
       const agentIcon = agNameLower.includes('claude') ? '✨'
         : agNameLower.includes('gemini') ? '⚡'
         : agNameLower.includes('cursor') ? '🎯'
+        : agNameLower.includes('antigravity') ? '🪐'
         : '🤖';
       const agentCleanName = ag.agentName || ag.agentId || 'Agent';
       const actionText = ag.action || 'Auditing AST';
@@ -1678,7 +1752,8 @@ export class AetherEngine {
     this.clusters.forEach((cl, folder) => {
       if (cl.count <= 0 || this.state.disabledModules[folder]) return;
       const center = this.worldToScreen(cl.cx, cl.cy);
-      const baseR = (cl.computedRadius || 100) * this.camera.zoom;
+      const rawR = (cl.computedRadius || 100) * this.camera.zoom;
+      const baseR = Math.max(5.5, rawR);
 
       if (
         center.x + baseR < -60 ||
@@ -1775,7 +1850,7 @@ export class AetherEngine {
         ctx.stroke();
       }
 
-      if (isSel || isEditedCell || (this.state.settings.showFolderBadges && cl.count >= 4 && baseR >= 34)) {
+      if (isSel || isEditedCell || (this.state.settings.showFolderBadges && cl.count >= 3 && rawR >= 9)) {
         badges.push({
           folder,
           label: formatFolderLabel(folder),
@@ -1790,6 +1865,11 @@ export class AetherEngine {
       }
     });
 
+    badges.sort((a, b) => {
+      if (a.sel !== b.sel) return a.sel ? -1 : 1;
+      if (Boolean(a.editHex) !== Boolean(b.editHex)) return a.editHex ? -1 : 1;
+      return b.count - a.count;
+    });
     this.renderFolderBadges(ctx, badges);
     ctx.restore();
   }
@@ -1812,7 +1892,7 @@ export class AetherEngine {
     ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, sans-serif';
     ctx.textBaseline = 'middle';
 
-    const maxDraw = Math.min(badges.length, 36);
+    const maxDraw = Math.min(badges.length, 42);
     for (let i = 0; i < maxDraw; i++) {
       const b = badges[i];
       const text = b.editLabel ? `${b.label} · ${b.editLabel}` : `${b.label}`;
@@ -1823,6 +1903,15 @@ export class AetherEngine {
       const pillH = 20;
       const pillX = b.cx - pillW * 0.5;
       const pillY = b.topY - pillH - 8;
+      if (
+        !b.sel &&
+        !b.editHex &&
+        this.folderPillBounds.some(
+          (p) => Math.abs(p.x + p.w * 0.5 - b.cx) < (p.w + pillW) * 0.48 && Math.abs(p.y - pillY) < 22
+        )
+      ) {
+        continue;
+      }
       this.folderPillBounds.push({ folder: b.folder, x: pillX, y: pillY, w: pillW, h: pillH });
 
       const strokeCol = b.sel ? '#38bdf8' : b.editHex ? b.editHex : `rgba(${b.rgb}, 0.55)`;

@@ -37,6 +37,7 @@ pub fn check_server_listening(port: u16) -> bool {
     }
 }
 
+#[allow(dead_code)]
 pub async fn run_mcp_stdio_loop(port: u16, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -78,6 +79,148 @@ pub async fn run_mcp_stdio_loop(port: u16, path: &str) -> Result<(), Box<dyn std
     Ok(())
 }
 
+pub const MCP_AGENT_PALETTE: &[&str] = &[
+    "#38bdf8", // Cyan (Sky)
+    "#c084fc", // Purple
+    "#34d399", // Emerald
+    "#f472b6", // Pink
+    "#f59e0b", // Amber
+    "#a3e635", // Lime
+    "#22d3ee", // Bright Cyan
+    "#fb7185", // Rose
+    "#818cf8", // Indigo
+    "#fb923c", // Orange
+    "#2dd4bf", // Teal
+    "#e879f9", // Fuchsia
+];
+
+pub fn mcp_assign_agent_color(agent_id: &str, agent_name: Option<&str>, explicit_color: Option<&str>) -> String {
+    if let Some(c) = explicit_color.map(str::trim).filter(|s| !s.is_empty()) {
+        return c.to_string();
+    }
+    let key = agent_id.trim();
+    let key_lower = key.to_lowercase();
+    let name_lower = agent_name.unwrap_or("").trim().to_lowercase();
+    let seed = if !key.is_empty() {
+        format!("{}:{}", key_lower, name_lower)
+    } else {
+        name_lower
+    };
+    if seed.is_empty() || seed == "primary-agent:" {
+        return MCP_AGENT_PALETTE[0].to_string();
+    }
+    let mut hash: u64 = 14695981039346656037;
+    for b in seed.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(1099511628211);
+    }
+    let idx = (hash as usize) % MCP_AGENT_PALETTE.len();
+    MCP_AGENT_PALETTE[idx].to_string()
+}
+
+#[derive(Clone, Debug)]
+pub struct McpAgentSession {
+    pub agent_id: String,
+    pub agent_name: String,
+    pub color: String,
+    pub explicit_identity: bool,
+}
+
+static MCP_SESSION: std::sync::OnceLock<std::sync::Mutex<McpAgentSession>> = std::sync::OnceLock::new();
+
+fn default_mcp_session() -> McpAgentSession {
+    let pid = std::process::id();
+    let env_id = std::env::var("AETHER_AGENT_ID").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let env_name = std::env::var("AETHER_AGENT_NAME").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let env_color = std::env::var("AETHER_AGENT_COLOR").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let explicit = env_id.is_some() || env_name.is_some();
+    let agent_id = env_id.unwrap_or_else(|| format!("mcp-agent-{}", pid % 10000));
+    let agent_name = env_name.unwrap_or_else(|| format!("IA MCP #{}", pid % 1000));
+    let color = mcp_assign_agent_color(&agent_id, Some(&agent_name), env_color.as_deref());
+    McpAgentSession {
+        agent_id,
+        agent_name,
+        color,
+        explicit_identity: explicit,
+    }
+}
+
+fn get_mcp_session() -> &'static std::sync::Mutex<McpAgentSession> {
+    MCP_SESSION.get_or_init(|| std::sync::Mutex::new(default_mcp_session()))
+}
+
+#[allow(dead_code)]
+pub fn init_mcp_session_identity(agent_id: Option<&str>, agent_name: Option<&str>, color: Option<&str>) {
+    if let Ok(mut session) = get_mcp_session().lock() {
+        if let Some(id) = agent_id.map(str::trim).filter(|s| !s.is_empty()) {
+            session.agent_id = id.to_string();
+            session.explicit_identity = true;
+        }
+        if let Some(name) = agent_name.map(str::trim).filter(|s| !s.is_empty()) {
+            session.agent_name = name.to_string();
+            session.explicit_identity = true;
+        }
+        let resolved_color = mcp_assign_agent_color(&session.agent_id, Some(&session.agent_name), color);
+        session.color = resolved_color;
+    }
+}
+
+pub fn register_mcp_client_info(client_name: &str) {
+    let clean_name = client_name.trim();
+    if clean_name.is_empty() {
+        return;
+    }
+    if let Ok(mut session) = get_mcp_session().lock() {
+        if !session.explicit_identity {
+            let pid = std::process::id() % 10000;
+            let slug: String = clean_name
+                .chars()
+                .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+                .collect();
+            let slug_trimmed = slug.trim_matches('-');
+            let base = if slug_trimmed.is_empty() { "mcp-ai" } else { slug_trimmed };
+            session.agent_id = format!("{}-{}", base, pid);
+            session.agent_name = format!("{} (#{})", clean_name, pid % 1000);
+            session.color = mcp_assign_agent_color(&session.agent_id, Some(&session.agent_name), None);
+        }
+    }
+}
+
+pub fn resolve_mcp_agent_identity(arguments: &Value) -> (String, String, String) {
+    let arg_id = opt_str_arg(arguments, "agent_id");
+    let arg_name = opt_str_arg(arguments, "agent_name");
+    let arg_color = opt_str_arg(arguments, "color");
+
+    if let Ok(mut session) = get_mcp_session().lock() {
+        if let Some(id) = arg_id {
+            session.agent_id = id.to_string();
+            session.explicit_identity = true;
+            if arg_name.is_none() && session.agent_name.starts_with("IA MCP #") {
+                session.agent_name = id.to_string();
+            }
+        }
+        if let Some(name) = arg_name {
+            session.agent_name = name.to_string();
+            session.explicit_identity = true;
+            if arg_id.is_none() && session.agent_id.starts_with("mcp-agent-") {
+                session.agent_id = name.to_lowercase().replace(' ', "-");
+            }
+        }
+        if let Some(c) = arg_color {
+            session.color = c.to_string();
+        } else if arg_id.is_some() || arg_name.is_some() {
+            session.color = mcp_assign_agent_color(&session.agent_id, Some(&session.agent_name), None);
+        }
+        return (
+            session.agent_id.clone(),
+            session.agent_name.clone(),
+            session.color.clone(),
+        );
+    }
+    let fallback = default_mcp_session();
+    (fallback.agent_id, fallback.agent_name, fallback.color)
+}
+
 fn opt_str_arg<'a>(arguments: &'a Value, key: &str) -> Option<&'a str> {
     arguments
         .get(key)
@@ -87,19 +230,86 @@ fn opt_str_arg<'a>(arguments: &'a Value, key: &str) -> Option<&'a str> {
 }
 
 fn build_telemetry_payload(target: &str, action: &str, details: &str, arguments: &Value) -> Value {
-    let mut payload = json!({
+    let (agent_id, agent_name, color) = resolve_mcp_agent_identity(arguments);
+    let now_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    json!({
         "target": target,
         "action": action,
-        "details": details
-    });
-    if let Some(obj) = payload.as_object_mut() {
-        for key in ["agent_id", "agent_name", "color"] {
-            if let Some(val) = opt_str_arg(arguments, key) {
-                obj.insert(key.to_string(), json!(val));
+        "details": details,
+        "timestamp": now_ts,
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "color": color
+    })
+}
+
+fn persist_offline_telemetry_cache(project_root: &Path, payload: &Value) {
+    let aether_dir = project_root.join(".aether");
+    let _ = std::fs::create_dir_all(&aether_dir);
+    let cache_path = aether_dir.join("ai_telemetry_cache.json");
+    let mut cache_val = std::fs::read_to_string(&cache_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .unwrap_or_else(|| json!({ "telemetry": null, "agents": [], "history": [] }));
+
+    let agent_id = payload.get("agent_id").and_then(|v| v.as_str()).unwrap_or("primary-agent");
+    let target = payload.get("target").and_then(|v| v.as_str()).unwrap_or("");
+    let action = payload.get("action").and_then(|v| v.as_str()).unwrap_or("");
+
+    if let Some(obj) = cache_val.as_object_mut() {
+        obj.insert("telemetry".to_string(), payload.clone());
+
+        let mut agents = obj
+            .get("agents")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if let Some(pos) = agents.iter().position(|a| a.get("agent_id").and_then(|v| v.as_str()) == Some(agent_id)) {
+            agents[pos] = payload.clone();
+        } else {
+            agents.insert(0, payload.clone());
+        }
+        obj.insert("agents".to_string(), json!(agents));
+
+        let mut history = obj
+            .get("history")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let is_dup = history.first().map(|last| {
+            last.get("agent_id").and_then(|v| v.as_str()) == Some(agent_id)
+                && last.get("target").and_then(|v| v.as_str()) == Some(target)
+                && last.get("action").and_then(|v| v.as_str()) == Some(action)
+        }).unwrap_or(false);
+        if !is_dup {
+            history.insert(0, payload.clone());
+            if history.len() > 250 {
+                history.truncate(250);
             }
         }
+        obj.insert("history".to_string(), json!(history));
     }
-    payload
+
+    if let Ok(s) = serde_json::to_string_pretty(&cache_val) {
+        let _ = std::fs::write(&cache_path, s);
+    }
+}
+
+async fn emit_mcp_telemetry(
+    server_port: u16,
+    project_path: &str,
+    target: &str,
+    action: &str,
+    details: &str,
+    arguments: &Value,
+) -> Result<Value, String> {
+    let payload = build_telemetry_payload(target, action, details, arguments);
+    let p_root = resolve_project_root(project_path);
+    persist_offline_telemetry_cache(&p_root, &payload);
+    send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&payload)).await
 }
 
 async fn fetch_active_swarm_agents(server_port: u16) -> Vec<Value> {
@@ -122,13 +332,14 @@ fn format_swarm_roster(agents: &[Value], self_id: Option<&str>) -> String {
         .map(|a| {
             let aid = a.get("agent_id").and_then(|v| v.as_str()).unwrap_or("-");
             let name = a.get("agent_name").and_then(|v| v.as_str()).unwrap_or(aid);
+            let color = a.get("color").and_then(|v| v.as_str()).unwrap_or("#38bdf8");
             let target = a.get("target").and_then(|v| v.as_str()).unwrap_or("-");
             let action = a.get("action").and_then(|v| v.as_str()).unwrap_or("-");
             let details = a.get("details").and_then(|v| v.as_str()).unwrap_or("");
             let tag = if self_id == Some(aid) { " (vous)" } else { "" };
             format!(
-                "• **{}** [`{}`]{} ➔ `{}` [{}] — {}",
-                name, aid, tag, target, action, details
+                "• **{}** [`{}` • `{}`]{} ➔ `{}` [{}] — {}",
+                name, aid, color, tag, target, action, details
             )
         })
         .collect();
@@ -141,24 +352,51 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
     }
     let id = req.id;
     match req.method.as_str() {
-        "initialize" => Some(JsonRpcResponse {
-            jsonrpc: "2.0".to_string(),
-            id,
-            result: Some(json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": { "listChanged": false },
-                    "resources": { "subscribe": false, "listChanged": false },
-                    "prompts": { "listChanged": false },
-                    "logging": {}
-                },
-                "serverInfo": {
-                    "name": "aetherscope-mcp",
-                    "version": env!("CARGO_PKG_VERSION")
-                }
-            })),
-            error: None,
-        }),
+        "initialize" => {
+            if let Some(client_name) = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("clientInfo"))
+                .and_then(|c| c.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                register_mcp_client_info(client_name);
+            }
+            let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&json!({}));
+            let _ = emit_mcp_telemetry(
+                server_port,
+                default_path,
+                "Cockpit",
+                "Connexion MCP",
+                &format!("Agent {} ({}) connecté au modèle", agent_name, color),
+                &json!({ "agent_id": agent_id, "agent_name": agent_name, "color": color }),
+            )
+            .await;
+
+            Some(JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id,
+                result: Some(json!({
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": { "listChanged": false },
+                        "resources": { "subscribe": false, "listChanged": false },
+                        "prompts": { "listChanged": false },
+                        "logging": {}
+                    },
+                    "serverInfo": {
+                        "name": "aetherscope-mcp",
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "agentIdentity": {
+                            "agent_id": agent_id,
+                            "agent_name": agent_name,
+                            "color": color
+                        }
+                    }
+                })),
+                error: None,
+            })
+        }
         "notifications/initialized" => None,
         "ping" => Some(JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
@@ -171,12 +409,13 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
             let raw_tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
-            // Normalisation des commandes combinÃ©es (et alias rÃ©trocompatibles)
+            // Normalisation des commandes combinées (et alias rétrocompatibles)
             let tool_name = match raw_tool_name {
                 "aetherscope_manage_tasks" => {
                     match arguments.get("action").and_then(|v| v.as_str()).unwrap_or("list") {
                         "create" => "aetherscope_create_task",
                         "update" => "aetherscope_update_task",
+                        "delete" => "aetherscope_delete_task",
                         _ => "aetherscope_list_tasks",
                     }
                 }
@@ -210,13 +449,11 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("Inspection").to_string();
                     let details = arguments.get("details").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let payload = build_telemetry_payload(&target, &action, &details, &arguments);
-
-                    let res = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&payload)).await;
-                    let self_id = opt_str_arg(&arguments, "agent_id").or_else(|| opt_str_arg(&arguments, "agent_name"));
+                    let (self_id, self_name, self_color) = resolve_mcp_agent_identity(&arguments);
+                    let res = emit_mcp_telemetry(server_port, default_path, &target, &action, &details, &arguments).await;
                     let peers = fetch_active_swarm_agents(server_port).await;
                     let peer_note = if peers.len() > 1 {
-                        format!("\n\n{}", format_swarm_roster(&peers, self_id))
+                        format!("\n\n{}", format_swarm_roster(&peers, Some(&self_id)))
                     } else {
                         String::new()
                     };
@@ -225,13 +462,13 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         Ok(_) => (json!([{
                             "type": "text",
                             "text": format!(
-                                "🔭 Caméra AetherScope alignée sur : {} ({})\n📡 Faisceau quantique et fil d'Ariane stellaire illuminés sur le graphe 3D WebGL 2.{}",
-                                target, action, peer_note
+                                "🔭 Caméra AetherScope alignée sur : `{}` ({}) — Agent `{}` [{}]\n📡 Faisceau quantique et fil d'Ariane stellaire illuminés sur le graphe 3D WebGL 2.{}",
+                                target, action, self_name, self_color, peer_note
                             )
                         }]), false),
                         Err(e) => (json!([{
                             "type": "text",
-                            "text": format!("⚠️ Télémétrie enregistrée (offline) : [{}] sur {}\n(Détails : {}){}", action, target, e, peer_note)
+                            "text": format!("⚠️ Télémétrie enregistrée en cache (.aether/ai_telemetry_cache.json) : [{}] sur `{}` par `{}` [{}]\n(Détails : {}){}", action, target, self_name, self_color, e, peer_note)
                         }]), false),
                     }
                 }
@@ -257,6 +494,20 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
 
                     let target_path = req_path_opt.unwrap_or(default_path);
                     let p_buf = resolve_project_root(target_path);
+
+                    let proj_label = p_buf
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Projet".to_string());
+                    let _ = emit_mcp_telemetry(
+                        server_port,
+                        target_path,
+                        &proj_label,
+                        "Cartographie AST",
+                        "Analyse globale de l'architecture et des tâches du projet",
+                        &arguments,
+                    )
+                    .await;
 
                     // Query project detection status if server is active
                     let status_val_res = send_http_request(server_port, "GET", "/api/project/status", None).await;
@@ -333,15 +584,13 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         let target_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
 
                         // 1. Send spatial telemetry to update Cockpit HUD
-                        let _ = send_http_request(
+                        let _ = emit_mcp_telemetry(
                             server_port,
-                            "POST",
-                            "/api/ai/telemetry",
-                            Some(&json!({
-                                "target": format!("Vision: {}", mode),
-                                "action": "Bascule Vision Cockpit",
-                                "details": format!("Bascule du cockpit vers la vision '{}'", mode)
-                            })),
+                            target_path,
+                            &format!("Vision: {}", mode),
+                            "Bascule Vision Cockpit",
+                            &format!("Bascule du cockpit vers la vision '{}'", mode),
+                            &arguments,
                         )
                         .await;
 
@@ -408,10 +657,10 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     if text.trim().is_empty() {
                         (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'text' ne peut pas Ãªtre vide." }]), true)
                     } else {
+                        let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
                         if let Some(ref sym) = target {
                             if !sym.trim().is_empty() {
-                                let telem_payload = build_telemetry_payload(sym, "Debrief Chat IA", &text, &arguments);
-                                let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&telem_payload)).await;
+                                let _ = emit_mcp_telemetry(server_port, default_path, sym, "Debrief Chat IA", &text, &arguments).await;
                             }
                         }
 
@@ -421,28 +670,25 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             text
                         };
 
-                        let agent_id = opt_str_arg(&arguments, "agent_id");
-                        let agent_name = opt_str_arg(&arguments, "agent_name");
                         let recipient = opt_str_arg(&arguments, "recipient");
-                        let color = opt_str_arg(&arguments, "color");
-                        let sender_label = agent_name.or(agent_id).unwrap_or("ai");
+                        let sender_label = agent_name.as_str();
 
                         let mut chat_body = json!({
                             "text": full_payload,
                             "sender": sender_label,
-                            "target_symbol": target
+                            "target_symbol": target,
+                            "agent_id": agent_id,
+                            "agent_name": agent_name,
+                            "color": color
                         });
                         if let Some(obj) = chat_body.as_object_mut() {
-                            if let Some(v) = agent_id { obj.insert("agent_id".to_string(), json!(v)); }
-                            if let Some(v) = agent_name { obj.insert("agent_name".to_string(), json!(v)); }
                             if let Some(v) = recipient { obj.insert("recipient".to_string(), json!(v)); }
-                            if let Some(v) = color { obj.insert("color".to_string(), json!(v)); }
                         }
 
                         let res = send_http_request(server_port, "POST", "/api/ai/chat", Some(&chat_body)).await;
 
                         match res {
-                            Ok(_) => (json!([{ "type": "text", "text": format!("💬 Message posté par {} dans le canal multi-agents AetherScope.", sender_label) }]), false),
+                            Ok(_) => (json!([{ "type": "text", "text": format!("💬 Message posté par {} [{}] dans le canal multi-agents AetherScope.", sender_label, color) }]), false),
                             Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur envoi chat AetherScope : {}", e) }]), true),
                         }
                     }
@@ -509,8 +755,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'symbol_id' est requis." }]), true)
                     } else {
                         // 1. Téléportation automatique de la caméra 3D + télémétrie multi-agents HUD
-                        let telem_payload = build_telemetry_payload(&symbol_id, action, details, &arguments);
-                        let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&telem_payload)).await;
+                        let _ = emit_mcp_telemetry(server_port, target_path, &symbol_id, action, details, &arguments).await;
 
                         // 2. RÃ©cupÃ©ration du contexte cible + contrat EARS + Handshake
                         let res = send_http_request(server_port, "POST", "/api/ai/target", Some(&json!({
@@ -595,14 +840,12 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let target_file = arguments.get("target_file").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let priority = arguments.get("priority").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let initial_readme = arguments.get("initial_readme").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let req_path = opt_str_arg(&arguments, "path").unwrap_or(default_path);
+                    let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
 
-                    if let Some(ref sym) = target_symbol {
+                    if let Some(ref sym) = target_symbol.as_ref().or(target_file.as_ref()) {
                         if !sym.trim().is_empty() {
-                            let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&json!({
-                                "target": sym,
-                                "action": "CrÃ©ation TÃ¢che",
-                                "details": &title
-                            }))).await;
+                            let _ = emit_mcp_telemetry(server_port, req_path, sym, "Création Tâche", &title, &arguments).await;
                         }
                     }
 
@@ -611,7 +854,10 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         "kind": kind_str,
                         "target_symbol": target_symbol,
                         "target_file": target_file,
-                        "author": "model",
+                        "author": agent_name,
+                        "agent_id": agent_id,
+                        "agent_name": agent_name,
+                        "color": color,
                         "priority": priority,
                         "initial_readme": initial_readme
                     });
@@ -627,17 +873,20 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             }]), false)
                         }
                         Err(_) => {
-                            let p_buf = PathBuf::from(default_path);
+                            let p_buf = resolve_project_root(req_path);
                             let kind = ai_file_bridge::TaskKind::from_str_loose(&kind_str);
-                            match ai_file_bridge::TaskManager::create_task(
+                            match ai_file_bridge::TaskManager::create_task_with_agent(
                                 &p_buf,
                                 &title,
                                 kind,
                                 target_symbol.as_deref(),
                                 target_file.as_deref(),
-                                "model",
+                                &agent_name,
                                 priority.as_deref(),
                                 initial_readme.as_deref(),
+                                Some(&agent_id),
+                                Some(&agent_name),
+                                Some(&color),
                             ) {
                                 Ok(t) => (json!([{
                                     "type": "text",
@@ -651,31 +900,47 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
 
                 "aetherscope_update_task" => {
                     let task_id = arguments.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let title = arguments.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let status_str = arguments.get("status").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let progress = arguments.get("progress").and_then(|v| v.as_u64()).map(|p| p as u8);
                     let progress_note = arguments.get("progress_note").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let full_readme = arguments.get("full_readme").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let target_symbol = arguments.get("target_symbol").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let target_file = arguments.get("target_file").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let priority = arguments.get("priority").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let req_path = opt_str_arg(&arguments, "path").unwrap_or(default_path);
+                    let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
 
                     if task_id.trim().is_empty() {
                         (json!([{ "type": "text", "text": "âš ï¸ Erreur: 'task_id' requis pour la mise Ã  jour." }]), true)
                     } else {
-                        if let Some(ref sym) = target_symbol {
+                        if let Some(ref sym) = target_symbol.as_ref().or(target_file.as_ref()) {
                             if !sym.trim().is_empty() {
-                                let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&json!({
-                                    "target": sym,
-                                    "action": "Mise Ã  jour TÃ¢che",
-                                    "details": progress_note.as_deref().unwrap_or(&task_id)
-                                }))).await;
+                                let _ = emit_mcp_telemetry(
+                                    server_port,
+                                    req_path,
+                                    sym,
+                                    "Mise à jour Tâche",
+                                    progress_note.as_deref().unwrap_or(&task_id),
+                                    &arguments,
+                                )
+                                .await;
                             }
                         }
 
                         let payload = json!({
                             "task_id": task_id,
+                            "title": title,
+                            "target_symbol": target_symbol,
+                            "target_file": target_file,
+                            "priority": priority,
                             "status": status_str,
                             "progress": progress,
                             "progress_note": progress_note,
-                            "full_readme": full_readme
+                            "full_readme": full_readme,
+                            "agent_id": agent_id,
+                            "agent_name": agent_name,
+                            "color": color
                         });
 
                         let res = send_http_request(server_port, "POST", "/api/tasks/update", Some(&payload)).await;
@@ -685,15 +950,22 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                 "text": format!("âš¡ TÃ¢che `{}` mise Ã  jour avec succÃ¨s :\n{}", task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
                             }]), false),
                             Err(_) => {
-                                let p_buf = PathBuf::from(default_path);
+                                let p_buf = resolve_project_root(req_path);
                                 let status = status_str.as_deref().map(ai_file_bridge::TaskStatus::from_str_loose);
-                                match ai_file_bridge::TaskManager::update_task(
+                                match ai_file_bridge::TaskManager::update_task_with_meta(
                                     &p_buf,
                                     &task_id,
                                     status,
                                     progress,
                                     progress_note.as_deref(),
                                     full_readme.as_deref(),
+                                    title.as_deref(),
+                                    target_symbol.as_deref(),
+                                    target_file.as_deref(),
+                                    priority.as_deref(),
+                                    Some(&agent_id),
+                                    Some(&agent_name),
+                                    Some(&color),
                                 ) {
                                     Ok(Some(t)) => (json!([{
                                         "type": "text",
@@ -707,12 +979,41 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     }
                 }
 
+                "aetherscope_delete_task" => {
+                    let task_id = arguments.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let req_path = opt_str_arg(&arguments, "path").unwrap_or(default_path);
+                    if task_id.trim().is_empty() {
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: 'task_id' requis pour la suppression." }]), true)
+                    } else {
+                        let res = send_http_request(server_port, "POST", "/api/tasks/delete", Some(&json!({ "task_id": task_id }))).await;
+                        match res {
+                            Ok(val) => {
+                                let deleted = val.get("deleted").and_then(|v| v.as_bool()).unwrap_or(true);
+                                if deleted {
+                                    (json!([{ "type": "text", "text": format!("🗑️ Tâche `{}` supprimée avec succès.", task_id) }]), false)
+                                } else {
+                                    (json!([{ "type": "text", "text": format!("⚠️ Tâche `{}` introuvable.", task_id) }]), true)
+                                }
+                            }
+                            Err(_) => {
+                                let p_buf = resolve_project_root(req_path);
+                                match ai_file_bridge::TaskManager::delete_task(&p_buf, &task_id) {
+                                    Ok(true) => (json!([{ "type": "text", "text": format!("🗑️ Tâche `{}` supprimée (mode offline).", task_id) }]), false),
+                                    Ok(false) => (json!([{ "type": "text", "text": format!("⚠️ Tâche `{}` introuvable.", task_id) }]), true),
+                                    Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur suppression tâche : {}", e) }]), true),
+                                }
+                            }
+                        }
+                    }
+                }
+
                 "aetherscope_list_tasks" => {
                     let filter = arguments
                         .get("status_filter")
                         .or_else(|| arguments.get("status"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("active");
+                    let req_path = opt_str_arg(&arguments, "path").unwrap_or(default_path);
                     let res = send_http_request(server_port, "GET", "/api/tasks", None).await;
 
                     let tasks = match res {
@@ -724,7 +1025,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             }
                         }
                         Err(_) => {
-                            let p_buf = PathBuf::from(default_path);
+                            let p_buf = resolve_project_root(req_path);
                             let raw_tasks = ai_file_bridge::TaskManager::list_tasks(&p_buf);
                             serde_json::to_value(&raw_tasks).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default()
                         }
@@ -865,38 +1166,52 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             text.push_str(&viol_block);
                         }
 
-                        // Coordination multi-agents lors des recherches partagées
-                        if opt_str_arg(&arguments, "agent_id").is_some() || opt_str_arg(&arguments, "agent_name").is_some() {
-                            let search_target = if !query.trim().is_empty() {
-                                query
-                            } else if let Some(fp) = file_pattern {
-                                fp
-                            } else if let Some(cwe) = cwe_id {
-                                cwe
-                            } else {
-                                "Codebase Search"
-                            };
-                            let telem_payload = build_telemetry_payload(
-                                search_target,
-                                "Recherche Collaborative",
-                                &format!("Recherche layer={:?} kind={:?} cwe={:?} scope={}", layer, kind, cwe_id, scope_mode),
-                                &arguments,
-                            );
-                            let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&telem_payload)).await;
-                        }
-                        let self_id = opt_str_arg(&arguments, "agent_id").or_else(|| opt_str_arg(&arguments, "agent_name"));
+                        // Emit spatial telemetry for every symbol search so the AI's movement appears in the model
+                        let q_lower = query.trim().to_lowercase();
+                        let matched_node_name = if !q_lower.is_empty() {
+                            g.nodes
+                                .iter()
+                                .find(|n| n.name.to_lowercase() == q_lower || n.id.to_lowercase() == q_lower)
+                                .or_else(|| g.nodes.iter().find(|n| n.name.to_lowercase().contains(&q_lower) || n.file_path.to_lowercase().contains(&q_lower)))
+                                .map(|n| n.name.clone())
+                        } else if let Some(fp) = file_pattern {
+                            let fp_l = fp.to_lowercase();
+                            g.nodes.iter().find(|n| n.file_path.to_lowercase().contains(&fp_l)).map(|n| n.name.clone())
+                        } else if effective_has_violation == Some(true) {
+                            g.nodes.iter().find(|n| n.has_security_violation).map(|n| n.name.clone())
+                        } else {
+                            None
+                        };
+                        let search_target = matched_node_name
+                            .as_deref()
+                            .or_else(|| if !query.trim().is_empty() { Some(query.trim()) } else { None })
+                            .or(file_pattern)
+                            .or(cwe_id)
+                            .unwrap_or("Codebase Search");
+
+                        let _ = emit_mcp_telemetry(
+                            server_port,
+                            req_path,
+                            search_target,
+                            "Recherche AST",
+                            &format!("Recherche query='{}' layer={:?} kind={:?} cwe={:?}", query, layer, kind, cwe_id),
+                            &arguments,
+                        )
+                        .await;
+
+                        let (self_id, _, _) = resolve_mcp_agent_identity(&arguments);
                         let peers = fetch_active_swarm_agents(server_port).await;
                         let active_others: Vec<Value> = peers
                             .into_iter()
                             .filter(|p| {
                                 let aid = p.get("agent_id").and_then(|v| v.as_str());
                                 let aname = p.get("agent_name").and_then(|v| v.as_str());
-                                self_id.map(|s| Some(s) != aid && Some(s) != aname).unwrap_or(true)
+                                Some(self_id.as_str()) != aid && Some(self_id.as_str()) != aname
                             })
                             .collect();
                         if !active_others.is_empty() {
                             text.push_str("\n\n---\n");
-                            text.push_str(&format_swarm_roster(&active_others, self_id));
+                            text.push_str(&format_swarm_roster(&active_others, Some(&self_id)));
                         }
 
                         (json!([{ "type": "text", "text": text }]), false)
@@ -1271,39 +1586,74 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             true,
                         )
                     } else {
-                        let root = Path::new(default_path);
+                        let req_path = opt_str_arg(&arguments, "path").unwrap_or(default_path);
+                        let p_buf = resolve_project_root(req_path);
+                        let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
+
+                        if let Some(first_file) = files.first() {
+                            let _ = emit_mcp_telemetry(
+                                server_port,
+                                req_path,
+                                first_file,
+                                "Pare-Feu Patch SAST",
+                                &format!("Vérification de {} fichier(s) modifié(s)", files.len()),
+                                &arguments,
+                            )
+                            .await;
+                        }
+
                         let result = ai_file_bridge::patch_verifier::PatchVerifier::verify_patch(
-                            root,
+                            &p_buf,
                             &files,
                             Some(server_port),
                         );
                         let is_rejected = result.verdict == ai_file_bridge::patch_verifier::PatchVerdict::Rejected;
                         let mut out_text = result.formatted_output;
 
-                        // Actions combinÃ©es automatiques si le patch est approuvÃ©
+                        // Actions combinées automatiques si le patch est approuvé
                         if !is_rejected {
                             if let Some(tid) = arguments.get("task_id").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
                                 let status_str = arguments.get("status").and_then(|v| v.as_str()).unwrap_or("done");
                                 let progress = arguments.get("progress").and_then(|v| v.as_u64()).map(|p| p as u8).or(Some(100));
-                                let note = arguments.get("progress_note").and_then(|v| v.as_str()).unwrap_or("Patch validÃ© par aetherscope_verify_patch");
+                                let note = arguments.get("progress_note").and_then(|v| v.as_str()).unwrap_or("Patch validé par aetherscope_verify_patch");
                                 let status = Some(ai_file_bridge::TaskStatus::from_str_loose(status_str));
-                                let _ = ai_file_bridge::TaskManager::update_task(root, tid, status, progress, Some(note), None);
+                                let _ = ai_file_bridge::TaskManager::update_task_with_meta(
+                                    &p_buf,
+                                    tid,
+                                    status,
+                                    progress,
+                                    Some(note),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    Some(&agent_id),
+                                    Some(&agent_name),
+                                    Some(&color),
+                                );
                                 let _ = send_http_request(server_port, "POST", "/api/tasks/update", Some(&json!({
                                     "task_id": tid,
                                     "status": status_str,
                                     "progress": progress,
-                                    "progress_note": note
+                                    "progress_note": note,
+                                    "agent_id": agent_id,
+                                    "agent_name": agent_name,
+                                    "color": color
                                 }))).await;
-                                out_text.push_str(&format!("\nâš¡ **TÃ¢che `{}` mise Ã  jour automatiquement** (`{}` â€¢ `{}%`).", tid, status_str, progress.unwrap_or(100)));
+                                out_text.push_str(&format!("\n⚡ **Tâche `{}` mise à jour automatiquement** (`{}` • `{}%`).", tid, status_str, progress.unwrap_or(100)));
                             }
 
                             if let Some(chat_msg) = arguments.get("chat_message").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
                                 let _ = send_http_request(server_port, "POST", "/api/ai/chat", Some(&json!({
                                     "text": chat_msg,
-                                    "sender": "ai",
+                                    "sender": agent_name,
+                                    "agent_id": agent_id,
+                                    "agent_name": agent_name,
+                                    "color": color,
                                     "target_symbol": files.first()
                                 }))).await;
-                                out_text.push_str("\nðŸ’¬ **Compte-rendu publiÃ© dans le Chat Copilot AetherScope.**");
+                                out_text.push_str("\n💬 **Compte-rendu publié dans le Chat Copilot AetherScope.**");
                             }
                         }
 

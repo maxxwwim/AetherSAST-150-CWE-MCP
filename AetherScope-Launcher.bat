@@ -1,26 +1,28 @@
 @echo off
 setlocal enabledelayedexpansion
-title AetherScope V2 - Control Center
+title AetherScope V2.4 - Control Center
 chcp 65001 >nul
 
 set "SCRIPT_DIR=%~dp0"
+set "REPO_DIR=C:\Users\1234\Desktop\Projets\aether-engine\"
 set "ENGINE_EXE="
 set "MCP_EXE="
 set "MC_RUNNER_EXE="
 
 if exist "%SCRIPT_DIR%target\release\aether-engine.exe" set "ENGINE_EXE=%SCRIPT_DIR%target\release\aether-engine.exe"
-if exist "%SCRIPT_DIR%aether-engine.exe" if not defined ENGINE_EXE set "ENGINE_EXE=%SCRIPT_DIR%aether-engine.exe"
-if exist "%SCRIPT_DIR%target-build\release\aether-engine.exe" if not defined ENGINE_EXE set "ENGINE_EXE=%SCRIPT_DIR%target-build\release\aether-engine.exe"
-if exist "%LOCALAPPDATA%\AetherScope\bin\aether-engine.exe" if not defined ENGINE_EXE set "ENGINE_EXE=%LOCALAPPDATA%\AetherScope\bin\aether-engine.exe"
+if not defined ENGINE_EXE if exist "%REPO_DIR%target\release\aether-engine.exe" set "ENGINE_EXE=%REPO_DIR%target\release\aether-engine.exe"
+if not defined ENGINE_EXE if exist "%SCRIPT_DIR%aether-engine.exe" set "ENGINE_EXE=%SCRIPT_DIR%aether-engine.exe"
+if not defined ENGINE_EXE if exist "%REPO_DIR%aether-engine.exe" set "ENGINE_EXE=%REPO_DIR%aether-engine.exe"
+if not defined ENGINE_EXE if exist "%LOCALAPPDATA%\AetherScope\bin\aether-engine.exe" set "ENGINE_EXE=%LOCALAPPDATA%\AetherScope\bin\aether-engine.exe"
 
 if exist "%SCRIPT_DIR%target\release\aetherscope-mcp.exe" set "MCP_EXE=%SCRIPT_DIR%target\release\aetherscope-mcp.exe"
-if exist "%SCRIPT_DIR%aetherscope-mcp.exe" if not defined MCP_EXE set "MCP_EXE=%SCRIPT_DIR%aetherscope-mcp.exe"
-if exist "%SCRIPT_DIR%target-build\release\aetherscope-mcp.exe" if not defined MCP_EXE set "MCP_EXE=%SCRIPT_DIR%target-build\release\aetherscope-mcp.exe"
-if exist "%LOCALAPPDATA%\AetherScope\bin\aetherscope-mcp.exe" if not defined MCP_EXE set "MCP_EXE=%LOCALAPPDATA%\AetherScope\bin\aetherscope-mcp.exe"
+if not defined MCP_EXE if exist "%REPO_DIR%target\release\aetherscope-mcp.exe" set "MCP_EXE=%REPO_DIR%target\release\aetherscope-mcp.exe"
+if not defined MCP_EXE if exist "%SCRIPT_DIR%aetherscope-mcp.exe" set "MCP_EXE=%SCRIPT_DIR%aetherscope-mcp.exe"
+if not defined MCP_EXE if exist "%LOCALAPPDATA%\AetherScope\bin\aetherscope-mcp.exe" set "MCP_EXE=%LOCALAPPDATA%\AetherScope\bin\aetherscope-mcp.exe"
 
 if exist "%SCRIPT_DIR%target\release\aether-mc-runner.exe" set "MC_RUNNER_EXE=%SCRIPT_DIR%target\release\aether-mc-runner.exe"
-if exist "%SCRIPT_DIR%aether-mc-runner.exe" if not defined MC_RUNNER_EXE set "MC_RUNNER_EXE=%SCRIPT_DIR%aether-mc-runner.exe"
-if exist "%LOCALAPPDATA%\AetherScope\bin\aether-mc-runner.exe" if not defined MC_RUNNER_EXE set "MC_RUNNER_EXE=%LOCALAPPDATA%\AetherScope\bin\aether-mc-runner.exe"
+if not defined MC_RUNNER_EXE if exist "%SCRIPT_DIR%aether-mc-runner.exe" set "MC_RUNNER_EXE=%SCRIPT_DIR%aether-mc-runner.exe"
+if not defined MC_RUNNER_EXE if exist "%LOCALAPPDATA%\AetherScope\bin\aether-mc-runner.exe" set "MC_RUNNER_EXE=%LOCALAPPDATA%\AetherScope\bin\aether-mc-runner.exe"
 
 if not defined ENGINE_EXE (
     echo [ERREUR] Impossible de trouver aether-engine.exe !
@@ -32,17 +34,18 @@ if not defined ENGINE_EXE (
 :MENU
 cls
 echo ==============================================================
-echo       🪐 AETHERSCOPE V2.1 — COCKPIT SPATIAL ET MCP SUITE
+echo       🪐 AETHERSCOPE V2.4 — COCKPIT SPATIAL ET MCP SUITE
 echo ==============================================================
+echo   Binaire actif : %ENGINE_EXE%
 echo.
-echo   [1] 🚀 Lancer le Cockpit Spatial (GUI WebGL 3D + Serveur Axum 3030)
+echo   [1] 🚀 Lancer le Cockpit Spatial (Svelte 5 + WebGL 2 + Axum 3030)
 echo   [2] 🤖 Tester le Serveur MCP Stdio interactif (aetherscope-mcp.exe)
 echo   [3] 🌐 Lancer le Serveur en Arriere-Plan (Mode Headless Axum 3030)
 echo   [4] 🔌 Configurer les Clients IA (Claude / Antigravity / Cursor)
 echo   [5] 🎯 Scanner et Synchroniser un Projet (SAST Live Synchro GUI)
 echo   [6] ⛏️ Lancer Aether Minecraft Cockpit (Web Flask + Runner)
 echo   [7] 🧹 Liberer le port 3030 (Fermer tous les processus Aether)
-echo   [8] 📦 Installer AetherScope dans Windows (PATH + Bureau)
+echo   [8] 📦 Installer / Mettre a jour AetherScope dans Windows (PATH + Bureau)
 echo   [9] ❌ Quitter
 echo.
 echo ==============================================================
@@ -63,21 +66,33 @@ echo Option invalide.
 timeout /t 2 >nul
 goto MENU
 
-:LAUNCH_GUI
-cls
-echo [INFO] Verification du port 3030...
+:SYNC_BINARIES
+taskkill /F /IM aether-engine.exe >nul 2>&1
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3030 ^| findstr LISTENING') do (
     set "PORT_PID=%%a"
     if defined PORT_PID (
-        echo [ATTENTION] Le port 3030 est deja occupe par le processus PID !PORT_PID!.
-        echo Fermeture du processus zombie pour eviter les erreurs de connexion...
         taskkill /PID !PORT_PID! /F >nul 2>&1
     )
 )
-echo [INFO] Demarrage du Cockpit AetherScope V2.1...
+if exist "%LOCALAPPDATA%\AetherScope\bin" (
+    copy /Y "%ENGINE_EXE%" "%LOCALAPPDATA%\AetherScope\bin\aether-engine.exe" >nul 2>&1
+    if defined MCP_EXE copy /Y "%MCP_EXE%" "%LOCALAPPDATA%\AetherScope\bin\aetherscope-mcp.exe" >nul 2>&1
+)
+if exist "%SCRIPT_DIR%Cargo.toml" (
+    if /I not "%ENGINE_EXE%"=="%SCRIPT_DIR%aether-engine.exe" (
+        copy /Y "%ENGINE_EXE%" "%SCRIPT_DIR%aether-engine.exe" >nul 2>&1
+    )
+)
+exit /b 0
+
+:LAUNCH_GUI
+cls
+echo [INFO] Verification du port 3030 et synchronisation des binaires V2.4...
+call :SYNC_BINARIES
+echo [INFO] Demarrage du Cockpit AetherScope V2.4...
 start "" "%ENGINE_EXE%"
 
-echo [OK] Cockpit actif sur http://127.0.0.1:3030 !
+echo [OK] Cockpit V2.4 actif sur http://127.0.0.1:3030 !
 echo Vos assistants IA (Claude, Cursor, Antigravity) communiquent directement via le serveur MCP standard stdio.
 timeout /t 2 >nul
 exit /b 0
@@ -85,7 +100,7 @@ exit /b 0
 :LAUNCH_MCP
 cls
 echo ==============================================================
-echo       🤖 AETHERSCOPE V2.1 — SERVEUR MCP STDIO DEDIE
+echo       🤖 AETHERSCOPE V2.4 — SERVEUR MCP STDIO DEDIE
 echo ==============================================================
 echo.
 echo Le serveur MCP communique en JSON-RPC 2.0 sur stdio.
@@ -103,7 +118,8 @@ goto MENU
 
 :LAUNCH_HEADLESS
 cls
-echo [INFO] Lancement du serveur Axum + FileWatcher sans interface graphique...
+echo [INFO] Synchronisation et lancement du serveur Axum + FileWatcher sans GUI...
+call :SYNC_BINARIES
 echo Le serveur restera actif sur http://127.0.0.1:3030
 "%ENGINE_EXE%" --no-gui
 pause
@@ -132,7 +148,7 @@ goto MENU
 cls
 echo [INFO] Lancement du Control-Plane Minecraft Cockpit (http://127.0.0.1:5000)...
 start http://127.0.0.1:5000
-python "%SCRIPT_DIR%services\mc-control-plane\app.py"
+python "%SCRIPT_DIR%apps\aethercraft\control-plane\app.py"
 pause
 goto MENU
 

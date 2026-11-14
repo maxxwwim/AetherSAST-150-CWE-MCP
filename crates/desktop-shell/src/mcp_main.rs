@@ -14,6 +14,15 @@ pub struct Args {
 
     #[arg(long, default_value_t = false)]
     pub mcp: bool,
+
+    #[arg(long)]
+    pub agent_id: Option<String>,
+
+    #[arg(long)]
+    pub agent_name: Option<String>,
+
+    #[arg(long)]
+    pub color: Option<String>,
 }
 
 #[tokio::main]
@@ -21,6 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let port = args.port;
     let path = args.path.clone();
+
+    mcp::init_mcp_session_identity(
+        args.agent_id.as_deref(),
+        args.agent_name.as_deref(),
+        args.color.as_deref(),
+    );
 
     if !mcp::check_server_listening(port) {
         eprintln!("📡 [AetherScope MCP] Serveur non detecte sur le port {}. Demarrage automatique du backend Axum...", port);

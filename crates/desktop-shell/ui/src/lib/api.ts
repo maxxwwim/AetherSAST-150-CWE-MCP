@@ -44,6 +44,9 @@ export class AetherApiClient {
     target_symbol?: string;
     target_file?: string;
     author?: string;
+    agent_id?: string;
+    agent_name?: string;
+    color?: string;
     priority?: string;
     initial_readme?: string;
   }): Promise<{ status: string; task?: TaskItem; message?: string }> {
@@ -60,7 +63,16 @@ export class AetherApiClient {
     status: string,
     progress: number,
     progressNote: string,
-    fullReadme?: string
+    fullReadme?: string,
+    extra?: {
+      title?: string;
+      target_symbol?: string;
+      target_file?: string;
+      priority?: string;
+      agent_id?: string;
+      agent_name?: string;
+      color?: string;
+    }
   ): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/tasks/update`, {
       method: 'POST',
@@ -71,6 +83,7 @@ export class AetherApiClient {
         progress,
         progress_note: progressNote,
         full_readme: fullReadme,
+        ...extra,
       }),
     });
     return res.json();
@@ -119,6 +132,15 @@ export class AetherApiClient {
       color?: string;
     } | null;
     agents?: {
+      target: string;
+      action: string;
+      details: string;
+      timestamp: number;
+      agent_id?: string;
+      agent_name?: string;
+      color?: string;
+    }[];
+    history?: {
       target: string;
       action: string;
       details: string;

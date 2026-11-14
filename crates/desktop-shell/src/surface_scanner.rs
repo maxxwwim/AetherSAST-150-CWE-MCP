@@ -130,6 +130,24 @@ pub struct DiscoveredDirectory {
 }
 
 #[derive(Serialize, Debug, Clone)]
+pub struct DiscoveredHtmlLink {
+    pub kind: String,          // "#LINK / ANCRE DOM", "URL EXTERNE", "LIEN HTML / PATH", "ASSET / RESSOURCE"
+    pub target: String,        // ex: "#aether-canvas", "https://...", "/api/surface_scan", "./favicon.svg"
+    pub resolved_path: String, // ex: "/#aether-canvas", "https://...", "/api/surface_scan", "/favicon.svg"
+    pub tag_context: String,   // ex: "<a href>", "<canvas id>", "<link href>", "JS Template URL"
+    pub label: String,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct DiscoveredPathNode {
+    pub path: String,
+    pub parent_dir: String,
+    pub node_type: String, // "FORM ACTION", "API ENDPOINT", "HTML LINK", "#LINK / ANCRE", "ASSET", "EXTERNAL URL"
+    pub method: String,
+    pub source_ref: String,
+}
+
+#[derive(Serialize, Debug, Clone)]
 pub struct TrustZoneSummary {
     pub zone_id: u8,
     pub title: String,
@@ -154,9 +172,10 @@ pub struct BoundaryWeaknessProbe {
     pub cwe: String,
     pub side_one_vector: String,
     pub category: String,
-    pub status: String, // "ROBUSTE", "FAIBLESSE", "EXPOSÃ‰"
+    pub status: String, // "ROBUSTE", "FAIBLESSE", "EXPOSÉ"
     pub observed_behavior: String,
     pub side_two_ast_target: String,
+    pub positive_test_spec: String,
     pub negative_test_spec: String,
 }
 
@@ -174,6 +193,8 @@ pub struct WebArchitectureDiscovery {
     pub security_txt_present: bool,
     pub web_files: Vec<DiscoveredWebFile>,
     pub directories: Vec<DiscoveredDirectory>,
+    pub html_links: Vec<DiscoveredHtmlLink>,
+    pub path_tree: Vec<DiscoveredPathNode>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -359,7 +380,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
     let mut last_http_body = String::new();
 
     if check_headers && !resolved_ips.is_empty() {
-        let http_method = if scan_level == 1 && !check_web_forms { "HEAD" } else { "GET" };
+        let http_method = "GET";
         let candidate_http_ports = [primary_port, 443, 80, 3030, 8080, 3000, 5000, 8000];
         let mut probe_result = None;
         let mut probed_port = primary_port;
@@ -602,7 +623,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                 }
             }
 
-            if check_web_forms {
+            if check_web_forms || !body.is_empty() {
                 let (mut disc, form_findings) = parse_html_architecture_and_forms(
                     &body,
                     &hdrs,
@@ -884,7 +905,11 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
             format!("ACA-Origin retournÃ© : `{}` (Credentials : `{}`).", acao_val, if acac_val.is_empty() { "false" } else { &acac_val })
         },
         side_two_ast_target: "Middleware CORS / CorsLayer (Passerelle HTTP)".to_string(),
-        negative_test_spec: "Test NÃ©gatif : Envoyer une requÃªte avec `Origin: https://untrusted.invalid` et vÃ©rifier que `Access-Control-Allow-Origin` est absent ou ne reflÃ¨te pas l'origine.".to_string(),
+        positive_test_spec: format!(
+            "Test Positif : Envoyer une requête légitime Same-Origin (`Host: {}:{}`, `Origin: {}`) et vérifier que le serveur répond `200 OK` sans bloquer le client autorisé.",
+            host, primary_port, base_url
+        ),
+        negative_test_spec: "Test Négatif : Envoyer une requête avec `Origin: https://untrusted.invalid` et vérifier que `Access-Control-Allow-Origin` est absent (ou rejeté `403`) sans refléter l'origine.".to_string(),
     });
 
     // 8.2 Sonde Active des Verbes HTTP (OPTIONS â€” CWE-650 / CWE-749)
@@ -922,7 +947,11 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         status: methods_status.to_string(),
         observed_behavior: allowed_methods_obs,
         side_two_ast_target: "Routeur HTTP / Table des Routes AST (get/post MethodFilter)".to_string(),
-        negative_test_spec: "Test NÃ©gatif : Envoyer une requÃªte `TRACE` ou `DELETE` non authentifiÃ©e sur la route et exiger `405 Method Not Allowed`.".to_string(),
+        positive_test_spec: format!(
+            "Test Positif : Envoyer une requête nominale `GET {}` (et `HEAD {}`) et vérifier le statut `200 OK` ainsi que l'en-tête `Content-Type` attendu.",
+            path, path
+        ),
+        negative_test_spec: "Test Négatif : Envoyer une requête `TRACE` ou `DELETE` non authentifiée sur la route et exiger `405 Method Not Allowed`.".to_string(),
     });
 
     // 8.3 Sonde d'Attributs de Session & Cookies (CWE-614 / CWE-1004 / CWE-1275)
@@ -960,7 +989,8 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         status: cookie_status.to_string(),
         observed_behavior: cookie_obs,
         side_two_ast_target: "Gestionnaire de Session / Auth Cookie Builder".to_string(),
-        negative_test_spec: "Test NÃ©gatif : VÃ©rifier que tout en-tÃªte `Set-Cookie` contient `HttpOnly; SameSite=Strict` (et `Secure` en HTTPS).".to_string(),
+        positive_test_spec: "Test Positif : Vérifier qu'une session authentifiée légitime (ou appel stateless Same-Origin) accède nominalement aux ressources avec ses attributs `HttpOnly; SameSite=Strict`.".to_string(),
+        negative_test_spec: "Test Négatif : Rejeter tout cookie de session forgé, expiré ou dépourvu de signature valide (`401/403`) et interdire l'émission sans `HttpOnly; SameSite=Strict`.".to_string(),
     });
 
     // 8.4 Sonde d'Indexation des Dossiers DÃ©couverts (CWE-548 â€” Directory Listing)
@@ -998,8 +1028,12 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                 status: dir_status.to_string(),
                 observed_behavior: dir_obs,
                 side_two_ast_target: "ServeDir / Static File Handler (CWE-59 / CWE-548)".to_string(),
+                positive_test_spec: format!(
+                    "Test Positif : Requêter une route ou ressource explicite autorisée sous `{}` et vérifier sa livraison nominale (`200 OK`) avec `X-Content-Type-Options: nosniff`.",
+                    first_dir.folder_path
+                ),
                 negative_test_spec: format!(
-                    "Test NÃ©gatif : Appeler `{}` et `{}` + `../` et vÃ©rifier l'absence de `Index of /` ainsi qu'un statut 403/404.",
+                    "Test Négatif : Appeler `{}` et `{}` + `../` et vérifier l'absence de `Index of /` ainsi qu'un statut 403/404.",
                     first_dir.folder_path, first_dir.folder_path
                 ),
             });
@@ -1031,9 +1065,15 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                     f.inputs.len(),
                     if inp_names.is_empty() { "aucun".to_string() } else { inp_names.join(", ") }
                 ),
-                side_two_ast_target: format!("Handler AST `{}` & Validateur des champs d'entrÃ©e", f.action),
+                side_two_ast_target: format!("Handler AST `{}` & Validateur des champs d'entrée", f.action),
+                positive_test_spec: format!(
+                    "Test Positif : Soumettre `{}` (`{}`) avec un jeton CSRF valide et des valeurs nominales conformes sur [{}] et vérifier le succès métier (`200/201/302`).",
+                    f.action,
+                    f.method,
+                    inp_names.join(", ")
+                ),
                 negative_test_spec: format!(
-                    "Test NÃ©gatif : Soumettre `{}` sans jeton CSRF ou avec types invalides sur [{}] et exiger un rejet 400/403/422.",
+                    "Test Négatif : Soumettre `{}` sans jeton CSRF ou avec types invalides sur [{}] et exiger un rejet 400/403/422.",
                     f.action,
                     inp_names.join(", ")
                 ),
@@ -1072,8 +1112,12 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                         if wf.has_sourcemap { " (SourceMap .map exposÃ©e CWE-540)" } else { "" }
                     ),
                     side_two_ast_target: format!("Struct DTO / Deserializer & Sink AST pour `{}`", routes_preview),
+                    positive_test_spec: format!(
+                        "Test Positif : Envoyer un payload JSON nominal valide respectant le contrat DTO sur les clés [{}] vers `{}` et vérifier la réponse `200 OK` structurée.",
+                        keys_preview, routes_preview
+                    ),
                     negative_test_spec: format!(
-                        "Test NÃ©gatif : Envoyer un payload JSON mal typÃ©, vide ou prÃ©fixÃ© par `--` sur les clÃ©s [{}] vers `{}` et vÃ©rifier le rejet strict (400/415/422) avant tout appel systÃ¨me.",
+                        "Test Négatif : Envoyer un payload JSON mal typé, vide ou préfixé par `--` sur les clés [{}] vers `{}` et vérifier le rejet strict (400/415/422) avant tout appel système.",
                         keys_preview, routes_preview
                     ),
                 });
@@ -1100,7 +1144,8 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                 format!("{} fichier(s) exposÃ©(s) (Valeurs masquÃ©es [MASQUÃ‰]) : {}", exp_list.len(), exp_list.join(", "))
             },
             side_two_ast_target: "Filtre de routage statique / Isolation des dotfiles".to_string(),
-            negative_test_spec: "Test NÃ©gatif : RequÃªter `/.env` et `/.git/HEAD` en CI et vÃ©rifier que le statut est 403/404 sans fuite de clÃ©.".to_string(),
+            positive_test_spec: "Test Positif : Requêter les routes publiques légitimes (`/`, `/api/health`, `/.well-known/security.txt`) et vérifier qu'elles répondent `200 OK` sans faux positif du filtre.".to_string(),
+            negative_test_spec: "Test Négatif : Requêter `/.env` et `/.git/HEAD` en CI et vérifier que le statut est 403/404 sans fuite de clé.".to_string(),
         });
     }
 

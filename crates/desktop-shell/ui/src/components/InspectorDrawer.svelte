@@ -425,7 +425,16 @@
   async function setTaskStatus(task: TaskItem, status: 'pending' | 'in_progress' | 'done') {
     const progress = status === 'done' ? 100 : status === 'in_progress' ? 50 : 0;
     try {
-      await api.updateTask(task.id, status, progress, `MAJ statut -> ${status}`);
+      const readme = task.full_readme || task.readme || task.readme_summary || '';
+      await api.updateTask(task.id, status, progress, readme, {
+        agent_id: task.agent_id,
+        agent_name: task.agent_name,
+        color: task.color,
+        title: task.title,
+        target_symbol: task.target_symbol,
+        target_file: task.target_file,
+        priority: task.priority,
+      });
       await refreshTasks();
     } catch (e) {
       console.error('Task update failed', e);
@@ -1442,25 +1451,44 @@
             {#each cockpitState.tasks as task}
               <div class="p-2.5 rounded-lg bg-white/[0.03] border border-white/10 space-y-1.5">
                 <div class="flex items-start justify-between gap-2">
-                  <div class="font-semibold text-white text-[11px]">{task.title}</div>
-                  <span class="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase {task.status === 'done' ? 'bg-emerald-500/20 text-emerald-300' : task.status === 'in_progress' ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-700/60 text-slate-300'}">
+                  <div class="font-semibold text-white text-[11px] flex items-center gap-1.5">
+                    <span>{task.kind === 'refactor' ? '⚙️' : task.kind === 'audit' ? '🔍' : task.kind === 'security' ? '🛡️' : task.kind === 'documentation' ? '📖' : task.kind === 'test' ? '🧪' : '📌'}</span>
+                    <span>{task.title}</span>
+                  </div>
+                  <span class="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase {task.status === 'done' ? 'bg-emerald-500/20 text-emerald-300' : task.status === 'in_progress' ? 'bg-sky-500/20 text-sky-300' : task.status === 'cancelled' ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-700/60 text-slate-300'}">
                     {task.status}
                   </span>
                 </div>
-                {#if task.target_symbol}
+                {#if task.agent_name || task.agent_id}
+                  <div class="flex items-center gap-1">
+                    <span
+                      class="px-1.5 py-0.5 rounded text-[9px] font-semibold"
+                      style="background-color: {task.color || '#38bdf8'}22; color: {task.color || '#38bdf8'}; border: 1px solid {task.color || '#38bdf8'}44;"
+                    >
+                      🤖 {task.agent_name || task.agent_id}
+                    </span>
+                  </div>
+                {/if}
+                {#if task.readme_summary}
+                  <div class="text-[10px] text-slate-400 italic line-clamp-2">
+                    {task.readme_summary}
+                  </div>
+                {/if}
+                {#if task.target_symbol || task.target_file}
                   <button
                     type="button"
-                    onclick={() => task.target_symbol && jumpToSymbol(task.target_symbol)}
-                    class="text-[10px] font-mono text-sky-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    onclick={() => (task.target_symbol || task.target_file) && jumpToSymbol(task.target_symbol || task.target_file || '')}
+                    class="text-[10px] font-mono text-sky-400 hover:underline flex items-center gap-1 cursor-pointer truncate max-w-full"
                   >
-                    <FileCode2 class="w-3 h-3" /> {task.target_symbol}
+                    <FileCode2 class="w-3 h-3 shrink-0" />
+                    <span class="truncate">{task.target_symbol || task.target_file}</span>
                   </button>
                 {/if}
                 <div class="w-full h-1.5 rounded bg-black/40 overflow-hidden">
                   <div class="h-full bg-emerald-400 transition-all" style="width: {task.progress || 0}%"></div>
                 </div>
                 <div class="flex gap-1.5 pt-0.5">
-                  {#if task.status !== 'in_progress'}
+                  {#if task.status !== 'in_progress' && task.status !== 'done'}
                     <button
                       type="button"
                       onclick={() => setTaskStatus(task, 'in_progress')}

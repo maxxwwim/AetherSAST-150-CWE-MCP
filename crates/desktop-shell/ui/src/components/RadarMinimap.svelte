@@ -62,14 +62,79 @@
     const cam = engine.camera;
     const logW = engine.logicalWidth || (typeof window !== 'undefined' ? window.innerWidth : 800);
     const logH = engine.logicalHeight || (typeof window !== 'undefined' ? window.innerHeight : 600);
-    const vw = Math.min(w * 2.2, (logW / cam.zoom) * scale);
-    const vh = Math.min(h * 2.2, (logH / cam.zoom) * scale);
-    const vx = cx + (cam.x - gCenterX) * scale - vw / 2;
-    const vy = cy + (cam.y - gCenterY) * scale - vh / 2;
+    const safeZoom = Math.max(0.0001, cam.zoom);
+    const vw = Math.min(w - 4, Math.max(4, (logW / safeZoom) * scale));
+    const vh = Math.min(h - 4, Math.max(4, (logH / safeZoom) * scale));
+    const vx = Math.max(2, Math.min(w - vw - 2, cx + (cam.x - gCenterX) * scale - vw / 2));
+    const vy = Math.max(2, Math.min(h - vh - 2, cy + (cam.y - gCenterY) * scale - vh / 2));
 
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 1.2;
     ctx.strokeRect(vx, vy, vw, vh);
+
+    // 4. Plot Multi-Agent AI Trails & Beacons
+    const agents = cockpitState.activeAgents;
+    const trails = cockpitState.agentTrails;
+    const nowTs = Date.now();
+
+    for (let idx = 0; idx < agents.length; idx++) {
+      const ag = agents[idx];
+      const agColor = ag.color || '#38bdf8';
+      const agTrail = trails[ag.agentId] || [];
+
+      // Render trail line on radar
+      if (agTrail.length > 1) {
+        ctx.beginPath();
+        let started = false;
+        for (const pt of agTrail) {
+          const wx = pt.x;
+          const wy = pt.y;
+          if (wx == null || wy == null) continue;
+          const tx = cx + (wx - gCenterX) * scale;
+          const ty = cy + (wy - gCenterY) * scale;
+          if (!started) {
+            ctx.moveTo(tx, ty);
+            started = true;
+          } else {
+            ctx.lineTo(tx, ty);
+          }
+        }
+        ctx.strokeStyle = agColor;
+        ctx.lineWidth = 1.0;
+        ctx.globalAlpha = 0.55;
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+      }
+
+      // Render agent current position
+      let ax = ag.targetX;
+      let ay = ag.targetY;
+      if (ax == null || ay == null) {
+        const hit = cockpitState.resolveTargetNode(ag.target);
+        if (hit) {
+          ax = hit.x;
+          ay = hit.y;
+        }
+      }
+      if (ax != null && ay != null) {
+        const arx = cx + (ax - gCenterX) * scale;
+        const ary = cy + (ay - gCenterY) * scale;
+        const pulseR = 3.5 + Math.sin(nowTs * 0.005 + idx) * 1.5;
+
+        // Outer pulsing beacon ring
+        ctx.beginPath();
+        ctx.arc(arx, ary, pulseR, 0, Math.PI * 2);
+        ctx.strokeStyle = agColor;
+        ctx.lineWidth = 1.0;
+        ctx.stroke();
+
+        // Inner glowing dot
+        ctx.beginPath();
+        ctx.arc(arx, ary, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = agColor;
+        ctx.fill();
+      }
+    }
   }
 
   function handleRadarClick(e: MouseEvent) {
@@ -132,7 +197,7 @@
     <!-- Header / Zoom level indicator -->
     <div class="w-full flex items-center justify-between px-1.5 text-[9px] font-mono text-cyan-400/80">
       <span>RADAR</span>
-      <span>{engine ? `${engine.camera.zoom.toFixed(2)}x` : '1.00x'}</span>
+      <span>{engine ? (engine.camera.zoom >= 0.01 ? `${engine.camera.zoom.toFixed(2)}x` : `${(engine.camera.zoom * 100).toFixed(2)}%`) : '1.00x'}</span>
     </div>
 
     <canvas

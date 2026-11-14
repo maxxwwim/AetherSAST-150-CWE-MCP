@@ -590,11 +590,15 @@ pub async fn execute_project_pipeline(
     };
 
     // 3. Mise à jour de l'état partagé
+    let prev_root = state.project_root.read().await.clone();
     *state.project_type.write().await = p_type;
     *state.detection_report.write().await = Some(detection_report);
     *state.active_view_mode.write().await = final_mode.clone();
     *state.graph.write().await = active_graph.clone();
     *state.project_root.write().await = path.clone();
+    if prev_root != path {
+        state.reload_telemetry_cache(&path).await;
+    }
     state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     // 4. Audit SAST si code présent
@@ -1566,11 +1570,22 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             axum::routing::get({
                 let state = state_telemetry.clone();
                 move || async move {
-                    let t = state.telemetry.read().await;
+                    let is_empty = state.active_agents.read().await.is_empty();
+                    if is_empty {
+                        let p_root = state.project_root.read().await.clone();
+                        state.reload_telemetry_cache(&p_root).await;
+                    }
+                    let t = state.telemetry.read().await.clone();
                     let agents_map = state.active_agents.read().await;
                     let mut agents: Vec<AiTelemetryEvent> = agents_map.values().cloned().collect();
                     agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-                    axum::Json(serde_json::json!({ "telemetry": *t, "agents": agents }))
+                    drop(agents_map);
+                    let history = state.telemetry_history.read().await.clone();
+                    axum::Json(serde_json::json!({
+                        "telemetry": t,
+                        "agents": agents,
+                        "history": history
+                    }))
                 }
             })
             .post({
@@ -1580,7 +1595,9 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         event.timestamp = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
-                            .as_millis() as u64;
+                            .as_secs();
+                    } else if event.timestamp > 1_000_000_000_000 {
+                        event.timestamp /= 1000;
                     }
                     let agent_key = event
                         .agent_id
@@ -1588,35 +1605,20 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         .filter(|s| !s.trim().is_empty())
                         .or_else(|| event.agent_name.clone().filter(|s| !s.trim().is_empty()))
                         .unwrap_or_else(|| "primary-agent".to_string());
-                    if event.agent_id.is_none() {
+                    if event.agent_id.as_deref().map(str::trim).unwrap_or("").is_empty() {
                         event.agent_id = Some(agent_key.clone());
                     }
-                    if event.agent_name.is_none() {
-                        event.agent_name = Some(agent_key.clone());
+                    if event.agent_name.as_deref().map(str::trim).unwrap_or("").is_empty() {
+                        event.agent_name = Some(agent_key);
                     }
-                    {
-                        let mut agents_map = state.active_agents.write().await;
-                        agents_map.insert(agent_key, event.clone());
-                        if agents_map.len() > 24 {
-                            if let Some(oldest_k) = agents_map
-                                .iter()
-                                .min_by_key(|(_, v)| v.timestamp)
-                                .map(|(k, _)| k.clone())
-                            {
-                                agents_map.remove(&oldest_k);
-                            }
-                        }
-                    }
-                    let mut t = state.telemetry.write().await;
-                    *t = Some(event);
-                    axum::Json(serde_json::json!({ "status": "ok" }))
+                    let recorded = state.record_telemetry(event).await;
+                    axum::Json(serde_json::json!({ "status": "ok", "event": recorded }))
                 }
             })
             .delete({
                 let state = state_telemetry.clone();
                 move || async move {
-                    state.active_agents.write().await.clear();
-                    *state.telemetry.write().await = None;
+                    state.clear_telemetry().await;
                     axum::Json(serde_json::json!({ "status": "ok" }))
                 }
             }),
@@ -1640,19 +1642,39 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 let state = state_chat.clone();
                 move |axum::extract::Json(req): axum::extract::Json<SendChatMessageRequest>| async move {
                     let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+                    let resolved_color = if req.agent_id.is_some() || req.agent_name.is_some() || req.color.is_some() {
+                        let aid = req.agent_id.as_deref().or(req.agent_name.as_deref()).unwrap_or("primary-agent");
+                        Some(crate::api_routes::assign_agent_color(aid, req.agent_name.as_deref(), req.color.as_deref()))
+                    } else {
+                        None
+                    };
                     let msg = AiChatMessage {
                         id: format!("msg_{}", now_ms),
                         sender: req.sender.unwrap_or_else(|| "user".to_string()),
-                        text: req.text,
-                        target_symbol: req.target_symbol,
+                        text: req.text.clone(),
+                        target_symbol: req.target_symbol.clone(),
                         timestamp: now_ms,
-                        agent_id: req.agent_id,
-                        agent_name: req.agent_name,
+                        agent_id: req.agent_id.clone(),
+                        agent_name: req.agent_name.clone(),
                         recipient: req.recipient,
-                        color: req.color,
+                        color: resolved_color.clone(),
                     };
                     let mut msgs = state.chat_messages.write().await;
                     msgs.push(msg.clone());
+                    drop(msgs);
+                    if let Some(ref sym) = req.target_symbol {
+                        if !sym.trim().is_empty() && (req.agent_id.is_some() || msg.sender != "user") {
+                            let _ = state.record_telemetry(AiTelemetryEvent {
+                                target: sym.trim().to_string(),
+                                action: "Chat / Hand-off".to_string(),
+                                details: req.text.chars().take(120).collect(),
+                                timestamp: now_ms / 1000,
+                                agent_id: req.agent_id,
+                                agent_name: req.agent_name,
+                                color: resolved_color,
+                            }).await;
+                        }
+                    }
                     axum::Json(serde_json::json!({ "status": "ok", "message": msg }))
                 }
             }),
@@ -1704,10 +1726,9 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 move || async move {
                     let mut msgs = state.chat_messages.write().await;
                     msgs.clear();
-                    state.active_agents.write().await.clear();
-                    let mut t = state.telemetry.write().await;
-                    *t = None;
-                    axum::Json(serde_json::json!({ "status": "ok", "message": "Nouvelle session dÃ©marrÃ©e" }))
+                    drop(msgs);
+                    state.clear_telemetry().await;
+                    axum::Json(serde_json::json!({ "status": "ok", "message": "Nouvelle session démarrée" }))
                 }
             }),
         )
@@ -1747,7 +1768,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // Gestionnaire de TÃ¢ches & QuÃªtes (Model & User)
+        // Gestionnaire de Tâches & Quêtes (Model & User)
         .route(
             "/api/tasks",
             axum::routing::get({
@@ -1761,10 +1782,18 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             .post({
                 let state = state_tasks.clone();
                 move |axum::extract::Json(req): axum::extract::Json<CreateTaskApiRequest>| async move {
-                    let p_root = state.project_root.read().await;
+                    let p_root = state.project_root.read().await.clone();
                     let kind = req.kind.as_deref().map(ai_file_bridge::TaskKind::from_str_loose).unwrap_or_default();
                     let author = req.author.as_deref().unwrap_or("user");
-                    match ai_file_bridge::TaskManager::create_task(
+                    let resolved_color = if req.agent_id.is_some() || req.agent_name.is_some() || req.color.is_some() {
+                        let aid = req.agent_id.as_deref().or(req.agent_name.as_deref()).unwrap_or(author);
+                        Some(crate::api_routes::assign_agent_color(aid, req.agent_name.as_deref(), req.color.as_deref()))
+                    } else if author != "user" {
+                        Some(crate::api_routes::assign_agent_color(author, Some(author), None))
+                    } else {
+                        None
+                    };
+                    match ai_file_bridge::TaskManager::create_task_with_agent(
                         &p_root,
                         &req.title,
                         kind,
@@ -1773,8 +1802,26 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         author,
                         req.priority.as_deref(),
                         req.initial_readme.as_deref(),
+                        req.agent_id.as_deref(),
+                        req.agent_name.as_deref(),
+                        resolved_color.as_deref(),
                     ) {
-                        Ok(task) => axum::Json(serde_json::json!({ "status": "ok", "task": task })),
+                        Ok(task) => {
+                            if let Some(target) = task.target_symbol.clone().or_else(|| task.target_file.clone()) {
+                                if task.agent_id.is_some() || task.author != "user" {
+                                    let _ = state.record_telemetry(AiTelemetryEvent {
+                                        target,
+                                        action: "Création de Tâche".to_string(),
+                                        details: format!("Tâche créée : {}", task.title),
+                                        timestamp: 0,
+                                        agent_id: task.agent_id.clone().or_else(|| Some(task.author.clone())),
+                                        agent_name: task.agent_name.clone().or_else(|| Some(task.author.clone())),
+                                        color: task.color.clone(),
+                                    }).await;
+                                }
+                            }
+                            axum::Json(serde_json::json!({ "status": "ok", "task": task }))
+                        }
                         Err(e) => axum::Json(serde_json::json!({ "status": "error", "message": format!("{}", e) })),
                     }
                 }
@@ -1785,18 +1832,46 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             axum::routing::post({
                 let state = state_tasks.clone();
                 move |axum::extract::Json(req): axum::extract::Json<UpdateTaskApiRequest>| async move {
-                    let p_root = state.project_root.read().await;
+                    let p_root = state.project_root.read().await.clone();
                     let status = req.status.as_deref().map(ai_file_bridge::TaskStatus::from_str_loose);
-                    match ai_file_bridge::TaskManager::update_task(
+                    let resolved_color = if req.agent_id.is_some() || req.agent_name.is_some() || req.color.is_some() {
+                        let aid = req.agent_id.as_deref().or(req.agent_name.as_deref()).unwrap_or("primary-agent");
+                        Some(crate::api_routes::assign_agent_color(aid, req.agent_name.as_deref(), req.color.as_deref()))
+                    } else {
+                        None
+                    };
+                    match ai_file_bridge::TaskManager::update_task_with_meta(
                         &p_root,
                         &req.task_id,
                         status,
                         req.progress,
                         req.progress_note.as_deref(),
                         req.full_readme.as_deref(),
+                        req.title.as_deref(),
+                        req.target_symbol.as_deref(),
+                        req.target_file.as_deref(),
+                        req.priority.as_deref(),
+                        req.agent_id.as_deref(),
+                        req.agent_name.as_deref(),
+                        resolved_color.as_deref(),
                     ) {
-                        Ok(Some(task)) => axum::Json(serde_json::json!({ "status": "ok", "task": task })),
-                        Ok(None) => axum::Json(serde_json::json!({ "status": "not_found", "message": "TÃ¢che introuvable" })),
+                        Ok(Some(task)) => {
+                            if let Some(target) = task.target_symbol.clone().or_else(|| task.target_file.clone()) {
+                                if req.agent_id.is_some() || req.agent_name.is_some() || task.agent_id.is_some() || task.author != "user" {
+                                    let _ = state.record_telemetry(AiTelemetryEvent {
+                                        target,
+                                        action: format!("Suivi Tâche ({}%)", task.progress),
+                                        details: req.progress_note.clone().unwrap_or_else(|| format!("Statut : {} — {}", task.status.as_str(), task.title)),
+                                        timestamp: 0,
+                                        agent_id: req.agent_id.or_else(|| task.agent_id.clone()).or_else(|| Some(task.author.clone())),
+                                        agent_name: req.agent_name.or_else(|| task.agent_name.clone()).or_else(|| Some(task.author.clone())),
+                                        color: resolved_color.or_else(|| task.color.clone()),
+                                    }).await;
+                                }
+                            }
+                            axum::Json(serde_json::json!({ "status": "ok", "task": task }))
+                        }
+                        Ok(None) => axum::Json(serde_json::json!({ "status": "not_found", "message": "Tâche introuvable" })),
                         Err(e) => axum::Json(serde_json::json!({ "status": "error", "message": format!("{}", e) })),
                     }
                 }

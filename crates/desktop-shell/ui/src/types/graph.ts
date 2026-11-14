@@ -254,16 +254,21 @@ export interface AetherGraph {
 export interface TaskItem {
   id: string;
   title: string;
-  kind: 'function' | 'research' | 'security_fix' | 'arch_refactor' | 'other';
-  status: 'pending' | 'in_progress' | 'blocked' | 'done';
+  kind: 'function' | 'research' | 'security_fix' | 'arch_refactor' | 'documentation' | 'test' | 'other';
+  status: 'pending' | 'in_progress' | 'blocked' | 'done' | 'cancelled';
   priority: 'low' | 'medium' | 'high' | 'critical';
   progress: number;
   target_symbol?: string;
   target_file?: string;
   author: string;
+  agent_id?: string;
+  agent_name?: string;
+  color?: string;
   created_at: string;
   updated_at: string;
-  readme: string;
+  readme_summary?: string;
+  full_readme?: string;
+  readme?: string;
 }
 
 export interface GitFileChange {

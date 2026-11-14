@@ -203,6 +203,9 @@ pub(crate) async fn send_http_probe(
         let mut cmd = tokio::process::Command::new("curl");
         cmd.args([
             "-sSi",
+            "-L",
+            "--max-redirs",
+            "4",
             "-k",
             "-m",
             "4",
@@ -229,56 +232,149 @@ pub(crate) async fn send_http_probe(
 
     // Sonde TCP HTTP/1.1 native ultra-rapide
     let addr = format!("{}:{}", host, port);
-    let mut stream = timeout(Duration::from_millis(1100), TcpStream::connect(&addr))
-        .await
-        .ok()?
-        .ok()?;
+    let host_hdr = if port == 80 || port == 443 {
+        host.to_string()
+    } else {
+        format!("{}:{}", host, port)
+    };
 
-    let req_str = format!(
-        "{} {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: AetherScope-SurfaceAuditor/2.0 (Defensive Posture Check)\r\nOrigin: https://scanner-probe.aetherscope.local\r\nAccept: text/html,application/xhtml+xml,application/json,*/*\r\nConnection: close\r\n\r\n",
-        method, path, host
-    );
+    for include_foreign_origin in [true, false] {
+        let Ok(Ok(mut stream)) = timeout(Duration::from_millis(1100), TcpStream::connect(&addr)).await else {
+            return None;
+        };
+        let origin_line = if include_foreign_origin {
+            "Origin: https://scanner-probe.aetherscope.local\r\n"
+        } else {
+            ""
+        };
+        let req_str = format!(
+            "{} {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: AetherScope-SurfaceAuditor/2.0 (Defensive Posture Check)\r\n{}Accept: text/html,application/xhtml+xml,application/json,*/*\r\nConnection: close\r\n\r\n",
+            method, path, host_hdr, origin_line
+        );
 
-    timeout(Duration::from_millis(700), stream.write_all(req_str.as_bytes()))
-        .await
-        .ok()?
-        .ok()?;
+        if timeout(Duration::from_millis(700), stream.write_all(req_str.as_bytes()))
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .is_none()
+        {
+            return None;
+        }
 
-    let mut full_buf = Vec::with_capacity(32768);
-    let mut chunk = [0u8; 4096];
-    let read_start = Instant::now();
-    while full_buf.len() < 65536 && read_start.elapsed() < Duration::from_millis(1400) {
-        match timeout(Duration::from_millis(450), stream.read(&mut chunk)).await {
-            Ok(Ok(0)) => break,
-            Ok(Ok(n)) => {
-                if let Some(slice) = chunk.get(..n) {
-                    full_buf.extend_from_slice(slice);
+        let mut full_buf = Vec::with_capacity(65536);
+        let mut chunk = [0u8; 32768];
+        let read_start = Instant::now();
+        while full_buf.len() < 3_500_000 && read_start.elapsed() < Duration::from_millis(2800) {
+            match timeout(Duration::from_millis(450), stream.read(&mut chunk)).await {
+                Ok(Ok(0)) => break,
+                Ok(Ok(n)) => {
+                    if let Some(slice) = chunk.get(..n) {
+                        full_buf.extend_from_slice(slice);
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        if full_buf.is_empty() {
+            return None;
+        }
+
+        let raw_resp = String::from_utf8_lossy(&full_buf).to_string();
+        if let Some((status, hdrs, body)) = parse_raw_http_response(&raw_resp) {
+            if include_foreign_origin && status.contains(" 403 ") {
+                continue;
+            }
+            if (status.contains(" 301 ")
+                || status.contains(" 302 ")
+                || status.contains(" 303 ")
+                || status.contains(" 307 ")
+                || status.contains(" 308 "))
+                && body.trim().len() < 256
+            {
+                if let Some(loc) = hdrs.get("location") {
+                    let loc_trim = loc.trim();
+                    if loc_trim.starts_with("https://") || loc_trim.starts_with("http://") {
+                        let mut cmd = tokio::process::Command::new("curl");
+                        cmd.args([
+                            "-sSi",
+                            "-L",
+                            "--max-redirs",
+                            "4",
+                            "-k",
+                            "-m",
+                            "4",
+                            "-X",
+                            method,
+                            "-H",
+                            "User-Agent: AetherScope-SurfaceAuditor/2.0 (Defensive Posture Check)",
+                            "--",
+                            loc_trim,
+                        ]);
+                        #[cfg(windows)]
+                        {
+                            cmd.creation_flags(0x08000000);
+                        }
+                        if let Ok(Ok(out)) = timeout(Duration::from_millis(4200), cmd.output()).await {
+                            if !out.stdout.is_empty() {
+                                let redir_raw = String::from_utf8_lossy(&out.stdout).to_string();
+                                if let Some(parsed) = parse_raw_http_response(&redir_raw) {
+                                    return Some(parsed);
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            _ => break,
+            return Some((status, hdrs, body));
         }
     }
-
-    if full_buf.is_empty() {
-        return None;
-    }
-
-    let raw_resp = String::from_utf8_lossy(&full_buf).to_string();
-    parse_raw_http_response(&raw_resp)
+    None
 }
 
 pub(crate) fn parse_raw_http_response(raw_resp: &str) -> Option<(String, HashMap<String, String>, String)> {
-    let (header_block, body_block) = match raw_resp.find("\r\n\r\n") {
-        Some(idx) => (
-            raw_resp.get(..idx).unwrap_or(raw_resp),
-            raw_resp.get(idx + 4..).unwrap_or(""),
-        ),
-        None => match raw_resp.find("\n\n") {
+    let mut current = raw_resp;
+    for _ in 0..5 {
+        let (header_block, rest, sep_len) = match current.find("\r\n\r\n") {
             Some(idx) => (
-                raw_resp.get(..idx).unwrap_or(raw_resp),
-                raw_resp.get(idx + 2..).unwrap_or(""),
+                current.get(..idx).unwrap_or(current),
+                current.get(idx + 4..).unwrap_or(""),
+                4usize,
             ),
-            None => (raw_resp, ""),
+            None => match current.find("\n\n") {
+                Some(idx) => (
+                    current.get(..idx).unwrap_or(current),
+                    current.get(idx + 2..).unwrap_or(""),
+                    2usize,
+                ),
+                None => (current, "", 0usize),
+            },
+        };
+        let first_line = header_block.lines().next().unwrap_or("").trim();
+        let is_redirect_or_continue = first_line.contains(" 100 ")
+            || first_line.contains(" 301 ")
+            || first_line.contains(" 302 ")
+            || first_line.contains(" 303 ")
+            || first_line.contains(" 307 ")
+            || first_line.contains(" 308 ");
+        if sep_len > 0 && is_redirect_or_continue && rest.trim_start().starts_with("HTTP/") {
+            current = rest.trim_start();
+            continue;
+        }
+        break;
+    }
+
+    let (header_block, body_block) = match current.find("\r\n\r\n") {
+        Some(idx) => (
+            current.get(..idx).unwrap_or(current),
+            current.get(idx + 4..).unwrap_or(""),
+        ),
+        None => match current.find("\n\n") {
+            Some(idx) => (
+                current.get(..idx).unwrap_or(current),
+                current.get(idx + 2..).unwrap_or(""),
+            ),
+            None => (current, ""),
         },
     };
 
@@ -309,18 +405,67 @@ pub(crate) fn parse_raw_http_response(raw_resp: &str) -> Option<(String, HashMap
 }
 
 pub(crate) fn extract_attr(tag_html: &str, attr_name: &str) -> Option<String> {
-    let lower = tag_html.to_lowercase();
-    for pat in [format!("{}=\"", attr_name), format!("{}='", attr_name)] {
-        if let Some(start_idx) = lower.find(&pat) {
-            let quote_char = pat.chars().last().unwrap_or('"');
-            let val_start = start_idx + pat.len();
+    let lower = tag_html.to_ascii_lowercase();
+    let attr_low = attr_name.to_ascii_lowercase();
+    let is_word_boundary = |idx: usize| -> bool {
+        if idx == 0 {
+            return true;
+        }
+        lower
+            .get(idx - 1..idx)
+            .and_then(|s| s.chars().next())
+            .map(|c| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+            .unwrap_or(true)
+    };
+
+    for (pat, end_delim) in [
+        (format!("{}=\"", attr_low), "\""),
+        (format!("{}='", attr_low), "'"),
+        (format!("{}=\\\"", attr_low), "\\\""),
+        (format!("{} = \"", attr_low), "\""),
+        (format!("{} = '", attr_low), "'"),
+    ] {
+        let mut search_from = 0usize;
+        while let Some(rel_idx) = lower.get(search_from..).and_then(|s| s.find(&pat)) {
+            let start_idx = search_from + rel_idx;
+            if is_word_boundary(start_idx) {
+                let val_start = start_idx + pat.len();
+                if let Some(after) = tag_html.get(val_start..) {
+                    if let Some(end_idx) = after.find(end_delim) {
+                        let val = after.get(..end_idx).unwrap_or("").trim();
+                        if !val.is_empty() && !val.starts_with("${") {
+                            return Some(val.replace('\n', " ").replace('\r', ""));
+                        }
+                    }
+                }
+            }
+            search_from = start_idx + pat.len();
+        }
+    }
+
+    // Support des attributs HTML minifies sans guillemets (ex: <form action=/login method=post>)
+    let unquoted_pat = format!("{}=", attr_low);
+    let mut search_from = 0usize;
+    while let Some(rel_idx) = lower.get(search_from..).and_then(|s| s.find(&unquoted_pat)) {
+        let start_idx = search_from + rel_idx;
+        if is_word_boundary(start_idx) {
+            let val_start = start_idx + unquoted_pat.len();
             if let Some(after) = tag_html.get(val_start..) {
-                if let Some(end_idx) = after.find(quote_char) {
-                    return Some(after.get(..end_idx).unwrap_or("").trim().to_string());
+                let first_ch = after.chars().next().unwrap_or(' ');
+                if !matches!(first_ch, '"' | '\'' | '\\' | ' ' | '>') {
+                    let end_idx = after
+                        .find(|c: char| c.is_ascii_whitespace() || c == '>' || c == '/')
+                        .unwrap_or(after.len());
+                    let val = after.get(..end_idx).unwrap_or("").trim();
+                    if !val.is_empty() && !val.starts_with("${") {
+                        return Some(val.to_string());
+                    }
                 }
             }
         }
+        search_from = start_idx + unquoted_pat.len();
     }
+
     None
 }
 
@@ -412,6 +557,361 @@ pub(crate) fn fingerprint_technologies(
     stack
 }
 
+pub(crate) fn classify_html_input(name: &str, itype: &str) -> (String, bool, bool, bool) {
+    let name_low = name.to_lowercase();
+    let is_csrf = name_low.contains("csrf")
+        || name_low.contains("_token")
+        || name_low.contains("xsrf")
+        || name_low.contains("authenticity_token")
+        || name_low.contains("nonce");
+    let is_password = itype == "password" || name_low.contains("pass") || name_low.contains("pwd");
+    let is_file = itype == "file";
+
+    let classification = if is_csrf {
+        "🛡️ Jeton Anti-CSRF"
+    } else if is_password || name_low.contains("secret") || name_low.contains("api_key") {
+        "🔑 Secret / Authentification"
+    } else if is_file {
+        "📂 Upload de Fichier"
+    } else if itype == "email" || name_low.contains("user") || name_low.contains("login") {
+        "👤 Identifiant / Email"
+    } else if name_low.contains("domaine")
+        || name_low.contains("ip:port")
+        || name_low.contains("url")
+        || name_low.contains("path")
+        || name_low.contains("chemin")
+        || name_low.contains("dir")
+    {
+        "🧭 Cible / Path / URL"
+    } else if name_low.contains("prompt")
+        || name_low.contains("consigne")
+        || name_low.contains("analyse")
+        || name_low.contains("cwe")
+    {
+        "🤖 Prompt / Filtre SAST & IA"
+    } else if itype == "hidden" {
+        "🔒 Paramètre Caché (Hidden)"
+    } else if itype == "select" || itype == "checkbox" || itype == "range" || itype == "number" {
+        "🎛️ Sélecteur / Paramètre UI"
+    } else {
+        "📝 Entrée Utilisateur"
+    }
+    .to_string();
+
+    (classification, is_csrf, is_password, is_file)
+}
+
+pub(crate) fn group_standalone_spa_forms(
+    standalone_inputs: Vec<DiscoveredInput>,
+    start_idx: usize,
+    routes: &mut Vec<DiscoveredRoute>,
+) -> Vec<DiscoveredForm> {
+    let mut scanner_inputs = Vec::new();
+    let mut forge_inputs = Vec::new();
+    let mut task_inputs = Vec::new();
+    let mut ai_inputs = Vec::new();
+    let mut gov_inputs = Vec::new();
+    let mut search_inputs = Vec::new();
+    let mut generic_inputs = Vec::new();
+
+    for inp in standalone_inputs {
+        let nl = inp.name.to_lowercase();
+        if nl.contains("domaine") || nl.contains("ip:port") || nl.contains("ports +") || nl.contains("surface") {
+            scanner_inputs.push(inp);
+        } else if nl.contains("forge-") || nl.contains("cf-") || nl.contains("neohotel") || nl.contains("auth_guard") {
+            forge_inputs.push(inp);
+        } else if nl.contains("task-")
+            || nl.contains("tâche")
+            || nl.contains("tache")
+            || nl.contains("symbole cible")
+            || nl.contains("fichier cible")
+            || nl.contains("spécifications ears")
+        {
+            task_inputs.push(inp);
+        } else if nl.contains("ai-") || nl.contains("consigne") || nl.contains("demander une analyse") || nl.contains("rule_max_lines") {
+            ai_inputs.push(inp);
+        } else if nl.contains("inspector-max-lines")
+            || nl.contains("blake3-")
+            || nl.contains("crates/*")
+            || nl.contains("tests/*")
+            || nl.contains("scope")
+        {
+            gov_inputs.push(inp);
+        } else if nl.contains("hub-project-path") || nl.contains("rechercher") || nl.contains("filtrer") || nl.contains("continuum") {
+            search_inputs.push(inp);
+        } else {
+            generic_inputs.push(inp);
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut idx = start_idx;
+    let groups = [
+        (
+            "Formulaire Scanner de Surface & Ports (SPA)",
+            "POST",
+            "/api/surface_scan",
+            scanner_inputs,
+        ),
+        (
+            "Formulaire Forge & Création Projet/Fichier (SPA)",
+            "POST",
+            "/api/scaffold_project",
+            forge_inputs,
+        ),
+        (
+            "Formulaire Gestion des Tâches & Kanban (SPA)",
+            "POST",
+            "/api/tasks/update",
+            task_inputs,
+        ),
+        (
+            "Formulaire Copilote IA & Prompt Studio (SPA)",
+            "POST",
+            "/api/ai/chat",
+            ai_inputs,
+        ),
+        (
+            "Formulaire Contrats EARS, Gouvernance & Vault (SPA)",
+            "POST",
+            "/api/update_contract",
+            gov_inputs,
+        ),
+        (
+            "Formulaire Workspace, Recherche & Filtres AST (SPA)",
+            "POST / GET",
+            "/api/analyze",
+            search_inputs,
+        ),
+        (
+            "Formulaire Dynamique HTML / Contrôles SPA",
+            "POST / FETCH",
+            "/api/*",
+            generic_inputs,
+        ),
+    ];
+
+    for (title, method, action, list) in groups {
+        if list.is_empty() {
+            continue;
+        }
+        if !routes.iter().any(|r| r.path == action) && action != "/api/*" {
+            routes.push(DiscoveredRoute {
+                path: action.to_string(),
+                method: method.to_string(),
+                source: format!("Form SPA «{}»", title),
+                status: None,
+            });
+        }
+        out.push(DiscoveredForm {
+            index: idx,
+            id_or_name: title.to_string(),
+            method: method.to_string(),
+            action: action.to_string(),
+            enctype: Some("application/json (fetch/XHR)".to_string()),
+            has_csrf_token: true,
+            has_password_field: list.iter().any(|i| i.input_type == "password"),
+            has_file_upload: list.iter().any(|i| i.input_type == "file"),
+            inputs: list,
+            security_posture: "PASS".to_string(),
+            security_notes: vec![format!(
+                "Formulaire SPA extrait du code source HTML/DOM ➔ soumission JSON vers `{}` (`{}`).",
+                action, method
+            )],
+        });
+        idx += 1;
+    }
+
+    out
+}
+
+pub(crate) fn extract_html_links_and_anchors(
+    body: &str,
+    lower_body: &str,
+    routes: &mut Vec<DiscoveredRoute>,
+) -> Vec<DiscoveredHtmlLink> {
+    let mut links: Vec<DiscoveredHtmlLink> = Vec::new();
+    let mut push_link = |kind: &str, target: &str, resolved_path: &str, tag_context: &str, label: &str| {
+        if target.is_empty() || target.len() > 140 || links.len() >= 80 {
+            return;
+        }
+        if !links.iter().any(|l| l.target == target && l.kind == kind) {
+            links.push(DiscoveredHtmlLink {
+                kind: kind.to_string(),
+                target: target.to_string(),
+                resolved_path: resolved_path.to_string(),
+                tag_context: tag_context.to_string(),
+                label: label.to_string(),
+            });
+        }
+    };
+
+    for (tag_pat, attr_name, ctx_label) in [
+        ("<a ", "href", "<a href>"),
+        ("<area ", "href", "<area href>"),
+        ("<link", "href", "<link href>"),
+        ("<iframe", "src", "<iframe src>"),
+        ("<img ", "src", "<img src>"),
+        ("<form", "action", "<form action>"),
+    ] {
+        let mut pos = 0usize;
+        while let Some(rel) = lower_body.get(pos..).and_then(|s| s.find(tag_pat)) {
+            let start = pos + rel;
+            let Some(end_rel) = lower_body.get(start..).and_then(|s| s.find('>')) else {
+                break;
+            };
+            if end_rel <= 420 {
+                let tag = body.get(start..=start + end_rel).unwrap_or("");
+                if let Some(val) = extract_attr(tag, attr_name) {
+                    if val.starts_with('#') && val.len() > 1 {
+                        let res_path = format!("/{}", val);
+                        push_link(
+                            "#LINK / ANCRE DOM",
+                            &val,
+                            &res_path,
+                            ctx_label,
+                            &format!("Lien d'ancre HTML {}", val),
+                        );
+                        if routes.len() < 65 && !routes.iter().any(|r| r.path == val || r.path == res_path) {
+                            routes.push(DiscoveredRoute {
+                                path: val.clone(),
+                                method: "ANCHOR (#)".to_string(),
+                                source: format!("HTML {}", ctx_label),
+                                status: None,
+                            });
+                        }
+                    } else if val.starts_with("http://")
+                        || val.starts_with("https://")
+                        || val.starts_with("ws://")
+                        || val.starts_with("wss://")
+                    {
+                        push_link("URL EXTERNE", &val, &val, ctx_label, &format!("URL {}", ctx_label));
+                    } else if !val.starts_with("javascript:")
+                        && !val.starts_with("data:")
+                        && !val.starts_with("mailto:")
+                    {
+                        let norm = if val.starts_with('/') {
+                            val.clone()
+                        } else {
+                            format!("/{}", val.trim_start_matches("./"))
+                        };
+                        let kind = if tag_pat == "<link" || tag_pat == "<img " {
+                            "ASSET / RESSOURCE"
+                        } else {
+                            "LIEN HTML / PATH"
+                        };
+                        push_link(kind, &val, &norm, ctx_label, &format!("Ressource HTML {}", norm));
+                        if (tag_pat == "<a " || tag_pat == "<iframe" || tag_pat == "<link")
+                            && routes.len() < 65
+                            && !routes.iter().any(|r| r.path == norm)
+                        {
+                            routes.push(DiscoveredRoute {
+                                path: norm,
+                                method: "GET".to_string(),
+                                source: format!("HTML {}", ctx_label),
+                                status: None,
+                            });
+                        }
+                    }
+                }
+            }
+            pos = start + end_rel + 1;
+        }
+    }
+
+    for pat in ["id=\"", "id='", "id=\\\""] {
+        let mut pos = 0usize;
+        while let Some(rel) = lower_body.get(pos..).and_then(|s| s.find(pat)) {
+            let start = pos + rel;
+            let val_start = start + pat.len();
+            let end_delim = if pat.ends_with("\\\"") {
+                "\\\""
+            } else if pat.ends_with('\'') {
+                "'"
+            } else {
+                "\""
+            };
+            if let Some(after) = body.get(val_start..body.len().min(val_start + 80)) {
+                if let Some(end_idx) = after.find(end_delim) {
+                    let id_val = after.get(..end_idx).unwrap_or("").trim();
+                    let is_valid_id = id_val.len() >= 2
+                        && id_val.len() <= 48
+                        && id_val.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                        && !id_val.starts_with("uml-arrow")
+                        && !id_val.starts_with("bounty-arrow");
+                    if is_valid_id {
+                        let hash_target = format!("#{}", id_val);
+                        let res_path = format!("/#{}", id_val);
+                        push_link(
+                            "#LINK / ANCRE DOM",
+                            &hash_target,
+                            &res_path,
+                            "DOM id=\"...\"",
+                            &format!("Ancre cible DOM #{}", id_val),
+                        );
+                    }
+                    pos = val_start + end_idx + 1;
+                    continue;
+                }
+            }
+            pos = val_start + 1;
+        }
+    }
+
+    for token in body.split(['\'', '"', '`', ' ', '\n', '\r', '(', ')', '<', '>']) {
+        let t = token.trim().trim_end_matches([',', ';', '.']);
+        if (t.starts_with("http://") || t.starts_with("https://") || t.starts_with("ws://") || t.starts_with("wss://"))
+            && t.len() >= 10
+            && t.len() <= 120
+        {
+            if t.contains("w3.org/") || t.contains("svelte.dev/e/") || t.contains("rolldown.rs/") {
+                continue;
+            }
+            let cleaned = if let Some(interp) = t.find("${") {
+                format!("{}/{}", t.get(..interp).unwrap_or(t).trim_end_matches('/'), "*")
+            } else {
+                t.to_string()
+            };
+            push_link(
+                "URL EXTERNE",
+                &cleaned,
+                &cleaned,
+                "HTML / Script URL",
+                "URL détectée dans la source HTML/JS",
+            );
+        } else if (t.starts_with("#/")
+            || (t.starts_with('#')
+                && t.len() >= 3
+                && t.len() <= 36
+                && t.get(1..)
+                    .unwrap_or("")
+                    .chars()
+                    .all(|c| c.is_ascii_alphabetic() || c == '-' || c == '_')))
+            && !t.starts_with("#0")
+            && !t.starts_with("#1")
+            && !t.starts_with("#2")
+            && !t.starts_with("#3")
+            && !t.starts_with("#4")
+            && !t.starts_with("#5")
+            && !t.starts_with("#6")
+            && !t.starts_with("#7")
+            && !t.starts_with("#8")
+            && !t.starts_with("#9")
+            && !t.starts_with("#f")
+            && !t.starts_with("#e")
+            && !t.starts_with("#d")
+            && !t.starts_with("#c")
+            && !t.starts_with("#b")
+            && !t.starts_with("#a")
+        {
+            let res_path = format!("/{}", t);
+            push_link("#LINK / ANCRE DOM", t, &res_path, "HTML / SPA #link", "Fragment / Route #link");
+        }
+    }
+
+    links
+}
+
 pub(crate) fn parse_html_architecture_and_forms(
     body: &str,
     headers: &HashMap<String, String>,
@@ -421,7 +921,7 @@ pub(crate) fn parse_html_architecture_and_forms(
     security_txt_present: bool,
 ) -> (WebArchitectureDiscovery, Vec<SurfaceFinding>) {
     let mut findings = Vec::new();
-    let lower_body = body.to_lowercase();
+    let lower_body = body.to_ascii_lowercase();
 
     // 1. Titre de la page
     let page_title = if let (Some(s), Some(e)) = (lower_body.find("<title>"), lower_body.find("</title>")) {
@@ -453,32 +953,73 @@ pub(crate) fn parse_html_architecture_and_forms(
     // 3. Extraction des Formulaires <form>...</form> et de tous les champs (<input>, <textarea>, <select>)
     let mut forms = Vec::new();
     let mut routes = Vec::new();
+    let mut form_ranges: Vec<(usize, usize)> = Vec::new();
     let mut form_pos = 0usize;
     let mut form_idx = 1usize;
 
     while let Some(f_rel) = lower_body.get(form_pos..).and_then(|s| s.find("<form")) {
         let f_start = form_pos + f_rel;
+        let next_ch = lower_body
+            .get(f_start + 5..f_start + 6)
+            .and_then(|s| s.chars().next())
+            .unwrap_or(' ');
+        if !matches!(next_ch, ' ' | '>' | '\t' | '\n' | '\r' | '/') {
+            form_pos = f_start + 5;
+            continue;
+        }
         let tag_end = match lower_body.get(f_start..).and_then(|s| s.find('>')) {
-            Some(te) => f_start + te,
-            None => break,
+            Some(te) if te <= 500 => f_start + te,
+            _ => {
+                form_pos = f_start + 5;
+                continue;
+            }
         };
         let form_open_tag = body.get(f_start..=tag_end).unwrap_or("");
+        let next_form_bound = lower_body
+            .get(tag_end + 1..)
+            .and_then(|s| s.find("<form"))
+            .map(|nf| tag_end + 1 + nf)
+            .unwrap_or_else(|| body.len().min(tag_end + 25000));
         let f_close = lower_body
             .get(tag_end + 1..)
             .and_then(|s| s.find("</form>"))
-            .map(|c| tag_end + 1 + c)
-            .unwrap_or_else(|| body.len().min(tag_end + 4000));
+            .map(|c| (tag_end + 1 + c).min(next_form_bound))
+            .unwrap_or(next_form_bound);
 
         let form_inner = body.get(tag_end + 1..f_close).unwrap_or("");
-        let form_inner_lower = form_inner.to_lowercase();
+        let form_inner_lower = form_inner.to_ascii_lowercase();
 
+        let explicit_action = extract_attr(form_open_tag, "action")
+            .or_else(|| extract_attr(form_open_tag, "data-action"));
+        let explicit_method = extract_attr(form_open_tag, "method")
+            .or_else(|| extract_attr(form_open_tag, "data-method"));
         let id_or_name = extract_attr(form_open_tag, "id")
             .or_else(|| extract_attr(form_open_tag, "name"))
+            .or_else(|| extract_attr(form_open_tag, "title"))
+            .or_else(|| extract_attr(form_open_tag, "aria-label"))
+            .or_else(|| extract_attr(form_open_tag, "data-testid"))
             .unwrap_or_else(|| format!("form_{}", form_idx));
-        let method = extract_attr(form_open_tag, "method")
-            .unwrap_or_else(|| "GET".to_string())
-            .to_uppercase();
-        let action = extract_attr(form_open_tag, "action").unwrap_or_else(|| "/".to_string());
+        let action = explicit_action.clone().unwrap_or_else(|| {
+            let low_title = id_or_name.to_lowercase();
+            if low_title.contains("workspace") || low_title.contains("chemin") || low_title.contains("url") {
+                "/api/analyze".to_string()
+            } else if low_title.contains("search") || low_title.contains("recherch") {
+                "/search".to_string()
+            } else if low_title.contains("login") || low_title.contains("auth") {
+                "/auth/login".to_string()
+            } else {
+                "/".to_string()
+            }
+        });
+        let method = explicit_method
+            .map(|m| m.to_uppercase())
+            .unwrap_or_else(|| {
+                if explicit_action.is_none() && action.starts_with("/api/") {
+                    "POST (SPA Submit)".to_string()
+                } else {
+                    "GET".to_string()
+                }
+            });
         let enctype = extract_attr(form_open_tag, "enctype");
 
         let mut inputs = Vec::new();
@@ -486,21 +1027,42 @@ pub(crate) fn parse_html_architecture_and_forms(
         let mut has_password_field = false;
         let mut has_file_upload = false;
 
-        // Parcourir les balises <input, <textarea, <select dans le corps du formulaire
-        for (tag_prefix, tag_label) in [("<input", "input"), ("<textarea", "textarea"), ("<select", "select")] {
+        // Parcourir les balises <input, <textarea, <select, <button dans le corps du formulaire
+        for (tag_prefix, tag_label) in [
+            ("<input", "input"),
+            ("<textarea", "textarea"),
+            ("<select", "select"),
+            ("<button", "button"),
+        ] {
             let mut ipos = 0usize;
             while let Some(irel) = form_inner_lower.get(ipos..).and_then(|s| s.find(tag_prefix)) {
                 let istart = ipos + irel;
                 if let Some(iend_rel) = form_inner_lower.get(istart..).and_then(|s| s.find('>')) {
                     let itag = form_inner.get(istart..=istart + iend_rel).unwrap_or("");
+                    let itype = extract_attr(itag, "type")
+                        .unwrap_or_else(|| {
+                            if tag_label == "button" {
+                                "submit".to_string()
+                            } else {
+                                tag_label.to_string()
+                            }
+                        })
+                        .to_lowercase();
+                    if tag_label == "button" && itype == "button" && extract_attr(itag, "name").is_none() {
+                        ipos = istart + iend_rel + 1;
+                        continue;
+                    }
                     let iname = extract_attr(itag, "name")
                         .or_else(|| extract_attr(itag, "id"))
                         .or_else(|| extract_attr(itag, "placeholder"))
-                        .unwrap_or_else(|| "unnamed_field".to_string());
-                    let itype = extract_attr(itag, "type")
-                        .unwrap_or_else(|| tag_label.to_string())
-                        .to_lowercase();
-                    let required = itag.to_lowercase().contains("required");
+                        .or_else(|| extract_attr(itag, "aria-label"))
+                        .or_else(|| extract_attr(itag, "title"))
+                        .or_else(|| extract_attr(itag, "data-testid"))
+                        .or_else(|| extract_attr(itag, "formcontrolname"))
+                        .or_else(|| extract_attr(itag, "v-model"))
+                        .or_else(|| extract_attr(itag, "value"))
+                        .unwrap_or_else(|| format!("{}_{}", tag_label, inputs.len() + 1));
+                    let required = itag.to_ascii_lowercase().contains("required");
 
                     let name_low = iname.to_lowercase();
                     let is_csrf = name_low.contains("csrf")
@@ -547,6 +1109,12 @@ pub(crate) fn parse_html_architecture_and_forms(
                 }
             }
         }
+
+        if inputs.is_empty() && explicit_action.is_none() && form_open_tag.trim().len() <= 7 {
+            form_pos = tag_end + 1;
+            continue;
+        }
+        form_ranges.push((f_start, f_close));
 
         let mut security_notes = Vec::new();
         let mut posture = "PASS".to_string();
@@ -625,8 +1193,97 @@ pub(crate) fn parse_html_architecture_and_forms(
         form_pos = f_close + 1;
     }
 
+    let mut standalone_inputs = Vec::new();
+    for (tag_prefix, tag_label) in [("<input", "input"), ("<textarea", "textarea"), ("<select", "select")] {
+        let mut ipos = 0usize;
+        while let Some(irel) = lower_body.get(ipos..).and_then(|s| s.find(tag_prefix)) {
+            let istart = ipos + irel;
+            let next_ch = lower_body
+                .get(istart + tag_prefix.len()..istart + tag_prefix.len() + 1)
+                .and_then(|s| s.chars().next())
+                .unwrap_or(' ');
+            if !matches!(next_ch, ' ' | '>' | '\t' | '\n' | '\r' | '/') {
+                ipos = istart + tag_prefix.len();
+                continue;
+            }
+            let in_existing_form = form_ranges.iter().any(|&(s, e)| istart >= s && istart <= e);
+            if let Some(iend_rel) = lower_body.get(istart..).and_then(|s| s.find('>')) {
+                if !in_existing_form && iend_rel <= 480 {
+                    let itag = body.get(istart..=istart + iend_rel).unwrap_or("");
+                    let itag_low = itag.to_ascii_lowercase();
+                    let is_readonly = itag_low.contains("readonly");
+                    let itype = extract_attr(itag, "type")
+                        .unwrap_or_else(|| tag_label.to_string())
+                        .to_lowercase();
+                    let explicit_ident = extract_attr(itag, "id")
+                        .or_else(|| extract_attr(itag, "name"))
+                        .or_else(|| extract_attr(itag, "placeholder"))
+                        .or_else(|| extract_attr(itag, "aria-label"))
+                        .or_else(|| extract_attr(itag, "title"))
+                        .or_else(|| extract_attr(itag, "data-testid"))
+                        .or_else(|| extract_attr(itag, "formcontrolname"))
+                        .or_else(|| extract_attr(itag, "v-model"))
+                        .or_else(|| extract_attr(itag, "autocomplete"))
+                        .or_else(|| {
+                            if tag_label == "select"
+                                || tag_label == "textarea"
+                                || matches!(
+                                    itype.as_str(),
+                                    "text"
+                                        | "search"
+                                        | "email"
+                                        | "password"
+                                        | "number"
+                                        | "file"
+                                        | "url"
+                                        | "tel"
+                                        | "date"
+                                        | "range"
+                                )
+                            {
+                                let min_v = extract_attr(itag, "min").unwrap_or_default();
+                                let max_v = extract_attr(itag, "max").unwrap_or_default();
+                                if !min_v.is_empty() || !max_v.is_empty() {
+                                    Some(format!("{} [{} {}..{}]", tag_label, itype, min_v, max_v))
+                                } else {
+                                    Some(format!("{} [{} #{}]", tag_label, itype, standalone_inputs.len() + 1))
+                                }
+                            } else {
+                                None
+                            }
+                        });
+
+                    if !is_readonly {
+                        if let Some(iname) = explicit_ident {
+                            if !standalone_inputs.iter().any(|i: &DiscoveredInput| i.name == iname)
+                                && standalone_inputs.len() < 70
+                            {
+                                let (classification, _, _, _) = classify_html_input(&iname, &itype);
+                                standalone_inputs.push(DiscoveredInput {
+                                    name: iname,
+                                    input_type: itype,
+                                    tag: format!("{} (HTML/SPA)", tag_label),
+                                    required: itag_low.contains("required"),
+                                    classification,
+                                });
+                            }
+                        }
+                    }
+                }
+                ipos = istart + iend_rel + 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    if !standalone_inputs.is_empty() {
+        let spa_forms = group_standalone_spa_forms(standalone_inputs, form_idx, &mut routes);
+        forms.extend(spa_forms);
+    }
+
     // 4. DÃ©couverte des Inputs autonomes (SPA / WebGL / React sans balise <form> englobante)
-    if forms.is_empty() && lower_body.contains("<input") {
+    if false && forms.is_empty() && lower_body.contains("<input") {
         let mut spa_inputs = Vec::new();
         let mut ipos = 0usize;
         while let Some(irel) = lower_body.get(ipos..).and_then(|s| s.find("<input")) {
@@ -729,27 +1386,33 @@ pub(crate) fn parse_html_architecture_and_forms(
         }
     }
 
-    // Extraction des routes /api/... mentionnÃ©es dans le HTML/JS
+    // Extraction des routes /api/... mentionnÃ©es dans le HTML/JS (y compris interpolations ${...}/api/...)
     for token in body.split(['\'', '"', '`']) {
-        let t = token.trim();
-        if (t.starts_with("/api/") || t.starts_with("/v1/") || t.starts_with("/graphql") || t.starts_with("/auth/"))
-            && t.len() < 64
-            && !t.contains(' ')
-            && routes.len() < 35
-        {
-            if !routes.iter().any(|r| r.path == t) {
+        if let Some(clean_route) = normalize_route_token(token) {
+            if (clean_route.starts_with("/api/")
+                || clean_route.starts_with("/v1/")
+                || clean_route.starts_with("/v2/")
+                || clean_route.starts_with("/graphql")
+                || clean_route.starts_with("/auth/")
+                || clean_route.starts_with("/ws"))
+                && routes.len() < 45
+                && !routes.iter().any(|r| r.path == clean_route)
+            {
+                let method = infer_http_method(body, &clean_route);
                 routes.push(DiscoveredRoute {
-                    path: t.to_string(),
-                    method: "API / RPC".to_string(),
-                    source: "RÃ©fÃ©rence API / Fetch".to_string(),
+                    path: clean_route,
+                    method,
+                    source: "HTML / Script ➔ Fetch API".to_string(),
                     status: None,
                 });
             }
         }
     }
 
+    let html_links = extract_html_links_and_anchors(body, &lower_body, &mut routes);
+
     for rob in &robots_entries {
-        if routes.len() < 40 && !routes.iter().any(|r| &r.path == rob) {
+        if routes.len() < 65 && !routes.iter().any(|r| &r.path == rob) {
             routes.push(DiscoveredRoute {
                 path: rob.clone(),
                 method: "GET".to_string(),
@@ -782,9 +1445,126 @@ pub(crate) fn parse_html_architecture_and_forms(
             security_txt_present,
             web_files: Vec::new(),
             directories: Vec::new(),
+            html_links,
+            path_tree: Vec::new(),
         },
         findings,
     )
+}
+
+pub(crate) fn normalize_route_token(raw: &str) -> Option<String> {
+    let mut t = raw.trim();
+    if let Some(after_interp) = t.strip_prefix("${") {
+        if let Some(close_idx) = after_interp.find('}') {
+            t = after_interp.get(close_idx + 1..).unwrap_or("");
+        }
+    }
+    if let Some(q_idx) = t.find('?') {
+        t = t.get(..q_idx).unwrap_or(t);
+    }
+    if let Some(d_idx) = t.find("${") {
+        t = t.get(..d_idx).unwrap_or(t);
+    }
+    let clean = t.trim().trim_end_matches('/');
+    if clean.len() < 2
+        || clean.len() > 88
+        || clean.contains([' ', '\n', '\r', '<', '>', '{', '}', ';', '(', ')'])
+    {
+        return None;
+    }
+    Some(clean.to_string())
+}
+
+pub(crate) fn infer_http_method(content: &str, route_path: &str) -> String {
+    if route_path.contains("graphql") {
+        return "POST (GraphQL)".to_string();
+    }
+    if route_path.starts_with("/ws") {
+        return "WS / WSS".to_string();
+    }
+
+    let mut saw_fetch = false;
+    for (pos, _) in content.match_indices(route_path).take(12) {
+        let pre_start = pos.saturating_sub(90);
+        let pre_raw = content.get(pre_start..pos).unwrap_or("");
+        let pre_stmt = match pre_raw.rfind(';') {
+            Some(sc) => pre_raw.get(sc + 1..).unwrap_or(pre_raw),
+            None => pre_raw,
+        }
+        .to_lowercase();
+
+        let post_end = content.len().min(pos + route_path.len() + 180);
+        let post_raw = content.get(pos + route_path.len()..post_end).unwrap_or("");
+        let post_stmt = match post_raw.find(';') {
+            Some(sc) => post_raw.get(..sc).unwrap_or(post_raw),
+            None => post_raw,
+        }
+        .to_lowercase();
+
+        if pre_stmt.contains(".post(")
+            || post_stmt.contains("'post'")
+            || post_stmt.contains("\"post\"")
+            || post_stmt.contains("method:\"post\"")
+            || post_stmt.contains("method: \"post\"")
+            || post_stmt.contains("method:'post'")
+        {
+            return "POST".to_string();
+        }
+        if pre_stmt.contains(".delete(")
+            || post_stmt.contains("'delete'")
+            || post_stmt.contains("\"delete\"")
+            || post_stmt.contains("method:\"delete\"")
+        {
+            return "DELETE".to_string();
+        }
+        if pre_stmt.contains(".put(")
+            || post_stmt.contains("'put'")
+            || post_stmt.contains("\"put\"")
+            || post_stmt.contains("method:\"put\"")
+        {
+            return "PUT".to_string();
+        }
+        if pre_stmt.contains(".patch(")
+            || post_stmt.contains("'patch'")
+            || post_stmt.contains("\"patch\"")
+            || post_stmt.contains("method:\"patch\"")
+        {
+            return "PATCH".to_string();
+        }
+        if pre_stmt.contains("fetch(") || pre_stmt.contains("axios") {
+            saw_fetch = true;
+        }
+    }
+
+    let rl = route_path.to_lowercase();
+    if rl.ends_with("/analyze")
+        || rl.ends_with("/surface_scan")
+        || rl.ends_with("/update")
+        || rl.ends_with("/update_contract")
+        || rl.ends_with("/create_file")
+        || rl.ends_with("/scaffold_project")
+        || rl.ends_with("/save")
+        || rl.ends_with("/sync")
+        || rl.ends_with("/import")
+        || rl.ends_with("/restore")
+        || rl.ends_with("/apply")
+        || rl.ends_with("/select")
+        || rl.ends_with("/launch_cli")
+        || rl.ends_with("/cancel")
+        || rl.ends_with("/new_session")
+        || rl.ends_with("/chat")
+        || rl.ends_with("/clear")
+        || rl.ends_with("/verify")
+        || rl.ends_with("/fix")
+    {
+        return "POST".to_string();
+    }
+
+    if saw_fetch {
+        "GET (Fetch)".to_string()
+    } else {
+        "GET / API".to_string()
+    }
 }
 
 pub(crate) fn extract_calls_from_asset(content: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
@@ -793,11 +1573,9 @@ pub(crate) fn extract_calls_from_asset(content: &str) -> (Vec<String>, Vec<Strin
     let mut json_keys = Vec::new();
 
     for token in content.split(['\'', '"', '`', '(', ')']) {
-        let t = token.trim();
-        if t.len() < 2 || t.len() > 96 || t.contains(' ') || t.contains('\n') || t.contains('<') || t.contains('>') {
+        let Some(t) = normalize_route_token(token) else {
             continue;
-        }
-        // DÃ©tection de fichiers (.html, .js, .css, .json, .php, .wasm) ou endpoints (/api/..., /v1/..., /auth/...)
+        };
         let is_file_ext = t.ends_with(".html")
             || t.ends_with(".htm")
             || t.ends_with(".js")
@@ -819,21 +1597,20 @@ pub(crate) fn extract_calls_from_asset(content: &str) -> (Vec<String>, Vec<Strin
 
         if (is_file_ext || is_route_prefix) && !t.starts_with("http://") && !t.starts_with("https://") && !t.starts_with("//") {
             let norm = if t.starts_with('/') {
-                t.to_string()
+                t
             } else if let Some(stripped) = t.strip_prefix("./") {
                 format!("/{}", stripped)
             } else {
                 format!("/{}", t)
             };
-            if refs.len() < 18 && !refs.contains(&norm) {
+            if refs.len() < 28 && !refs.contains(&norm) {
                 refs.push(norm.clone());
             }
-            // Extraire le dossier parent s'il existe (ex: "/api/scan" -> "/api/", "/assets/js/app.js" -> "/assets/js/")
             if let Some(last_slash) = norm.rfind('/') {
                 if last_slash > 0 {
                     if let Some(dir_slice) = norm.get(..=last_slash) {
                         let dir_str = dir_slice.to_string();
-                        if folders.len() < 14 && !folders.contains(&dir_str) {
+                        if folders.len() < 20 && !folders.contains(&dir_str) {
                             folders.push(dir_str);
                         }
                     }
@@ -842,7 +1619,6 @@ pub(crate) fn extract_calls_from_asset(content: &str) -> (Vec<String>, Vec<Strin
         }
     }
 
-    // Extraire les clÃ©s de payload JSON autour de JSON.stringify({ ... }) dans les fichiers JS
     let mut search_pos = 0usize;
     while let Some(rel) = content.get(search_pos..).and_then(|s| s.find("JSON.stringify(")) {
         let abs = search_pos + rel + 15;
@@ -859,7 +1635,7 @@ pub(crate) fn extract_calls_from_asset(content: &str) -> (Vec<String>, Vec<Strin
                         && key_cand.len() <= 32
                         && key_cand.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                         && !json_keys.iter().any(|k| k == key_cand)
-                        && json_keys.len() < 12
+                        && json_keys.len() < 20
                     {
                         json_keys.push(key_cand.to_string());
                     }
@@ -885,6 +1661,83 @@ pub(crate) fn classify_directory(dir: &str) -> &'static str {
     } else {
         "ðŸ“ RÃ©pertoire Application"
     }
+}
+
+pub(crate) fn build_html_path_tree(disc: &WebArchitectureDiscovery) -> Vec<DiscoveredPathNode> {
+    let mut tree: Vec<DiscoveredPathNode> = Vec::new();
+    let mut push_node = |path: &str, node_type: &str, method: &str, source_ref: &str| {
+        if path.is_empty() || tree.len() >= 90 {
+            return;
+        }
+        if tree.iter().any(|n| n.path == path && n.node_type == node_type) {
+            return;
+        }
+        let parent_dir = if path.starts_with("http://")
+            || path.starts_with("https://")
+            || path.starts_with("ws://")
+            || path.starts_with("wss://")
+        {
+            "🌐 URLs Externes://".to_string()
+        } else if path.starts_with('#') || path.starts_with("/#") {
+            "/#anchors/".to_string()
+        } else if let Some(last_slash) = path.rfind('/') {
+            if last_slash > 0 {
+                path.get(..=last_slash).unwrap_or("/").to_string()
+            } else {
+                "/".to_string()
+            }
+        } else {
+            "/".to_string()
+        };
+
+        tree.push(DiscoveredPathNode {
+            path: path.to_string(),
+            parent_dir,
+            node_type: node_type.to_string(),
+            method: method.to_string(),
+            source_ref: source_ref.to_string(),
+        });
+    };
+
+    for f in &disc.forms {
+        push_node(
+            &f.action,
+            "FORM ACTION",
+            &f.method,
+            &format!("Form #{} «{}» ({} champ(s))", f.index, f.id_or_name, f.inputs.len()),
+        );
+    }
+
+    for wf in &disc.web_files {
+        push_node(&wf.path, "SOURCE / BUNDLE", "GET", &format!("Fichier {}", wf.file_type));
+    }
+
+    for r in &disc.routes {
+        let ntype = if r.path.starts_with('#') || r.method.contains("ANCHOR") {
+            "#LINK / ANCRE"
+        } else if r.path.starts_with("/api/")
+            || r.path.starts_with("/v1/")
+            || r.path.starts_with("/v2/")
+            || r.path.starts_with("/graphql")
+        {
+            "API ENDPOINT"
+        } else {
+            "HTML ROUTE / PATH"
+        };
+        push_node(&r.path, ntype, &r.method, &r.source);
+    }
+
+    for hl in &disc.html_links {
+        let (ntype, mth) = match hl.kind.as_str() {
+            "#LINK / ANCRE DOM" => ("#LINK / ANCRE", "ANCHOR (#)"),
+            "URL EXTERNE" => ("EXTERNAL URL", "EXTERNAL"),
+            "ASSET / RESSOURCE" => ("ASSET", "GET"),
+            _ => ("HTML LINK / PATH", "GET"),
+        };
+        push_node(&hl.resolved_path, ntype, mth, &format!("{} ({})", hl.tag_context, hl.label));
+    }
+
+    tree
 }
 
 pub(crate) async fn inspect_web_files_and_directories(
@@ -915,7 +1768,7 @@ pub(crate) async fn inspect_web_files_and_directories(
     }
 
     // Extraire aussi les feuilles CSS <link href="..."> du HTML
-    let lower_html = entry_body.to_lowercase();
+    let lower_html = entry_body.to_ascii_lowercase();
     let mut candidate_local_files: Vec<(String, String)> = Vec::new();
 
     for sc in &disc.external_scripts {
@@ -985,6 +1838,43 @@ pub(crate) async fn inspect_web_files_and_directories(
         has_sourcemap: false,
     });
 
+    // 1b. Extraire les bundles <script type="module"> / <script> inline (> 256 octets) liÃ©s Ã  la source HTML
+    let mut inl_pos = 0usize;
+    let mut inl_idx = 1usize;
+    while let Some(s_rel) = lower_html.get(inl_pos..).and_then(|s| s.find("<script")) {
+        let s_start = inl_pos + s_rel;
+        let Some(tag_end_rel) = lower_html.get(s_start..).and_then(|s| s.find('>')) else {
+            break;
+        };
+        let tag_end = s_start + tag_end_rel;
+        let open_tag = entry_body.get(s_start..=tag_end).unwrap_or("");
+        let s_close = lower_html
+            .get(tag_end + 1..)
+            .and_then(|s| s.find("</script>"))
+            .map(|c| tag_end + 1 + c)
+            .unwrap_or(tag_end + 1);
+        if extract_attr(open_tag, "src").is_none() && s_close > tag_end + 256 && inl_idx <= 5 {
+            let script_body = entry_body.get(tag_end + 1..s_close).unwrap_or("");
+            let (m_folders, m_refs, m_keys) = extract_calls_from_asset(script_body);
+            let mod_path = format!("{}#module-{}.js", entry_path.trim_end_matches('/'), inl_idx);
+            for mf in &m_folders {
+                record_dir(mf, &mod_path);
+            }
+            web_files.push(DiscoveredWebFile {
+                path: mod_path,
+                file_type: "ES-MODULE".to_string(),
+                http_status: "200 Inline DOM".to_string(),
+                size_bytes: script_body.len(),
+                folder_calls: m_folders,
+                api_and_asset_refs: m_refs,
+                json_payload_keys: m_keys,
+                has_sourcemap: script_body.contains("sourceMappingURL="),
+            });
+            inl_idx += 1;
+        }
+        inl_pos = s_close + 1;
+    }
+
     // 2. Inspecter chaque fichier local dÃ©couvert (.js, .css, .html, .json) pour extraire ses appels d'API et de dossiers
     for (file_path, file_type) in candidate_local_files.into_iter().take(6) {
         if let Some((st_line, _fhdrs, fbody)) = send_http_probe(scheme, host, port, &file_path, "GET").await {
@@ -994,6 +1884,31 @@ pub(crate) async fn inspect_web_files_and_directories(
             } else {
                 (Vec::new(), Vec::new(), Vec::new())
             };
+
+            if is_200 && (file_type == "JS" || file_type == "HTML") {
+                let empty_hdrs = HashMap::new();
+                let (sub_disc, sub_findings) = parse_html_architecture_and_forms(
+                    &fbody,
+                    &empty_hdrs,
+                    scheme,
+                    true,
+                    Vec::new(),
+                    disc.security_txt_present,
+                );
+                for mut sf in sub_disc.forms {
+                    if disc.forms.len() < 18 && !disc.forms.iter().any(|ef| ef.id_or_name == sf.id_or_name && ef.action == sf.action) {
+                        sf.index = disc.forms.len() + 1;
+                        sf.id_or_name = format!("{} [{}]", sf.id_or_name, file_path);
+                        disc.forms.push(sf);
+                    }
+                }
+                for hl in sub_disc.html_links {
+                    if disc.html_links.len() < 80 && !disc.html_links.iter().any(|el| el.target == hl.target) {
+                        disc.html_links.push(hl);
+                    }
+                }
+                findings.extend(sub_findings);
+            }
 
             if let Some(last_slash) = file_path.rfind('/') {
                 if last_slash > 0 {
@@ -1007,16 +1922,22 @@ pub(crate) async fn inspect_web_files_and_directories(
                 record_dir(ff, &file_path);
             }
 
-            // Ajouter les endpoints /api/* dÃ©couverts dans le fichier JS/HTML Ã  la carte des routes
+            // Ajouter les endpoints /api/* dÃ©couverts dans le fichier JS/HTML Ã  la carte des routes avec leur type de requÃªte
             for rf in &frefs {
-                if (rf.starts_with("/api/") || rf.starts_with("/v1/") || rf.starts_with("/graphql") || rf.starts_with("/auth/"))
+                if (rf.starts_with("/api/")
+                    || rf.starts_with("/v1/")
+                    || rf.starts_with("/v2/")
+                    || rf.starts_with("/graphql")
+                    || rf.starts_with("/auth/")
+                    || rf.starts_with("/ws"))
                     && disc.routes.len() < 45
                     && !disc.routes.iter().any(|r| &r.path == rf)
                 {
+                    let req_method = infer_http_method(&fbody, rf);
                     disc.routes.push(DiscoveredRoute {
                         path: rf.clone(),
-                        method: "API / FETCH".to_string(),
-                        source: format!("Fichier {} ({})", file_type, file_path),
+                        method: req_method,
+                        source: format!("{} ➔ Fichier {} ({})", entry_label, file_type, file_path),
                         status: None,
                     });
                 }
@@ -1064,10 +1985,30 @@ pub(crate) async fn inspect_web_files_and_directories(
         }
     }
 
+    for hl in &disc.html_links {
+        if hl.kind == "#LINK / ANCRE DOM" {
+            record_dir("/#anchors/", entry_label);
+        } else if hl.resolved_path.starts_with('/') {
+            if let Some(last_slash) = hl.resolved_path.rfind('/') {
+                if last_slash > 0 {
+                    if let Some(dir_slice) = hl.resolved_path.get(..=last_slash) {
+                        record_dir(dir_slice, entry_label);
+                    }
+                } else {
+                    record_dir("/", entry_label);
+                }
+            }
+        }
+    }
+
     let mut directories: Vec<DiscoveredDirectory> = dir_map
         .into_iter()
         .map(|(folder_path, (source_files, call_count))| {
-            let classification = classify_directory(&folder_path).to_string();
+            let classification = if folder_path.contains("/#") {
+                "#️⃣ Ancres DOM & Fragments (#link)".to_string()
+            } else {
+                classify_directory(&folder_path).to_string()
+            };
             DiscoveredDirectory {
                 folder_path,
                 source_files,
@@ -1078,8 +2019,67 @@ pub(crate) async fn inspect_web_files_and_directories(
         .collect();
     directories.sort_by(|a, b| b.call_count.cmp(&a.call_count).then_with(|| a.folder_path.cmp(&b.folder_path)));
 
+    // Synthetiser egalement les surfaces de soumission JSON/POST decouvertes dans les bundles JS mais non couvertes par un <form>
+    let all_json_keys: Vec<String> = web_files
+        .iter()
+        .flat_map(|wf| wf.json_payload_keys.iter().cloned())
+        .collect();
+    for r in &disc.routes {
+        let m_up = r.method.to_uppercase();
+        if (m_up.contains("POST") || m_up.contains("PUT") || m_up.contains("PATCH") || m_up.contains("DELETE"))
+            && r.path.starts_with('/')
+            && disc.forms.len() < 16
+            && !disc.forms.iter().any(|f| f.action == r.path)
+        {
+            let route_seg = r
+                .path
+                .split('/')
+                .filter(|s| !s.is_empty() && *s != "api")
+                .collect::<Vec<_>>()
+                .join("_");
+            let mut matched_inputs = Vec::new();
+            for jk in &all_json_keys {
+                let jk_low = jk.to_lowercase();
+                if (route_seg.len() >= 3 && (jk_low.contains(&route_seg) || route_seg.contains(&jk_low)))
+                    || matched_inputs.len() < 4
+                {
+                    if !matched_inputs.iter().any(|i: &DiscoveredInput| &i.name == jk) && matched_inputs.len() < 6 {
+                        let (classification, _, _, _) = classify_html_input(jk, "json");
+                        matched_inputs.push(DiscoveredInput {
+                            name: jk.clone(),
+                            input_type: "json_field".to_string(),
+                            tag: "fetch/JSON (JS)".to_string(),
+                            required: true,
+                            classification,
+                        });
+                    }
+                }
+            }
+            let next_idx = disc.forms.len() + 1;
+            disc.forms.push(DiscoveredForm {
+                index: next_idx,
+                id_or_name: format!("Requete API «{}» ({})", r.path, r.source),
+                method: r.method.clone(),
+                action: r.path.clone(),
+                enctype: Some("application/json (fetch/XHR)".to_string()),
+                has_csrf_token: true,
+                has_password_field: matched_inputs
+                    .iter()
+                    .any(|i| i.name.contains("pass") || i.name.contains("token") || i.name.contains("secret")),
+                has_file_upload: false,
+                inputs: matched_inputs,
+                security_posture: "PASS".to_string(),
+                security_notes: vec![format!(
+                    "Surface d'appel `{}` detectee dans `{}` avec payload JSON vers `{}`.",
+                    r.method, r.source, r.path
+                )],
+            });
+        }
+    }
+
     disc.web_files = web_files;
     disc.directories = directories;
+    disc.path_tree = build_html_path_tree(disc);
 }
 
 pub(crate) async fn probe_sensitive_artifacts(
@@ -1272,4 +2272,38 @@ pub(crate) async fn probe_sensitive_artifacts(
 
     (results, findings)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_surface_route_normalization_and_method_inference() {
+        assert_eq!(
+            normalize_route_token("${this.baseUrl}/api/surface_scan"),
+            Some("/api/surface_scan".to_string())
+        );
+        assert_eq!(
+            normalize_route_token("/api/file_content?path=${encodeURIComponent(p)}"),
+            Some("/api/file_content".to_string())
+        );
+
+        let js_code = r#"
+            await fetch(`${this.baseUrl}/api/surface_scan`, { method: 'POST', body: JSON.stringify({ target, scan_level }) });
+            await fetch(`${this.baseUrl}/api/ai/telemetry`, { method: 'DELETE' });
+            await fetch(`${this.baseUrl}/api/graph`);
+        "#;
+        assert_eq!(infer_http_method(js_code, "/api/surface_scan"), "POST");
+        assert_eq!(infer_http_method(js_code, "/api/ai/telemetry"), "DELETE");
+        assert_eq!(infer_http_method(js_code, "/api/graph"), "GET (Fetch)");
+
+        let (folders, refs, keys) = extract_calls_from_asset(js_code);
+        assert!(folders.contains(&"/api/".to_string()));
+        assert!(folders.contains(&"/api/ai/".to_string()));
+        assert!(refs.contains(&"/api/surface_scan".to_string()));
+        assert!(keys.contains(&"target".to_string()));
+        assert!(keys.contains(&"scan_level".to_string()));
+    }
+}
+
 

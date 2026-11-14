@@ -71,6 +71,14 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
   async function analyzeFolderFromBar(e?: Event) {
     e?.preventDefault();
     const target = folderInput.trim() || cockpitState.graph.project_path || '.';
+    if (
+      /^https?:\/\//i.test(target) ||
+      /^localhost(:\d+)?(\/.*)?$/i.test(target) ||
+      /^\d{1,3}(\.\d{1,3}){3}(:\d+)?(\/.*)?$/.test(target)
+    ) {
+      cockpitState.isSurfaceScannerOpen = true;
+      return;
+    }
     if (isAnalyzingBar) return;
     isAnalyzingBar = true;
     cockpitState.isScanningProject = true;
@@ -442,11 +450,11 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
 
       <button
         onclick={() => (cockpitState.isSurfaceScannerOpen = true)}
-        class="hidden 2xl:flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 transition-colors shadow-xs cursor-pointer"
-        title="Scanner de Surface Domaine / IP (DNS, Ports, Headers, .env)"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-200 transition-colors shadow-xs cursor-pointer"
+        title="Scanner de Surface Domaine / IP : Ports, Type de requête HTTP, Arborescence HTML & Flux de Data (U)"
       >
-        <Radar class="w-3.5 h-3.5 text-emerald-400" />
-        <span>Surface</span>
+        <Radar class="w-3.5 h-3.5 text-cyan-400" />
+        <span>Scanner Surface</span>
       </button>
 
       <!-- Menu Déroulant Export Rapport d'Audit Global -->
@@ -524,11 +532,11 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
 
       <button
         onclick={() => cockpitState.openPromptModal('context')}
-        class="hidden 2xl:flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-indigo-500/12 hover:bg-indigo-500/22 border border-indigo-500/35 text-indigo-300 transition-colors shadow-xs cursor-pointer"
+        class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-indigo-500/12 hover:bg-indigo-500/22 border border-indigo-500/35 text-indigo-300 transition-colors shadow-xs cursor-pointer"
         title="Générateur de Prompt IA Contextuel & Master Blueprint"
       >
         <Sparkles class="w-3.5 h-3.5 text-indigo-400" />
-        <span>Prompts</span>
+        <span class="hidden xl:inline">Prompts</span>
       </button>
 
       <div class="h-4 w-px bg-white/10 mx-0.5"></div>
@@ -561,11 +569,11 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
 
       <button
         onclick={() => (cockpitState.isSynthesisOpen = !cockpitState.isSynthesisOpen)}
-        class="hidden 2xl:flex items-center gap-1 px-2 py-1 rounded-md transition-colors border cursor-pointer {cockpitState.isSynthesisOpen ? 'bg-sky-500/20 border-sky-400 text-sky-200' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/5'}"
+        class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors border cursor-pointer {cockpitState.isSynthesisOpen ? 'bg-sky-500/20 border-sky-400 text-sky-200' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/5'}"
         title="Panneau de Synthèse & Flux Écosystème"
       >
         <Activity class="w-3.5 h-3.5" />
-        <span class="text-[11px]">Synthèse</span>
+        <span class="hidden xl:inline text-[11px]">Synthèse</span>
       </button>
 
       <button

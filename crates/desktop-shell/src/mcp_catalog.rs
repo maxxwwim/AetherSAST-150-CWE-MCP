@@ -518,6 +518,18 @@ pub(crate) async fn handle_catalog_request(
                                     "type": "string",
                                     "description": "Filtre optionnel de sévérité pour détailler les violations SAST/CWE ('critical', 'high', 'all')",
                                     "enum": ["all", "critical", "high", "medium", "low", "warning"]
+                                },
+                                "agent_id": {
+                                    "type": "string",
+                                    "description": "Identifiant unique de l'agent IA connecté"
+                                },
+                                "agent_name": {
+                                    "type": "string",
+                                    "description": "Nom affiché de l'agent IA dans le modèle"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Couleur hexadécimale de l'agent IA (ex: '#38bdf8', '#c084fc')"
                                 }
                             },
                             "required": [],
@@ -711,7 +723,10 @@ pub(crate) async fn handle_catalog_request(
                                 "path": {
                                     "type": "string",
                                     "description": "Chemin optionnel du projet cible (par défaut le projet actif)"
-                                }
+                                },
+                                "agent_id": { "type": "string", "description": "Identifiant unique de l'agent IA" },
+                                "agent_name": { "type": "string", "description": "Nom affiché de l'agent IA" },
+                                "color": { "type": "string", "description": "Couleur hexadécimale de l'agent IA" }
                             },
                             "required": ["mode"],
                             "additionalProperties": false
@@ -726,7 +741,7 @@ pub(crate) async fn handle_catalog_request(
                     },
                     {
                         "name": "aetherscope_manage_tasks",
-                        "description": "[COMMANDE COMBINÃ‰E 3-EN-1] Gestion unifiÃ©e des tÃ¢ches AetherScope (action = 'list' | 'create' | 'update') avec mini-README dans .aether/tasks/ et tÃ©lÃ©portation automatique de la camÃ©ra 3D lorsque target_symbol est renseignÃ©.",
+                        "description": "[COMMANDE COMBINÉE 4-EN-1] Gestion unifiée des tâches AetherScope (action = 'list' | 'create' | 'update' | 'delete') avec mini-README dans .aether/tasks/, auteur/couleur IA, et téléportation automatique de la caméra 3D lorsque target_symbol est renseigné.",
                         "readOnlyHint": false,
                         "destructiveHint": false,
                         "idempotentHint": false,
@@ -736,34 +751,34 @@ pub(crate) async fn handle_catalog_request(
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "description": "OpÃ©ration Ã  effectuer : 'list' (lister les tÃ¢ches), 'create' (crÃ©er une tÃ¢che), ou 'update' (mettre Ã  jour statut/progrÃ¨s/README)",
-                                    "enum": ["list", "create", "update"],
-                                    "examples": ["list", "create", "update"]
+                                    "description": "Opération à effectuer : 'list' (lister les tâches), 'create' (créer une tâche), 'update' (mettre à jour statut/progrès/README), ou 'delete' (supprimer une tâche)",
+                                    "enum": ["list", "create", "update", "delete"],
+                                    "examples": ["list", "create", "update", "delete"]
                                 },
                                 "task_id": {
                                     "type": "string",
-                                    "description": "Identifiant de la tÃ¢che (requis pour action='update')"
+                                    "description": "Identifiant de la tâche (requis pour action='update' ou 'delete')"
                                 },
                                 "title": {
                                     "type": "string",
-                                    "description": "Titre explicite de la tÃ¢che (requis pour action='create')"
+                                    "description": "Titre explicite de la tâche (requis pour action='create', optionnel pour 'update')"
                                 },
                                 "kind": {
                                     "type": "string",
-                                    "description": "Type de tÃ¢che pour 'create' : 'function', 'research', 'security_fix', 'arch_refactor', 'documentation', 'test', 'other'",
+                                    "description": "Type de tâche pour 'create' : 'function', 'research', 'security_fix', 'arch_refactor', 'documentation', 'test', 'other'",
                                     "enum": ["function", "research", "security_fix", "arch_refactor", "documentation", "test", "other"]
                                 },
                                 "target_symbol": {
                                     "type": "string",
-                                    "description": "Symbole AST ciblÃ© (aligne automatiquement la camÃ©ra 3D sur ce symbole)"
+                                    "description": "Symbole AST ciblé (aligne automatiquement la caméra 3D et déplace l'avatar IA sur ce symbole)"
                                 },
                                 "target_file": {
                                     "type": "string",
-                                    "description": "Chemin du fichier concernÃ©"
+                                    "description": "Chemin du fichier concerné"
                                 },
                                 "priority": {
                                     "type": "string",
-                                    "description": "PrioritÃ© ('low', 'medium', 'high', 'critical')",
+                                    "description": "Priorité ('low', 'medium', 'high', 'critical')",
                                     "enum": ["low", "medium", "high", "critical"]
                                 },
                                 "status": {
@@ -779,7 +794,7 @@ pub(crate) async fn handle_catalog_request(
                                 },
                                 "progress_note": {
                                     "type": "string",
-                                    "description": "Note d'avancement ajoutÃ©e au mini-README de la tÃ¢che"
+                                    "description": "Note d'avancement ajoutée au mini-README de la tâche"
                                 },
                                 "initial_readme": {
                                     "type": "string",
@@ -791,15 +806,31 @@ pub(crate) async fn handle_catalog_request(
                                 },
                                 "status_filter": {
                                     "type": "string",
-                                    "description": "Filtre pour action='list' : 'active' (dÃ©faut), 'all', 'done'",
+                                    "description": "Filtre pour action='list' : 'active' (défaut), 'all', 'done'",
                                     "enum": ["active", "all", "done"]
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Chemin optionnel du projet cible"
+                                },
+                                "agent_id": {
+                                    "type": "string",
+                                    "description": "Identifiant unique de l'agent IA créant ou mettant à jour la tâche"
+                                },
+                                "agent_name": {
+                                    "type": "string",
+                                    "description": "Nom affiché de l'agent IA auteur de la tâche"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Couleur hexadécimale de l'agent IA (ex: '#38bdf8')"
                                 }
                             },
                             "required": ["action"],
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Gestionnaire UnifiÃ© des TÃ¢ches (List / Create / Update)",
+                            "title": "Gestionnaire Unifié des Tâches (List / Create / Update / Delete)",
                             "readOnlyHint": false,
                             "destructiveHint": false,
                             "idempotentHint": false,
@@ -808,7 +839,7 @@ pub(crate) async fn handle_catalog_request(
                     },
                     {
                         "name": "aetherscope_verify_patch",
-                        "description": "[COMMANDE COMBINÃ‰E 4-EN-1] Pare-Feu IA Temps RÃ©el (< 50 ms) : (1) Analyse incrÃ©mentale SAST 150+ CWE + conformitÃ© contrat EARS/BLAKE3 sur files_modified, (2) TÃ©lÃ©porte la camÃ©ra 3D, (3) Met Ã  jour automatiquement la tÃ¢che associÃ©e (si task_id fourni et patch approuvÃ©), et (4) Publie le compte-rendu dans le chat AetherScope (si chat_message fourni).",
+                        "description": "[COMMANDE COMBINÉE 4-EN-1] Pare-Feu IA Temps Réel (< 50 ms) : (1) Analyse incrémentale SAST 150+ CWE + conformité contrat EARS/BLAKE3 sur files_modified, (2) Téléporte la caméra 3D et l'avatar IA, (3) Met à jour automatiquement la tâche associée (si task_id fourni et patch approuvé), et (4) Publie le compte-rendu dans le chat AetherScope (si chat_message fourni).",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -819,30 +850,46 @@ pub(crate) async fn handle_catalog_request(
                                 "files_modified": {
                                     "type": "array",
                                     "items": { "type": "string" },
-                                    "description": "Chemins relatifs ou absolus des fichiers modifiÃ©s ou gÃ©nÃ©rÃ©s par l'IA"
+                                    "description": "Chemins relatifs ou absolus des fichiers modifiés ou générés par l'IA"
                                 },
                                 "task_id": {
                                     "type": "string",
-                                    "description": "Optionnel : ID de la tÃ¢che Ã  mettre Ã  jour automatiquement si le pare-feu approuve le patch"
+                                    "description": "Optionnel : ID de la tâche à mettre à jour automatiquement si le pare-feu approuve le patch"
                                 },
                                 "status": {
                                     "type": "string",
-                                    "description": "Optionnel : Nouveau statut de la tÃ¢che (ex: 'done', 'in_progress') si task_id est fourni",
+                                    "description": "Optionnel : Nouveau statut de la tâche (ex: 'done', 'in_progress') si task_id est fourni",
                                     "enum": ["pending", "in_progress", "blocked", "done", "cancelled"]
                                 },
                                 "progress": {
                                     "type": "integer",
-                                    "description": "Optionnel : Pourcentage d'avancement (0-100) de la tÃ¢che si task_id est fourni",
+                                    "description": "Optionnel : Pourcentage d'avancement (0-100) de la tâche si task_id est fourni",
                                     "minimum": 0,
                                     "maximum": 100
                                 },
                                 "progress_note": {
                                     "type": "string",
-                                    "description": "Optionnel : Note de progrÃ¨s Ã  consigner dans la tÃ¢che si task_id est fourni"
+                                    "description": "Optionnel : Note de progrès à consigner dans la tâche si task_id est fourni"
                                 },
                                 "chat_message": {
                                     "type": "string",
-                                    "description": "Optionnel : Compte-rendu final envoyÃ© simultanÃ©ment dans le Chat Copilot AetherScope"
+                                    "description": "Optionnel : Compte-rendu final envoyé simultanément dans le Chat Copilot AetherScope"
+                                },
+                                "path": {
+                                    "type": "string",
+                                    "description": "Optionnel : Chemin racine du projet"
+                                },
+                                "agent_id": {
+                                    "type": "string",
+                                    "description": "Identifiant unique de l'agent IA validant le patch"
+                                },
+                                "agent_name": {
+                                    "type": "string",
+                                    "description": "Nom affiché de l'agent IA"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Couleur hexadécimale de l'agent IA"
                                 }
                             },
                             "required": ["files_modified"],

@@ -111,6 +111,12 @@ pub struct TaskItem {
     pub target_file: Option<String>,
     #[serde(default = "default_author")]
     pub author: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     #[serde(default = "default_priority")]
     pub priority: String,
     pub created_at: String,
@@ -121,6 +127,8 @@ pub struct TaskItem {
     pub readme_summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full_readme: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readme: Option<String>,
 }
 
 fn default_author() -> String { "user".to_string() }
@@ -156,7 +164,10 @@ impl TaskManager {
         let mut task: TaskItem = serde_json::from_str(&json_str).ok()?;
         if let Ok(readme_content) = fs::read_to_string(folder.join("README.md")) {
             task.readme_summary = extract_summary(&readme_content);
-            task.full_readme = Some(readme_content);
+            task.full_readme = Some(readme_content.clone());
+            task.readme = Some(readme_content);
+        } else if let Some(ref fr) = task.full_readme {
+            task.readme = Some(fr.clone());
         }
         Some(task)
     }
@@ -171,6 +182,35 @@ impl TaskManager {
         author: &str,
         priority: Option<&str>,
         initial_readme: Option<&str>,
+    ) -> std::io::Result<TaskItem> {
+        Self::create_task_with_agent(
+            project_root,
+            title,
+            kind,
+            target_symbol,
+            target_file,
+            author,
+            priority,
+            initial_readme,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_task_with_agent(
+        project_root: &Path,
+        title: &str,
+        kind: TaskKind,
+        target_symbol: Option<&str>,
+        target_file: Option<&str>,
+        author: &str,
+        priority: Option<&str>,
+        initial_readme: Option<&str>,
+        agent_id: Option<&str>,
+        agent_name: Option<&str>,
+        color: Option<&str>,
     ) -> std::io::Result<TaskItem> {
         let tasks_dir = Self::tasks_dir(project_root);
         fs::create_dir_all(&tasks_dir)?;
@@ -193,6 +233,18 @@ impl TaskManager {
             _ => generate_default_readme(title, &kind, target_sym_owned.as_deref(), target_file_owned.as_deref(), &now_str),
         };
 
+        let resolved_agent_id = agent_id.map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        let resolved_agent_name = agent_name.map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        let resolved_color = color.map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+        let resolved_author = if !author.trim().is_empty() && author.trim() != "model" {
+            author.trim().to_string()
+        } else {
+            resolved_agent_name
+                .clone()
+                .or_else(|| resolved_agent_id.clone())
+                .unwrap_or_else(|| if author.trim().is_empty() { "user".to_string() } else { author.trim().to_string() })
+        };
+
         let task = TaskItem {
             id: task_id,
             title: title.trim().to_string(),
@@ -200,13 +252,17 @@ impl TaskManager {
             status: TaskStatus::Pending,
             target_symbol: target_sym_owned,
             target_file: target_file_owned,
-            author: author.trim().to_string(),
+            author: resolved_author,
+            agent_id: resolved_agent_id,
+            agent_name: resolved_agent_name,
+            color: resolved_color,
             priority: priority.unwrap_or("medium").to_string(),
             created_at: now_str.clone(),
             updated_at: now_str,
             progress: 0,
             readme_summary: extract_summary(&readme_content),
             full_readme: Some(readme_content.clone()),
+            readme: Some(readme_content.clone()),
         };
 
         fs::write(task_folder.join("task.json"), serde_json::to_string_pretty(&task)?)?;
@@ -223,6 +279,39 @@ impl TaskManager {
         append_note: Option<&str>,
         full_readme: Option<&str>,
     ) -> std::io::Result<Option<TaskItem>> {
+        Self::update_task_with_meta(
+            project_root,
+            task_id,
+            status,
+            progress,
+            append_note,
+            full_readme,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_task_with_meta(
+        project_root: &Path,
+        task_id: &str,
+        status: Option<TaskStatus>,
+        progress: Option<u8>,
+        append_note: Option<&str>,
+        full_readme: Option<&str>,
+        title: Option<&str>,
+        target_symbol: Option<&str>,
+        target_file: Option<&str>,
+        priority: Option<&str>,
+        agent_id: Option<&str>,
+        agent_name: Option<&str>,
+        color: Option<&str>,
+    ) -> std::io::Result<Option<TaskItem>> {
         let task_folder = Self::tasks_dir(project_root).join(task_id);
         let meta_file = task_folder.join("task.json");
         let readme_file = task_folder.join("README.md");
@@ -233,6 +322,34 @@ impl TaskManager {
         let mut task: TaskItem = serde_json::from_str(&fs::read_to_string(&meta_file)?)?;
         let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         task.updated_at = now_str.clone();
+
+        if let Some(t) = title.map(str::trim).filter(|s| !s.is_empty()) {
+            task.title = t.to_string();
+        }
+        if let Some(sym) = target_symbol.map(str::trim).filter(|s| !s.is_empty()) {
+            task.target_symbol = Some(sym.to_string());
+        }
+        if let Some(f) = target_file.map(str::trim).filter(|s| !s.is_empty()) {
+            task.target_file = Some(f.to_string());
+        }
+        if let Some(prio) = priority.map(str::trim).filter(|s| !s.is_empty()) {
+            task.priority = prio.to_string();
+        }
+        if let Some(aid) = agent_id.map(str::trim).filter(|s| !s.is_empty()) {
+            task.agent_id = Some(aid.to_string());
+            if task.author == "user" || task.author == "model" {
+                task.author = agent_name.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(aid).to_string();
+            }
+        }
+        if let Some(aname) = agent_name.map(str::trim).filter(|s| !s.is_empty()) {
+            task.agent_name = Some(aname.to_string());
+            if task.author == "user" || task.author == "model" {
+                task.author = aname.to_string();
+            }
+        }
+        if let Some(c) = color.map(str::trim).filter(|s| !s.is_empty()) {
+            task.color = Some(c.to_string());
+        }
 
         if let Some(new_status) = status {
             task.status = new_status;
@@ -250,15 +367,22 @@ impl TaskManager {
         }
 
         let mut current_readme = full_readme
+            .filter(|s| !s.trim().is_empty())
             .map(str::to_string)
             .unwrap_or_else(|| fs::read_to_string(&readme_file).unwrap_or_default());
 
         if let Some(note) = append_note.map(str::trim).filter(|s| !s.is_empty()) {
-            current_readme.push_str(&format!("\n\n### 📝 Note d'avancement ({})\n{}\n", now_str, note));
+            let author_tag = task
+                .agent_name
+                .as_deref()
+                .or(task.agent_id.as_deref())
+                .unwrap_or(&task.author);
+            current_readme.push_str(&format!("\n\n### 📝 Note d'avancement ({} — `{}`)\n{}\n", now_str, author_tag, note));
         }
 
         task.readme_summary = extract_summary(&current_readme);
         task.full_readme = Some(current_readme.clone());
+        task.readme = Some(current_readme.clone());
 
         fs::write(&meta_file, serde_json::to_string_pretty(&task)?)?;
         fs::write(&readme_file, &current_readme)?;

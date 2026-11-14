@@ -131,6 +131,65 @@ function loadSavedRadar(): boolean {
   return true;
 }
 
+interface SavedAiCache {
+  activeAgents: {
+    agentId: string;
+    agentName: string;
+    color: string;
+    target: string;
+    action: string;
+    details: string;
+    timestamp: number;
+    nodeId?: string;
+    prevX?: number;
+    prevY?: number;
+    targetX?: number;
+    targetY?: number;
+    moveStartTs?: number;
+  }[];
+  agentTrails: Record<string, {
+    target: string;
+    action: string;
+    details: string;
+    timestamp: number;
+    nodeId?: string;
+    x?: number;
+    y?: number;
+  }[]>;
+  aiTrail: {
+    target: string;
+    action: string;
+    details: string;
+    timestamp: number;
+    nodeId?: string;
+    agentName?: string;
+    color?: string;
+    x?: number;
+    y?: number;
+  }[];
+}
+
+function loadSavedAiCache(): SavedAiCache {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem('aetherscope_ai_cache');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          activeAgents: Array.isArray(parsed.activeAgents) ? parsed.activeAgents : [],
+          agentTrails: parsed.agentTrails && typeof parsed.agentTrails === 'object' ? parsed.agentTrails : {},
+          aiTrail: Array.isArray(parsed.aiTrail) ? parsed.aiTrail : [],
+        };
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return { activeAgents: [], agentTrails: {}, aiTrail: [] };
+}
+
+const INITIAL_AI_CACHE = loadSavedAiCache();
+
 export function normalizeEdgeRelation(raw?: string): string {
   const r = String(raw || 'calls').toLowerCase().trim();
   if (r === 'realtime_ws' || r === 'realtimews') return 'realtime';
@@ -214,7 +273,12 @@ export class CockpitState {
     details: string;
     timestamp: number;
     nodeId?: string;
-  }[]>([]);
+    prevX?: number;
+    prevY?: number;
+    targetX?: number;
+    targetY?: number;
+    moveStartTs?: number;
+  }[]>(INITIAL_AI_CACHE.activeAgents);
   agentTrails = $state<Record<string, {
     target: string;
     action: string;
@@ -223,7 +287,7 @@ export class CockpitState {
     nodeId?: string;
     x?: number;
     y?: number;
-  }[]>>({});
+  }[]>>(INITIAL_AI_CACHE.agentTrails);
   aiTelemetry = $state<{
     target: string;
     action: string;
@@ -244,7 +308,7 @@ export class CockpitState {
     color?: string;
     x?: number;
     y?: number;
-  }[]>([]);
+  }[]>(INITIAL_AI_CACHE.aiTrail);
   aiChatMessages = $state<{
     id: string;
     sender: string;
@@ -260,32 +324,131 @@ export class CockpitState {
   mcpConnected = $state(true);
   lastTelemetryTs = $state(0);
 
-  private resolveAgentColor(agentId: string, customColor?: string): string {
-    if (customColor) return customColor;
-    const palette = ['#c084fc', '#38bdf8', '#34d399', '#f59e0b', '#f472b6', '#a3e635'];
+  saveLocalAiCache() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(
+          'aetherscope_ai_cache',
+          JSON.stringify({
+            activeAgents: this.activeAgents,
+            agentTrails: this.agentTrails,
+            aiTrail: this.aiTrail,
+          })
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private resolveAgentColor(agentId: string, customColor?: string, agentName?: string): string {
+    if (customColor && customColor.trim()) return customColor.trim();
+    const palette = [
+      '#38bdf8', '#c084fc', '#34d399', '#f472b6',
+      '#f59e0b', '#a3e635', '#22d3ee', '#fb7185',
+      '#818cf8', '#fb923c', '#2dd4bf', '#e879f9'
+    ];
+    const key = (agentId || agentName || 'primary-agent').trim().toLowerCase();
     let hash = 0;
-    for (let i = 0; i < agentId.length; i++) {
-      hash = (hash * 31 + agentId.charCodeAt(i)) >>> 0;
+    for (let i = 0; i < key.length; i++) {
+      hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
     }
     return palette[hash % palette.length];
   }
 
   resolveTargetNode(target: string): SymbolBubble | undefined {
-    const tLower = target.toLowerCase();
-    return this.graph.nodes.find(
-      (n) =>
-        n.name.toLowerCase() === tLower ||
-        n.id.toLowerCase() === tLower ||
-        (n.file_path && n.file_path.toLowerCase().includes(tLower))
+    if (!target) return undefined;
+    let clean = target.trim();
+    clean = clean.replace(/^(?:file|note|symbol)::+/i, '');
+    clean = clean.replace(/:\d+(?::\d+)?$/, '');
+    clean = clean.replace(/\\/g, '/').trim();
+    if (!clean) return undefined;
+
+    const tLower = clean.toLowerCase();
+    const baseNameLower = tLower.split('/').pop() || tLower;
+
+    // 1. Exact ID or name match
+    let hit = this.graph.nodes.find(
+      (n) => n.id.toLowerCase() === tLower || n.name.toLowerCase() === tLower
     );
+    if (hit) return hit;
+
+    // 2. Exact match on basename
+    hit = this.graph.nodes.find(
+      (n) => n.name.toLowerCase() === baseNameLower
+    );
+    if (hit) return hit;
+
+    // 3. File path ends with or equals
+    hit = this.graph.nodes.find((n) => {
+      const np = (n.file_path || '').replace(/\\/g, '/').toLowerCase();
+      return np === tLower || np.endsWith('/' + tLower) || np.endsWith(tLower);
+    });
+    if (hit) return hit;
+
+    // 4. File path contains
+    hit = this.graph.nodes.find((n) => {
+      const np = (n.file_path || '').replace(/\\/g, '/').toLowerCase();
+      return np.includes(tLower) || (baseNameLower.length > 2 && np.includes(baseNameLower));
+    });
+    if (hit) return hit;
+
+    // 5. Folder match
+    hit = this.graph.nodes.find((n) => {
+      const f = (n.folder || '').replace(/\\/g, '/').toLowerCase();
+      return f === tLower || f.endsWith('/' + tLower) || tLower.includes(f);
+    });
+    return hit;
+  }
+
+  syncTelemetryCoordinates() {
+    let changed = false;
+    for (const ag of this.activeAgents) {
+      const hit = this.resolveTargetNode(ag.target);
+      if (hit) {
+        ag.nodeId = hit.id;
+        if (ag.targetX !== hit.x || ag.targetY !== hit.y) {
+          ag.prevX = ag.targetX ?? hit.x;
+          ag.prevY = ag.targetY ?? hit.y;
+          ag.targetX = hit.x;
+          ag.targetY = hit.y;
+          ag.moveStartTs = Date.now();
+          changed = true;
+        }
+      }
+    }
+    for (const trail of Object.values(this.agentTrails)) {
+      for (const p of trail) {
+        const hit = this.resolveTargetNode(p.target);
+        if (hit && (p.x !== hit.x || p.y !== hit.y || p.nodeId !== hit.id)) {
+          p.nodeId = hit.id;
+          p.x = hit.x;
+          p.y = hit.y;
+          changed = true;
+        }
+      }
+    }
+    for (const p of this.aiTrail) {
+      const hit = this.resolveTargetNode(p.target);
+      if (hit && (p.x !== hit.x || p.y !== hit.y || p.nodeId !== hit.id)) {
+        p.nodeId = hit.id;
+        p.x = hit.x;
+        p.y = hit.y;
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.saveLocalAiCache();
+    }
   }
 
   recordAiTelemetry(
     ev: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string },
-    agentsList?: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[]
+    agentsList?: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[],
+    historyList?: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[]
   ) {
     const incoming = agentsList && agentsList.length > 0 ? agentsList : ev?.target ? [ev] : [];
-    if (incoming.length === 0) return;
+    if (incoming.length === 0 && (!historyList || historyList.length === 0)) return;
 
     let anyNew = false;
     let latestAutoFocusId: string | null = null;
@@ -293,8 +456,52 @@ export class CockpitState {
     const nextActive: typeof this.activeAgents = [];
     const mergedGlobalTrail = [...this.aiTrail];
 
+    // Reconstruct history if provided from backend cache
+    if (historyList && historyList.length > 0) {
+      const chronological = [...historyList].sort((a, b) => a.timestamp - b.timestamp);
+      for (const hist of chronological) {
+        if (!hist?.target) continue;
+        const normTs = hist.timestamp < 1e11 ? hist.timestamp * 1000 : hist.timestamp;
+        const aid = hist.agent_id || hist.agent_name || 'primary-agent';
+        const aname = hist.agent_name || aid;
+        const color = this.resolveAgentColor(aid, hist.color, aname);
+        const hit = this.resolveTargetNode(hist.target);
+
+        const curAgentTrail = nextTrails[aid] || [];
+        if (!curAgentTrail.some((p) => Math.abs(p.timestamp - normTs) <= 1000 && p.target === hist.target)) {
+          nextTrails[aid] = [
+            ...curAgentTrail,
+            {
+              target: hist.target,
+              action: hist.action || 'Inspection',
+              details: hist.details || '',
+              timestamp: normTs,
+              nodeId: hit?.id,
+              x: hit?.x,
+              y: hit?.y,
+            },
+          ].slice(-24);
+        }
+
+        if (!mergedGlobalTrail.some((p) => Math.abs(p.timestamp - normTs) <= 1000 && p.target === hist.target && p.agentName === aname)) {
+          mergedGlobalTrail.push({
+            target: hist.target,
+            action: hist.action || 'Inspection',
+            details: hist.details || '',
+            timestamp: normTs,
+            nodeId: hit?.id,
+            agentName: aname,
+            color,
+            x: hit?.x,
+            y: hit?.y,
+          });
+        }
+      }
+    }
+
     for (const item of incoming) {
       if (!item?.target) continue;
+      const normTs = item.timestamp < 1e11 ? item.timestamp * 1000 : item.timestamp;
       const agentId = item.agent_id || item.agent_name || (
         item.action?.toLowerCase().includes('claude') ? 'claude-mcp'
           : item.action?.toLowerCase().includes('gemini') ? 'gemini-mcp'
@@ -302,8 +509,15 @@ export class CockpitState {
               : 'primary-agent'
       );
       const agentName = item.agent_name || agentId;
-      const color = this.resolveAgentColor(agentId, item.color);
+      const color = this.resolveAgentColor(agentId, item.color, agentName);
       const hit = this.resolveTargetNode(item.target);
+
+      const existingActive = this.activeAgents.find((a) => a.agentId === agentId);
+      let prevX = existingActive?.targetX;
+      let prevY = existingActive?.targetY;
+      let targetX = hit?.x;
+      let targetY = hit?.y;
+      let moveStartTs = (prevX !== undefined && targetX !== undefined && (prevX !== targetX || prevY !== targetY)) ? Date.now() : existingActive?.moveStartTs;
 
       nextActive.push({
         agentId,
@@ -312,12 +526,17 @@ export class CockpitState {
         target: item.target,
         action: item.action || 'Inspection',
         details: item.details || '',
-        timestamp: item.timestamp,
+        timestamp: normTs,
         nodeId: hit?.id,
+        prevX,
+        prevY,
+        targetX,
+        targetY,
+        moveStartTs,
       });
 
       const prevAgentTrail = nextTrails[agentId] || [];
-      if (!prevAgentTrail.some((p) => p.timestamp === item.timestamp && p.target === item.target)) {
+      if (!prevAgentTrail.some((p) => Math.abs(p.timestamp - normTs) <= 1000 && p.target === item.target)) {
         anyNew = true;
         if (hit && incoming.length === 1) {
           latestAutoFocusId = hit.id;
@@ -328,19 +547,19 @@ export class CockpitState {
             target: item.target,
             action: item.action || 'Inspection',
             details: item.details || '',
-            timestamp: item.timestamp,
+            timestamp: normTs,
             nodeId: hit?.id,
             x: hit?.x,
             y: hit?.y,
           },
-        ].slice(-18);
+        ].slice(-24);
 
-        if (!mergedGlobalTrail.some((p) => p.timestamp === item.timestamp && p.target === item.target && p.agentName === agentName)) {
+        if (!mergedGlobalTrail.some((p) => Math.abs(p.timestamp - normTs) <= 1000 && p.target === item.target && p.agentName === agentName)) {
           mergedGlobalTrail.push({
             target: item.target,
             action: item.action || 'Inspection',
             details: item.details || '',
-            timestamp: item.timestamp,
+            timestamp: normTs,
             nodeId: hit?.id,
             agentName,
             color,
@@ -353,7 +572,8 @@ export class CockpitState {
 
     this.activeAgents = nextActive.sort((a, b) => b.timestamp - a.timestamp);
     this.agentTrails = nextTrails;
-    this.aiTrail = mergedGlobalTrail.slice(-36);
+    this.aiTrail = mergedGlobalTrail.slice(-48);
+    this.saveLocalAiCache();
 
     const head = this.activeAgents[0];
     if (head) {
@@ -380,6 +600,7 @@ export class CockpitState {
     this.agentTrails = {};
     this.activeAgents = [];
     this.aiTelemetry = null;
+    this.saveLocalAiCache();
   }
 
   saveLocalSettings() {
@@ -864,6 +1085,7 @@ export class CockpitState {
       edges: Array.isArray(g?.edges) ? g.edges : [],
       clusters: g?.clusters || {},
     };
+    this.syncTelemetryCoordinates();
     if (normalizedNodes.length > 0 && !this.activeSymbol) {
       this.activeSymbol = normalizedNodes[0];
     } else if (this.activeSymbol) {

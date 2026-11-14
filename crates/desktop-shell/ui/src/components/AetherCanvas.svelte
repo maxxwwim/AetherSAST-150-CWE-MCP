@@ -11,8 +11,16 @@
   let lineCanvasEl: HTMLCanvasElement;
   let engine = $state.raw<AetherEngine | null>(null);
   let fps = $state(120);
-  let zoomPercent = $state(100);
+  let zoomLabel = $state('100%');
   let resizeObserver: ResizeObserver | null = null;
+
+  function formatZoomLabel(z: number): string {
+    const pct = z * 100;
+    if (pct >= 10) return `${Math.round(pct)}%`;
+    if (pct >= 1) return `${pct.toFixed(1)}%`;
+    if (pct >= 0.1) return `${pct.toFixed(2)}%`;
+    return `${pct.toFixed(3)}%`;
+  }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -29,7 +37,7 @@
       engine.onFps = (val) => {
         fps = val;
         if (engine) {
-          zoomPercent = Math.round(engine.camera.zoom * 100);
+          zoomLabel = formatZoomLabel(engine.camera.zoom);
         }
       };
       engine.start();
@@ -82,12 +90,12 @@
     <!-- Zoom In -->
     <button
       type="button"
-      onclick={() => {
-        engine?.zoomIn();
-        if (engine) zoomPercent = Math.round(engine.camera.targetZoom * 100);
+      onclick={(e) => {
+        engine?.zoomIn(e.shiftKey ? 1.85 : 1.28);
+        if (engine) zoomLabel = formatZoomLabel(engine.camera.targetZoom);
         playSpatialTone(cockpitState.settings.soundEnabled, 'action', 0);
       }}
-      title="Zoom avant (+)"
+      title="Zoom avant (+ ou Shift+Clic pour zoom rapide)"
       aria-label="Zoom avant"
       class="flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-[32px] sm:min-h-[32px] rounded-lg text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 active:bg-sky-500/30 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-sky-400"
     >
@@ -99,25 +107,25 @@
       type="button"
       onclick={() => {
         engine?.resetZoom();
-        zoomPercent = 100;
+        zoomLabel = '100%';
         playSpatialTone(cockpitState.settings.soundEnabled, 'action', 0);
       }}
-      title="Réinitialiser le zoom (1:1 / 100%)"
+      title="Réinitialiser le zoom (1:1 / 100%) — Dézoom infini actif jusqu'à 0.01%"
       aria-label="Réinitialiser le zoom à 1:1"
       class="flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-[42px] sm:min-h-[32px] px-1.5 rounded-lg text-xs font-mono font-bold text-sky-400 hover:text-sky-300 hover:bg-white/10 active:scale-90 active:bg-sky-500/30 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-sky-400"
     >
-      {zoomPercent}%
+      {zoomLabel}
     </button>
 
     <!-- Zoom Out -->
     <button
       type="button"
-      onclick={() => {
-        engine?.zoomOut();
-        if (engine) zoomPercent = Math.round(engine.camera.targetZoom * 100);
+      onclick={(e) => {
+        engine?.zoomOut(e.shiftKey ? 0.45 : 0.78);
+        if (engine) zoomLabel = formatZoomLabel(engine.camera.targetZoom);
         playSpatialTone(cockpitState.settings.soundEnabled, 'action', 0);
       }}
-      title="Zoom arrière (-)"
+      title="Dézoom infini galaxie (- ou Shift+Clic pour grand dézoom)"
       aria-label="Zoom arrière"
       class="flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-[32px] sm:min-h-[32px] rounded-lg text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 active:bg-sky-500/30 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-sky-400"
     >

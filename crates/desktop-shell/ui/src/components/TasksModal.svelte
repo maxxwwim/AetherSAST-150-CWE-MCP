@@ -13,7 +13,7 @@
   } from 'lucide-svelte';
   import type { TaskItem } from '../types/graph';
 
-  let filterStatus = $state<'all' | 'pending' | 'in_progress' | 'done'>('all');
+  let filterStatus = $state<'all' | 'pending' | 'in_progress' | 'blocked' | 'done' | 'cancelled'>('all');
   let selectedTask = $state<TaskItem | null>(null);
   let showCreateForm = $state(false);
   let loading = $state(false);
@@ -70,7 +70,7 @@
     selectedTask = t;
     editStatus = t.status;
     editProgress = t.progress || 0;
-    editReadme = t.readme || '';
+    editReadme = t.full_readme || t.readme || t.readme_summary || '';
     statusMsg = null;
   }
 
@@ -143,10 +143,17 @@
 
   function teleportToTaskTarget() {
     if (!selectedTask) return;
-    const hit = cockpitState.resolveTargetNode(selectedTask.target_symbol || selectedTask.target_file || '');
+    const target = selectedTask.target_symbol || selectedTask.target_file || '';
+    const hit = cockpitState.resolveTargetNode(target);
     if (hit) {
       cockpitState.selectSymbol(hit.id, true);
       cockpitState.isTasksModalOpen = false;
+    } else if (selectedTask.target_symbol && selectedTask.target_file) {
+      const hitFile = cockpitState.resolveTargetNode(selectedTask.target_file);
+      if (hitFile) {
+        cockpitState.selectSymbol(hitFile.id, true);
+        cockpitState.isTasksModalOpen = false;
+      }
     }
   }
 
@@ -217,6 +224,8 @@
                 <option value="arch_refactor">Arch Refactor</option>
                 <option value="function">Function</option>
                 <option value="research">Research</option>
+                <option value="documentation">Documentation</option>
+                <option value="test">Test</option>
                 <option value="other">Autre</option>
               </select>
               <select bind:value={newPriority} class="flex-1 px-2 py-1.5 rounded-lg bg-slate-900 border border-white/15 text-xs text-slate-200">
@@ -271,14 +280,14 @@
       <div class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-[380px]">
         <!-- Left List -->
         <div class="w-full md:w-80 border-b md:border-b-0 md:border-r border-white/10 flex flex-col bg-black/25 shrink-0 max-h-56 md:max-h-none">
-          <div class="flex p-2 gap-1 border-b border-white/10 text-[10px] font-mono">
-            {#each (['all', 'pending', 'in_progress', 'done'] as const) as st}
+          <div class="flex flex-wrap p-2 gap-1 border-b border-white/10 text-[10px] font-mono">
+            {#each (['all', 'pending', 'in_progress', 'blocked', 'done', 'cancelled'] as const) as st}
               <button
                 type="button"
                 onclick={() => (filterStatus = st)}
-                class="flex-1 py-1 rounded cursor-pointer {filterStatus === st ? 'bg-indigo-500/25 text-indigo-200 font-bold' : 'text-slate-400 hover:text-white'}"
+                class="px-2 py-1 rounded cursor-pointer {filterStatus === st ? 'bg-indigo-500/25 text-indigo-200 font-bold' : 'text-slate-400 hover:text-white'}"
               >
-                {st === 'all' ? 'Toutes' : st === 'pending' ? 'Attente' : st === 'in_progress' ? 'En cours' : 'Fait'}
+                {st === 'all' ? 'Toutes' : st === 'pending' ? 'Attente' : st === 'in_progress' ? 'En cours' : st === 'blocked' ? 'Bloquée' : st === 'done' ? 'Fait' : 'Annulée'}
               </button>
             {/each}
           </div>
@@ -295,14 +304,31 @@
                   onclick={() => selectTask(t)}
                   class="w-full text-left p-2.5 rounded-lg border transition-colors cursor-pointer {selectedTask?.id === t.id ? 'bg-indigo-500/15 border-indigo-400/50 text-white' : 'bg-white/[0.02] border-white/5 text-slate-300 hover:bg-white/[0.05]'}"
                 >
-                  <div class="flex items-center justify-between text-[9.5px] font-mono">
-                    <span class="px-1.5 py-0.5 rounded bg-white/10 uppercase">{t.priority}</span>
-                    <span class="text-sky-300">{t.progress || 0}%</span>
+                  <div class="flex items-center justify-between text-[9.5px] font-mono gap-1">
+                    <div class="flex items-center gap-1 truncate">
+                      <span class="px-1.5 py-0.5 rounded bg-white/10 uppercase">
+                        {t.kind === 'refactor' ? '⚙️' : t.kind === 'audit' ? '🔍' : t.kind === 'security' ? '🛡️' : t.kind === 'documentation' ? '📖' : t.kind === 'test' ? '🧪' : '📌'} {t.priority}
+                      </span>
+                      {#if t.agent_name || t.agent_id}
+                        <span
+                          class="px-1.5 py-0.5 rounded text-[9px] font-semibold truncate"
+                          style="background-color: {t.color || '#38bdf8'}22; color: {t.color || '#38bdf8'}; border: 1px solid {t.color || '#38bdf8'}44;"
+                        >
+                          🤖 {t.agent_name || t.agent_id}
+                        </span>
+                      {/if}
+                    </div>
+                    <span class="text-sky-300 shrink-0">{t.progress || 0}%</span>
                   </div>
                   <div class="text-xs font-semibold mt-1 truncate">{t.title}</div>
+                  {#if t.readme_summary}
+                    <div class="text-[10px] text-slate-400 italic truncate mt-0.5">
+                      {t.readme_summary}
+                    </div>
+                  {/if}
                   {#if t.target_symbol || t.target_file}
                     <div class="text-[10px] font-mono text-slate-500 truncate mt-0.5">
-                      {t.target_symbol || t.target_file}
+                      🎯 {t.target_symbol || t.target_file}
                     </div>
                   {/if}
                 </button>
@@ -317,9 +343,19 @@
             <div class="space-y-4">
               <div class="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-500/40 text-indigo-300">
-                    {selectedTask.kind} • {selectedTask.priority}
-                  </span>
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-500/40 text-indigo-300">
+                      {selectedTask.kind} • {selectedTask.priority}
+                    </span>
+                    {#if selectedTask.agent_name || selectedTask.agent_id}
+                      <span
+                        class="px-2 py-0.5 rounded text-[10px] font-semibold"
+                        style="background-color: {selectedTask.color || '#38bdf8'}22; color: {selectedTask.color || '#38bdf8'}; border: 1px solid {selectedTask.color || '#38bdf8'}55;"
+                      >
+                        🤖 {selectedTask.agent_name || selectedTask.agent_id}
+                      </span>
+                    {/if}
+                  </div>
                   <h3 class="text-base font-bold text-white mt-1.5">{selectedTask.title}</h3>
                   {#if selectedTask.target_symbol || selectedTask.target_file}
                     <p class="text-[11px] font-mono text-sky-400 mt-0.5">
@@ -359,6 +395,7 @@
                     <option value="in_progress">in_progress</option>
                     <option value="blocked">blocked</option>
                     <option value="done">done</option>
+                    <option value="cancelled">cancelled</option>
                   </select>
                 </div>
                 <div>
