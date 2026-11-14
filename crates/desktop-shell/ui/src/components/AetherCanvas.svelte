@@ -9,8 +9,9 @@
   let containerEl: HTMLDivElement;
   let canvasEl: HTMLCanvasElement;
   let lineCanvasEl: HTMLCanvasElement;
-  let engine = $state<AetherEngine | null>(null);
+  let engine = $state.raw<AetherEngine | null>(null);
   let fps = $state(120);
+  let zoomPercent = $state(100);
   let resizeObserver: ResizeObserver | null = null;
 
   function handleKeydown(e: KeyboardEvent) {
@@ -27,6 +28,9 @@
       engine = new AetherEngine(canvasEl, lineCanvasEl, cockpitState);
       engine.onFps = (val) => {
         fps = val;
+        if (engine) {
+          zoomPercent = Math.round(engine.camera.zoom * 100);
+        }
       };
       engine.start();
       if (cockpitState.graph.nodes.length > 0) {
@@ -52,7 +56,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div bind:this={containerEl} class="relative w-full h-full overflow-hidden bg-[#07090e]">
+<div bind:this={containerEl} class="relative w-full h-full min-h-0 overflow-hidden bg-[#07090e]">
   <!-- WebGL 2 Instanced Celestial Canvas -->
   <canvas
     bind:this={canvasEl}
@@ -80,6 +84,7 @@
       type="button"
       onclick={() => {
         engine?.zoomIn();
+        if (engine) zoomPercent = Math.round(engine.camera.targetZoom * 100);
         playSpatialTone(cockpitState.settings.soundEnabled, 'action', 0);
       }}
       title="Zoom avant (+)"
@@ -94,13 +99,14 @@
       type="button"
       onclick={() => {
         engine?.resetZoom();
+        zoomPercent = 100;
         playSpatialTone(cockpitState.settings.soundEnabled, 'action', 0);
       }}
       title="Réinitialiser le zoom (1:1 / 100%)"
       aria-label="Réinitialiser le zoom à 1:1"
       class="flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-[42px] sm:min-h-[32px] px-1.5 rounded-lg text-xs font-mono font-bold text-sky-400 hover:text-sky-300 hover:bg-white/10 active:scale-90 active:bg-sky-500/30 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-sky-400"
     >
-      {Math.round((engine?.camera.zoom ?? 1) * 100)}%
+      {zoomPercent}%
     </button>
 
     <!-- Zoom Out -->
@@ -108,6 +114,7 @@
       type="button"
       onclick={() => {
         engine?.zoomOut();
+        if (engine) zoomPercent = Math.round(engine.camera.targetZoom * 100);
         playSpatialTone(cockpitState.settings.soundEnabled, 'action', 0);
       }}
       title="Zoom arrière (-)"

@@ -222,9 +222,9 @@
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
-<div class="w-full h-full flex flex-col bg-[#07090e] text-slate-100 overflow-hidden font-sans">
+<div class="w-full h-screen flex flex-col bg-[#07090e] text-slate-100 overflow-hidden font-sans">
   <HeaderDeck />
-  <div class="relative flex-1 w-full h-full overflow-hidden">
+  <div class="relative flex-1 w-full min-h-0 overflow-hidden">
     <AetherCanvas />
     <CanvasTooltip />
     <VisionModesDeck />
