@@ -39,6 +39,8 @@
     const target = folderInput.trim() || cockpitState.graph.project_path || '.';
     if (isAnalyzingBar) return;
     isAnalyzingBar = true;
+    cockpitState.isScanningProject = true;
+    cockpitState.scanningTargetPath = target;
     try {
       const g = await api.analyzeProject(target, cockpitState.settings.exclusions);
       if (g && Array.isArray(g.nodes)) {
@@ -47,6 +49,7 @@
       }
     } finally {
       isAnalyzingBar = false;
+      cockpitState.isScanningProject = false;
     }
   }
 

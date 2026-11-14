@@ -2,17 +2,25 @@ use core_graph::graph::AetherGraph;
 use obsidian_vault::types::DetectedProjectType;
 use serde::Serialize;
 
+#[allow(dead_code)]
 pub const INDEX_HTML: &str = include_str!("../assets/index.html");
+#[allow(dead_code)]
 pub const STYLES_CSS: &str = include_str!("../assets/styles.css");
+#[allow(dead_code)]
 pub const STATE_API_JS: &str = include_str!("../assets/state_api.js");
+#[allow(dead_code)]
 pub const WEBGL_SHADERS_PHYSICS_JS: &str = include_str!("../assets/webgl_shaders_physics.js");
+#[allow(dead_code)]
 pub const WEBGL_RENDERER_JS: &str = include_str!("../assets/webgl_renderer.js");
+#[allow(dead_code)]
 pub const UI_NAVIGATION_JS: &str = include_str!("../assets/ui_navigation.js");
+#[allow(dead_code)]
 pub const UI_INSPECTOR_DOCS_JS: &str = include_str!("../assets/ui_inspector_docs.js");
+#[allow(dead_code)]
 pub const UI_VISION_MODES_JS: &str = include_str!("../assets/ui_vision_modes.js");
+#[allow(dead_code)]
 pub const UI_AI_MODALS_JS: &str = include_str!("../assets/ui_ai_modals.js");
 pub const PHYSICS_WORKER_JS: &str = include_str!("../assets/physics_worker.js");
-#[allow(dead_code)]
 pub const DIST_INDEX_HTML: &str = include_str!("../dist/index.html");
 
 /// Dual-vision graph container serialized for offline standalone bundles.
@@ -47,6 +55,7 @@ fn ensure_system_prompt(graph: &AetherGraph) -> AetherGraph {
 
 /// Generates a standalone self-contained HTML bundle embedding both Code and Vault graphs
 /// for dual-vision mode when generated from Mixed or single-mode projects.
+#[allow(dead_code)]
 pub fn generate_dual_standalone_html(
     code_graph: Option<&AetherGraph>,
     vault_graph: Option<&AetherGraph>,
@@ -85,7 +94,6 @@ pub fn generate_dual_standalone_html(
 }
 
 /// Generates a modern Svelte 5 + Vite standalone HTML bundle (ultra-lightweight ~145 KB)
-#[allow(dead_code)]
 pub fn generate_modern_standalone_html(
     code_graph: Option<&AetherGraph>,
     vault_graph: Option<&AetherGraph>,
@@ -132,6 +140,7 @@ pub fn generate_standalone_html(graph: &AetherGraph) -> String {
     )
 }
 
+#[allow(dead_code)]
 fn assemble_bundle(injection: &str) -> String {
     let combined_js = format!(
         "<script>\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n</script>",

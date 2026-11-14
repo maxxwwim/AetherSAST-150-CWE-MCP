@@ -891,7 +891,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let code_g = state.code_graph.read().await;
                     let vault_g = state.vault_graph.read().await;
                     let g = state.graph.read().await;
-                    let html = viewer::generate_dual_standalone_html(
+                    let html = viewer::generate_modern_standalone_html(
                         code_g.as_ref().or(Some(&*g)),
                         vault_g.as_ref(),
                         p_type,
@@ -1147,7 +1147,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let active_view = state.active_view_mode.read().await.clone();
                     let code_g = state.code_graph.read().await;
                     let vault_g = state.vault_graph.read().await;
-                    let html = viewer::generate_dual_standalone_html(
+                    let html = viewer::generate_modern_standalone_html(
                         code_g.as_ref().or(Some(&*g)),
                         vault_g.as_ref(),
                         p_type,

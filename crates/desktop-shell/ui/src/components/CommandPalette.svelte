@@ -3,6 +3,13 @@
   import { Search, X, Code2, ShieldAlert, Layers } from '@lucide/svelte';
 
   let query = $state('');
+  let searchInputEl = $state<HTMLInputElement | null>(null);
+
+  $effect(() => {
+    if (cockpitState.isCommandPaletteOpen) {
+      setTimeout(() => searchInputEl?.focus(), 10);
+    }
+  });
 
   function onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -53,11 +60,11 @@
       <div class="flex items-center px-3 py-2.5 border-b border-white/10 gap-2.5">
         <Search class="w-4 h-4 text-slate-400" />
         <input
+          bind:this={searchInputEl}
           type="text"
           bind:value={query}
           placeholder="Rechercher un symbole, fonction, fichier..."
           class="flex-1 bg-transparent border-none outline-none text-xs text-white placeholder-slate-500 font-mono"
-          autofocus
         />
         <button
           onclick={() => (cockpitState.isCommandPaletteOpen = false)}

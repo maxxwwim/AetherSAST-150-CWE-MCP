@@ -111,6 +111,8 @@ export class CockpitState {
   graphVersion = $state(0);
   liveConnected = $state(false);
   bountyOutOfScopePatterns = $state<string[]>([]);
+  isScanningProject = $state(false);
+  scanningTargetPath = $state('');
 
   // Live Multi-Agent AI Swarm, MCP & Copilot Telemetry
   activeAgents = $state<{

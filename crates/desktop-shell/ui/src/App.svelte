@@ -109,5 +109,23 @@
     <TasksModal />
     <CreateFileModal />
     <IgnoredCweModal />
+
+    {#if cockpitState.isScanningProject}
+      <div class="fixed inset-0 z-50 bg-[#050811]/80 backdrop-blur-md flex items-center justify-center pointer-events-auto">
+        <div class="w-96 max-w-[90vw] p-6 rounded-2xl bg-[#0c111d] border border-sky-500/40 shadow-[0_20px_60px_rgba(14,165,233,0.35)] flex flex-col items-center text-center gap-3">
+          <div class="w-10 h-10 rounded-full border-2 border-sky-400 border-t-transparent animate-spin"></div>
+          <div class="text-sm font-bold text-white">Analyse AST & Télémétrie SAST en cours...</div>
+          <div class="text-[11px] font-mono text-sky-300 truncate max-w-full px-3 py-1 rounded bg-sky-500/10 border border-sky-500/25">
+            {cockpitState.scanningTargetPath || cockpitState.graph.project_path || '.'}
+          </div>
+          <div class="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div class="h-full w-2/3 bg-gradient-to-r from-sky-500 via-purple-400 to-emerald-400 animate-pulse rounded-full"></div>
+          </div>
+          <div class="text-[10px] font-mono text-slate-400">
+            Extraction Tree-Sitter · Contrats EARS · CWE Top 25 · Enveloppes Cellulaires
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 </div>

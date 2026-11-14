@@ -214,6 +214,8 @@
     const target = (overridePath ?? projectPath).trim() || '.';
     projectPath = target;
     isBusy = true;
+    cockpitState.isScanningProject = true;
+    cockpitState.scanningTargetPath = target;
     feedback = null;
     try {
       const g = await api.analyzeProject(target, cockpitState.settings.exclusions);
@@ -224,6 +226,7 @@
       feedback = { ok: false, text: '❌ Impossible de contacter POST /api/analyze.' };
     } finally {
       isBusy = false;
+      cockpitState.isScanningProject = false;
     }
   }
 

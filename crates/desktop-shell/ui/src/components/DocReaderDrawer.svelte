@@ -326,6 +326,153 @@
     parsedBlocks.filter((b): b is Extract<DocBlock, { type: 'h1' | 'h2' | 'h3' }> => b.type === 'h1' || b.type === 'h2' || b.type === 'h3')
   );
 
+  const readingMetrics = $derived.by(() => {
+    const trimmed = rawMarkdown.trim();
+    const words = trimmed ? trimmed.split(/\s+/).length : 0;
+    const minutes = Math.max(1, Math.ceil(words / 200));
+    const codeBlocks = parsedBlocks.filter((b) => b.type === 'code').length;
+    return {
+      words,
+      minutes,
+      headings: tocHeadings.length,
+      codeBlocks,
+    };
+  });
+
+  // Syntax highlighter tokenizer (multi-language GitHub Dark style, safe spans)
+  const CODE_KEYWORDS = new Set([
+    'fn', 'pub', 'let', 'mut', 'const', 'static', 'async', 'await', 'impl', 'trait', 'struct', 'enum', 'mod', 'use', 'crate', 'self', 'super', 'where', 'match', 'if', 'else', 'for', 'while', 'loop', 'return', 'break', 'continue', 'type', 'unsafe', 'move', 'ref', 'in', 'as',
+    'function', 'class', 'interface', 'extends', 'implements', 'import', 'export', 'from', 'default', 'new', 'this', 'try', 'catch', 'finally', 'throw', 'typeof', 'instanceof', 'void', 'delete',
+    'def', 'elif', 'except', 'lambda', 'pass', 'raise', 'with', 'yield', 'global', 'nonlocal', 'assert', 'None', 'True', 'False',
+    'contract', 'pragma', 'solidity', 'mapping', 'event', 'emit', 'modifier', 'require', 'revert', 'payable', 'view', 'pure', 'external', 'internal', 'public', 'private', 'memory', 'storage', 'calldata',
+    'true', 'false', 'null', 'undefined',
+  ]);
+
+  function tokenizeCodeLine(line: string): { text: string; cls: string }[] {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('//') || trimmed.startsWith('# ') || trimmed.startsWith('--')) {
+      return [{ text: line, cls: 'text-slate-500 italic' }];
+    }
+    const tokens: { text: string; cls: string }[] = [];
+    const regex = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/.*$|\b[A-Za-z_][A-Za-z0-9_]*\b|\b\d+(?:\.\d+)?\b|[{}()[\].,:;+-/*=<>!&|?~]+)/g;
+    let lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(line)) !== null) {
+      if (m.index > lastIndex) {
+        tokens.push({ text: line.slice(lastIndex, m.index), cls: 'text-slate-300' });
+      }
+      const tok = m[0];
+      let cls = 'text-slate-200';
+      if (tok.startsWith('//')) {
+        cls = 'text-slate-500 italic';
+      } else if (tok.startsWith('"') || tok.startsWith("'") || tok.startsWith('`')) {
+        cls = 'text-amber-300';
+      } else if (/^\d/.test(tok)) {
+        cls = 'text-purple-300';
+      } else if (CODE_KEYWORDS.has(tok)) {
+        cls = 'text-pink-400 font-semibold';
+      } else if (/^[A-Z][A-Za-z0-9_]*$/.test(tok)) {
+        cls = 'text-emerald-300';
+      } else if (/^[{}()[\].,:;+-/*=<>!&|?~]+$/.test(tok)) {
+        cls = 'text-sky-300/80';
+      }
+      tokens.push({ text: tok, cls });
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < line.length) {
+      tokens.push({ text: line.slice(lastIndex), cls: 'text-slate-300' });
+    }
+    return tokens.length > 0 ? tokens : [{ text: line, cls: 'text-slate-300' }];
+  }
+
+  // Incoming & Outgoing symbol/folder relations for bottom cards
+  const docRelations = $derived.by(() => {
+    const nodes = cockpitState.graph.nodes || [];
+    const edges = cockpitState.graph.edges || [];
+    if (nodes.length === 0) return { incoming: [], outgoing: [], scopeLabel: '' };
+
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const targetIds = new Set<string>();
+    let scopeLabel = '';
+
+    if (cockpitState.docMode === 'symbol' && cockpitState.activeSymbol) {
+      targetIds.add(cockpitState.activeSymbol.id);
+      scopeLabel = cockpitState.activeSymbol.name;
+    } else {
+      const refPath = (loadedPath || cockpitState.selectedFolder || '').replace(/\\/g, '/');
+      const folderPrefix = refPath.endsWith('.md')
+        ? refPath.includes('/')
+          ? refPath.slice(0, refPath.lastIndexOf('/'))
+          : ''
+        : refPath;
+      scopeLabel = folderPrefix || 'Racine Projet';
+      for (const n of nodes) {
+        const nf = (n.file_path || '').replace(/\\/g, '/');
+        if (!folderPrefix ? !nf.includes('/') : nf === folderPrefix || nf.startsWith(folderPrefix + '/')) {
+          targetIds.add(n.id);
+        }
+      }
+      if (targetIds.size === 0 && cockpitState.activeSymbol) {
+        targetIds.add(cockpitState.activeSymbol.id);
+        scopeLabel = cockpitState.activeSymbol.name;
+      }
+    }
+
+    const incoming: { id: string; name: string; file: string; relation: string }[] = [];
+    const outgoing: { id: string; name: string; file: string; relation: string }[] = [];
+    const seenIn = new Set<string>();
+    const seenOut = new Set<string>();
+
+    for (const e of edges) {
+      const fromId = e.source || (e as any).from;
+      const toId = e.target || (e as any).to;
+      const rel = String(e.relation || 'calls').toUpperCase();
+      if (targetIds.has(toId) && !targetIds.has(fromId) && !seenIn.has(fromId)) {
+        const src = nodeById.get(fromId);
+        if (src) {
+          seenIn.add(fromId);
+          incoming.push({ id: src.id, name: src.name, file: src.file_path || '', relation: rel });
+        }
+      }
+      if (targetIds.has(fromId) && !targetIds.has(toId) && !seenOut.has(toId)) {
+        const dst = nodeById.get(toId);
+        if (dst) {
+          seenOut.add(toId);
+          outgoing.push({ id: dst.id, name: dst.name, file: dst.file_path || '', relation: rel });
+        }
+      }
+    }
+
+    return {
+      incoming: incoming.slice(0, 10),
+      outgoing: outgoing.slice(0, 10),
+      scopeLabel,
+    };
+  });
+
+  function jumpToRelationNode(nodeId: string) {
+    const target = cockpitState.graph.nodes.find((n) => n.id === nodeId);
+    if (target) {
+      cockpitState.selectSymbol(target.id);
+      cockpitState.requestFocusSymbol(target.id);
+      if (cockpitState.docMode === 'symbol') {
+        loadPathContent(target.file_path);
+      }
+    }
+  }
+
+  let autoSaveEnabled = $state(true);
+  let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function triggerDocAutoSave() {
+    if (!autoSaveEnabled || !editMode) return;
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    saveStatus = '⏳ Auto-save (1.5s)...';
+    autoSaveTimer = setTimeout(() => {
+      saveCurrentDoc(true);
+    }, 1500);
+  }
+
   function selectLibraryDoc(path: string) {
     cockpitState.docSelectedPath = path;
     cockpitState.docMode = 'library';
@@ -348,16 +495,17 @@
       editMode = true;
       saveStatus = '';
     } else {
+      if (autoSaveTimer) clearTimeout(autoSaveTimer);
       editMode = false;
     }
   }
 
-  async function saveCurrentDoc() {
+  async function saveCurrentDoc(isAuto = false) {
     const p = loadedPath || cockpitState.activeSymbol?.file_path || 'README.md';
     const parts = p.split('/');
     const fileName = parts.pop() || 'README.md';
     const folder = parts.join('/') || '.';
-    saveStatus = 'Sauvegarde...';
+    saveStatus = isAuto ? 'Auto-sauvegarde...' : 'Sauvegarde...';
     try {
       const res = await api.saveDoc({
         project_path: cockpitState.graph.project_path || '.',
@@ -366,7 +514,11 @@
         content: draftContent,
       });
       loadedContent = draftContent;
-      saveStatus = res.blake3_hash ? `Enregistré (${res.blake3_hash.slice(0, 8)})` : 'Enregistré';
+      saveStatus = res.blake3_hash
+        ? `${isAuto ? '✓ Auto-save' : 'Enregistré'} (${res.blake3_hash.slice(0, 8)})`
+        : isAuto
+          ? '✓ Auto-sauvegardé'
+          : 'Enregistré';
       setTimeout(() => (saveStatus = ''), 3000);
     } catch (e: any) {
       saveStatus = e?.message || 'Erreur sauvegarde';
@@ -587,21 +739,36 @@
       </div>
     {/if}
 
-    <!-- In-Doc Search + Save Status Strip -->
+    <!-- In-Doc Search + Reading Metrics + Save Status Strip -->
     {#if cockpitState.docMode !== 'library' || loadedPath}
-      <div class="px-3 py-1.5 border-b border-white/10 bg-black/30 flex items-center gap-2">
-        <div class="relative flex-1">
-          <Search class="w-3 h-3 text-slate-500 absolute left-2 top-1.5" />
-          <input
-            type="text"
-            bind:value={contentSearch}
-            placeholder="Rechercher dans le document..."
-            class="w-full pl-6 pr-2 py-1 rounded bg-white/[0.04] border border-white/10 text-[10px] text-slate-200 focus:outline-none focus:border-sky-400"
-          />
+      <div class="px-3 py-1.5 border-b border-white/10 bg-black/30 flex flex-col gap-1">
+        <div class="flex items-center gap-2">
+          <div class="relative flex-1">
+            <Search class="w-3 h-3 text-slate-500 absolute left-2 top-1.5" />
+            <input
+              type="text"
+              bind:value={contentSearch}
+              placeholder="Rechercher dans le document..."
+              class="w-full pl-6 pr-2 py-1 rounded bg-white/[0.04] border border-white/10 text-[10px] text-slate-200 focus:outline-none focus:border-sky-400"
+            />
+          </div>
+          {#if saveStatus}
+            <span class="text-[10px] font-mono text-emerald-300 shrink-0">{saveStatus}</span>
+          {/if}
         </div>
-        {#if saveStatus}
-          <span class="text-[10px] font-mono text-emerald-300 shrink-0">{saveStatus}</span>
-        {/if}
+        <div class="flex items-center justify-between text-[9.5px] font-mono text-slate-400">
+          <div class="flex items-center gap-2.5">
+            <span>📖 {readingMetrics.words} mots</span>
+            <span>⏱ ~{readingMetrics.minutes} min</span>
+            <span>📑 {readingMetrics.headings} titres</span>
+            <span>💻 {readingMetrics.codeBlocks} blocs</span>
+          </div>
+          {#if docRelations.incoming.length > 0 || docRelations.outgoing.length > 0}
+            <span class="text-sky-300/90">
+              ⬅ {docRelations.incoming.length} · ➔ {docRelations.outgoing.length} liens
+            </span>
+          {/if}
+        </div>
       </div>
     {/if}
 
@@ -626,13 +793,20 @@
       <div class="flex-1 flex flex-col p-3 gap-2 overflow-hidden">
         <textarea
           bind:value={draftContent}
+          oninput={triggerDocAutoSave}
           class="flex-1 w-full p-3 rounded-lg bg-[#05070e] border border-amber-500/35 font-mono text-[11px] text-slate-100 focus:outline-none resize-none leading-relaxed"
         ></textarea>
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] font-mono text-slate-400">{draftContent.split('\n').length} lignes</span>
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-3 text-[10px] font-mono text-slate-400">
+            <span>{draftContent.split('\n').length} lignes</span>
+            <label class="flex items-center gap-1 cursor-pointer text-emerald-300">
+              <input type="checkbox" bind:checked={autoSaveEnabled} class="accent-emerald-400" />
+              Auto-Save (1.5s)
+            </label>
+          </div>
           <button
             type="button"
-            onclick={saveCurrentDoc}
+            onclick={() => saveCurrentDoc(false)}
             class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-xs font-bold text-slate-950 cursor-pointer"
           >
             <Save class="w-3.5 h-3.5" /> Enregistrer sur Disque
@@ -719,10 +893,12 @@
                 {/if}
               </div>
             {:else}
+              {@const codeLines = block.text.split('\n')}
               <div class="rounded-lg bg-[#06080f] border border-white/10 overflow-hidden">
                 <div class="flex items-center justify-between px-2.5 py-1 bg-white/[0.04] border-b border-white/5 text-[9.5px] font-mono text-slate-400">
-                  <span>{block.lang || 'text'}</span>
-                  <div class="flex items-center gap-1.5">
+                  <span class="px-1.5 py-0.2 rounded bg-sky-500/15 text-sky-300 uppercase font-bold">{block.lang || 'code'}</span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-slate-500">{codeLines.length} L</span>
                     {#if block.lang?.toLowerCase() === 'mermaid'}
                       <button
                         type="button"
@@ -741,13 +917,81 @@
                     </button>
                   </div>
                 </div>
-                <pre class="p-3 font-mono text-[10.5px] text-sky-100 overflow-x-auto whitespace-pre leading-snug">{block.text}</pre>
+                <div class="p-2.5 font-mono text-[10.5px] overflow-x-auto leading-snug">
+                  {#each codeLines as cLine, li}
+                    <div class="flex items-baseline hover:bg-white/[0.02] px-1 rounded">
+                      <span class="w-7 shrink-0 select-none text-right pr-2.5 text-[9px] text-slate-600">{li + 1}</span>
+                      <span class="whitespace-pre">
+                        {#each tokenizeCodeLine(cLine) as tok}
+                          <span class={tok.cls}>{tok.text}</span>
+                        {/each}
+                      </span>
+                    </div>
+                  {/each}
+                </div>
               </div>
             {/if}
           {:else}
             <p class="text-[11.5px] text-slate-300">{block.text}</p>
           {/if}
         {/each}
+
+        <!-- Bottom Incoming & Outgoing Architectural Links Cards -->
+        {#if docRelations.incoming.length > 0 || docRelations.outgoing.length > 0}
+          <div class="mt-4 pt-3 border-t border-white/10 space-y-2.5">
+            <div class="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-emerald-300">
+              <span>🔗 Liaisons Architecturales ({docRelations.scopeLabel})</span>
+              <span class="text-slate-500">Cliquer pour téléporter</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <!-- Incoming Callers / References -->
+              <div class="p-2.5 rounded-lg bg-sky-950/20 border border-sky-500/25 space-y-1.5">
+                <div class="text-[10px] font-mono font-bold text-sky-300">
+                  ⬅ Entrants / Appelants ({docRelations.incoming.length})
+                </div>
+                {#if docRelations.incoming.length === 0}
+                  <div class="text-[10px] font-mono text-slate-500">Aucun appelant externe</div>
+                {:else}
+                  <div class="space-y-1 max-h-36 overflow-y-auto pr-0.5">
+                    {#each docRelations.incoming as item}
+                      <button
+                        type="button"
+                        onclick={() => jumpToRelationNode(item.id)}
+                        class="w-full text-left px-2 py-1 rounded bg-white/[0.03] hover:bg-sky-500/20 border border-white/5 hover:border-sky-400/40 flex items-center justify-between gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <span class="text-[10.5px] font-mono text-slate-200 truncate">{item.name}</span>
+                        <span class="text-[8.5px] font-mono px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 shrink-0">{item.relation}</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Outgoing Calls / Dependencies -->
+              <div class="p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/25 space-y-1.5">
+                <div class="text-[10px] font-mono font-bold text-amber-300">
+                  ➔ Sortants / Dépendances ({docRelations.outgoing.length})
+                </div>
+                {#if docRelations.outgoing.length === 0}
+                  <div class="text-[10px] font-mono text-slate-500">Aucune dépendance sortante</div>
+                {:else}
+                  <div class="space-y-1 max-h-36 overflow-y-auto pr-0.5">
+                    {#each docRelations.outgoing as item}
+                      <button
+                        type="button"
+                        onclick={() => jumpToRelationNode(item.id)}
+                        class="w-full text-left px-2 py-1 rounded bg-white/[0.03] hover:bg-amber-500/20 border border-white/5 hover:border-amber-400/40 flex items-center justify-between gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <span class="text-[10.5px] font-mono text-slate-200 truncate">{item.name}</span>
+                        <span class="text-[8.5px] font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 shrink-0">{item.relation}</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          </div>
+        {/if}
       </div>
     {/if}
   </aside>

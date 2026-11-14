@@ -31,6 +31,41 @@
   let cliFeedback = $state('');
   let chatBodyEl = $state<HTMLDivElement | null>(null);
 
+  // Draggable window offset (relative to default bottom-4 right-4 anchor)
+  let dragOffset = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+  let isDraggingWindow = $state(false);
+  let dragStartPointer = { x: 0, y: 0 };
+  let dragStartOffset = { x: 0, y: 0 };
+
+  function onHeaderPointerDown(e: PointerEvent) {
+    if ((e.target as HTMLElement)?.closest('button')) return;
+    isDraggingWindow = true;
+    dragStartPointer = { x: e.clientX, y: e.clientY };
+    dragStartOffset = { ...dragOffset };
+    window.addEventListener('pointermove', onWindowPointerMove);
+    window.addEventListener('pointerup', onWindowPointerUp);
+  }
+
+  function onWindowPointerMove(e: PointerEvent) {
+    if (!isDraggingWindow) return;
+    const dx = e.clientX - dragStartPointer.x;
+    const dy = e.clientY - dragStartPointer.y;
+    dragOffset = {
+      x: Math.max(-window.innerWidth + 140, Math.min(80, dragStartOffset.x + dx)),
+      y: Math.max(-window.innerHeight + 100, Math.min(80, dragStartOffset.y + dy)),
+    };
+  }
+
+  function onWindowPointerUp() {
+    isDraggingWindow = false;
+    window.removeEventListener('pointermove', onWindowPointerMove);
+    window.removeEventListener('pointerup', onWindowPointerUp);
+  }
+
+  function resetWindowPosition() {
+    dragOffset = { x: 0, y: 0 };
+  }
+
   function scrollToBottom() {
     if (chatBodyEl) {
       requestAnimationFrame(() => {
@@ -248,10 +283,17 @@
 {#if cockpitState.isChatOpen}
   <aside
     aria-label="Copilot IA, Agents & MCP"
-    class="fixed bottom-4 right-4 z-50 w-[400px] max-w-[95vw] {minimized ? 'h-11' : 'h-[500px] max-h-[80vh]'} bg-[#0b0e18]/96 backdrop-blur-2xl border border-purple-500/35 rounded-2xl shadow-[0_20px_60px_rgba(88,28,135,0.45)] flex flex-col overflow-hidden transition-all"
+    style="transform: translate3d({dragOffset.x}px, {dragOffset.y}px, 0);"
+    class="fixed bottom-4 right-4 z-50 w-[400px] max-w-[95vw] {minimized ? 'h-11' : 'h-[500px] max-h-[80vh]'} bg-[#0b0e18]/96 backdrop-blur-2xl border border-purple-500/35 rounded-2xl shadow-[0_20px_60px_rgba(88,28,135,0.45)] flex flex-col overflow-hidden {isDraggingWindow ? '' : 'transition-all'}"
   >
-    <!-- Header -->
-    <div class="px-3 py-2 border-b border-white/10 bg-[#120d22] flex items-center justify-between gap-2 shrink-0">
+    <!-- Header (Draggable Handle) -->
+    <div
+      onpointerdown={onHeaderPointerDown}
+      role="toolbar"
+      tabindex="-1"
+      title="Glisser pour déplacer la fenêtre Copilot IA"
+      class="px-3 py-2 border-b border-white/10 bg-[#120d22] flex items-center justify-between gap-2 shrink-0 cursor-move select-none"
+    >
       <div class="flex items-center gap-2 min-w-0">
         <Bot class="w-4 h-4 text-purple-400 shrink-0" />
         <span class="text-xs font-bold text-white truncate">Copilot IA & Agents</span>
@@ -265,6 +307,16 @@
       </div>
 
       <div class="flex items-center gap-1 shrink-0">
+        {#if dragOffset.x !== 0 || dragOffset.y !== 0}
+          <button
+            type="button"
+            onclick={resetWindowPosition}
+            class="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[9px] font-mono text-slate-300 cursor-pointer"
+            title="Réinitialiser la position de la fenêtre"
+          >
+            Ancrer
+          </button>
+        {/if}
         <button
           type="button"
           onclick={() => (cockpitState.isMcpModalOpen = true)}
