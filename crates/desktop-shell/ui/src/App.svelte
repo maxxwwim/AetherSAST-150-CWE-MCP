@@ -224,6 +224,7 @@
           const tasks = await api.getTasks();
           if (Array.isArray(tasks)) {
             cockpitState.tasks = tasks;
+            cockpitState.syncTaskAgentsToTelemetry(tasks);
           }
         } catch {
           // offline or quiet tasks

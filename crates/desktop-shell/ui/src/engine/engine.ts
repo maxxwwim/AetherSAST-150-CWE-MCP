@@ -1271,110 +1271,41 @@ export class AetherEngine {
     ctx.save();
     const zoom = this.camera.zoom;
 
-    // Count agents per target node for orbital distribution
+    // Palette of vibrant neon colors guaranteed to be visually distinct
+    const DISTINCT_PALETTE = [
+      '#38bdf8', // Sky Cyan
+      '#f97316', // Neon Orange
+      '#c084fc', // Cosmic Purple
+      '#34d399', // Emerald Mint
+      '#f43f5e', // Hot Coral Rose
+      '#eab308', // Solar Amber
+      '#a855f7', // Electric Violet
+      '#06b6d4', // Bright Turquoise
+      '#ec4899', // Hyper Pink
+      '#84cc16', // Toxic Lime
+      '#6366f1', // Ultra Indigo
+      '#14b8a6', // Deep Teal
+      '#fb923c', // Tangerine
+      '#e879f9', // Orchid Fuchsia
+      '#10b981', // Spring Green
+      '#3b82f6', // Cobalt Blue
+    ];
+
+    // Pre-pass: Resolve target bubble and assign unique color for each agent
+    interface ActiveAgentVisual {
+      ag: (typeof agents)[0];
+      targetNode: SymbolBubble;
+      agColor: string;
+      agNameLower: string;
+      agentCleanName: string;
+    }
+
+    const resolvedList: ActiveAgentVisual[] = [];
     const agentsByNode = new Map<string, number>();
-    agents.forEach((ag) => {
-      const targetId = ag.nodeId;
-      if (targetId) {
-        agentsByNode.set(targetId, (agentsByNode.get(targetId) || 0) + 1);
-      }
-    });
-
-    const nodeAgentCounter = new Map<string, number>();
-
-    // 3D inclined celestial orbit constants:
-    // Tilt alpha = 35° (0.6108 rad), inclination psi = 25° (0.4363 rad)
-    const TILT_ALPHA = 0.610865;
-    const INCLINATION_PSI = 0.436332;
-    const cosAlpha = Math.cos(TILT_ALPHA);
-    const cosPsi = Math.cos(INCLINATION_PSI);
-    const sinPsi = Math.sin(INCLINATION_PSI);
-    const omega = 0.0018;
+    const assignedColors = new Set<string>();
 
     for (let idx = 0; idx < agents.length; idx++) {
       const ag = agents[idx];
-      const agNameLower = (ag.agentName || ag.agentId || '').toLowerCase();
-      let agColor = ag.color;
-      if (!agColor || agColor.trim() === '') {
-        if (agNameLower.includes('claude')) agColor = '#f97316';
-        else if (agNameLower.includes('gemini')) agColor = '#38bdf8';
-        else if (agNameLower.includes('cursor')) agColor = '#10b981';
-        else if (agNameLower.includes('antigravity')) agColor = '#a3e635';
-        else agColor = '#c084fc';
-      }
-
-      // 1. Trail path & waypoint nodes rendering
-      const agTrail = trails[ag.agentId] || [];
-      if (this.state.settings.aiTrail && agTrail.length > 0) {
-        const validPoints: { s: { x: number; y: number }; pt: typeof agTrail[0]; step: number }[] = [];
-        let stepCount = 0;
-        for (const pt of agTrail) {
-          const node = pt.nodeId ? this.nodeMap.get(pt.nodeId) : null;
-          const wx = node ? node.x : pt.x;
-          const wy = node ? node.y : pt.y;
-          if (wx == null || wy == null) continue;
-          stepCount++;
-          validPoints.push({ s: this.worldToScreen(wx, wy), pt, step: stepCount });
-        }
-
-        if (validPoints.length > 1) {
-          // Pass 1: Glowing under-line
-          ctx.beginPath();
-          ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
-          for (let i = 1; i < validPoints.length; i++) {
-            ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
-          }
-          ctx.strokeStyle = agColor;
-          ctx.lineWidth = Math.max(2.5, 4.0 * Math.sqrt(zoom));
-          ctx.shadowColor = agColor;
-          ctx.shadowBlur = 8;
-          ctx.globalAlpha = 0.25;
-          ctx.stroke();
-
-          // Pass 2: Animated dashed core
-          ctx.beginPath();
-          ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
-          for (let i = 1; i < validPoints.length; i++) {
-            ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
-          }
-          ctx.setLineDash([7, 5]);
-          ctx.lineDashOffset = -(now * 0.024);
-          ctx.strokeStyle = agColor;
-          ctx.shadowColor = agColor;
-          ctx.shadowBlur = 4;
-          ctx.globalAlpha = 0.85;
-          ctx.lineWidth = Math.max(1.4, 2.2 * Math.sqrt(zoom));
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-
-        // Pass 3: Draw waypoint markers on visited locations
-        for (let i = 0; i < validPoints.length; i++) {
-          const wp = validPoints[i];
-          const isLatest = i === validPoints.length - 1;
-          const wpRadius = isLatest ? 4.5 : 3.0;
-
-          ctx.beginPath();
-          ctx.arc(wp.s.x, wp.s.y, wpRadius, 0, Math.PI * 2);
-          ctx.fillStyle = isLatest ? '#ffffff' : agColor;
-          ctx.shadowColor = agColor;
-          ctx.shadowBlur = isLatest ? 8 : 4;
-          ctx.globalAlpha = isLatest ? 0.95 : 0.65;
-          ctx.fill();
-
-          if (isLatest) {
-            ctx.beginPath();
-            ctx.arc(wp.s.x, wp.s.y, wpRadius + 2.5 + Math.sin(now * 0.005) * 1.2, 0, Math.PI * 2);
-            ctx.strokeStyle = agColor;
-            ctx.lineWidth = 1.0;
-            ctx.globalAlpha = 0.75;
-            ctx.stroke();
-          }
-        }
-        ctx.globalAlpha = 1.0;
-      }
-
-      // 2. Resolve target bubble position in world space (X_N, Y_N)
       let targetNode: SymbolBubble | undefined;
       if (ag.nodeId) {
         targetNode = this.nodeMap.get(ag.nodeId);
@@ -1382,31 +1313,194 @@ export class AetherEngine {
       if (!targetNode && ag.target) {
         targetNode = this.state.resolveTargetNode(ag.target);
       }
+      if (!targetNode && this.state.activeSymbol) {
+        targetNode = this.state.activeSymbol;
+      }
       if (!targetNode) continue;
+
+      let agColor = ag.color;
+      if (!agColor || assignedColors.has(agColor)) {
+        agColor = DISTINCT_PALETTE[idx % DISTINCT_PALETTE.length];
+      }
+      assignedColors.add(agColor);
+
+      const agNameLower = (ag.agentName || ag.agentId || '').toLowerCase();
+      const agentCleanName = ag.agentName || ag.agentId || 'Agent';
+
+      resolvedList.push({ ag, targetNode, agColor, agNameLower, agentCleanName });
+      agentsByNode.set(targetNode.id, (agentsByNode.get(targetNode.id) || 0) + 1);
+    }
+
+    if (resolvedList.length === 0) {
+      ctx.restore();
+      return;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 1. RENDER INTER-BUBBLE NAVIGATION TRAJECTORIES (UNE COULEUR PAR IA)
+    // ─────────────────────────────────────────────────────────────────────────
+    if (this.state.settings.aiTrail) {
+      for (let idx = 0; idx < resolvedList.length; idx++) {
+        const { ag, targetNode, agColor } = resolvedList[idx];
+        const agTrail = trails[ag.agentId] || [];
+
+        const validPoints: { s: { x: number; y: number }; wx: number; wy: number; step: number }[] = [];
+        let stepCount = 0;
+
+        for (const pt of agTrail) {
+          let node = pt.nodeId ? this.nodeMap.get(pt.nodeId) : null;
+          if (!node && pt.target) node = this.state.resolveTargetNode(pt.target);
+          const wx = node ? node.x : pt.x;
+          const wy = node ? node.y : pt.y;
+          if (wx == null || wy == null) continue;
+          stepCount++;
+          validPoints.push({ s: this.worldToScreen(wx, wy), wx, wy, step: stepCount });
+        }
+
+        // Connect the trail directly to the current target bubble if not already the final point
+        const lastPt = validPoints[validPoints.length - 1];
+        if (!lastPt || Math.hypot(lastPt.wx - targetNode.x, lastPt.wy - targetNode.y) > 1.0) {
+          validPoints.push({
+            s: this.worldToScreen(targetNode.x, targetNode.y),
+            wx: targetNode.x,
+            wy: targetNode.y,
+            step: validPoints.length + 1,
+          });
+        }
+
+        if (validPoints.length > 1) {
+          // Pass 1: Diffused colored glow path
+          ctx.beginPath();
+          ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
+          for (let i = 1; i < validPoints.length; i++) {
+            ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
+          }
+          ctx.strokeStyle = agColor;
+          ctx.lineWidth = Math.max(2.5, 4.5 * Math.sqrt(zoom));
+          ctx.shadowColor = agColor;
+          ctx.shadowBlur = 10;
+          ctx.globalAlpha = 0.30;
+          ctx.stroke();
+
+          // Pass 2: Animated marching dashed core
+          ctx.beginPath();
+          ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
+          for (let i = 1; i < validPoints.length; i++) {
+            ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
+          }
+          ctx.setLineDash([8, 6]);
+          ctx.lineDashOffset = -(now * 0.026 + idx * 4);
+          ctx.strokeStyle = agColor;
+          ctx.shadowColor = agColor;
+          ctx.shadowBlur = 5;
+          ctx.globalAlpha = 0.90;
+          ctx.lineWidth = Math.max(1.5, 2.4 * Math.sqrt(zoom));
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Pass 3: Traveling photon energy pulses along the trajectory toward the current bubble
+          ctx.shadowColor = agColor;
+          ctx.shadowBlur = 8;
+          for (let seg = 0; seg < validPoints.length - 1; seg++) {
+            const p0 = validPoints[seg].s;
+            const p1 = validPoints[seg + 1].s;
+            const segDist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+            if (segDist < 10) continue;
+
+            // 1-2 pulses per segment
+            for (let b = 0; b < 2; b++) {
+              const u = ((now * 0.0018 + b * 0.5 + idx * 0.33) % 1.0 + 1.0) % 1.0;
+              const bx = p0.x + (p1.x - p0.x) * u;
+              const by = p0.y + (p1.y - p0.y) * u;
+
+              ctx.beginPath();
+              ctx.arc(bx, by, Math.max(1.8, 3.0 * Math.sqrt(zoom)), 0, Math.PI * 2);
+              ctx.fillStyle = '#ffffff';
+              ctx.globalAlpha = 0.95;
+              ctx.fill();
+
+              // Subtle arrow / chevrons in the travel direction
+              const angle = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+              ctx.save();
+              ctx.translate(bx, by);
+              ctx.rotate(angle);
+              ctx.beginPath();
+              ctx.moveTo(-4, -3);
+              ctx.lineTo(2, 0);
+              ctx.lineTo(-4, 3);
+              ctx.strokeStyle = agColor;
+              ctx.lineWidth = 1.2;
+              ctx.globalAlpha = 0.75;
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+
+          // Pass 4: Waypoint markers on visited bubbles
+          for (let i = 0; i < validPoints.length; i++) {
+            const wp = validPoints[i];
+            const isLatest = i === validPoints.length - 1;
+            const wpRadius = isLatest ? 4.5 : 3.2;
+
+            ctx.beginPath();
+            ctx.arc(wp.s.x, wp.s.y, wpRadius, 0, Math.PI * 2);
+            ctx.fillStyle = isLatest ? '#ffffff' : agColor;
+            ctx.shadowColor = agColor;
+            ctx.shadowBlur = isLatest ? 9 : 4;
+            ctx.globalAlpha = isLatest ? 0.95 : 0.70;
+            ctx.fill();
+
+            if (isLatest) {
+              ctx.beginPath();
+              ctx.arc(wp.s.x, wp.s.y, wpRadius + 3.0 + Math.sin(now * 0.005) * 1.5, 0, Math.PI * 2);
+              ctx.strokeStyle = agColor;
+              ctx.lineWidth = 1.2;
+              ctx.globalAlpha = 0.85;
+              ctx.stroke();
+            }
+          }
+          ctx.globalAlpha = 1.0;
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 2. RENDER MULTI-AGENT ORBITS ON THE BUBBLE SIMULTANEOUSLY
+    // ─────────────────────────────────────────────────────────────────────────
+    const nodeAgentCounter = new Map<string, number>();
+
+    // 3D inclined celestial orbit constants base:
+    const TILT_ALPHA = 0.610865;   // ~35°
+    const INCLINATION_PSI = 0.436332; // ~25°
+    const omega = 0.0018;
+
+    for (let idx = 0; idx < resolvedList.length; idx++) {
+      const { ag, targetNode, agColor, agNameLower, agentCleanName } = resolvedList[idx];
 
       const totalOnNode = agentsByNode.get(targetNode.id) || 1;
       const subIdx = nodeAgentCounter.get(targetNode.id) || 0;
       nodeAgentCounter.set(targetNode.id, subIdx + 1);
 
-      // Phase spacing for agents orbiting the same node
-      const phiAgent = (subIdx / totalOnNode) * (Math.PI * 2) + (idx * 0.618);
-      const theta = (now * omega) + phiAgent;
+      // Phase spacing: uniformly distribute agents around this bubble
+      const phiAgent = (subIdx / totalOnNode) * (Math.PI * 2);
 
-      // 3. Orbit radius in world space: R_orbit = R_node * 2.85 + 24.0
+      // Tiered radius per agent on the same bubble so they have distinct orbital shells
       const { baseRadius } = this.classifyNode(targetNode);
-      const orbitR = baseRadius * 2.85 + 24.0;
+      const orbitR = (baseRadius * 2.5 + 24.0) + (subIdx * 14.0);
 
-      // 3D celestial coordinates calculation in world space:
-      // In orbital plane: x_plane = R * cos(theta), y_plane = R * sin(theta)
-      // Tilt alpha = 35° around X-axis: x1 = x_plane, y1 = y_plane * cos(alpha)
-      // Inclination psi = 25° in (x, y) plane:
-      // x_rot = x1 * cos(psi) - y1 * sin(psi)
-      // y_rot = x1 * sin(psi) + y1 * cos(psi)
-      const xPlane = orbitR * Math.cos(theta);
-      const yPlane = orbitR * Math.sin(theta) * cosAlpha;
-      const xRot = xPlane * cosPsi - yPlane * sinPsi;
-      const yRot = xPlane * sinPsi + yPlane * cosPsi;
+      // Distinct 3D orbital plane tilt and inclination per agent on this bubble
+      const tiltAlpha = TILT_ALPHA + (subIdx * (Math.PI / Math.max(2, totalOnNode * 2)));
+      const inclinationPsi = INCLINATION_PSI + (subIdx * (Math.PI / Math.max(1, totalOnNode)));
+      const cosAlpha = Math.cos(tiltAlpha);
+      const cosPsi = Math.cos(inclinationPsi);
+      const sinPsi = Math.sin(inclinationPsi);
 
+      // Alternating orbital revolution direction and speed
+      const dir = (subIdx % 2 === 0 ? 1 : -0.85);
+      const agentOmega = omega + (subIdx * 0.0002);
+      const theta = (now * agentOmega * dir) + phiAgent;
+
+      // Smooth camera anchor position with easing when switching targets
       let anchorX = targetNode.x;
       let anchorY = targetNode.y;
       if (ag.prevX !== undefined && ag.prevY !== undefined && ag.moveStartTs) {
@@ -1420,17 +1514,49 @@ export class AetherEngine {
         }
       }
 
+      // ───────────────────────────────────────────────────────────────────────
+      // A. DRAW ORBITAL TRAJECTORY RING ON THE BUBBLE IN THIS IA'S COLOR
+      // ───────────────────────────────────────────────────────────────────────
+      ctx.save();
+      ctx.beginPath();
+      const ORBIT_SAMPLES = 36;
+      for (let s = 0; s <= ORBIT_SAMPLES; s++) {
+        const a = (s / ORBIT_SAMPLES) * Math.PI * 2;
+        const xP = orbitR * Math.cos(a);
+        const yP = orbitR * Math.sin(a) * cosAlpha;
+        const xR = xP * cosPsi - yP * sinPsi;
+        const yR = xP * sinPsi + yP * cosPsi;
+        const p = this.worldToScreen(anchorX + xR, anchorY + yR);
+        if (s === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = agColor;
+      ctx.lineWidth = Math.max(1.0, 1.6 * Math.sqrt(zoom));
+      ctx.globalAlpha = 0.38;
+      ctx.shadowColor = agColor;
+      ctx.shadowBlur = 6;
+      ctx.setLineDash([6, 6]);
+      ctx.lineDashOffset = -(now * 0.018 * dir);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Current avatar 3D position in orbit
+      const xPlane = orbitR * Math.cos(theta);
+      const yPlane = orbitR * Math.sin(theta) * cosAlpha;
+      const xRot = xPlane * cosPsi - yPlane * sinPsi;
+      const yRot = xPlane * sinPsi + yPlane * cosPsi;
+
       const xOrbWorld = anchorX + xRot;
       const yOrbWorld = anchorY + yRot;
 
-      // 4. Smoothly project to screen coordinates using worldToScreen
       const pOrb = this.worldToScreen(xOrbWorld, yOrbWorld);
       const pNode = this.worldToScreen(anchorX, anchorY);
 
-      // Culling
+      // Screen culling
       if (
-        pOrb.x < -120 || pOrb.x > this.logicalWidth + 120 ||
-        pOrb.y < -120 || pOrb.y > this.logicalHeight + 120
+        pOrb.x < -140 || pOrb.x > this.logicalWidth + 140 ||
+        pOrb.y < -140 || pOrb.y > this.logicalHeight + 140
       ) {
         continue;
       }
@@ -1443,11 +1569,13 @@ export class AetherEngine {
       const impactDist = Math.max(0, targetR * 0.45);
       const pImpact = {
         x: pNode.x - (dx / len) * impactDist,
-        y: pNode.y - (dy / len) * impactDist
+        y: pNode.y - (dy / len) * impactDist,
       };
 
-      // 5. Multi-Pass Connecting Laser Beam from avatar to target bubble surface:
-      // Pass 1: Diffused colored glow aura (lineWidth = 3.5 * Math.sqrt(zoom), globalAlpha = 0.35)
+      // ───────────────────────────────────────────────────────────────────────
+      // B. CONNECTING LASER BEAM FROM AVATAR TO BUBBLE SURFACE
+      // ───────────────────────────────────────────────────────────────────────
+      // Pass 1: Diffused colored glow aura
       ctx.beginPath();
       ctx.moveTo(pOrb.x, pOrb.y);
       ctx.lineTo(pImpact.x, pImpact.y);
@@ -1458,7 +1586,7 @@ export class AetherEngine {
       ctx.globalAlpha = 0.35;
       ctx.stroke();
 
-      // Pass 2: High-intensity inner white laser core (lineWidth = 1.2, globalAlpha = 0.95)
+      // Pass 2: High-intensity inner white laser core
       ctx.beginPath();
       ctx.moveTo(pOrb.x, pOrb.y);
       ctx.lineTo(pImpact.x, pImpact.y);
@@ -1469,7 +1597,7 @@ export class AetherEngine {
       ctx.globalAlpha = 0.95;
       ctx.stroke();
 
-      // Pass 3: 3 traveling photon beads animated along the vector
+      // Pass 3: 3 traveling photon beads animated along the laser beam
       ctx.shadowColor = agColor;
       ctx.shadowBlur = 6;
       for (let b = 0; b < 3; b++) {
@@ -1484,7 +1612,7 @@ export class AetherEngine {
       }
 
       // Pass 4: Concentric circular scanning reticle on bubble surface with animated rotation
-      const reticleAngle = now * 0.0035 + idx;
+      const reticleAngle = now * 0.0035 + (subIdx * 1.5);
       const reticleRadius = Math.max(5, Math.min(14, 6 * Math.sqrt(Math.max(0.3, zoom))));
       ctx.save();
       ctx.translate(pImpact.x, pImpact.y);
@@ -1513,8 +1641,10 @@ export class AetherEngine {
       ctx.stroke();
       ctx.restore();
 
-      // 6. Stellar Avatar Orb at (pOrb.x, pOrb.y):
-      // Layer 2: Colored luminous corona (radius 9px, glowing radial gradient)
+      // ───────────────────────────────────────────────────────────────────────
+      // C. STELLAR AVATAR ORB AT (pOrb.x, pOrb.y)
+      // ───────────────────────────────────────────────────────────────────────
+      // Layer 2: Colored luminous corona
       const coronaGrad = ctx.createRadialGradient(pOrb.x, pOrb.y, 1, pOrb.x, pOrb.y, 16);
       coronaGrad.addColorStop(0, '#ffffff');
       coronaGrad.addColorStop(0.35, agColor);
@@ -1527,10 +1657,10 @@ export class AetherEngine {
       ctx.fill();
 
       // Layer 3: Spinning accretion ring / halo with animated rotation angle
-      const haloR = 9.0 + Math.sin(now * 0.0032 + idx) * 1.5;
+      const haloR = 9.0 + Math.sin(now * 0.0032 + subIdx) * 1.5;
       ctx.save();
       ctx.translate(pOrb.x, pOrb.y);
-      ctx.rotate(now * 0.003 + idx * 1.2);
+      ctx.rotate(now * 0.003 + subIdx * 1.2);
       ctx.beginPath();
       ctx.ellipse(0, 0, haloR, haloR * 0.45, 0, 0, Math.PI * 2);
       ctx.strokeStyle = agColor;
@@ -1541,7 +1671,7 @@ export class AetherEngine {
       ctx.stroke();
       ctx.restore();
 
-      // Layer 1: White-hot core nucleus (radius 4.5px, #ffffff)
+      // Layer 1: White-hot core nucleus
       ctx.beginPath();
       ctx.arc(pOrb.x, pOrb.y, 4.5, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
@@ -1550,25 +1680,27 @@ export class AetherEngine {
       ctx.globalAlpha = 1.0;
       ctx.fill();
 
-      // 7. Billboard Badge floating above cursor (pOrb.x, pOrb.y - 18)
+      // ───────────────────────────────────────────────────────────────────────
+      // D. BILLBOARD BADGE (STAGGERED VERTICALLY SO SIMULTANEOUS BADGES DON'T CLASH)
+      // ───────────────────────────────────────────────────────────────────────
       const agentIcon = agNameLower.includes('claude') ? '✨'
         : agNameLower.includes('gemini') ? '⚡'
         : agNameLower.includes('cursor') ? '🎯'
         : agNameLower.includes('antigravity') ? '🪐'
         : '🤖';
-      const agentCleanName = ag.agentName || ag.agentId || 'Agent';
       const actionText = ag.action || 'Auditing AST';
       const tagText = `${agentIcon} ${agentCleanName} · ${actionText}`;
 
       ctx.font = '600 10px ui-sans-serif, system-ui, -apple-system, sans-serif';
       const tw = ctx.measureText(tagText).width + 16;
       const badgeH = 19;
-      const badgeY = pOrb.y - 18;
+      // Stagger vertical offset per agent on the node to prevent overlapping badges!
+      const badgeY = pOrb.y - 18 - ((subIdx % 2) * 18);
 
       // Glassmorphic pill badge
       ctx.fillStyle = 'rgba(10, 14, 26, 0.90)';
       ctx.strokeStyle = agColor;
-      ctx.lineWidth = 1.1;
+      ctx.lineWidth = 1.2;
       ctx.shadowColor = agColor;
       ctx.shadowBlur = 6;
       ctx.globalAlpha = 0.95;

@@ -341,19 +341,32 @@ export class CockpitState {
     }
   }
 
-  private resolveAgentColor(agentId: string, customColor?: string, agentName?: string): string {
+  resolveAgentColor(agentId?: string, customColor?: string, agentName?: string, indexOffset = 0): string {
     if (customColor && customColor.trim()) return customColor.trim();
     const palette = [
-      '#38bdf8', '#c084fc', '#34d399', '#f472b6',
-      '#f59e0b', '#a3e635', '#22d3ee', '#fb7185',
-      '#818cf8', '#fb923c', '#2dd4bf', '#e879f9'
+      '#38bdf8', // Cyan (Sky)
+      '#f97316', // Orange (Fire)
+      '#c084fc', // Purple (Cosmic)
+      '#34d399', // Emerald (Bio)
+      '#f43f5e', // Rose (Neon)
+      '#eab308', // Amber (Solar)
+      '#a855f7', // Violet
+      '#06b6d4', // Bright Turquoise
+      '#ec4899', // Hot Pink
+      '#84cc16', // Toxic Lime
+      '#6366f1', // Indigo
+      '#14b8a6', // Teal
+      '#fb923c', // Tangerine
+      '#e879f9', // Fuchsia
+      '#10b981', // Green
+      '#3b82f6', // Electric Blue
     ];
     const key = (agentId || agentName || 'primary-agent').trim().toLowerCase();
     let hash = 0;
     for (let i = 0; i < key.length; i++) {
       hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
     }
-    return palette[hash % palette.length];
+    return palette[(hash + indexOffset) % palette.length];
   }
 
   resolveTargetNode(target: string): SymbolBubble | undefined {
@@ -377,6 +390,14 @@ export class CockpitState {
     hit = this.graph.nodes.find(
       (n) => n.name.toLowerCase() === baseNameLower
     );
+    if (hit) return hit;
+
+    // 2b. Exact or partial match with :: converted to / or _
+    const slashClean = clean.replace(/::/g, '/').toLowerCase();
+    hit = this.graph.nodes.find((n) => {
+      const np = (n.file_path || '').replace(/\\/g, '/').toLowerCase();
+      return np === slashClean || np.endsWith('/' + slashClean) || np.includes(slashClean) || slashClean.includes(np);
+    });
     if (hit) return hit;
 
     // 3. File path ends with or equals
@@ -442,6 +463,30 @@ export class CockpitState {
     }
   }
 
+  syncTaskAgentsToTelemetry(tasks: TaskItem[]) {
+    if (!tasks || tasks.length === 0) return;
+    const taskAgents: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[] = [];
+    for (const t of tasks) {
+      if (t.status === 'done' || t.status === 'cancelled') continue;
+      const target = t.target_symbol || t.target_file;
+      if (!target) continue;
+      const agentId = t.agent_id || (t.agent_name ? t.agent_name.toLowerCase().replace(/\s+/g, '-') : t.author ? t.author.toLowerCase().replace(/\s+/g, '-') : `task-agent-${t.id}`);
+      const agentName = t.agent_name || (t.author && t.author !== 'model' ? t.author : `Agent (${t.title.slice(0, 16)})`);
+      taskAgents.push({
+        target,
+        action: `Mission: ${t.kind}`,
+        details: `${t.title} (${t.progress || 0}%)`,
+        timestamp: Date.now(),
+        agent_id: agentId,
+        agent_name: agentName,
+        color: t.color,
+      });
+    }
+    if (taskAgents.length > 0) {
+      this.recordAiTelemetry(taskAgents[0], taskAgents);
+    }
+  }
+
   recordAiTelemetry(
     ev: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string },
     agentsList?: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[],
@@ -453,8 +498,13 @@ export class CockpitState {
     let anyNew = false;
     let latestAutoFocusId: string | null = null;
     const nextTrails = { ...this.agentTrails };
-    const nextActive: typeof this.activeAgents = [];
     const mergedGlobalTrail = [...this.aiTrail];
+
+    // Seed activeMap with all existing active agents so none are discarded!
+    const activeMap = new Map<string, (typeof this.activeAgents)[0]>();
+    for (const ag of this.activeAgents) {
+      activeMap.set(ag.agentId, ag);
+    }
 
     // Reconstruct history if provided from backend cache
     if (historyList && historyList.length > 0) {
@@ -480,7 +530,7 @@ export class CockpitState {
               x: hit?.x,
               y: hit?.y,
             },
-          ].slice(-24);
+          ].slice(-32);
         }
 
         if (!mergedGlobalTrail.some((p) => Math.abs(p.timestamp - normTs) <= 1000 && p.target === hist.target && p.agentName === aname)) {
@@ -512,14 +562,14 @@ export class CockpitState {
       const color = this.resolveAgentColor(agentId, item.color, agentName);
       const hit = this.resolveTargetNode(item.target);
 
-      const existingActive = this.activeAgents.find((a) => a.agentId === agentId);
+      const existingActive = activeMap.get(agentId) || this.activeAgents.find((a) => a.agentId === agentId);
       let prevX = existingActive?.targetX;
       let prevY = existingActive?.targetY;
       let targetX = hit?.x;
       let targetY = hit?.y;
       let moveStartTs = (prevX !== undefined && targetX !== undefined && (prevX !== targetX || prevY !== targetY)) ? Date.now() : existingActive?.moveStartTs;
 
-      nextActive.push({
+      activeMap.set(agentId, {
         agentId,
         agentName,
         color,
@@ -552,7 +602,7 @@ export class CockpitState {
             x: hit?.x,
             y: hit?.y,
           },
-        ].slice(-24);
+        ].slice(-32);
 
         if (!mergedGlobalTrail.some((p) => Math.abs(p.timestamp - normTs) <= 1000 && p.target === item.target && p.agentName === agentName)) {
           mergedGlobalTrail.push({
@@ -570,9 +620,22 @@ export class CockpitState {
       }
     }
 
-    this.activeAgents = nextActive.sort((a, b) => b.timestamp - a.timestamp);
+    const sortedActive = Array.from(activeMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+    // Guarantee 100% unique, distinct color per active agent ("une couleur par IA")
+    const usedColors = new Set<string>();
+    for (let i = 0; i < sortedActive.length; i++) {
+      const ag = sortedActive[i];
+      let c = ag.color;
+      if (!c || usedColors.has(c)) {
+        c = this.resolveAgentColor(ag.agentId, undefined, ag.agentName, i);
+      }
+      usedColors.add(c);
+      ag.color = c;
+    }
+
+    this.activeAgents = sortedActive;
     this.agentTrails = nextTrails;
-    this.aiTrail = mergedGlobalTrail.slice(-48);
+    this.aiTrail = mergedGlobalTrail.slice(-64);
     this.saveLocalAiCache();
 
     const head = this.activeAgents[0];

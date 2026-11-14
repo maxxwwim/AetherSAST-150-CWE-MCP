@@ -49,6 +49,21 @@ pub fn generate_dual_standalone_html(
     generate_modern_standalone_html(code_graph, vault_graph, project_type, active_view)
 }
 
+fn get_dist_index_html() -> std::borrow::Cow<'static, str> {
+    for path in &[
+        "crates/desktop-shell/dist/index.html",
+        "dist/index.html",
+        "../dist/index.html",
+    ] {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if !content.trim().is_empty() {
+                return std::borrow::Cow::Owned(content);
+            }
+        }
+    }
+    std::borrow::Cow::Borrowed(DIST_INDEX_HTML)
+}
+
 /// Generates a modern Svelte 5 + Vite standalone HTML bundle (ultra-lightweight ~145 KB)
 pub fn generate_modern_standalone_html(
     code_graph: Option<&AetherGraph>,
@@ -111,22 +126,23 @@ pub fn generate_modern_standalone_html(
         safe_dual_json, worker_json, active_key
     );
 
-    if let Some(pos) = DIST_INDEX_HTML.rfind("<div id=\"app\"></div>") {
-        let mut out = String::with_capacity(DIST_INDEX_HTML.len() + injection.len() + 16);
-        out.push_str(&DIST_INDEX_HTML[..pos]);
+    let dist_html = get_dist_index_html();
+    if let Some(pos) = dist_html.rfind("<div id=\"app\"></div>") {
+        let mut out = String::with_capacity(dist_html.len() + injection.len() + 16);
+        out.push_str(&dist_html[..pos]);
         out.push_str(&injection);
         out.push_str("\n    ");
-        out.push_str(&DIST_INDEX_HTML[pos..]);
+        out.push_str(&dist_html[pos..]);
         out
-    } else if let Some(pos) = DIST_INDEX_HTML.rfind("<body") {
-        let mut out = String::with_capacity(DIST_INDEX_HTML.len() + injection.len() + 16);
-        out.push_str(&DIST_INDEX_HTML[..pos]);
+    } else if let Some(pos) = dist_html.rfind("<body") {
+        let mut out = String::with_capacity(dist_html.len() + injection.len() + 16);
+        out.push_str(&dist_html[..pos]);
         out.push_str(&injection);
         out.push('\n');
-        out.push_str(&DIST_INDEX_HTML[pos..]);
+        out.push_str(&dist_html[pos..]);
         out
     } else {
-        format!("{}\n{}", injection, DIST_INDEX_HTML)
+        format!("{}\n{}", injection, dist_html)
     }
 }
 

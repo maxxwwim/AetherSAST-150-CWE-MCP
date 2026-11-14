@@ -160,6 +160,56 @@
   function closeModal() {
     cockpitState.isTasksModalOpen = false;
   }
+
+  function formatKindIcon(kind: string) {
+    switch (kind) {
+      case 'security_fix':
+      case 'security':
+        return '🛡️';
+      case 'arch_refactor':
+      case 'refactor':
+        return '⚙️';
+      case 'function':
+        return '⚡';
+      case 'research':
+      case 'audit':
+        return '🔍';
+      case 'documentation':
+        return '📖';
+      case 'test':
+        return '🧪';
+      default:
+        return '📌';
+    }
+  }
+
+  async function toggleTaskComplete(t: TaskItem, e?: Event) {
+    if (e) e.stopPropagation();
+    loading = true;
+    try {
+      const isDone = t.status === 'done';
+      const newSt = isDone ? 'pending' : 'done';
+      const newProg = isDone ? 0 : 100;
+      await api.updateTask(
+        t.id,
+        newSt,
+        newProg,
+        isDone ? 'Réouverture de la tâche' : 'Tâche marquée complétée à 100%'
+      );
+      t.status = newSt as any;
+      t.progress = newProg;
+      if (selectedTask?.id === t.id) {
+        editStatus = newSt as any;
+        editProgress = newProg;
+      }
+      await refreshTasks();
+      statusMsg = isDone ? 'Tâche réouverte.' : 'Tâche complétée avec succès !';
+    } catch (err: any) {
+      statusMsg = err?.message || 'Erreur mise à jour tâche.';
+    } finally {
+      loading = false;
+    }
+  }
 </script>
 
 {#if cockpitState.isTasksModalOpen}
@@ -299,15 +349,25 @@
               </div>
             {:else}
               {#each filteredTasks as t}
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabindex="0"
                   onclick={() => selectTask(t)}
+                  onkeydown={(e) => e.key === 'Enter' && selectTask(t)}
                   class="w-full text-left p-2.5 rounded-lg border transition-colors cursor-pointer {selectedTask?.id === t.id ? 'bg-indigo-500/15 border-indigo-400/50 text-white' : 'bg-white/[0.02] border-white/5 text-slate-300 hover:bg-white/[0.05]'}"
                 >
                   <div class="flex items-center justify-between text-[9.5px] font-mono gap-1">
-                    <div class="flex items-center gap-1 truncate">
+                    <div class="flex items-center gap-1.5 truncate">
+                      <button
+                        type="button"
+                        onclick={(e) => toggleTaskComplete(t, e)}
+                        class="p-0.5 rounded hover:bg-white/20 transition-colors shrink-0 {t.status === 'done' ? 'text-emerald-400' : 'text-slate-500 hover:text-emerald-300'}"
+                        title={t.status === 'done' ? 'Marquer comme non terminée' : 'Marquer comme terminée (100%)'}
+                      >
+                        <CheckSquare class="w-3.5 h-3.5 {t.status === 'done' ? 'text-emerald-400' : 'opacity-40'}" />
+                      </button>
                       <span class="px-1.5 py-0.5 rounded bg-white/10 uppercase">
-                        {t.kind === 'refactor' ? '⚙️' : t.kind === 'audit' ? '🔍' : t.kind === 'security' ? '🛡️' : t.kind === 'documentation' ? '📖' : t.kind === 'test' ? '🧪' : '📌'} {t.priority}
+                        {formatKindIcon(t.kind)} {t.priority}
                       </span>
                       {#if t.agent_name || t.agent_id}
                         <span
@@ -318,9 +378,9 @@
                         </span>
                       {/if}
                     </div>
-                    <span class="text-sky-300 shrink-0">{t.progress || 0}%</span>
+                    <span class="shrink-0 font-mono {t.status === 'done' ? 'text-emerald-400 font-bold' : 'text-sky-300'}">{t.progress || 0}%</span>
                   </div>
-                  <div class="text-xs font-semibold mt-1 truncate">{t.title}</div>
+                  <div class="text-xs font-semibold mt-1 truncate {t.status === 'done' ? 'line-through text-slate-400' : ''}">{t.title}</div>
                   {#if t.readme_summary}
                     <div class="text-[10px] text-slate-400 italic truncate mt-0.5">
                       {t.readme_summary}
@@ -331,7 +391,7 @@
                       🎯 {t.target_symbol || t.target_file}
                     </div>
                   {/if}
-                </button>
+                </div>
               {/each}
             {/if}
           </div>
@@ -364,6 +424,15 @@
                   {/if}
                 </div>
                 <div class="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onclick={() => toggleTaskComplete(selectedTask)}
+                    class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors {selectedTask.status === 'done' ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40' : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'}"
+                    title={selectedTask.status === 'done' ? 'Réouvrir la tâche' : 'Marquer comme terminée à 100%'}
+                  >
+                    <CheckSquare class="w-3.5 h-3.5" />
+                    {selectedTask.status === 'done' ? 'Réouvrir (0%)' : '✅ Marquer Terminée (100%)'}
+                  </button>
                   {#if selectedTask.target_symbol || selectedTask.target_file}
                     <button
                       type="button"

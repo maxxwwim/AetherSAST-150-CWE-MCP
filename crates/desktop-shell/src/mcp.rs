@@ -187,30 +187,32 @@ pub fn register_mcp_client_info(client_name: &str) {
 }
 
 pub fn resolve_mcp_agent_identity(arguments: &Value) -> (String, String, String) {
-    let arg_id = opt_str_arg(arguments, "agent_id");
-    let arg_name = opt_str_arg(arguments, "agent_name");
+    let arg_id = opt_str_arg(arguments, "agent_id")
+        .or_else(|| opt_str_arg(arguments, "agent"))
+        .or_else(|| opt_str_arg(arguments, "caller"))
+        .or_else(|| opt_str_arg(arguments, "author"))
+        .or_else(|| opt_str_arg(arguments, "sender"))
+        .or_else(|| opt_str_arg(arguments, "role"));
+
+    let arg_name = opt_str_arg(arguments, "agent_name")
+        .or_else(|| opt_str_arg(arguments, "name"))
+        .or_else(|| arg_id);
+
     let arg_color = opt_str_arg(arguments, "color");
 
-    if let Ok(mut session) = get_mcp_session().lock() {
-        if let Some(id) = arg_id {
-            session.agent_id = id.to_string();
-            session.explicit_identity = true;
-            if arg_name.is_none() && session.agent_name.starts_with("IA MCP #") {
-                session.agent_name = id.to_string();
-            }
-        }
-        if let Some(name) = arg_name {
-            session.agent_name = name.to_string();
-            session.explicit_identity = true;
-            if arg_id.is_none() && session.agent_id.starts_with("mcp-agent-") {
-                session.agent_id = name.to_lowercase().replace(' ', "-");
-            }
-        }
-        if let Some(c) = arg_color {
-            session.color = c.to_string();
-        } else if arg_id.is_some() || arg_name.is_some() {
-            session.color = mcp_assign_agent_color(&session.agent_id, Some(&session.agent_name), None);
-        }
+    if arg_id.is_some() || arg_name.is_some() {
+        let aid = arg_id
+            .map(str::to_string)
+            .or_else(|| arg_name.map(|n| n.to_lowercase().replace(' ', "-")))
+            .unwrap_or_else(|| "primary-agent".to_string());
+        let aname = arg_name
+            .map(str::to_string)
+            .unwrap_or_else(|| aid.clone());
+        let color = mcp_assign_agent_color(&aid, Some(&aname), arg_color);
+        return (aid, aname, color);
+    }
+
+    if let Ok(session) = get_mcp_session().lock() {
         return (
             session.agent_id.clone(),
             session.agent_name.clone(),
@@ -558,6 +560,13 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                     t.target_symbol.as_deref().unwrap_or("-")
                                 ));
                             }
+                        }
+                    }
+
+                    let inbox_path = p_buf.join(".aether").join("CHAT_INBOX.md");
+                    if let Ok(content) = std::fs::read_to_string(&inbox_path) {
+                        if content.contains("PENDING_AI_RESPONSE") {
+                            summary.push_str("\n\n---\n💬 **[MESSAGE UTILISATEUR EN ATTENTE DANS LE COCKPIT]**\nUn message a été envoyé depuis le chat Cockpit d'AetherScope.\nConsultez-le avec `aetherscope_chat({\"action\": \"history\"})` ou lisez `.aether/CHAT_INBOX.md` et répondez avec `aetherscope_chat({\"action\": \"send\", \"text\": \"...\"})`.\n");
                         }
                     }
 

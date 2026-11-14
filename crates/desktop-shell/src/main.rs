@@ -1662,6 +1662,30 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let mut msgs = state.chat_messages.write().await;
                     msgs.push(msg.clone());
                     drop(msgs);
+
+                    // Persister le message dans .aether/CHAT_INBOX.md pour réveil et lecture IA zero-token
+                    let p_root = state.project_root.read().await.clone();
+                    let aether_dir = p_root.join(".aether");
+                    let _ = fs::create_dir_all(&aether_dir);
+                    let inbox_file = aether_dir.join("CHAT_INBOX.md");
+                    if msg.sender == "user" {
+                        let inbox_content = format!(
+                            "# 📩 AetherScope Chat Inbox (En attente de réponse IA)\n\n- **Date :** {}\n- **Expéditeur :** {}\n- **Cible :** {}\n- **Statut :** PENDING_AI_RESPONSE\n\n### Message utilisateur :\n{}\n\n---\n> *Répondre via l'outil MCP `aetherscope_chat(action: \"send\", text: \"...\")` ou directement dans le copilote Antigravity.*\n",
+                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                            msg.sender,
+                            msg.target_symbol.as_deref().unwrap_or("Global"),
+                            msg.text
+                        );
+                        let _ = fs::write(&inbox_file, inbox_content);
+                    } else {
+                        let inbox_content = format!(
+                            "# 📩 AetherScope Chat Inbox (Traité)\n\n- **Dernière réponse IA :** {}\n- **Par :** {}\n- **Statut :** ANSWERED\n\n> Le message précédent a reçu une réponse de l'IA.\n",
+                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                            msg.sender
+                        );
+                        let _ = fs::write(&inbox_file, inbox_content);
+                    }
+
                     if let Some(ref sym) = req.target_symbol {
                         if !sym.trim().is_empty() && (req.agent_id.is_some() || msg.sender != "user") {
                             let _ = state.record_telemetry(AiTelemetryEvent {
@@ -1686,6 +1710,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 move || async move {
                     let mut msgs = state.chat_messages.write().await;
                     msgs.clear();
+                    let p_root = state.project_root.read().await.clone();
+                    let _ = fs::remove_file(p_root.join(".aether").join("CHAT_INBOX.md"));
                     axum::Json(serde_json::json!({ "status": "ok" }))
                 }
             }),

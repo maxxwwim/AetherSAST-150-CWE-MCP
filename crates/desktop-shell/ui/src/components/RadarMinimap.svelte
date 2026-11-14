@@ -82,31 +82,7 @@
       const agColor = ag.color || '#38bdf8';
       const agTrail = trails[ag.agentId] || [];
 
-      // Render trail line on radar
-      if (agTrail.length > 1) {
-        ctx.beginPath();
-        let started = false;
-        for (const pt of agTrail) {
-          const wx = pt.x;
-          const wy = pt.y;
-          if (wx == null || wy == null) continue;
-          const tx = cx + (wx - gCenterX) * scale;
-          const ty = cy + (wy - gCenterY) * scale;
-          if (!started) {
-            ctx.moveTo(tx, ty);
-            started = true;
-          } else {
-            ctx.lineTo(tx, ty);
-          }
-        }
-        ctx.strokeStyle = agColor;
-        ctx.lineWidth = 1.0;
-        ctx.globalAlpha = 0.55;
-        ctx.stroke();
-        ctx.globalAlpha = 1.0;
-      }
-
-      // Render agent current position
+      // Determine agent current position
       let ax = ag.targetX;
       let ay = ag.targetY;
       if (ax == null || ay == null) {
@@ -116,6 +92,46 @@
           ay = hit.y;
         }
       }
+
+      // Render trail line on radar (connecting visited bubbles to current position)
+      const radarPts: { x: number; y: number }[] = [];
+      for (const pt of agTrail) {
+        let wx = pt.x;
+        let wy = pt.y;
+        if (wx == null || wy == null) {
+          const hit = cockpitState.resolveTargetNode(pt.target);
+          if (hit) {
+            wx = hit.x;
+            wy = hit.y;
+          }
+        }
+        if (wx != null && wy != null) {
+          radarPts.push({ x: cx + (wx - gCenterX) * scale, y: cy + (wy - gCenterY) * scale });
+        }
+      }
+      if (ax != null && ay != null) {
+        const curTx = cx + (ax - gCenterX) * scale;
+        const curTy = cy + (ay - gCenterY) * scale;
+        const last = radarPts[radarPts.length - 1];
+        if (!last || Math.hypot(last.x - curTx, last.y - curTy) > 0.5) {
+          radarPts.push({ x: curTx, y: curTy });
+        }
+      }
+
+      if (radarPts.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(radarPts[0].x, radarPts[0].y);
+        for (let i = 1; i < radarPts.length; i++) {
+          ctx.lineTo(radarPts[i].x, radarPts[i].y);
+        }
+        ctx.strokeStyle = agColor;
+        ctx.lineWidth = 1.2;
+        ctx.globalAlpha = 0.65;
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+      }
+
+      // Render agent current position beacon
       if (ax != null && ay != null) {
         const arx = cx + (ax - gCenterX) * scale;
         const ary = cy + (ay - gCenterY) * scale;

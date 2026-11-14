@@ -422,6 +422,28 @@
     }
   }
 
+  function formatTaskKindIcon(kind: string) {
+    switch (kind) {
+      case 'security_fix':
+      case 'security':
+        return '🛡️';
+      case 'arch_refactor':
+      case 'refactor':
+        return '⚙️';
+      case 'function':
+        return '⚡';
+      case 'research':
+      case 'audit':
+        return '🔍';
+      case 'documentation':
+        return '📖';
+      case 'test':
+        return '🧪';
+      default:
+        return '📌';
+    }
+  }
+
   async function setTaskStatus(task: TaskItem, status: 'pending' | 'in_progress' | 'done') {
     const progress = status === 'done' ? 100 : status === 'in_progress' ? 50 : 0;
     try {
@@ -1452,7 +1474,7 @@
               <div class="p-2.5 rounded-lg bg-white/[0.03] border border-white/10 space-y-1.5">
                 <div class="flex items-start justify-between gap-2">
                   <div class="font-semibold text-white text-[11px] flex items-center gap-1.5">
-                    <span>{task.kind === 'refactor' ? '⚙️' : task.kind === 'audit' ? '🔍' : task.kind === 'security' ? '🛡️' : task.kind === 'documentation' ? '📖' : task.kind === 'test' ? '🧪' : '📌'}</span>
+                    <span>{formatTaskKindIcon(task.kind)}</span>
                     <span>{task.title}</span>
                   </div>
                   <span class="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase {task.status === 'done' ? 'bg-emerald-500/20 text-emerald-300' : task.status === 'in_progress' ? 'bg-sky-500/20 text-sky-300' : task.status === 'cancelled' ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-700/60 text-slate-300'}">

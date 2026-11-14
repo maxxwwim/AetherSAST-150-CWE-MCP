@@ -544,10 +544,20 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
       <!-- Groupe Outils, Documentation & Tiroirs -->
       <button
         onclick={() => (cockpitState.isTasksModalOpen = true)}
-        class="p-1 rounded-md transition-colors border cursor-pointer {cockpitState.isTasksModalOpen ? 'bg-indigo-500/25 border-indigo-400 text-indigo-200' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/5'}"
-        title="Tableau des Tâches & Quêtes ({cockpitState.tasks.length})"
+        class="flex items-center gap-1 px-2 py-1 rounded-md transition-colors border cursor-pointer {cockpitState.isTasksModalOpen ? 'bg-indigo-500/25 border-indigo-400 text-indigo-200' : 'text-slate-400 hover:text-white hover:bg-white/5 border-white/5'}"
+        title="Tableau des Tâches & Quêtes ({cockpitState.tasks.length} total, {cockpitState.tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length} actives)"
       >
-        <CheckSquare class="w-3.5 h-3.5" />
+        <CheckSquare class="w-3.5 h-3.5 text-indigo-400" />
+        <span class="hidden xl:inline text-[11px]">Tâches</span>
+        {#if cockpitState.tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length > 0}
+          <span class="px-1 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 font-mono text-[10px] font-bold">
+            {cockpitState.tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length}
+          </span>
+        {:else if cockpitState.tasks.length > 0}
+          <span class="px-1 rounded-full bg-white/10 text-slate-300 font-mono text-[10px]">
+            {cockpitState.tasks.length}
+          </span>
+        {/if}
       </button>
 
       <button

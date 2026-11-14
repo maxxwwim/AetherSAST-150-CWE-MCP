@@ -145,11 +145,27 @@ impl TaskManager {
         let dir = Self::tasks_dir(project_root);
         let Ok(entries) = fs::read_dir(&dir) else { return Vec::new() };
         let mut tasks = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
+
         for entry in entries.flatten() {
-            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            let path = entry.path();
+            if path.is_dir() {
                 if let Some(id) = entry.file_name().to_str() {
                     if let Some(t) = Self::get_task(project_root, id) {
-                        tasks.push(t);
+                        if seen_ids.insert(t.id.clone()) {
+                            tasks.push(t);
+                        }
+                    }
+                }
+            } else if path.is_file() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".json") && name != "TASKS_SUMMARY.json" && name != "task.json" {
+                        let id = name.strip_suffix(".json").unwrap_or(name);
+                        if let Some(t) = Self::get_task(project_root, id) {
+                            if seen_ids.insert(t.id.clone()) {
+                                tasks.push(t);
+                            }
+                        }
                     }
                 }
             }
@@ -159,15 +175,44 @@ impl TaskManager {
     }
 
     pub fn get_task(project_root: &Path, task_id: &str) -> Option<TaskItem> {
-        let folder = Self::tasks_dir(project_root).join(task_id);
-        let json_str = fs::read_to_string(folder.join("task.json")).ok()?;
+        let clean_id = task_id.strip_suffix(".json").unwrap_or(task_id);
+        let tasks_dir = Self::tasks_dir(project_root);
+        let folder = tasks_dir.join(clean_id);
+        let folder_meta = folder.join("task.json");
+        let direct_file = tasks_dir.join(format!("{}.json", clean_id));
+
+        let (meta_file, readme_file) = if folder_meta.exists() {
+            (folder_meta, Some(folder.join("README.md")))
+        } else if direct_file.exists() {
+            let rf = if folder.join("README.md").exists() {
+                Some(folder.join("README.md"))
+            } else {
+                None
+            };
+            (direct_file, rf)
+        } else {
+            return None;
+        };
+
+        let json_str = fs::read_to_string(&meta_file).ok()?;
         let mut task: TaskItem = serde_json::from_str(&json_str).ok()?;
-        if let Ok(readme_content) = fs::read_to_string(folder.join("README.md")) {
-            task.readme_summary = extract_summary(&readme_content);
-            task.full_readme = Some(readme_content.clone());
-            task.readme = Some(readme_content);
-        } else if let Some(ref fr) = task.full_readme {
-            task.readme = Some(fr.clone());
+        if task.id.is_empty() {
+            task.id = clean_id.to_string();
+        }
+
+        if let Some(ref rf) = readme_file {
+            if let Ok(readme_content) = fs::read_to_string(rf) {
+                task.readme_summary = extract_summary(&readme_content);
+                task.full_readme = Some(readme_content.clone());
+                task.readme = Some(readme_content);
+            }
+        }
+        if task.readme.is_none() {
+            if let Some(ref fr) = task.full_readme {
+                task.readme = Some(fr.clone());
+            } else if !task.readme_summary.is_empty() {
+                task.readme = Some(task.readme_summary.clone());
+            }
         }
         Some(task)
     }
@@ -312,14 +357,29 @@ impl TaskManager {
         agent_name: Option<&str>,
         color: Option<&str>,
     ) -> std::io::Result<Option<TaskItem>> {
-        let task_folder = Self::tasks_dir(project_root).join(task_id);
-        let meta_file = task_folder.join("task.json");
-        let readme_file = task_folder.join("README.md");
-        if !meta_file.exists() {
+        let clean_id = task_id.strip_suffix(".json").unwrap_or(task_id);
+        let tasks_dir = Self::tasks_dir(project_root);
+        let task_folder = tasks_dir.join(clean_id);
+        let folder_meta = task_folder.join("task.json");
+        let direct_file = tasks_dir.join(format!("{}.json", clean_id));
+
+        let (meta_file, readme_file) = if folder_meta.exists() {
+            (folder_meta, Some(task_folder.join("README.md")))
+        } else if direct_file.exists() {
+            let rf = if task_folder.join("README.md").exists() {
+                Some(task_folder.join("README.md"))
+            } else {
+                None
+            };
+            (direct_file, rf)
+        } else {
             return Ok(None);
-        }
+        };
 
         let mut task: TaskItem = serde_json::from_str(&fs::read_to_string(&meta_file)?)?;
+        if task.id.is_empty() {
+            task.id = clean_id.to_string();
+        }
         let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         task.updated_at = now_str.clone();
 
@@ -369,7 +429,12 @@ impl TaskManager {
         let mut current_readme = full_readme
             .filter(|s| !s.trim().is_empty())
             .map(str::to_string)
-            .unwrap_or_else(|| fs::read_to_string(&readme_file).unwrap_or_default());
+            .unwrap_or_else(|| {
+                readme_file.as_ref()
+                    .and_then(|rf| fs::read_to_string(rf).ok())
+                    .or_else(|| task.full_readme.clone())
+                    .unwrap_or_default()
+            });
 
         if let Some(note) = append_note.map(str::trim).filter(|s| !s.is_empty()) {
             let author_tag = task
@@ -385,15 +450,30 @@ impl TaskManager {
         task.readme = Some(current_readme.clone());
 
         fs::write(&meta_file, serde_json::to_string_pretty(&task)?)?;
-        fs::write(&readme_file, &current_readme)?;
+        if let Some(ref rf) = readme_file {
+            let _ = fs::write(rf, &current_readme);
+        } else if task_folder.is_dir() {
+            let _ = fs::write(task_folder.join("README.md"), &current_readme);
+        }
         let _ = Self::sync_tasks_summary_markdown(project_root);
         Ok(Some(task))
     }
 
     pub fn delete_task(project_root: &Path, task_id: &str) -> std::io::Result<bool> {
-        let task_folder = Self::tasks_dir(project_root).join(task_id);
-        if task_folder.exists() {
+        let clean_id = task_id.strip_suffix(".json").unwrap_or(task_id);
+        let tasks_dir = Self::tasks_dir(project_root);
+        let task_folder = tasks_dir.join(clean_id);
+        let direct_file = tasks_dir.join(format!("{}.json", clean_id));
+        let mut deleted = false;
+        if task_folder.exists() && task_folder.is_dir() {
             fs::remove_dir_all(&task_folder)?;
+            deleted = true;
+        }
+        if direct_file.exists() && direct_file.is_file() {
+            fs::remove_file(&direct_file)?;
+            deleted = true;
+        }
+        if deleted {
             let _ = Self::sync_tasks_summary_markdown(project_root);
             Ok(true)
         } else {
