@@ -20,8 +20,6 @@
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
 [![M8ven Score](https://m8ven.ai/badge/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7)](https://m8ven.ai/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?s=readme)
 [![SAST Linter](https://img.shields.io/badge/SAST_%26_Bug_Bounty-215_Rules_%26_Zero--Day_Backdoors-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
-[![CWE Catalog](https://img.shields.io/badge/Rules_Catalog-215_Official_Rules-fbbf24?style=for-the-badge&logo=target)](./CWE_CATALOG.md)
-[![BLAKE3](https://img.shields.io/badge/Contracts-BLAKE3_%2B_EARS_Sealed-10b981?style=for-the-badge)](#-spec-driven-governance-ears-contracts--blake3-seal)
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non--Commercial-ef4444?style=for-the-badge)](#-license)
 
 <br/><br/>
