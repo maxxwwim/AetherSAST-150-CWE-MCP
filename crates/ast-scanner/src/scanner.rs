@@ -637,8 +637,11 @@ impl ProjectScanner {
         let mut ws_handlers = Vec::new();
         let mut ws_emits = Vec::new();
         let mut file_contents: Vec<(String, String, String)> = Vec::new();
+        let mut file_hashes: HashMap<String, String> = HashMap::with_capacity(results.len());
 
         for res in results {
+            let f_hash = ReadmeContract::compute_blake3_hex(&res.raw_content);
+            file_hashes.insert(res.rel_path.clone(), f_hash);
             file_contents.push((res.rel_path, res.folder, res.raw_content));
             graph.nodes.extend(res.nodes);
             all_raw_calls.extend(res.calls);
@@ -667,12 +670,39 @@ impl ProjectScanner {
             contracts_by_folder.get("root")
         };
 
-        // Enrich all nodes with their folder's BLAKE3 hash, lock status & EARS count
+        let find_contract_for_file = |folder: &str, file_path: &str| -> Option<&ReadmeContract> {
+            if let Some(c) = contracts_by_folder.get(folder) {
+                if c.file_override_for(file_path).is_some() {
+                    return Some(c);
+                }
+            }
+            let mut cur = folder;
+            while let Some(idx) = cur.rfind('/') {
+                cur = &cur[..idx];
+                if let Some(c) = contracts_by_folder.get(cur) {
+                    if c.file_override_for(file_path).is_some() {
+                        return Some(c);
+                    }
+                }
+            }
+            if let Some(root_c) = contracts_by_folder.get("root") {
+                if root_c.file_override_for(file_path).is_some() {
+                    return Some(root_c);
+                }
+            }
+            find_contract_for_folder(folder)
+        };
+
+        // Enrich all nodes with their folder/file BLAKE3 hash, lock status, EARS count & max lines limit
         let mut tamper_edges: Vec<AffiliationEdge> = Vec::new();
         for node in &mut graph.nodes {
-            if let Some(contract) = find_contract_for_folder(&node.folder) {
+            node.metadata.file_blake3_hash = file_hashes.get(&node.file_path).cloned();
+            if let Some(contract) = find_contract_for_file(&node.folder, &node.file_path) {
                 node.metadata.blake3_hash = Some(contract.blake3_hash.clone());
+                node.metadata.contract_folder = Some(contract.folder_path.clone());
                 node.metadata.ears_count = contract.ears_requirements.len();
+                node.metadata.max_lines_limit = Some(contract.effective_max_lines(&node.file_path));
+                node.metadata.file_max_lines_override = contract.file_override_for(&node.file_path);
                 let expected = locked_hashes
                     .get(&contract.folder_path)
                     .or_else(|| locked_hashes.get(&node.folder))
@@ -749,7 +779,7 @@ impl ProjectScanner {
                 if rel_path.to_lowercase().ends_with(".md") {
                     return None;
                 }
-                let contract = find_contract_for_folder(folder);
+                let contract = find_contract_for_file(folder, rel_path);
                 let mut violations = SecurityLinter::audit_file(rel_path, raw_content, contract);
                 if let Some(ref engine_mutex) = plugin_engine {
                     if let Ok(mut engine) = engine_mutex.lock() {

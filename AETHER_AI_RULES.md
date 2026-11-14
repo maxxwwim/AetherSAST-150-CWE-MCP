@@ -2,8 +2,8 @@
 
 > **Projet :** `aether-engine`  
 > **Racine :** `C:\Users\1234\Desktop\Projets\aether-engine`  
-> **Stack Détectée :** 🦀 Pure Rust (Cargo Workspace Hexagonal)  
-> **Architecture Active :** Cargo Workspace : `crates/domain` (100% pur), `crates/server-axum`, `crates/client-ui`, `crates/db-adapter`  
+> **Stack Détectée :** ⚡ Hybride Web3 & Temps Réel MMO  
+> **Architecture Active :** Client PixiJS/TS + Serveur Rust WebSocket + Adaptateurs Data-Nodes (PostgreSQL / Redis)  
 > **Serveur Local AetherScope :** `http://127.0.0.1:3030`  
 
 Tu opères en binôme direct avec le développeur et le moteur d'intelligence architecturale **AetherScope V2**.
@@ -68,7 +68,7 @@ Spécifie toujours les paramètres exacts lors de tes appels MCP :
 ---
 
 ## 🏛️ 4. INVARIANTS PAR COUCHE & SÉPARATION STRICTE
-- `contracts/` : Traits Rust (`RepositoryPort`), DTOs partagés Serde et schémas RPC stricts
+- `contracts/` : Paquets binaires WebSocket + ABIs Smart Contracts dans `contracts/`
 - `client/` : Rendu graphique, formulaires («Form»), état réactif. Ne doit JAMAIS importer `server/domain` ni `data-nodes`.
 - `server/domain/` : **100% pur, déterministe, zéro I/O**. Interdiction formelle de requêtes SQL brutes, d'accès réseau ou de variables d'environnement (`process.env` / `std::env::var`).
 - `server/application/` : Orchestration des cas d'usage reliant le domaine aux interfaces de persistance.

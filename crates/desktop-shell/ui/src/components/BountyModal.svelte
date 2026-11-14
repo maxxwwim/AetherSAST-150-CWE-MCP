@@ -1,785 +1,1227 @@
 <script lang="ts">
-  import { cockpitState } from '../state/graphState.svelte';
+  import { untrack } from 'svelte';
   import { api } from '../lib/api';
-  import { ShieldAlert, X, Copy, Check, Terminal, Radar, Sparkles, Plug, Send, Search, Code2, SlidersHorizontal, ExternalLink } from '@lucide/svelte';
-  import type { CveAnomalyRecord } from '../types/graph';
+  import { playSpatialTone } from '../lib/sound';
+  import { cockpitState } from '../state/graphState.svelte';
+  import type { CveAnomalyRecord, SymbolBubble } from '../types/graph';
+  import {
+    BOUNTY_PRESETS,
+    buildBugBountyMarkdownReport,
+    buildCodeViewerLines,
+    buildCurlCommand,
+    buildStep1ScopePrompt,
+    buildStep2TargetFunctionsPrompt,
+    buildStep3DataCodePrompt,
+    buildStep4ContextualTargetPrompt,
+    buildTargetDataDirection,
+    extractFileFunctions,
+    getTargetEndpoint,
+    getTargetMethod,
+    matchesWildcardPattern,
+    normalizeFolderKey,
+    parsePatternLines,
+    pathsMatch,
+    type BountyPresetId,
+    type BountyStep,
+    type DataFlowNode,
+    type DryRunResult,
+    type FileFunctionItem,
+    type FolderRecommendation,
+    type ProjectFolderStat,
+    type PromptFormat,
+    type ScopePromptConfig,
+    type ScopePromptMission,
+  } from './bounty/bountyEngine';
+  import StepCodeDataPanel from './bounty/StepCodeDataPanel.svelte';
+  import StepPromptsPocPanel from './bounty/StepPromptsPocPanel.svelte';
+  import StepScopePanel from './bounty/StepScopePanel.svelte';
+  import StepTargetsFunctionsPanel from './bounty/StepTargetsFunctionsPanel.svelte';
+  import {
+    CheckCircle2,
+    Code2,
+    Download,
+    Eye,
+    Layers,
+    Lock,
+    Radar,
+    Save,
+    ShieldAlert,
+    Sparkles,
+    X,
+  } from '@lucide/svelte';
 
-  interface FolderRecommendation {
-    folder: string;
-    status: string;
-    critical_count: number;
-    high_count: number;
-    total_violations: number;
-    entrypoints_count: number;
-    score: number;
-    reason: string;
-  }
-
-  type PromptFormat = 'poc_exploit' | 'gold_patch' | 'bounty_report' | 'full_handshake';
-  type BountyPresetId = 'immunefi' | 'hackerone' | 'yeswehack' | 'smart_contracts';
-
-  const BOUNTY_PRESETS: Record<BountyPresetId, { label: string; badge: string; inScope: string[]; outScope: string[]; rationale: string }> = {
-    immunefi: {
-      label: 'Immunefi Web3',
-      badge: '⛓️ Web3',
-      inScope: ['contracts/*', 'crates/*', 'src/*', '*.sol', '*.rs'],
-      outScope: ['tests/*', 'test/*', 'script/*', 'mocks/*', 'docs/*', 'target/*'],
-      rationale: 'Preset Immunefi Web3 : Contrats, crates cœur & logique d\'état In-Scope ; tests/mocks/scripts Out-of-Scope.',
-    },
-    hackerone: {
-      label: 'HackerOne API',
-      badge: '🌐 API',
-      inScope: ['crates/*', 'src/*', 'api/*', 'routes/*', 'controllers/*', 'auth/*'],
-      outScope: ['tests/*', '*.spec.*', '*.test.*', 'docs/*', 'fixtures/*', 'benches/*'],
-      rationale: 'Preset HackerOne API : Endpoints HTTP/WS, handlers & auth In-Scope ; tests unitaires & docs Out-of-Scope.',
-    },
-    yeswehack: {
-      label: 'YesWeHack SaaS',
-      badge: '🛡️ SaaS',
-      inScope: ['crates/*', 'src/*', 'app/*', 'server/*', 'ui/src/*'],
-      outScope: ['tests/*', 'e2e/*', 'docs/*', 'migrations/*', 'node_modules/*', '*.test.*'],
-      rationale: 'Preset YesWeHack SaaS : Application full-stack (backend + frontend UI) In-Scope ; migrations & tests Out-of-Scope.',
-    },
-    smart_contracts: {
-      label: 'Smart Contracts',
-      badge: '💎 DeFi',
-      inScope: ['contracts/*', 'programs/*', 'pallets/*', 'crates/core*'],
-      outScope: ['test/*', 'tests/*', 'bench/*', 'scripts/*', 'audits/*', 'docs/*'],
-      rationale: 'Preset Smart Contracts : Protocoles on-chain & moteurs critiques uniquement.',
-    },
-  };
-
+  let currentStep = $state<BountyStep>(1);
   let selectedAnomaly = $state<CveAnomalyRecord | null>(null);
+  let selectedSymbol = $state<SymbolBubble | null>(null);
+  let activeFunction = $state<FileFunctionItem | null>(null);
+
+  let rawFileContent = $state('');
+  let codeViewMode = $state<'excerpt' | 'full'>('excerpt');
+  let snippetLoading = $state(false);
+  let snippetFileError = $state('');
+  const fileCache = new Map<string, string>();
+  let fileFetchSeq = 0;
+
   let filterSeverity = $state<'ALL' | 'CRITICAL' | 'HIGH'>('ALL');
+  let filterReachableOnly = $state(false);
   let cveSearchQuery = $state('');
-  let promptFormat = $state<PromptFormat>('poc_exploit');
-  let activePreset = $state<BountyPresetId | null>(null);
+
+  let promptFormat = $state<PromptFormat>('target_prompt');
+  let reportRenderMode = $state<'formatted' | 'raw'>('formatted');
+
+  let activePreset = $state<BountyPresetId | null>('auto');
   let showWildcardEditor = $state(false);
-  let inScopePatternsText = $state('');
-  let outScopePatternsText = $state('tests/*\n*.test.*\n*.spec.*\ndocs/*');
+  let inScopePatternsText = $state('src/*\ncrates/*');
+  let outScopePatternsText = $state('tests/*\nfixtures/*\nmocks/*');
   let excludedFolders = $state<Record<string, boolean>>({});
   let recommendations = $state<FolderRecommendation[]>([]);
-  let scopeModeLabel = $state('ai_recommended');
-  let scopeUpdatedBy = $state('AetherScope AI Recommender');
+  let scopeModeLabel = $state('Permissive / Audit Complet');
+  let scopeUpdatedBy = $state('UI Scope Matrix');
   let scopeRationale = $state('');
   let syncedNotice = $state('');
-  let copied = $state(false);
+  let copiedKey = $state<string | null>(null);
   let sentToMcp = $state(false);
 
-  // Faulty source code snippet state
-  let snippetLoading = $state(false);
-  let snippetLines = $state<{ num: number; text: string; isFaulty: boolean }[]>([]);
-  let snippetFileError = $state('');
-  let fileCache = new Map<string, string>();
+  let lockedSingleFolder = $state<string>('ALL');
+  let folderSearchQuery = $state('');
+  let isolateScopeIn3DGraph = $state(false);
 
-  const projectFolders = $derived.by(() => {
-    const counts = new Map<string, number>();
+  let scopePromptMission = $state<ScopePromptMission>('audit_strict');
+  let strictFolderBoundary = $state(true);
+  let includeTopTargetsInPrompt = $state(true);
+  let requireNonDestructivePoc = $state(true);
+  let requireEarsInvariant = $state(true);
+  let customScopeInstructions = $state('');
+
+  let isDryRunning = $state(false);
+  let dryRunResult = $state<DryRunResult | null>(null);
+  let dryRunActiveTab = $state<'response' | 'headers' | 'ast'>('response');
+
+  const STEPS: { id: BountyStep; num: string; label: string; desc: string }[] = [
+    { id: 1, num: '01', label: 'Scope & Dossiers', desc: 'Périmètre & RoE' },
+    { id: 2, num: '02', label: 'Cibles & Fonctions', desc: 'CVE, AST & Appels' },
+    { id: 3, num: '03', label: 'Code & Direction Data', desc: 'Pipeline SVG & SSA' },
+    { id: 4, num: '04', label: 'Prompts & PoC Studio', desc: 'Prompts, cURL & Dry-Run' },
+  ];
+
+  // Aggregate folders across graph nodes & anomalies
+  const projectFolders = $derived.by((): ProjectFolderStat[] => {
+    const stats = new Map<string, ProjectFolderStat>();
+    const ensure = (folder: string) => {
+      let entry = stats.get(folder);
+      if (!entry) {
+        entry = { folder, count: 0, critCount: 0, highCount: 0, nodeCount: 0 };
+        stats.set(folder, entry);
+      }
+      return entry;
+    };
+
+    for (const n of cockpitState.graph.nodes) {
+      const f = normalizeFolderKey(n.file_path, n.folder);
+      ensure(f).nodeCount += 1;
+    }
+
     for (const v of cockpitState.allViolations) {
-      const parts = (v.file_path || '').replace(/\\/g, '/').split('/');
-      const folder = parts.length > 1 ? parts.slice(0, Math.min(2, parts.length - 1)).join('/') : 'root';
-      counts.set(folder, (counts.get(folder) || 0) + 1);
+      const f = normalizeFolderKey(v.file_path);
+      const item = ensure(f);
+      item.count += 1;
+      const sev = (v.severity || '').toUpperCase();
+      if (sev === 'CRITICAL') item.critCount += 1;
+      else if (sev === 'HIGH') item.highCount += 1;
     }
-    for (const r of recommendations) {
-      if (!counts.has(r.folder)) counts.set(r.folder, r.total_violations);
-    }
-    return Array.from(counts.entries()).map(([folder, count]) => ({ folder, count }));
+
+    return Array.from(stats.values()).sort((a, b) => {
+      if (b.critCount !== a.critCount) return b.critCount - a.critCount;
+      if (b.count !== a.count) return b.count - a.count;
+      if (b.nodeCount !== a.nodeCount) return b.nodeCount - a.nodeCount;
+      return a.folder.localeCompare(b.folder);
+    });
+  });
+
+  const filteredProjectFolders = $derived.by(() => {
+    const q = folderSearchQuery.trim().toLowerCase();
+    if (!q) return projectFolders;
+    return projectFolders.filter((f) => f.folder.toLowerCase().includes(q));
   });
 
   const recByFolder = $derived.by(() => {
     const map = new Map<string, FolderRecommendation>();
-    for (const r of recommendations) map.set(r.folder, r);
+    for (const r of recommendations) {
+      map.set(normalizeFolderKey(r.folder, r.folder), r);
+    }
     return map;
   });
 
-  function folderOf(a: CveAnomalyRecord): string {
-    const parts = (a.file_path || '').replace(/\\/g, '/').split('/');
-    return parts.length > 1 ? parts.slice(0, Math.min(2, parts.length - 1)).join('/') : 'root';
-  }
+  const inScopeFoldersList = $derived.by(() => {
+    if (lockedSingleFolder !== 'ALL') return [lockedSingleFolder];
+    return projectFolders.filter((f) => !excludedFolders[f.folder]).map((f) => f.folder);
+  });
 
-  function parsePatternLines(text: string): string[] {
-    return text
-      .split(/[\r\n,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  function matchesWildcardPattern(filePath: string, pattern: string): boolean {
-    const normPath = (filePath || '').replace(/\\/g, '/').toLowerCase();
-    const normPat = (pattern || '').replace(/\\/g, '/').trim().toLowerCase();
-    if (!normPat) return false;
-    if (!normPat.includes('*')) {
-      return normPath === normPat || normPath.startsWith(normPat + '/') || normPath.includes('/' + normPat + '/');
+  const outScopeFoldersList = $derived.by(() => {
+    if (lockedSingleFolder !== 'ALL') {
+      return projectFolders.filter((f) => f.folder !== lockedSingleFolder).map((f) => f.folder);
     }
-    const regexStr =
-      '^' +
-      normPat
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*/g, '.*') +
-      '$';
+    return projectFolders.filter((f) => excludedFolders[f.folder]).map((f) => f.folder);
+  });
+
+  const parsedOutPatterns = $derived(parsePatternLines(outScopePatternsText));
+
+  function isPathInActiveScope(filePath?: string): boolean {
+    if (!filePath) return lockedSingleFolder === 'ALL';
+    const folder = normalizeFolderKey(filePath);
+    if (lockedSingleFolder !== 'ALL') {
+      return folder === lockedSingleFolder;
+    }
+    if (excludedFolders[folder]) return false;
+    if (parsedOutPatterns.some((pat) => matchesWildcardPattern(filePath, pat))) {
+      return false;
+    }
+    return true;
+  }
+
+  const inScopeNodes = $derived.by(() => {
+    return cockpitState.graph.nodes.filter((n) => isPathInActiveScope(n.file_path));
+  });
+
+  const filteredTargets = $derived.by(() => {
+    const q = cveSearchQuery.trim().toLowerCase();
+    const sevOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    return cockpitState.allViolations
+      .filter((v) => isPathInActiveScope(v.file_path))
+      .filter((v) => {
+        if (filterSeverity === 'ALL') return true;
+        return (v.severity || '').toUpperCase() === filterSeverity;
+      })
+      .filter((v) => !filterReachableOnly || v.is_reachable !== false)
+      .filter((v) => {
+        if (!q) return true;
+        return (
+          (v.cve_id || '').toLowerCase().includes(q) ||
+          (v.cwe_class || '').toLowerCase().includes(q) ||
+          (v.file_path || '').toLowerCase().includes(q) ||
+          (v.title || '').toLowerCase().includes(q) ||
+          (v.message || '').toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        const ra = sevOrder[(a.severity || '').toUpperCase()] ?? 4;
+        const rb = sevOrder[(b.severity || '').toUpperCase()] ?? 4;
+        if (ra !== rb) return ra - rb;
+        return (a.file_path || '').localeCompare(b.file_path || '');
+      });
+  });
+
+  const criticalCount = $derived(
+    filteredTargets.filter((v) => (v.severity || '').toUpperCase() === 'CRITICAL').length
+  );
+
+  const activeFilePath = $derived(
+    selectedAnomaly?.file_path || selectedSymbol?.file_path || ''
+  );
+
+  const targetLine = $derived(
+    selectedAnomaly?.line_number || activeFunction?.line || selectedSymbol?.line_number || 1
+  );
+
+  const fileFunctions = $derived.by(() => {
+    if (!activeFilePath) return [];
+    return extractFileFunctions(
+      cockpitState.graph.nodes,
+      activeFilePath,
+      rawFileContent,
+      selectedAnomaly?.line_number || selectedSymbol?.line_number || 1,
+      selectedAnomaly
+    );
+  });
+
+  const codeLines = $derived.by(() => {
+    return buildCodeViewerLines(
+      rawFileContent,
+      selectedAnomaly?.line_number || activeFunction?.line || selectedSymbol?.line_number || 1,
+      activeFunction,
+      selectedAnomaly,
+      codeViewMode
+    );
+  });
+
+  const dataDirection = $derived.by(() => {
+    return buildTargetDataDirection(
+      selectedAnomaly,
+      selectedSymbol,
+      activeFunction,
+      cockpitState.graph
+    );
+  });
+
+  const presetLabel = $derived(
+    activePreset ? BOUNTY_PRESETS[activePreset].label : 'Scope Personnalisé'
+  );
+
+  const scopePromptCfg = $derived<ScopePromptConfig>({
+    projectName: cockpitState.graph.project_name || 'AetherEngine',
+    projectPath: cockpitState.graph.project_path || '.',
+    presetLabel,
+    scopeModeLabel,
+    lockedSingleFolder,
+    inFolders: inScopeFoldersList,
+    outFolders: outScopeFoldersList,
+    inScopePatternsText,
+    outScopePatternsText,
+    mission: scopePromptMission,
+    strictFolderBoundary,
+    filterReachableOnly,
+    includeTopTargetsInPrompt,
+    requireNonDestructivePoc,
+    requireEarsInvariant,
+    customScopeInstructions,
+    filteredTargets,
+    selectedAnomaly,
+  });
+
+  const step1Prompt = $derived(buildStep1ScopePrompt(scopePromptCfg));
+  const step2Prompt = $derived(
+    buildStep2TargetFunctionsPrompt(
+      selectedAnomaly,
+      selectedSymbol,
+      fileFunctions,
+      activeFunction,
+      inScopeFoldersList
+    )
+  );
+  const step3Prompt = $derived(
+    buildStep3DataCodePrompt(
+      selectedAnomaly,
+      selectedSymbol,
+      activeFunction,
+      codeLines,
+      dataDirection
+    )
+  );
+  const step4TargetPrompt = $derived(
+    buildStep4ContextualTargetPrompt(
+      selectedAnomaly,
+      selectedSymbol,
+      activeFunction,
+      codeLines,
+      dataDirection,
+      scopePromptCfg
+    )
+  );
+
+  const activeRecommendation = $derived.by(() => {
+    if (!selectedAnomaly) return undefined;
+    return recByFolder.get(normalizeFolderKey(selectedAnomaly.file_path));
+  });
+
+  function showSyncedToast(msg: string) {
+    syncedNotice = msg;
+    setTimeout(() => {
+      if (syncedNotice === msg) syncedNotice = '';
+    }, 3200);
+  }
+
+  async function loadTargetFileContent(filePath: string) {
+    if (!filePath) {
+      rawFileContent = '';
+      snippetFileError = '';
+      return;
+    }
+    const cached = fileCache.get(filePath);
+    if (cached !== undefined) {
+      rawFileContent = cached;
+      snippetFileError = '';
+      return;
+    }
+
+    const seq = ++fileFetchSeq;
+    snippetLoading = true;
+    snippetFileError = '';
     try {
-      if (new RegExp(regexStr, 'i').test(normPath)) return true;
-      const prefix = normPat.replace(/\/?\*+$/, '');
-      if (prefix && (normPath === prefix || normPath.startsWith(prefix + '/'))) return true;
-    } catch {
-      // ignore invalid regex
+      const res = await api.getFileContent(filePath);
+      if (seq !== fileFetchSeq) return;
+      const content = res?.content || '';
+      fileCache.set(filePath, content);
+      rawFileContent = content;
+    } catch (e) {
+      if (seq !== fileFetchSeq) return;
+      rawFileContent = '';
+      snippetFileError = `Impossible de lire ${filePath} (${e instanceof Error ? e.message : String(e)})`;
+    } finally {
+      if (seq === fileFetchSeq) snippetLoading = false;
     }
-    return false;
   }
 
   async function loadServerScope() {
     try {
-      const res = await api.getBountyScope();
-      if (res?.recommendations) recommendations = res.recommendations;
-      if (res?.scope) {
-        scopeModeLabel = res.scope.mode || 'ai_recommended';
-        scopeUpdatedBy = res.scope.updated_by || 'Auto';
-        scopeRationale = res.scope.rationale || '';
-        const next: Record<string, boolean> = {};
-        for (const outF of res.scope.out_of_scope || []) {
-          next[outF] = true;
-        }
-        excludedFolders = next;
-        inScopePatternsText = (res.scope.in_scope || []).join('\n');
-        outScopePatternsText = (res.scope.out_of_scope || []).join('\n');
-        cockpitState.bountyOutOfScopePatterns = res.scope.out_of_scope || [];
+      const cfg = await api.getBountyScope();
+      if (!cfg?.scope) return;
+      if (Array.isArray(cfg.scope.in_scope) && cfg.scope.in_scope.length > 0) {
+        inScopePatternsText = cfg.scope.in_scope.join('\n');
       }
+      if (Array.isArray(cfg.scope.out_of_scope)) {
+        outScopePatternsText = cfg.scope.out_of_scope.join('\n');
+        cockpitState.bountyOutOfScopePatterns = cfg.scope.out_of_scope;
+        cockpitState.filterVersion += 1;
+      }
+      if (Array.isArray(cfg.recommendations)) {
+        recommendations = cfg.recommendations;
+      }
+      if (cfg.scope.mode) scopeModeLabel = cfg.scope.mode;
+      if (cfg.scope.updated_by) scopeUpdatedBy = cfg.scope.updated_by;
+      if (cfg.scope.rationale) scopeRationale = cfg.scope.rationale;
     } catch {
-      // Fallback local
+      // Backend optional in offline viewer mode
     }
   }
 
-  $effect(() => {
-    if (cockpitState.isBountyModalOpen) {
-      loadServerScope();
-      if (!selectedAnomaly && cockpitState.allViolations.length > 0) {
-        selectAnomaly(cockpitState.allViolations[0]);
+  function sync3DGraphIsolation(enabled: boolean) {
+    if (enabled) {
+      const nextDisabled: Record<string, boolean> = {};
+      for (const f of outScopeFoldersList) {
+        nextDisabled[f] = true;
       }
-    }
-  });
-
-  async function applyBountyPreset(presetId: BountyPresetId) {
-    activePreset = presetId;
-    const preset = BOUNTY_PRESETS[presetId];
-    inScopePatternsText = preset.inScope.join('\n');
-    outScopePatternsText = preset.outScope.join('\n');
-    scopeRationale = preset.rationale;
-    const next: Record<string, boolean> = {};
-    for (const { folder } of projectFolders) {
-      const isOut = preset.outScope.some((pat) => matchesWildcardPattern(folder, pat));
-      if (isOut) next[folder] = true;
-    }
-    excludedFolders = next;
-    await syncOutScopeToScanner(`Preset ${preset.label}`);
-  }
-
-  async function applyAiRecommendedScope() {
-    activePreset = null;
-    try {
-      const res = await api.updateBountyScope({
-        action: 'auto_recommend',
-        updated_by: 'AetherScope AI Recommender',
-      });
-      if (res?.recommendations) recommendations = res.recommendations;
-      if (res?.scope) {
-        scopeModeLabel = res.scope.mode || 'ai_recommended';
-        scopeUpdatedBy = res.scope.updated_by || 'AI Recommender';
-        scopeRationale = res.scope.rationale || '';
-        const next: Record<string, boolean> = {};
-        for (const outF of res.scope.out_of_scope || []) next[outF] = true;
-        excludedFolders = next;
-        inScopePatternsText = (res.scope.in_scope || []).join('\n');
-        outScopePatternsText = (res.scope.out_of_scope || []).join('\n');
-        cockpitState.bountyOutOfScopePatterns = res.scope.out_of_scope || [];
-        syncedNotice = `🤖 Auto-Scope IA appliqué (${res.scope.in_scope?.length || 0} In-Scope · ${res.scope.out_of_scope?.length || 0} Out-Scope)`;
-        setTimeout(() => (syncedNotice = ''), 3200);
-        return;
-      }
-    } catch {
-      // Fallback local heuristic
-    }
-    const next: Record<string, boolean> = {};
-    for (const { folder } of projectFolders) {
-      const rec = recByFolder.get(folder);
-      if (rec ? rec.status === 'out_of_scope' : /(test|tests|spec|fixture|mock|bench|docs|target|node_modules)/i.test(folder)) {
-        next[folder] = true;
-      }
-    }
-    excludedFolders = next;
-  }
-
-  function toggleFolderScope(folder: string) {
-    const nextExcluded = !excludedFolders[folder];
-    excludedFolders = { ...excludedFolders, [folder]: nextExcluded };
-    const outSet = new Set(parsePatternLines(outScopePatternsText));
-    const inSet = new Set(parsePatternLines(inScopePatternsText));
-    if (nextExcluded) {
-      outSet.add(folder);
-      inSet.delete(folder);
+      cockpitState.disabledModules = nextDisabled;
+      cockpitState.filterVersion += 1;
     } else {
-      outSet.delete(folder);
-      inSet.add(folder);
+      cockpitState.setAllModules(true);
     }
-    outScopePatternsText = Array.from(outSet).join('\n');
-    inScopePatternsText = Array.from(inSet).join('\n');
   }
 
-  async function syncOutScopeToScanner(customAuthor?: string) {
-    const folderOutList = Object.keys(excludedFolders).filter((k) => excludedFolders[k]);
-    const folderInList = projectFolders.map((p) => p.folder).filter((f) => !excludedFolders[f]);
-    const outList = Array.from(new Set([...folderOutList, ...parsePatternLines(outScopePatternsText)]));
-    const inList = Array.from(new Set([...folderInList, ...parsePatternLines(inScopePatternsText)]));
+  function toggleIsolateScopeIn3DGraph() {
+    isolateScopeIn3DGraph = !isolateScopeIn3DGraph;
+    sync3DGraphIsolation(isolateScopeIn3DGraph);
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+    showSyncedToast(
+      isolateScopeIn3DGraph
+        ? '🌐 Graphe 3D isolé sur le périmètre In-Scope'
+        : '🌐 Graphe 3D restauré (tous modules)'
+    );
+  }
+
+  async function syncOutScopeToScanner(author = 'UI Scope Matrix') {
+    const outList = Array.from(
+      new Set([
+        ...outScopeFoldersList.map((f) => `${f}/*`),
+        ...parsePatternLines(outScopePatternsText),
+      ])
+    );
+    const inList = Array.from(
+      new Set([
+        ...inScopeFoldersList.map((f) => `${f}/*`),
+        ...parsePatternLines(inScopePatternsText),
+      ])
+    );
+
     cockpitState.bountyOutOfScopePatterns = outList;
+    cockpitState.filterVersion += 1;
+    if (isolateScopeIn3DGraph) {
+      sync3DGraphIsolation(true);
+    }
+
     try {
-      const res = await api.updateBountyScope({
+      await api.updateBountyScope({
         action: 'set',
         in_scope: inList,
         out_of_scope: outList,
-        mode: 'mcp_synced',
-        updated_by: customAuthor || 'Cockpit User -> MCP',
-        rationale: scopeRationale || `Périmètre synchronisé depuis BountyModal (${inList.length} In-Scope, ${outList.length} Out-of-Scope)`,
+        mode: lockedSingleFolder !== 'ALL' ? `Strict (${lockedSingleFolder})` : scopeModeLabel,
+        updated_by: author,
+        rationale:
+          scopeRationale ||
+          `Synchronisation Scope (${inScopeFoldersList.length} In-Scope, ${outScopeFoldersList.length} exclus)`,
       });
-      if (res?.scope) {
-        scopeModeLabel = res.scope.mode;
-        scopeUpdatedBy = res.scope.updated_by || 'Cockpit User';
-      }
-      syncedNotice = `🔌 Synchronisé MCP (.aether/bounty_scope.json) & Surface (${inList.length} In · ${outList.length} Out)`;
+      showSyncedToast('Scope synchronisé avec le scanner Rust & MCP');
     } catch {
-      syncedNotice = `${outList.length} règle(s) Out-of-Scope synchronisée(s) localement`;
-    }
-    setTimeout(() => (syncedNotice = ''), 3200);
-  }
-
-  const activeOutWildcards = $derived(parsePatternLines(outScopePatternsText));
-
-  const filtered = $derived(
-    cockpitState.allViolations.filter((v) => {
-      if (filterSeverity !== 'ALL' && v.severity !== filterSeverity) return false;
-      const folder = folderOf(v);
-      if (excludedFolders[folder]) return false;
-      if (activeOutWildcards.some((pat) => matchesWildcardPattern(v.file_path || '', pat))) return false;
-      const q = cveSearchQuery.trim().toLowerCase();
-      if (q) {
-        const hay = `${v.cve_id} ${v.cwe_class || ''} ${v.title} ${v.file_path} ${v.description || ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    })
-  );
-
-  async function loadFaultySnippet(a: CveAnomalyRecord) {
-    snippetFileError = '';
-    snippetLines = [];
-    if (!a?.file_path) return;
-    snippetLoading = true;
-    try {
-      let raw = fileCache.get(a.file_path);
-      if (raw === undefined) {
-        const res = await api.getFileContent(a.file_path);
-        if (typeof res?.content === 'string') {
-          raw = res.content;
-          fileCache.set(a.file_path, res.content);
-        }
-      }
-      if (raw) {
-        const allLines = raw.split(/\r?\n/);
-        const targetLine = Math.max(1, Number(a.line_number) || 1);
-        const startLine = Math.max(1, targetLine - 5);
-        const endLine = Math.min(allLines.length, targetLine + 5);
-        const extracted: { num: number; text: string; isFaulty: boolean }[] = [];
-        for (let ln = startLine; ln <= endLine; ln++) {
-          extracted.push({
-            num: ln,
-            text: allLines[ln - 1] ?? '',
-            isFaulty: ln === targetLine,
-          });
-        }
-        snippetLines = extracted;
-      } else {
-        snippetFileError = 'Extrait source non disponible sur disque';
-      }
-    } catch {
-      snippetFileError = 'Impossible de charger l\'extrait source';
-    } finally {
-      snippetLoading = false;
+      showSyncedToast('Scope appliqué localement (hors-ligne)');
     }
   }
 
-  function selectAnomaly(a: CveAnomalyRecord) {
+  function applyBountyPreset(id: BountyPresetId) {
+    const preset = BOUNTY_PRESETS[id];
+    activePreset = id;
+    lockedSingleFolder = 'ALL';
+    inScopePatternsText = preset.inScope.join('\n');
+    outScopePatternsText = preset.outScope.join('\n');
+    scopeModeLabel = `Preset ${preset.label}`;
+    scopeRationale = preset.rationale;
+
+    const nextExcluded: Record<string, boolean> = {};
+    for (const pf of projectFolders) {
+      const samplePath = `${pf.folder}/lib.rs`;
+      const isOut = preset.outScope.some((pat) => matchesWildcardPattern(samplePath, pat));
+      if (isOut) nextExcluded[pf.folder] = true;
+    }
+    excludedFolders = nextExcluded;
+
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+    void syncOutScopeToScanner(`Preset: ${preset.label}`);
+  }
+
+  function applyAiRecommendedScope() {
+    activePreset = 'auto';
+    lockedSingleFolder = 'ALL';
+    const nextExcluded: Record<string, boolean> = {};
+    if (recommendations.length > 0) {
+      for (const rec of recommendations) {
+        const key = normalizeFolderKey(rec.folder, rec.folder);
+        if (rec.status === 'OUT_OF_SCOPE' || rec.total_violations === 0) {
+          nextExcluded[key] = true;
+        }
+      }
+    } else {
+      for (const pf of projectFolders) {
+        if (pf.count === 0 && /(test|bench|mock|doc|script|fixture|example)/i.test(pf.folder)) {
+          nextExcluded[pf.folder] = true;
+        }
+      }
+    }
+    excludedFolders = nextExcluded;
+    scopeModeLabel = 'IA Auto-Scope Strict';
+    scopeRationale = 'Dossiers recommandés automatiquement par ratio de vulnérabilités et entrypoints.';
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+    void syncOutScopeToScanner('IA Auto-Scope');
+  }
+
+  function lockToSingleFolder(folder: string) {
+    lockedSingleFolder = lockedSingleFolder === folder ? 'ALL' : folder;
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+    void syncOutScopeToScanner(
+      lockedSingleFolder === 'ALL' ? 'Unlock Folder' : `Lock: ${lockedSingleFolder}`
+    );
+  }
+
+  function isolateOnlyFolderInMatrix(folder: string) {
+    lockedSingleFolder = folder;
+    const nextExcluded: Record<string, boolean> = {};
+    for (const pf of projectFolders) {
+      if (pf.folder !== folder) nextExcluded[pf.folder] = true;
+    }
+    excludedFolders = nextExcluded;
+    if (!isolateScopeIn3DGraph) isolateScopeIn3DGraph = true;
+    sync3DGraphIsolation(true);
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+    void syncOutScopeToScanner(`Focus Dossier: ${folder}`);
+  }
+
+  function setAllFoldersScope(includeAll: boolean) {
+    lockedSingleFolder = 'ALL';
+    if (includeAll) {
+      excludedFolders = {};
+    } else {
+      const nextExcluded: Record<string, boolean> = {};
+      for (const pf of projectFolders) nextExcluded[pf.folder] = true;
+      excludedFolders = nextExcluded;
+    }
+    void syncOutScopeToScanner(includeAll ? 'Include All' : 'Exclude All');
+  }
+
+  function toggleFolderScope(folder: string) {
+    if (lockedSingleFolder !== 'ALL') {
+      lockedSingleFolder = 'ALL';
+    }
+    excludedFolders = {
+      ...excludedFolders,
+      [folder]: !excludedFolders[folder],
+    };
+    void syncOutScopeToScanner('Folder Matrix Toggle');
+  }
+
+  function pickDefaultFunctionForFile(
+    fns: FileFunctionItem[],
+    lineHint: number,
+    symbolHint: SymbolBubble | null
+  ): FileFunctionItem | null {
+    if (fns.length === 0) return null;
+    const containing = fns.find((f) => lineHint > 0 && lineHint >= f.line && lineHint <= f.endLine);
+    if (containing) return containing;
+    if (symbolHint) {
+      const byName = fns.find((f) => f.name === symbolHint.name);
+      if (byName) return byName;
+    }
+    const tainted = fns.find((f) => f.isTaintTouched || f.hasAnomaly);
+    return tainted || fns[0];
+  }
+
+  function selectAnomalyTarget(a: CveAnomalyRecord, jumpToStep?: BountyStep) {
     selectedAnomaly = a;
-    copied = false;
-    sentToMcp = false;
-    loadFaultySnippet(a);
+    const matchedNode = cockpitState.graph.nodes.find((n) => pathsMatch(n.file_path, a.file_path));
+    if (matchedNode) selectedSymbol = matchedNode;
+    activeFunction = null;
+    dryRunResult = null;
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+    if (jumpToStep) currentStep = jumpToStep;
   }
 
-  function focusAnomalyInGraph(a: CveAnomalyRecord) {
-    const node = cockpitState.resolveTargetNode(a.file_path);
-    if (node) {
-      cockpitState.selectSymbol(node.id);
-      cockpitState.activeTab = 'cve';
-      cockpitState.requestFocusSymbol(node.id);
-      cockpitState.isBountyModalOpen = false;
+  function selectSymbolTarget(s: SymbolBubble, jumpToStep?: BountyStep) {
+    selectedSymbol = s;
+    const nodeAnom =
+      cockpitState.allViolations.find((v) => pathsMatch(v.file_path, s.file_path)) || null;
+    selectedAnomaly = nodeAnom;
+    activeFunction = null;
+    dryRunResult = null;
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+    if (jumpToStep) currentStep = jumpToStep;
+  }
+
+  function selectFunctionItem(fn: FileFunctionItem, jumpToStep?: BountyStep) {
+    activeFunction = fn;
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+    if (jumpToStep) currentStep = jumpToStep;
+  }
+
+  function handleJumpToDataNode(node: DataFlowNode) {
+    const resolved =
+      (node.symbolId && cockpitState.graph.nodes.find((n) => n.id === node.symbolId)) ||
+      cockpitState.graph.nodes.find(
+        (n) => pathsMatch(n.file_path, node.filePath) && Math.abs((n.line_number || 0) - node.line) <= 3
+      ) ||
+      cockpitState.graph.nodes.find((n) => pathsMatch(n.file_path, node.filePath)) ||
+      null;
+
+    const vuln =
+      cockpitState.allViolations.find(
+        (v) =>
+          pathsMatch(v.file_path, node.filePath) &&
+          Math.abs((v.line_number || 0) - node.line) <= 5
+      ) ||
+      cockpitState.allViolations.find((v) => pathsMatch(v.file_path, node.filePath)) ||
+      null;
+
+    if (vuln) selectedAnomaly = vuln;
+    if (resolved) selectedSymbol = resolved;
+    activeFunction = null;
+    dryRunResult = null;
+    playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+  }
+
+  function focusActiveTargetIn3DGraph() {
+    const candidate =
+      selectedSymbol ||
+      (selectedAnomaly
+        ? cockpitState.graph.nodes.find((n) => pathsMatch(n.file_path, selectedAnomaly?.file_path))
+        : null);
+    if (candidate) {
+      cockpitState.selectSymbol(candidate.id, true);
+      cockpitState.requestFocusSymbol(candidate.id);
+      playSpatialTone(cockpitState.settings.soundEnabled, 'select');
     }
   }
 
-  function buildMcpBountyPrompt(a: CveAnomalyRecord, format: PromptFormat = promptFormat): string {
-    const outList = Array.from(new Set([...Object.keys(excludedFolders).filter((k) => excludedFolders[k]), ...parsePatternLines(outScopePatternsText)]));
-    const inList = Array.from(new Set([...projectFolders.map((p) => p.folder).filter((f) => !excludedFolders[f]), ...parsePatternLines(inScopePatternsText)]));
-    const folder = folderOf(a);
-    const rec = recByFolder.get(folder);
-    const snippetBlock =
-      snippetLines.length > 0
-        ? `\n## Extrait Source Vulnérable (${a.file_path}:${a.line_number}):\n\`\`\`\n${snippetLines
-            .map((l) => `${l.isFaulty ? '>> ' : '   '}${String(l.num).padStart(4, ' ')} | ${l.text}`)
-            .join('\n')}\n\`\`\`\n`
-        : '';
+  async function executePocDryRun() {
+    if (!selectedAnomaly || isDryRunning) return;
+    isDryRunning = true;
+    dryRunActiveTab = 'response';
+    const method = getTargetMethod(selectedAnomaly);
+    const endpoint = getTargetEndpoint(selectedAnomaly);
+    const param = selectedAnomaly.transmitted_data || 'payload';
+    const cveSlug = (selectedAnomaly.cve_id || 'vuln').toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const vectorValue = `aether_poc_${cveSlug}_test_vector`;
+    const targetUrl =
+      method === 'POST'
+        ? `http://localhost:3030${endpoint}`
+        : `http://localhost:3030${endpoint}?${encodeURIComponent(param)}=${encodeURIComponent(vectorValue)}`;
 
-    if (format === 'gold_patch') {
-      return `# 🛡️ Mission Gold Patch & Contrat EARS — ${a.cve_id} (${a.title})
+    const requestHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'AetherScope-BugBounty-PoC/2.4',
+      'X-Bounty-Scope': 'In-Scope-Validated',
+    };
+    const requestPayload = method === 'POST' ? { [param]: vectorValue } : { queryParam: vectorValue };
 
-## Cible In-Scope:
-- Fichier : \`${a.file_path}\` (Ligne \`${a.line_number}\`)
-- Sévérité : **${a.severity}** · Classe : \`${a.cwe_class}\`
-- Diagnostic : ${a.description}
-${snippetBlock}
-## Exigences EARS & Remédiation:
-- ${a.remediation}
-- Le correctif DOIT préserver les invariants du module \`${folder}\` et être certifié via \`aetherscope_verify_patch({"symbol_id": "${a.file_path}", "patched_code": "..."})\`.`;
+    const started = performance.now();
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(targetUrl, {
+        method,
+        headers: requestHeaders,
+        body: method === 'POST' ? JSON.stringify(requestPayload) : undefined,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      const latencyMs = Math.max(1, Math.round(performance.now() - started));
+      const responseBody = await res.text();
+      const responseHeaders: Record<string, string> = {};
+      res.headers.forEach((v, k) => {
+        responseHeaders[k] = v;
+      });
+
+      const reproduced = res.status >= 500 || responseBody.includes(vectorValue);
+      dryRunResult = {
+        mode: 'live_http',
+        statusCode: res.status,
+        statusText: res.statusText || 'OK',
+        latencyMs,
+        verdict: reproduced ? 'vulnerability_reproduced' : 'target_defended',
+        verdictMessage: reproduced
+          ? 'Serveur local atteint : anomalie / réflexion reproduite.'
+          : 'Requête HTTP exécutée : aucune panique 5xx détectée.',
+        targetUrl,
+        method,
+        requestHeaders,
+        requestPayload,
+        responseHeaders,
+        responseBody: responseBody || '(Corps de réponse vide)',
+      };
+    } catch {
+      const latencyMs = Math.max(2, Math.round(performance.now() - started));
+      const sev = (selectedAnomaly.severity || '').toUpperCase();
+      const isCritOrHigh = sev === 'CRITICAL' || sev === 'HIGH';
+      dryRunResult = {
+        mode: 'sandbox_ast',
+        statusCode: isCritOrHigh ? 500 : 200,
+        statusText: isCritOrHigh
+          ? 'Simulated Unhandled Exception / Sink Reached'
+          : 'Simulated 200 OK',
+        latencyMs,
+        verdict: isCritOrHigh && !dataDirection.isSanitized ? 'vulnerability_reproduced' : 'target_defended',
+        verdictMessage:
+          isCritOrHigh && !dataDirection.isSanitized
+            ? 'Serveur HTTP inactif — Bascule Sandbox AST : flux tainté non assaini atteint le sink.'
+            : 'Serveur HTTP inactif — Bascule Sandbox AST : barrière ou sévérité modérée simulée.',
+        targetUrl,
+        method,
+        requestHeaders,
+        requestPayload,
+        responseHeaders: {
+          'x-aether-sandbox': 'ast-dataflow-v2.4',
+          'content-type': 'application/json',
+        },
+        responseBody: JSON.stringify(
+          {
+            simulation: 'sandbox_ast',
+            cve_id: selectedAnomaly.cve_id,
+            cwe_class: selectedAnomaly.cwe_class || 'CWE',
+            taint_chain: dataDirection.taintSummary,
+            sink: `${selectedAnomaly.file_path}:${selectedAnomaly.line_number || 1}`,
+            injected_param: param,
+            sanitizer_detected: dataDirection.isSanitized,
+          },
+          null,
+          2
+        ),
+        astDetails: {
+          taintChain: dataDirection.taintSummary,
+          sinkRule: `${selectedAnomaly.cve_id} (${selectedAnomaly.cwe_class || 'CWE'})`,
+          sanitizerDetected: dataDirection.isSanitized,
+          confidence: selectedAnomaly.taint_trace?.is_vulnerable
+            ? 0.94
+            : selectedAnomaly.severity === 'CRITICAL'
+              ? 0.91
+              : 0.78,
+        },
+      };
+    } finally {
+      isDryRunning = false;
+      playSpatialTone(cockpitState.settings.soundEnabled, 'select');
     }
-
-    if (format === 'bounty_report') {
-      return `# 🏆 Rapport Bug Bounty (${activePreset ? BOUNTY_PRESETS[activePreset].label : 'HackerOne / Immunefi'}) — ${a.cve_id}
-
-## 1. Executive Summary
-- **Asset In-Scope** : \`${a.file_path}\` (L${a.line_number})
-- **Vulnerability Type** : ${a.cve_id} — ${a.title} (${a.cwe_class})
-- **Severity** : **${a.severity}**
-- **Attack Surface Score** : ${rec?.score ?? 'High'} (${rec?.reason || 'Reachable module'})
-
-## 2. Root Cause & Vulnerable Code
-${a.description}
-${snippetBlock}
-## 3. Proof of Concept (Non-Destructive)
-1. Target entrypoint in \`${folder}\`.
-2. Trigger state/input reaching \`${a.file_path}:${a.line_number}\`.
-3. Observe invariant violation without causing DoS.
-
-## 4. Recommended Fix
-${a.remediation}`;
-    }
-
-    if (format === 'full_handshake') {
-      return `# 🤝 Handshake Complet Multi-Agent MCP — ${a.cve_id}
-
-\`\`\`json
-{
-  "protocol": "aetherscope-mcp-v2.3",
-  "mission": "poc_and_ears_patch",
-  "target": {
-    "cve_id": "${a.cve_id}",
-    "cwe_class": "${a.cwe_class}",
-    "severity": "${a.severity}",
-    "file_path": "${a.file_path}",
-    "line_number": ${a.line_number || 1},
-    "folder": "${folder}"
-  },
-  "scope": {
-    "mode": "${scopeModeLabel}",
-    "preset": "${activePreset || 'auto'}",
-    "in_scope": ${JSON.stringify(inList.slice(0, 12))},
-    "out_of_scope": ${JSON.stringify(outList.slice(0, 12))}
-  },
-  "mcp_pipeline": [
-    { "tool": "aetherscope_search_symbols", "args": { "scope_mode": "in_scope_only", "cwe_id": "${a.cve_id}" } },
-    { "tool": "aetherscope_get_active_target", "args": { "symbol_id": "${a.file_path}", "action": "Audit PoC ${a.cve_id}" } },
-    { "tool": "aetherscope_verify_patch", "args": { "symbol_id": "${a.file_path}" } }
-  ]
-}
-\`\`\`
-${snippetBlock}`;
-    }
-
-    return `# 🎯 Bug Bounty PoC & Exploitation Report — ${a.cve_id}
-
-## Target Architecture & Scope MCP:
-- File: \`${a.file_path}\` (Dossier: \`${folder}\` — **IN-SCOPE**)
-- Line: \`${a.line_number}\`
-- Severity: **${a.severity}**
-- Title: ${a.title}
-- Surface Rationale: ${rec?.reason || 'Module actif In-Scope'}
-- Active In-Scope Modules (${inList.length}): ${inList.map((s) => `\`${s}\``).join(', ') || 'All'}
-- Excluded Out-of-Scope (${outList.length}): ${outList.map((s) => `\`${s}\``).join(', ') || 'None'}
-
-## Description:
-${a.description}
-${snippetBlock}
-## Remediation Roadmap:
-${a.remediation}
-
-## Protocole Agent MCP AetherScope:
-1. Vérifier/ajuster le scope PoC : \`aetherscope_search_symbols({"scope_mode": "recommend_scope"})\` ou \`{"scope_mode": "in_scope_only", "cwe_id": "${a.cve_id}"}\`
-2. Inspecter le flux d'atteignabilité : \`aetherscope_get_active_target({"symbol_id": "${a.file_path}", "action": "Audit PoC ${a.cve_id}"})\`
-3. Rédiger un PoC défensif prouvant l'atteignabilité sans DoS, appliquer le patch EARS, puis certifier avec \`aetherscope_verify_patch\`.`;
   }
 
-  const activePromptPreview = $derived(selectedAnomaly ? buildMcpBountyPrompt(selectedAnomaly, promptFormat) : '');
+  async function copyText(text: string, key: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedKey = key;
+      playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+      setTimeout(() => {
+        if (copiedKey === key) copiedKey = null;
+      }, 2200);
+    } catch {
+      // Clipboard fallback ignored if denied
+    }
+  }
 
-  function copyBountyPrompt(a: CveAnomalyRecord) {
-    navigator.clipboard.writeText(buildMcpBountyPrompt(a, promptFormat)).then(() => {
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
+  function downloadFile(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadScopePromptMd() {
+    downloadFile('aether_scope_prompt.md', step1Prompt, 'text/markdown;charset=utf-8');
+    showSyncedToast('Prompt Scope exporté (.md)');
+  }
+
+  function downloadReportMd() {
+    if (!selectedAnomaly) return;
+    const md = buildBugBountyMarkdownReport(selectedAnomaly, {
+      presetLabel,
+      recReason: activeRecommendation?.reason,
+      snippetLines: codeLines,
+      dataDirection,
     });
+    const slug = (selectedAnomaly.cve_id || 'bounty').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    downloadFile(`bounty_report_${slug}.md`, md, 'text/markdown;charset=utf-8');
+    showSyncedToast(`Rapport ${selectedAnomaly.cve_id} téléchargé`);
   }
 
-  async function sendPocMissionToMcpChat(a?: CveAnomalyRecord | null) {
-    const text = a
-      ? buildMcpBountyPrompt(a, promptFormat)
-      : `🤖 Peux-tu analyser les recommandations In-Scope / Out-of-Scope de ce projet via \`aetherscope_search_symbols({"scope_mode": "recommend_scope"})\`, configurer le périmètre optimal avec \`scope_mode: "configure_scope"\`, et prioriser les PoC sur les CWE critiques In-Scope ?`;
-    await api.sendChatMessage(text, 'user', a?.file_path || 'Bug Bounty Scope');
-    sentToMcp = true;
-    setTimeout(() => (sentToMcp = false), 2500);
+  function downloadScopeJson() {
+    const payload = {
+      project: cockpitState.graph.project_name || 'AetherEngine',
+      preset: activePreset,
+      mode: scopeModeLabel,
+      locked_folder: lockedSingleFolder,
+      in_scope_folders: inScopeFoldersList,
+      out_of_scope_folders: outScopeFoldersList,
+      in_scope_patterns: parsePatternLines(inScopePatternsText),
+      out_of_scope_patterns: parsePatternLines(outScopePatternsText),
+      selected_target: selectedAnomaly
+        ? {
+            cve_id: selectedAnomaly.cve_id,
+            cwe_class: selectedAnomaly.cwe_class,
+            severity: selectedAnomaly.severity,
+            file_path: selectedAnomaly.file_path,
+            line_number: selectedAnomaly.line_number,
+            data_direction: dataDirection.taintSummary,
+          }
+        : null,
+    };
+    downloadFile('aether_bounty_scope.json', JSON.stringify(payload, null, 2), 'application/json');
+    showSyncedToast('Configuration Scope JSON téléchargée');
   }
+
+  async function saveReportToWorkspace() {
+    if (!selectedAnomaly) return;
+    const projectPath = cockpitState.graph.project_path || '.';
+    const md = buildBugBountyMarkdownReport(selectedAnomaly, {
+      presetLabel,
+      recReason: activeRecommendation?.reason,
+      snippetLines: codeLines,
+      dataDirection,
+    });
+    const slug = (selectedAnomaly.cve_id || 'bounty').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    const relPath = `.aether/bounty_reports/report_${slug}.md`;
+    try {
+      await api.createFile({
+        project_path: projectPath,
+        file_path: relPath,
+        content: md,
+      });
+      playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+      showSyncedToast(`Sauvegardé dans ${relPath}`);
+    } catch (e) {
+      showSyncedToast(
+        `Échec sauvegarde : ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+  }
+
+  async function sendPromptToMcpChat(promptText: string, targetSymbol?: string) {
+    try {
+      await api.sendChatMessage(promptText, 'user', targetSymbol);
+      sentToMcp = true;
+      playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+      showSyncedToast('Prompt transmis au Copilote IA MCP');
+      setTimeout(() => {
+        sentToMcp = false;
+      }, 2600);
+    } catch (e) {
+      showSyncedToast(`Erreur Chat MCP : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function sendScopePromptToMcpChat() {
+    await sendPromptToMcpChat(step1Prompt, inScopeFoldersList[0] || undefined);
+  }
+
+  async function sendPocMissionToMcpChat() {
+    if (!selectedAnomaly) {
+      await sendPromptToMcpChat(step4TargetPrompt, selectedSymbol?.file_path);
+      return;
+    }
+    const curl = buildCurlCommand(selectedAnomaly);
+    const msg = `${step4TargetPrompt}\n\n### Commande cURL\n\`\`\`bash\n${curl}\n\`\`\``;
+    await sendPromptToMcpChat(msg, selectedAnomaly.file_path);
+  }
+
+  function closeModal() {
+    cockpitState.isBountyModalOpen = false;
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && cockpitState.isBountyModalOpen) {
+      e.preventDefault();
+      closeModal();
+    }
+  }
+
+  // Hydrate modal target & server scope when opened
+  $effect(() => {
+    if (!cockpitState.isBountyModalOpen) return;
+
+    untrack(() => {
+      void loadServerScope();
+      const activeNode = cockpitState.activeSymbol;
+      if (activeNode) {
+        selectedSymbol = activeNode;
+        const matchedVuln =
+          cockpitState.allViolations.find((v) => pathsMatch(v.file_path, activeNode.file_path)) ||
+          null;
+        selectedAnomaly = matchedVuln;
+        if (matchedVuln) currentStep = 2;
+      } else if (!selectedAnomaly && filteredTargets.length > 0) {
+        selectedAnomaly = filteredTargets[0];
+      }
+    });
+  });
+
+  // Load real source code whenever target file changes while modal is open
+  $effect(() => {
+    if (!cockpitState.isBountyModalOpen) return;
+    const fp = activeFilePath;
+    if (!fp) {
+      rawFileContent = '';
+      snippetFileError = '';
+      return;
+    }
+    untrack(() => {
+      void loadTargetFileContent(fp);
+    });
+  });
+
+  // Auto-select most relevant function for newly loaded file/target
+  $effect(() => {
+    if (!cockpitState.isBountyModalOpen) return;
+    const fns = fileFunctions;
+    if (fns.length === 0) return;
+    const lineHint = selectedAnomaly?.line_number || selectedSymbol?.line_number || 1;
+    const symHint = selectedSymbol;
+    const currentFn = untrack(() => activeFunction);
+    const stillValid = currentFn && fns.some((f) => f.id === currentFn.id);
+    if (!stillValid) {
+      activeFunction = pickDefaultFunctionForFile(fns, lineHint, symHint);
+    }
+  });
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if cockpitState.isBountyModalOpen}
+  <!-- Backdrop -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none"
-    onclick={() => (cockpitState.isBountyModalOpen = false)}
-    role="presentation"
+    class="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4"
+    onclick={closeModal}
   >
+    <!-- Studio Modal Shell -->
     <div
-      class="w-full max-w-5xl max-h-[88vh] bg-[#0c0f17] border border-rose-500/30 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-slate-100"
+      class="w-full max-w-[1440px] h-[93vh] rounded-2xl border border-amber-500/35 bg-[#070a12] shadow-2xl shadow-amber-950/30 flex flex-col overflow-hidden"
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => { if (e.key === 'Escape') cockpitState.isBountyModalOpen = false; }}
-      role="dialog"
-      aria-modal="true"
-      tabindex="-1"
     >
-      <!-- Header -->
-      <div class="px-5 py-3 border-b border-white/10 flex items-center justify-between bg-rose-950/20">
-        <div class="flex items-center gap-2.5 flex-wrap">
-          <ShieldAlert class="w-5 h-5 text-rose-400" />
-          <h2 class="text-sm font-bold tracking-tight text-white">
-            Générateur de PoC Bug Bounty & Audit Zero-Day
-          </h2>
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
-            {filtered.length} / {cockpitState.allViolations.length} In-Scope
-          </span>
-          <!-- Bug Bounty Program Presets -->
-          <div class="flex items-center gap-1 ml-2">
-            {#each Object.entries(BOUNTY_PRESETS) as [presetKey, preset]}
-              <button
-                type="button"
-                onclick={() => applyBountyPreset(presetKey as BountyPresetId)}
-                title={preset.rationale}
-                class="px-2 py-0.5 rounded text-[10px] font-mono border transition-all cursor-pointer {activePreset === presetKey ? 'bg-amber-500/25 border-amber-400/50 text-amber-200 font-bold' : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'}"
-              >
-                {preset.badge} {preset.label}
-              </button>
-            {/each}
+      <!-- 1. Top Studio Header -->
+      <header class="px-4 py-2.5 border-b border-white/10 bg-gradient-to-r from-[#0d1323] via-[#0a0f1d] to-[#120d18] flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div class="flex flex-wrap items-center gap-2.5 min-w-0">
+          <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/30 to-rose-500/30 border border-amber-400/50 flex items-center justify-center shrink-0">
+            <Radar class="w-4 h-4 text-amber-300" />
           </div>
-        </div>
-        <button
-          onclick={() => (cockpitState.isBountyModalOpen = false)}
-          class="p-1 rounded text-slate-400 hover:text-white cursor-pointer"
-        >
-          <X class="w-4 h-4" />
-        </button>
-      </div>
-
-      <!-- Content Split View -->
-      <div class="flex-1 flex overflow-hidden">
-        <!-- List Sidebar -->
-        <div class="w-88 border-r border-white/10 flex flex-col bg-black/30 shrink-0">
-          <!-- Severity Filter Tabs -->
-          <div class="flex items-center p-2 gap-1 border-b border-white/10 text-[11px] font-mono">
-            <button
-              onclick={() => (filterSeverity = 'ALL')}
-              class="flex-1 py-1 rounded transition-colors cursor-pointer {filterSeverity === 'ALL' ? 'bg-white/10 text-white font-bold' : 'text-slate-400'}"
-            >
-              Tous ({filtered.length})
-            </button>
-            <button
-              onclick={() => (filterSeverity = 'CRITICAL')}
-              class="flex-1 py-1 rounded transition-colors cursor-pointer {filterSeverity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-300 font-bold' : 'text-slate-400'}"
-            >
-              Critique ({cockpitState.criticalViolations.length})
-            </button>
-            <button
-              onclick={() => (filterSeverity = 'HIGH')}
-              class="flex-1 py-1 rounded transition-colors cursor-pointer {filterSeverity === 'HIGH' ? 'bg-orange-500/20 text-orange-300 font-bold' : 'text-slate-400'}"
-            >
-              Élevé
-            </button>
-          </div>
-
-          <!-- Internal CWE / File Search -->
-          <div class="px-2 py-1.5 border-b border-white/10 bg-black/25">
-            <div class="relative">
-              <Search class="w-3 h-3 text-slate-500 absolute left-2.5 top-2" />
-              <input
-                type="text"
-                bind:value={cveSearchQuery}
-                placeholder="Filtrer CWE, titre, fichier..."
-                class="w-full pl-7 pr-2 py-1 rounded bg-white/[0.04] border border-white/10 text-[10.5px] font-mono text-slate-200 focus:outline-none focus:border-rose-400/50"
-              />
-            </div>
-          </div>
-
-          <!-- Interactive In-Scope / Out-of-Scope Folder Pills + MCP & AI Recommender -->
-          {#if projectFolders.length > 0}
-            <div class="p-2 border-b border-white/10 bg-black/20 space-y-1.5">
-              <div class="flex items-center justify-between gap-1 text-[9.5px] font-mono text-slate-400">
-                <span class="flex items-center gap-1" title="Mode actif : {scopeModeLabel} ({scopeUpdatedBy})">
-                  <Plug class="w-2.5 h-2.5 text-sky-400" />
-                  SCOPE MCP ({scopeModeLabel === 'mcp_synced' ? 'MCP' : 'IA'})
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-sm font-extrabold font-mono tracking-tight text-white">
+                Scope PoC · Bug Bounty Studio
+              </h2>
+              <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono font-bold">
+                {inScopeFoldersList.length} dossiers In-Scope
+              </span>
+              {#if lockedSingleFolder !== 'ALL'}
+                <span class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-200 text-[10px] font-mono font-bold">
+                  <Lock class="w-3 h-3" />
+                  <span>{lockedSingleFolder}</span>
                 </span>
-                <div class="flex gap-1">
-                  <button
-                    type="button"
-                    onclick={() => (showWildcardEditor = !showWildcardEditor)}
-                    class="flex items-center gap-0.5 px-1.5 py-0.5 rounded border cursor-pointer {showWildcardEditor ? 'bg-sky-500/25 border-sky-400/40 text-sky-200' : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-300'}"
-                    title="Éditer les règles Wildcards In-Scope / Out-of-Scope (*.test.ts, migrations/*, etc.)"
-                  >
-                    <SlidersHorizontal class="w-2.5 h-2.5" /> Règles
-                  </button>
-                  <button
-                    type="button"
-                    onclick={applyAiRecommendedScope}
-                    class="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/30 text-purple-200 cursor-pointer"
-                    title="Laisser l'IA / AST configurer automatiquement le In-Scope (surfaces exposées & CWE) et Out-of-Scope (tests/docs)"
-                  >
-                    <Sparkles class="w-2.5 h-2.5" /> Auto-IA
-                  </button>
-                  <button
-                    type="button"
-                    onclick={() => syncOutScopeToScanner()}
-                    class="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 text-emerald-300 cursor-pointer"
-                    title="Synchroniser In-Scope / Out-of-Scope vers MCP (.aether/bounty_scope.json) et Surface Scanner"
-                  >
-                    <Radar class="w-2.5 h-2.5" /> Sync MCP
-                  </button>
-                </div>
-              </div>
-              {#if syncedNotice}
-                <div class="text-[9.5px] font-mono text-emerald-300">{syncedNotice}</div>
-              {:else if scopeRationale}
-                <div class="text-[9px] font-mono text-slate-400 truncate" title={scopeRationale}>
-                  💡 {scopeRationale}
-                </div>
               {/if}
-
-              {#if showWildcardEditor}
-                <div class="grid grid-cols-2 gap-1.5 pt-1">
-                  <div class="flex flex-col gap-0.5">
-                    <span class="text-[8.5px] font-mono text-emerald-300 uppercase">🎯 In-Scope Wildcards</span>
-                    <textarea
-                      bind:value={inScopePatternsText}
-                      rows="3"
-                      placeholder="crates/*&#10;src/*&#10;*.rs"
-                      class="w-full p-1.5 rounded bg-[#050811] border border-emerald-500/30 text-[9.5px] font-mono text-emerald-100 focus:outline-none resize-none"
-                    ></textarea>
-                  </div>
-                  <div class="flex flex-col gap-0.5">
-                    <span class="text-[8.5px] font-mono text-rose-300 uppercase">🚫 Out-of-Scope Wildcards</span>
-                    <textarea
-                      bind:value={outScopePatternsText}
-                      rows="3"
-                      placeholder="tests/*&#10;*.test.*&#10;docs/*"
-                      class="w-full p-1.5 rounded bg-[#050811] border border-rose-500/30 text-[9.5px] font-mono text-rose-100 focus:outline-none resize-none"
-                    ></textarea>
-                  </div>
-                </div>
-              {/if}
-
-              <div class="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
-                {#each projectFolders as item}
-                  {@const isOut = Boolean(excludedFolders[item.folder])}
-                  {@const rec = recByFolder.get(item.folder)}
-                  <button
-                    type="button"
-                    onclick={() => toggleFolderScope(item.folder)}
-                    title="{item.folder} • {rec ? `${rec.status.toUpperCase()} (score ${rec.score}) : ${rec.reason}` : isOut ? 'Out-of-Scope' : 'In-Scope'}"
-                    class="px-1.5 py-0.5 rounded text-[9.5px] font-mono border cursor-pointer {isOut ? 'bg-rose-500/15 border-rose-500/35 text-rose-300 line-through' : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'}"
-                  >
-                    {isOut ? '🚫' : '🎯'} {item.folder} ({item.count})
-                  </button>
-                {/each}
-              </div>
-              <button
-                type="button"
-                onclick={() => sendPocMissionToMcpChat(null)}
-                class="w-full py-1 px-2 rounded bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-200 text-[9.5px] font-mono flex items-center justify-center gap-1 cursor-pointer"
-              >
-                <Send class="w-2.5 h-2.5" />
-                {sentToMcp && !selectedAnomaly ? 'Mission Scope envoyée au Chat MCP !' : 'Demander à l\'Agent MCP de configurer le Scope'}
-              </button>
             </div>
-          {/if}
-
-          <!-- Anomalies Items -->
-          <div class="flex-1 overflow-y-auto p-2 space-y-1">
-            {#each filtered as a}
-              <button
-                onclick={() => selectAnomaly(a)}
-                class="w-full text-left p-2 rounded-lg border transition-all cursor-pointer {selectedAnomaly?.cve_id === a.cve_id && selectedAnomaly?.line_number === a.line_number && selectedAnomaly?.file_path === a.file_path ? 'bg-rose-500/15 border-rose-500/40 text-white' : 'bg-white/[0.02] border-white/5 text-slate-300 hover:bg-white/[0.05]'}"
-              >
-                <div class="flex items-center justify-between text-[10px] font-mono">
-                  <span class="font-bold {a.severity === 'CRITICAL' ? 'text-rose-400' : 'text-orange-400'}">{a.cve_id}</span>
-                  <span class="text-slate-500">{a.line_number ? `L${a.line_number}` : ''}</span>
-                </div>
-                <div class="text-xs font-semibold truncate mt-0.5">{a.title}</div>
-                <div class="text-[10px] text-slate-500 font-mono truncate">{a.file_path}</div>
-              </button>
-            {/each}
-            {#if filtered.length === 0}
-              <div class="py-12 text-center text-xs text-slate-500 font-mono">
-                Aucune anomalie In-Scope détectée
-              </div>
-            {/if}
+            <p class="text-[10.5px] font-mono text-slate-400 truncate max-w-[540px]">
+              {#if selectedAnomaly}
+                Cible : <span class="text-amber-300 font-bold">{selectedAnomaly.cve_id}</span>
+                <span class="text-slate-500">·</span>
+                <span class="text-rose-300">{selectedAnomaly.cwe_class || 'CWE'}</span>
+                <span class="text-slate-500">·</span>
+                <span class="text-cyan-300">{selectedAnomaly.file_path}:{selectedAnomaly.line_number || 1}</span>
+              {:else if selectedSymbol}
+                Symbole : <span class="text-sky-300 font-bold">{selectedSymbol.name}</span>
+                <span class="text-slate-500">·</span>
+                <span class="text-cyan-300">{selectedSymbol.file_path}</span>
+              {:else}
+                Orchestration multi-étapes : Scope, Fonctions AST, Code Source, Direction Data & PoC
+              {/if}
+            </p>
           </div>
         </div>
 
-        <!-- Detail Preview -->
-        <div class="flex-1 flex flex-col p-4 overflow-y-auto bg-[#0a0d14]">
+        <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+          {#if syncedNotice}
+            <span class="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-[10.5px] font-mono">
+              <CheckCircle2 class="w-3.5 h-3.5" />
+              <span>{syncedNotice}</span>
+            </span>
+          {/if}
+
+          <button
+            type="button"
+            onclick={toggleIsolateScopeIn3DGraph}
+            class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-mono border cursor-pointer {isolateScopeIn3DGraph
+              ? 'bg-emerald-500/25 border-emerald-400/50 text-emerald-200 font-bold'
+              : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-200'}"
+            title="Isoler uniquement les dossiers In-Scope dans la scène 3D"
+          >
+            <Eye class="w-3.5 h-3.5" />
+            <span>Isoler 3D</span>
+          </button>
+
           {#if selectedAnomaly}
-            <div class="flex flex-col gap-3.5">
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-[10px] font-mono px-2 py-0.5 rounded font-bold {selectedAnomaly.severity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-orange-500/20 text-orange-300 border border-orange-500/40'}">
-                      {selectedAnomaly.severity} · {selectedAnomaly.cwe_class}
-                    </span>
-                    <button
-                      type="button"
-                      onclick={() => selectedAnomaly && focusAnomalyInGraph(selectedAnomaly)}
-                      class="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/35 text-[10px] font-mono text-sky-300 cursor-pointer"
-                      title="Téléporter la caméra sur cette bulle dans le graphe"
-                    >
-                      <ExternalLink class="w-2.5 h-2.5" /> Cibler dans le Graphe
-                    </button>
-                  </div>
-                  <h3 class="text-base font-bold text-white mt-1.5">{selectedAnomaly.title}</h3>
-                  <p class="text-xs font-mono text-slate-400 mt-0.5">
-                    {selectedAnomaly.file_path}:{selectedAnomaly.line_number}
-                  </p>
+            <button
+              type="button"
+              onclick={saveReportToWorkspace}
+              class="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 text-[11px] font-mono cursor-pointer"
+            >
+              <Save class="w-3.5 h-3.5" />
+              <span>Sauver .aether/</span>
+            </button>
+
+            <button
+              type="button"
+              onclick={downloadReportMd}
+              class="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 text-[11px] font-mono font-bold cursor-pointer"
+            >
+              <Download class="w-3.5 h-3.5" />
+              <span>Rapport .md</span>
+            </button>
+          {/if}
+
+          <button
+            type="button"
+            onclick={closeModal}
+            class="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/25 border border-white/10 hover:border-rose-400/50 text-slate-300 hover:text-white cursor-pointer"
+            aria-label="Fermer Scope PoC Studio"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
+      <!-- 2. 4-Step Horizontal Stepper + Persistent Target Quick-Bar -->
+      <div class="px-4 py-2 border-b border-white/10 bg-[#090d18] flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <nav class="flex flex-wrap items-center gap-1.5" aria-label="Étapes Scope PoC">
+          {#each STEPS as step}
+            {@const isActive = currentStep === step.id}
+            <button
+              type="button"
+              onclick={() => {
+                currentStep = step.id;
+                playSpatialTone(cockpitState.settings.soundEnabled, 'select');
+              }}
+              class="group flex items-center gap-2 px-3 py-1.5 rounded-xl border text-left transition-all cursor-pointer {isActive
+                ? 'bg-gradient-to-r from-amber-500/20 to-cyan-500/15 border-amber-400/60 shadow-sm shadow-amber-500/10'
+                : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 text-slate-400 hover:text-slate-200'}"
+            >
+              <span
+                class="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-extrabold font-mono {isActive
+                  ? 'bg-amber-500 text-slate-950'
+                  : 'bg-white/10 text-slate-300'}"
+              >
+                {step.num}
+              </span>
+              <div class="leading-tight">
+                <div class="text-[11px] font-bold font-mono {isActive ? 'text-white' : ''}">
+                  {step.label}
                 </div>
-
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onclick={() => selectedAnomaly && sendPocMissionToMcpChat(selectedAnomaly)}
-                    class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-600/80 hover:bg-purple-600 border border-purple-400/40 text-white text-xs font-bold transition-all cursor-pointer"
-                    title="Envoyer la cible In-Scope et la demande de PoC dans le canal MCP"
-                  >
-                    <Send class="w-3.5 h-3.5" />
-                    <span>{sentToMcp ? 'Envoyé MCP !' : 'Envoyer Agent MCP'}</span>
-                  </button>
-                  <button
-                    onclick={() => selectedAnomaly && copyBountyPrompt(selectedAnomaly)}
-                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-lg shadow-rose-500/25 cursor-pointer"
-                  >
-                    {#if copied}
-                      <Check class="w-3.5 h-3.5" />
-                      <span>Copié !</span>
-                    {:else}
-                      <Copy class="w-3.5 h-3.5" />
-                      <span>Copier Prompt PoC + MCP</span>
-                    {/if}
-                  </button>
-                </div>
-              </div>
-
-              <!-- Prompt / Report Mode Selector -->
-              <div class="flex items-center gap-1 p-1 rounded-lg bg-black/40 border border-white/10 text-[10.5px] font-mono">
-                <button
-                  type="button"
-                  onclick={() => (promptFormat = 'poc_exploit')}
-                  class="flex-1 py-1 px-2 rounded cursor-pointer transition-colors {promptFormat === 'poc_exploit' ? 'bg-rose-500/25 text-rose-200 border border-rose-500/40 font-bold' : 'text-slate-400 hover:text-white'}"
-                >
-                  🎯 PoC Exploit Défensif
-                </button>
-                <button
-                  type="button"
-                  onclick={() => (promptFormat = 'gold_patch')}
-                  class="flex-1 py-1 px-2 rounded cursor-pointer transition-colors {promptFormat === 'gold_patch' ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-500/40 font-bold' : 'text-slate-400 hover:text-white'}"
-                >
-                  🛡️ Gold Patch EARS
-                </button>
-                <button
-                  type="button"
-                  onclick={() => (promptFormat = 'bounty_report')}
-                  class="flex-1 py-1 px-2 rounded cursor-pointer transition-colors {promptFormat === 'bounty_report' ? 'bg-amber-500/25 text-amber-200 border border-amber-500/40 font-bold' : 'text-slate-400 hover:text-white'}"
-                >
-                  🏆 Rapport Bounty
-                </button>
-                <button
-                  type="button"
-                  onclick={() => (promptFormat = 'full_handshake')}
-                  class="flex-1 py-1 px-2 rounded cursor-pointer transition-colors {promptFormat === 'full_handshake' ? 'bg-purple-500/25 text-purple-200 border border-purple-500/40 font-bold' : 'text-slate-400 hover:text-white'}"
-                >
-                  🤝 Handshake MCP
-                </button>
-              </div>
-
-              <!-- Faulty Source Code Snippet Preview (line ± 5) -->
-              <div class="rounded-lg bg-[#05070d] border border-rose-500/30 overflow-hidden">
-                <div class="px-3 py-1.5 bg-rose-950/30 border-b border-rose-500/20 flex items-center justify-between text-[10px] font-mono text-rose-200">
-                  <span class="flex items-center gap-1.5">
-                    <Code2 class="w-3.5 h-3.5 text-rose-400" />
-                    Extrait Code Source Fautif ({selectedAnomaly.file_path} · Ligne {selectedAnomaly.line_number})
-                  </span>
-                  <span class="text-rose-400/80">Contexte ±5 lignes</span>
-                </div>
-                {#if snippetLoading}
-                  <div class="p-3 text-[11px] font-mono text-slate-400">Chargement de l'extrait source...</div>
-                {:else if snippetLines.length > 0}
-                  <div class="p-2 font-mono text-[10.5px] overflow-x-auto leading-relaxed">
-                    {#each snippetLines as ln}
-                      <div
-                        class="flex items-center px-2 py-0.5 rounded {ln.isFaulty ? 'bg-rose-500/25 border-l-2 border-rose-400 text-rose-100 font-bold' : 'text-slate-300'}"
-                      >
-                        <span class="w-10 shrink-0 select-none text-right pr-3 {ln.isFaulty ? 'text-rose-300' : 'text-slate-500'}">{ln.num}</span>
-                        <span class="whitespace-pre flex-1">{ln.text}</span>
-                        {#if ln.isFaulty}
-                          <span class="ml-3 px-1.5 py-0.2 rounded bg-rose-500/40 text-[9px] text-white shrink-0">◄ {selectedAnomaly.cve_id}</span>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {:else}
-                  <div class="p-3 text-[11px] font-mono text-slate-500">{snippetFileError || 'Extrait non disponible'}</div>
-                {/if}
-              </div>
-
-              <!-- Description & Remediation Grid -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div class="p-3 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1">
-                  <span class="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Description de la Faille</span>
-                  <p class="text-xs text-slate-300 leading-relaxed">{selectedAnomaly.description}</p>
-                </div>
-
-                <div class="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/20 flex flex-col gap-1">
-                  <span class="text-[10px] font-mono text-emerald-400 uppercase tracking-wider">Guide de Remédiation Défensive</span>
-                  <p class="text-xs text-emerald-200/90 leading-relaxed">{selectedAnomaly.remediation}</p>
+                <div class="text-[9.5px] font-mono text-slate-400 hidden xl:block">
+                  {#if step.id === 1}
+                    {inScopeFoldersList.length} dossiers · {filteredTargets.length} CVE
+                  {:else if step.id === 2}
+                    {filteredTargets.length} cibles · {fileFunctions.length} fonctions
+                  {:else if step.id === 3}
+                    🌊 {dataDirection.upstream.length} IN → {dataDirection.downstream.length} OUT
+                  {:else}
+                    ⚡ 8 formats & Dry-Run
+                  {/if}
                 </div>
               </div>
+            </button>
+          {/each}
+        </nav>
 
-              <!-- Live Prompt / Handshake Preview -->
-              <div class="rounded-lg bg-black/50 border border-white/10 overflow-hidden">
-                <div class="px-3 py-1.5 bg-white/[0.03] border-b border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                  <span>Aperçu du Payload ({promptFormat})</span>
-                  <span>Prêt pour Presse-Papiers / Canal MCP</span>
-                </div>
-                <pre class="p-3 text-[10px] font-mono text-slate-300 whitespace-pre-wrap max-h-44 overflow-y-auto leading-relaxed">{activePromptPreview}</pre>
-              </div>
-            </div>
-          {:else}
-            <div class="h-full flex flex-col items-center justify-center text-center text-slate-500 gap-2">
-              <Terminal class="w-8 h-8 text-slate-600" />
-              <p class="text-xs font-mono">Sélectionnez une vulnérabilité à gauche pour générer le prompt PoC Bug Bounty.</p>
-            </div>
+        <!-- Persistent Target Quick-Switcher (Usable across Steps 2-4) -->
+        <div class="flex items-center gap-2 min-w-0 max-w-full sm:max-w-[430px]">
+          <div class="flex items-center gap-1 text-[10px] font-mono text-amber-300 shrink-0">
+            <ShieldAlert class="w-3.5 h-3.5" />
+            <span class="hidden md:inline">Cible :</span>
+          </div>
+          <select
+            class="flex-1 min-w-[200px] max-w-[380px] bg-black/50 border border-white/15 rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-100 focus:outline-none focus:border-amber-400"
+            value={selectedAnomaly ? `${selectedAnomaly.cve_id}::${selectedAnomaly.file_path}:${selectedAnomaly.line_number}` : ''}
+            onchange={(e) => {
+              const val = e.currentTarget.value;
+              const match = filteredTargets.find(
+                (t) => `${t.cve_id}::${t.file_path}:${t.line_number}` === val
+              );
+              if (match) selectAnomalyTarget(match);
+            }}
+          >
+            {#if filteredTargets.length === 0}
+              <option value="">Aucune CVE dans le scope actif ({inScopeFoldersList.length} dossiers)</option>
+            {:else}
+              {#if !selectedAnomaly}
+                <option value="">-- Sélectionner parmi {filteredTargets.length} CVE --</option>
+              {/if}
+              {#each filteredTargets as t}
+                <option value={`${t.cve_id}::${t.file_path}:${t.line_number}`}>
+                  [{t.severity}] {t.cve_id} ({t.cwe_class || 'CWE'}) · {t.file_path}:{t.line_number || 1}
+                </option>
+              {/each}
+            {/if}
+          </select>
+
+          {#if activeFunction}
+            <button
+              type="button"
+              onclick={() => (currentStep = 3)}
+              class="hidden lg:flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-500/15 border border-sky-400/35 text-sky-200 text-[10px] font-mono shrink-0 cursor-pointer hover:bg-sky-500/25"
+              title="Inspecter la fonction active et son flux de données (Étape 3)"
+            >
+              <Code2 class="w-3 h-3" />
+              <span class="truncate max-w-[110px]">{activeFunction.name}()</span>
+            </button>
           {/if}
         </div>
       </div>
+
+      <!-- 3. Active Step Viewport -->
+      <main class="flex-1 min-h-0 flex flex-col overflow-hidden">
+        {#if currentStep === 1}
+          <StepScopePanel
+            {projectFolders}
+            {filteredProjectFolders}
+            {inScopeFoldersList}
+            {outScopeFoldersList}
+            {recByFolder}
+            {excludedFolders}
+            {lockedSingleFolder}
+            bind:folderSearchQuery
+            bind:showWildcardEditor
+            bind:inScopePatternsText
+            bind:outScopePatternsText
+            {activePreset}
+            {scopeModeLabel}
+            {scopeUpdatedBy}
+            {scopeRationale}
+            {isolateScopeIn3DGraph}
+            bind:scopePromptMission
+            bind:strictFolderBoundary
+            bind:includeTopTargetsInPrompt
+            bind:requireNonDestructivePoc
+            bind:requireEarsInvariant
+            bind:customScopeInstructions
+            filteredTargetsCount={filteredTargets.length}
+            {step1Prompt}
+            {copiedKey}
+            {sentToMcp}
+            onApplyPreset={applyBountyPreset}
+            onApplyAiRecommended={applyAiRecommendedScope}
+            onSyncOutScope={syncOutScopeToScanner}
+            onToggleIsolate3D={toggleIsolateScopeIn3DGraph}
+            onLockSingleFolder={lockToSingleFolder}
+            onIsolateOnlyFolder={isolateOnlyFolderInMatrix}
+            onSetAllFoldersScope={setAllFoldersScope}
+            onToggleFolderScope={toggleFolderScope}
+            onCopyText={copyText}
+            onSendScopePrompt={sendScopePromptToMcpChat}
+            onDownloadScopePrompt={downloadScopePromptMd}
+            onGoNextStep={() => (currentStep = 2)}
+          />
+        {:else if currentStep === 2}
+          <StepTargetsFunctionsPanel
+            {filteredTargets}
+            {inScopeNodes}
+            {selectedAnomaly}
+            {selectedSymbol}
+            bind:filterSeverity
+            bind:filterReachableOnly
+            bind:cveSearchQuery
+            {criticalCount}
+            {fileFunctions}
+            {activeFunction}
+            {lockedSingleFolder}
+            {step2Prompt}
+            {copiedKey}
+            {sentToMcp}
+            onSelectAnomaly={(a) => selectAnomalyTarget(a)}
+            onSelectSymbol={(s) => selectSymbolTarget(s)}
+            onSelectFunction={(fn) => selectFunctionItem(fn)}
+            onInspectFunctionCodeData={(fn) => selectFunctionItem(fn, 3)}
+            onFocusInGraph={focusActiveTargetIn3DGraph}
+            onUnlockFolder={() => {
+              lockedSingleFolder = 'ALL';
+              void syncOutScopeToScanner('Unlock Folder');
+            }}
+            onCopyText={copyText}
+            onSendPromptToChat={sendPromptToMcpChat}
+            onGoPrevStep={() => (currentStep = 1)}
+            onGoNextStep={() => (currentStep = 3)}
+          />
+        {:else if currentStep === 3}
+          <StepCodeDataPanel
+            {selectedAnomaly}
+            {selectedSymbol}
+            {fileFunctions}
+            {activeFunction}
+            {codeLines}
+            bind:codeViewMode
+            {snippetLoading}
+            {snippetFileError}
+            {dataDirection}
+            {step3Prompt}
+            {copiedKey}
+            {sentToMcp}
+            onSelectFunction={(fn) => selectFunctionItem(fn)}
+            onToggleCodeViewMode={(mode) => (codeViewMode = mode)}
+            onJumpToDataNode={handleJumpToDataNode}
+            onFocusInGraph={focusActiveTargetIn3DGraph}
+            onCopyText={copyText}
+            onSendPromptToChat={sendPromptToMcpChat}
+            onGoPrevStep={() => (currentStep = 2)}
+            onGoNextStep={() => (currentStep = 4)}
+          />
+        {:else}
+          <StepPromptsPocPanel
+            {selectedAnomaly}
+            {selectedSymbol}
+            {activeFunction}
+            {codeLines}
+            {dataDirection}
+            bind:promptFormat
+            bind:reportRenderMode
+            {step1Prompt}
+            {step4TargetPrompt}
+            {activePreset}
+            {presetLabel}
+            {scopeModeLabel}
+            {inScopeFoldersList}
+            {outScopeFoldersList}
+            {lockedSingleFolder}
+            {activeRecommendation}
+            {isDryRunning}
+            {dryRunResult}
+            bind:dryRunActiveTab
+            {copiedKey}
+            {sentToMcp}
+            onGoStep2={() => (currentStep = 2)}
+            onGoPrevStep={() => (currentStep = 3)}
+            onExecuteDryRun={executePocDryRun}
+            onCopyText={copyText}
+            onSendPromptToChat={sendPromptToMcpChat}
+            onSendPocMissionToMcp={sendPocMissionToMcpChat}
+            onSaveReportToWorkspace={saveReportToWorkspace}
+            onDownloadReportMd={downloadReportMd}
+            onDownloadScopeJson={downloadScopeJson}
+          />
+        {/if}
+      </main>
     </div>
   </div>
 {/if}

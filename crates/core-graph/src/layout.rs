@@ -78,8 +78,8 @@ pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
     for (dir_name, indices) in dir_groups {
         let (branch, sub) = get_branch(&dir_name);
         let n_len = indices.len();
-        // Rayon cellulaire dynamique généreux proportionnel au nombre de symboles
-        let radius = ((n_len as f64).sqrt() * 78.0 + 75.0).clamp(120.0, 780.0);
+        // Rayon cellulaire dynamique généreux proportionnel au nombre de symboles (espace accru classes & fonctions)
+        let radius = ((n_len as f64).sqrt() * 95.0 + 90.0).clamp(150.0, 950.0);
         branch_map.entry(branch).or_default().push(FolderInfo {
             _name: dir_name,
             sub,
@@ -177,9 +177,9 @@ pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
                 let (node_dist, node_angle) = if n_len <= 1 {
                     (0.0, 0.0)
                 } else {
-                    // Dégagement central ferme (r0 = 38px) : aucune bulle ne se superpose au barycentre
+                    // Dégagement central ferme (r0 = 48px) : espacement généreux pour classes et fonctions
                     let t = (i as f64 + 0.6) / n_len as f64;
-                    let dist = 38.0 + t.sqrt() * (folder.radius - 42.0);
+                    let dist = 48.0 + t.sqrt() * (folder.radius - 48.0);
                     let angle = i as f64 * GOLDEN_ANGLE;
                     (dist, angle)
                 };
@@ -264,8 +264,8 @@ pub fn compute_classes_layout(nodes: &mut [SymbolBubble]) {
         return;
     }
     let cols = ((total_nodes as f64 * 1.4).sqrt().ceil() as usize).max(2);
-    let spacing_x = 340.0;
-    let spacing_y = 160.0;
+    let spacing_x = 380.0;
+    let spacing_y = 210.0;
 
     for idx in 0..total_nodes {
         let r = idx / cols;

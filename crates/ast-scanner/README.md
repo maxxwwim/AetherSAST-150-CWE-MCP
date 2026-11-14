@@ -1,31 +1,26 @@
 ---
 id: ast-scanner
-layer: application
-max_lines_per_file: 5000
-allowed_imports: ["core_graph::*", "security_linter::*", "walkdir::*", "rayon::*", "regex::*", "serde::*", "serde_json::*", "toml::*", "std::*"]
+layer: action
+max_lines_per_file: 2500
+allowed_imports: ["core_graph::*", "security_linter::*", "obsidian_vault::*", "walkdir::*", "rayon::*", "regex::*", "serde::*", "thiserror::*", "std::*"]
 forbidden_imports: ["ai_file_bridge::*", "arch_templates::*", "desktop_shell::*", "axum::*", "tokio::*"]
 security_rules:
   no_raw_sql: true
   no_env_access: true
 ---
-# 🔍 ast-scanner — Scanner AST polyglotte multithread
+# 🔍 ast-scanner — Scanner AST polyglotte multithread & Empreintes BLAKE3 (v2.4.0)
 
-Parcourt un projet (`walkdir` + `rayon`), extrait symboles, relations et routes, puis alimente `core-graph` et déclenche l'audit de `security-linter`.
+Parcourt l'arborescence d'un projet en parallèle (`rayon`), extrait les symboles AST multi-langages (Rust, PHP, Zig, C#, Java, TypeScript/JS, Python, C/C++, Solidity/Move/Cairo, Markdown), calcule l'empreinte BLAKE3 de chaque fichier (`file_blake3_hash`), résout le contrat de dossier/fichier applicable et invoque `security-linter`.
 
 ## 📦 Contenu
 
 | Fichier | Rôle |
 | :--- | :--- |
-| `src/scanner.rs` | `ProjectScanner` : extraction par regex `OnceLock` (Rust, Java, PHP, Zig, C#, TS/JS, Python, C/C++, Smart Contracts, Markdown) |
-| `src/taint_extractor.rs` | Extraction polyglotte des flux de données intra-procéduraux (Sources, Propagations, Sanitizers, Sinks) |
-| `src/lib.rs` | Ré-exports publics |
-
-> [!NOTE]
-> `scanner.rs` dépasse le budget standard : le plafond est relevé, un découpage par langage est recommandé.
+| `src/scanner.rs` | `ProjectScanner`, regex compilées `OnceLock`, calcul BLAKE3 par fichier (`file_blake3_hash`), résolution des contrats (`find_contract_for_file`) et constructeurs d'arêtes d'affiliation |
+| `src/lib.rs` | Point d'entrée public du crate |
 
 ## 🛡️ Règles EARS
 
-- WHEN a project folder is scanned THE SYSTEM SHALL analyze files in parallel and build an `AetherGraph`.
-- WHEN a file matches a user exclusion THE SYSTEM SHALL skip it entirely.
-- WHEN a source file is parsed THE SYSTEM SHALL extract classes, traits, functions, routes and docstrings.
-- IF a file cannot be read THEN THE SYSTEM SHALL continue the scan without aborting.
+- WHEN a project directory is scanned THE SYSTEM SHALL parse source files in parallel using `rayon` and skip excluded directories (`target`, `node_modules`, `.git`, `.aether`).
+- WHEN a symbol is extracted THE SYSTEM SHALL attach its source file path, `file_blake3_hash`, `contract_folder`, `max_lines_limit`, `file_max_lines_override`, line number, complexity, and SAST anomalies.
+- IF a file of this folder exceeds `max_lines_per_file` THEN THE SYSTEM SHALL report a `RULE_MAX_LINES` warning.

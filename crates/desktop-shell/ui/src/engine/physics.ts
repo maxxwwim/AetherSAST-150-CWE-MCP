@@ -90,6 +90,9 @@ export class PhysicsController {
           layer: String(n.layer || 'domain'),
           loc: Number(n.loc) || 10,
           is_file: Boolean(n.is_file || n.kind === 'File'),
+          is_class: Boolean(n.is_class || n.kind === 'ClassOrStruct' || n.kind === 'TraitOrInterface' || n.kind === 'Enum'),
+          is_func: Boolean(n.kind === 'FunctionOrMethod'),
+          kind: String(n.kind || ''),
           layouts: this.clonePlainLayouts(n.layouts)
         })),
         edges: edges.map((e) => ({

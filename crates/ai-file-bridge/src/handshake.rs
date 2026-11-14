@@ -73,7 +73,7 @@ impl HandshakePacker {
 
         if let Some(c) = contract {
             xml.push_str("  <contract_rules>\n");
-            xml.push_str(&format!("    <max_lines>{}</max_lines>\n", c.frontmatter.max_lines_per_file));
+            xml.push_str(&format!("    <max_lines>{}</max_lines>\n", c.effective_max_lines(&symbol.file_path)));
             xml.push_str("    <allowed_imports>\n");
             for a in &c.frontmatter.allowed_imports {
                 xml.push_str(&format!("      <import>{}</import>\n", a));

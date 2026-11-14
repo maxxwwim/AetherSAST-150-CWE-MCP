@@ -121,7 +121,7 @@ impl AuditWriter {
             content.push_str("\n## 🔒 Contrat du dossier (`README.md`)\n\n");
             content.push_str(&format!("- **Imports autorisés :** `{:?}`\n", c.frontmatter.allowed_imports));
             content.push_str(&format!("- **Imports INTERDITS :** `{:?}`\n", c.frontmatter.forbidden_imports));
-            content.push_str(&format!("- **Lignes max :** `{}`\n\n", c.frontmatter.max_lines_per_file));
+            content.push_str(&format!("- **Lignes max :** `{}`\n\n", c.effective_max_lines(&symbol.file_path)));
 
             if !c.ears_requirements.is_empty() {
                 content.push_str("### 📋 Exigences EARS\n");

@@ -10,6 +10,7 @@ export const vsSource = `#version 300 es
   in vec4 a_color;
   in float a_is_file;
   in float a_birth_time;
+  in float a_git_status;
 
   uniform vec2 u_resolution;
   uniform vec2 u_camera_pos;
@@ -23,13 +24,16 @@ export const vsSource = `#version 300 es
   out float v_spawn_progress;
   out float v_time;
   out float v_phase;
+  out float v_git_status;
 
   void main() {
     v_uv = a_quad_pos;
     v_color = a_color;
     v_is_file = a_is_file;
     v_time = u_time;
-    v_phase = fract(sin(dot(a_node_pos, vec2(12.9898, 78.233))) * 43758.5453) * 6.283185;
+    v_git_status = a_git_status;
+    // Constant per-instance phase (never depends on a_node_pos so moving nodes never strobe or jitter!)
+    v_phase = fract(sin(float(gl_InstanceID) * 12.9898 + 78.233) * 43758.5453) * 6.283185;
 
     float dt = u_time - a_birth_time;
     if (dt <= 0.0) {
@@ -45,23 +49,24 @@ export const vsSource = `#version 300 es
     v_spawn_progress = progress;
 
     float ease_out = 1.0 - pow(1.0 - progress, 3.0);
-    float breath_overshoot = sin(progress * 3.14159) * 0.20 * (1.0 - progress);
-    float scale = clamp(ease_out + breath_overshoot, 0.0, 1.30);
+    float breath_overshoot = sin(progress * 3.14159) * 0.12 * (1.0 - progress);
+    float scale = clamp(ease_out + breath_overshoot, 0.0, 1.15);
     v_scale = scale;
 
-    float zoom_factor = clamp(1.0 / sqrt(clamp(u_zoom, 0.08, 3.5)), 0.85, 2.5);
-    float breath = 1.0 + 0.045 * sin(u_time * 0.0014 + v_phase);
-    float actual_r = a_radius * scale * breath * 2.85 * zoom_factor;
+    float zoom_factor = clamp(1.0 / sqrt(clamp(u_zoom, 0.001, 5.0)), 0.85, 4.5);
+    float breath = 1.0 + 0.038 * sin(u_time * 0.0016 + v_phase);
+    float git_margin = (a_git_status > 0.5) ? 1.16 : 1.0;
+    float actual_r = a_radius * scale * breath * 2.85 * zoom_factor * git_margin;
 
-    // Gentle organic cytoplasmic suspension drift (phase-shifted per bubble)
-    float buoy_x = sin(u_time * 0.00095 + v_phase + a_node_pos.y * 0.008) * 3.8
-                 + cos(u_time * 0.00055 + v_phase * 1.7) * 1.6;
-    float buoy_y = cos(u_time * 0.00082 + v_phase * 1.3 + a_node_pos.x * 0.008) * 4.2
-                 + sin(u_time * 0.00048 + v_phase) * 1.6;
+    // Organic living micro-drift in world space
+    float buoy_x = sin(u_time * 0.0011 + v_phase) * 1.5;
+    float buoy_y = cos(u_time * 0.0009 + v_phase * 1.3) * 1.5;
     vec2 dynamic_pos = a_node_pos + vec2(buoy_x, buoy_y);
 
-    vec2 world_pos = dynamic_pos + a_quad_pos * actual_r;
-    vec2 screen_pos = (world_pos - u_camera_pos) * u_zoom + u_resolution * 0.5;
+    // Guaranteed minimum screen-space radius (2.0px) for infinite dezoom without vanishing
+    float screen_r = max(2.0, actual_r * u_zoom);
+    vec2 screen_center = (dynamic_pos - u_camera_pos) * u_zoom + u_resolution * 0.5;
+    vec2 screen_pos = screen_center + a_quad_pos * screen_r;
     vec2 clip_pos = (screen_pos / u_resolution) * 2.0 - 1.0;
     clip_pos.y = -clip_pos.y;
 
@@ -78,6 +83,7 @@ export const fsSource = `#version 300 es
   in float v_spawn_progress;
   in float v_time;
   in float v_phase;
+  in float v_git_status;
 
   out vec4 fragColor;
 
@@ -87,9 +93,9 @@ export const fsSource = `#version 300 es
     if (r > 1.0) discard;
 
     float angle = atan(v_uv.y, v_uv.x);
-    // Multi-harmonic living cell membrane contour ("bulle vivante")
-    float wave = 0.044 * sin(angle * 3.0 + v_time * 0.0013 + v_phase)
-               + 0.026 * cos(angle * 5.0 - v_time * 0.00095 + v_phase * 1.6);
+    // Organic living cell membrane wave (amoeboid surface tension)
+    float wave = 0.028 * sin(angle * 3.0 + v_time * 0.0018 + v_phase)
+               + 0.016 * cos(angle * 5.0 - v_time * 0.0014 + v_phase * 1.6);
     float r_org = r * (1.0 + wave);
     vec3 col = v_color.rgb;
     vec3 final_rgb = col;
@@ -97,7 +103,7 @@ export const fsSource = `#version 300 es
 
     if (v_is_file < 0.5) {
       // SYMBOLE / FONCTION : Cellule synaptique bioluminescente vivante
-      float twinkle = 0.93 + 0.07 * sin(v_time * 0.0020 + v_phase);
+      float twinkle = 0.93 + 0.07 * sin(v_time * 0.0022 + v_phase);
       float core = 1.0 - smoothstep(0.0, 0.34, r_org);
       float cytoplasm = (1.0 - smoothstep(0.18, 0.62, r_org)) * 0.55;
       float membrane = (1.0 - smoothstep(0.0, 0.09, abs(r_org - 0.44))) * 0.72 * twinkle;
@@ -105,12 +111,12 @@ export const fsSource = `#version 300 es
       final_rgb = mix(col * 1.15, vec3(1.0, 0.99, 0.96), core * 0.78) + col * (cytoplasm + halo * 0.72) + mix(col, vec3(1.0), 0.5) * membrane;
       alpha = clamp(core * 0.96 + cytoplasm + membrane + halo * 0.62, 0.0, 1.0);
     } else if (v_is_file < 1.5) {
-      // PLANÈTE / FICHIER : Bulle cellulaire organique à double membrane lipidique
+      // PLANÈTE / FICHIER : Bulle cellulaire organique à double membrane lipidique vivante
       float z_sphere = sqrt(max(0.0, 1.0 - min(1.0, (r_org / 0.58) * (r_org / 0.58))));
       float cytoplasm = (1.0 - smoothstep(0.10, 0.58, r_org)) * (0.42 + 0.28 * (1.0 - z_sphere));
       float nucleus = 1.0 - smoothstep(0.0, 0.25, r_org);
       float inner_rim = 1.0 - smoothstep(0.0, 0.085, abs(r_org - 0.54));
-      float outer_wave = 0.052 * cos(angle * 4.0 - v_time * 0.0015 + v_phase * 1.3);
+      float outer_wave = 0.026 * cos(angle * 4.0 - v_time * 0.0015 + v_phase * 1.3);
       float exo_r = r * (1.0 + outer_wave);
       float outer_membrane = (1.0 - smoothstep(0.0, 0.065, abs(exo_r - 0.80))) * 0.82;
       float bio_aura = (1.0 - smoothstep(0.45, 0.98, r)) * 0.45;
@@ -119,21 +125,22 @@ export const fsSource = `#version 300 es
       final_rgb += col * (cytoplasm * 0.85 + bio_aura * 0.90) + mix(col, vec3(0.88, 0.97, 1.0), 0.55) * (inner_rim * 0.85 + outer_membrane);
       alpha = clamp(nucleus * 0.85 + cytoplasm * 0.78 + inner_rim * 0.92 + outer_membrane * 0.85 + bio_aura * 0.55, 0.0, 1.0);
     } else if (v_is_file < 2.5) {
-      // CLASSE / STRUCT : Organite hexagonal organique vivant
-      float hex_wave = 0.038 * cos(angle * 6.0 + v_time * 0.0011 + v_phase);
-      float r_hex = r_org * (1.0 + hex_wave);
+      // CLASSE / STRUCT : Organite hexagonal géométrique avec respiration d'organite
+      float hex_wave = 0.024 * cos(angle * 6.0 + 0.08 * sin(v_time * 0.0016 + v_phase));
+      float r_hex = r * (1.0 + hex_wave);
       float body = (1.0 - smoothstep(0.20, 0.58, r_hex)) * 0.76;
       float rim = 1.0 - smoothstep(0.0, 0.075, abs(r_hex - 0.54));
-      float inner_ring = (1.0 - smoothstep(0.0, 0.06, abs(r_hex - 0.31))) * 0.78;
+      float inner_pulse = 0.31 + 0.018 * sin(v_time * 0.0018 + v_phase);
+      float inner_ring = (1.0 - smoothstep(0.0, 0.06, abs(r_hex - inner_pulse))) * 0.80;
       float core = 1.0 - smoothstep(0.0, 0.21, r_hex);
       float outer_glow = (1.0 - smoothstep(0.48, 0.96, r)) * 0.50;
 
       final_rgb = mix(col, vec3(1.0), core * 0.76) + vec3(0.95, 0.98, 1.0) * rim * 0.75 + col * (body * 0.65 + inner_ring * 0.85 + outer_glow * 0.88);
       alpha = clamp(body + rim * 0.92 + inner_ring * 0.70 + outer_glow * 0.52, 0.0, 1.0);
     } else {
-      // FORM / ENDPOINT : Vésicule émettrice à respiration lente
-      float pulse_r = mix(0.50, 0.90, fract(v_time * 0.00038 + v_phase * 0.159));
-      float radar_wave = (1.0 - smoothstep(0.0, 0.07, abs(r_org - pulse_r))) * (1.0 - (pulse_r - 0.50) / 0.42) * 0.75;
+      // FORM / ENDPOINT : Vésicule émettrice à pulsation vivante
+      float pulse_r = mix(0.50, 0.85, 0.5 + 0.5 * sin(v_time * 0.0020 + v_phase));
+      float radar_wave = (1.0 - smoothstep(0.0, 0.08, abs(r_org - pulse_r))) * 0.55;
       float body = (1.0 - smoothstep(0.22, 0.57, r_org)) * 0.75;
       float rim = 1.0 - smoothstep(0.0, 0.09, abs(r_org - 0.52));
       float core = 1.0 - smoothstep(0.0, 0.26, r_org);
@@ -141,6 +148,29 @@ export const fsSource = `#version 300 es
 
       final_rgb = mix(col, vec3(1.0, 0.97, 0.88), core * 0.72) + vec3(1.0) * (rim * 0.72 + radar_wave * 0.45) + col * (body * 0.6 + outer_glow * 0.88 + radar_wave * 0.75);
       alpha = clamp(body + rim * 0.90 + outer_glow * 0.68 + radar_wave * 0.72, 0.0, 1.0);
+    }
+
+    // Outer & Inner Bioluminescent Edit / Git Diff Illumination (calm steady glow)
+    // 1.0: Modif Code (#facc15), 2.0: New File (#34d399), 3.0: Violation (#ef4444), 4.0: Text/Doc (#22d3ee), 5.0: New Folder (#c084fc)
+    if (v_git_status > 0.5) {
+      vec3 halo_col = vec3(0.98, 0.80, 0.08); // 1.0: Modified code (amber/yellow #facc15)
+      float pulse = 0.88 + 0.12 * sin(v_time * 0.00075 + v_phase);
+
+      if (v_git_status > 1.5 && v_git_status < 2.5) {
+        halo_col = vec3(0.18, 0.92, 0.52); // 2.0: New file / Untracked (emerald green #34d399)
+      } else if (v_git_status >= 2.5 && v_git_status < 3.5) {
+        halo_col = vec3(0.98, 0.22, 0.22); // 3.0: Violation (crimson red #ef4444)
+      } else if (v_git_status >= 3.5 && v_git_status < 4.5) {
+        halo_col = vec3(0.13, 0.85, 0.96); // 4.0: Text / Doc / Config edit (cyan #22d3ee)
+      } else if (v_git_status >= 4.5) {
+        halo_col = vec3(0.76, 0.52, 0.99); // 5.0: New Folder / Module structure (violet #c084fc)
+      }
+
+      float inner_boost = (1.0 - smoothstep(0.0, 0.62, r_org)) * 0.34 * pulse;
+      float halo_rim = (1.0 - smoothstep(0.0, 0.095, abs(r - 0.84))) * pulse;
+      float halo_glow = (1.0 - smoothstep(0.48, 0.99, r)) * 0.52 * pulse;
+      final_rgb = mix(final_rgb, halo_col * 1.18, clamp(inner_boost + halo_rim * 0.88 + halo_glow * 0.52, 0.0, 1.0));
+      alpha = max(alpha, clamp(halo_rim * 0.92 + halo_glow * 0.58, 0.0, 1.0));
     }
 
     if (v_color.a < 0.2) {
@@ -208,7 +238,7 @@ export function initShaderPipeline(gl: WebGL2RenderingContext): ShaderPipeline {
   gl.vertexAttribPointer(aQuadPos, 2, gl.FLOAT, false, 0, 0);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, instanceVbo);
-  const stride = 9 * 4; // 9 floats per instance
+  const stride = 10 * 4; // 10 floats per instance
   const aNodePos = gl.getAttribLocation(program, 'a_node_pos');
   gl.enableVertexAttribArray(aNodePos);
   gl.vertexAttribPointer(aNodePos, 2, gl.FLOAT, false, stride, 0);
@@ -233,6 +263,11 @@ export function initShaderPipeline(gl: WebGL2RenderingContext): ShaderPipeline {
   gl.enableVertexAttribArray(aBirthTime);
   gl.vertexAttribPointer(aBirthTime, 1, gl.FLOAT, false, stride, 8 * 4);
   gl.vertexAttribDivisor(aBirthTime, 1);
+
+  const aGitStatus = gl.getAttribLocation(program, 'a_git_status');
+  gl.enableVertexAttribArray(aGitStatus);
+  gl.vertexAttribPointer(aGitStatus, 1, gl.FLOAT, false, stride, 9 * 4);
+  gl.vertexAttribDivisor(aGitStatus, 1);
 
   gl.bindVertexArray(null);
 

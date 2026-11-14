@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cockpitState, normalizeEdgeRelation } from '../state/graphState.svelte';
+  import { cockpitState, normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly } from '../state/graphState.svelte';
   import { api } from '../lib/api';
   import type { AffiliationEdge, CveAnomalyRecord, SymbolBubble, TaskItem } from '../types/graph';
   import {
@@ -177,11 +177,81 @@
     return out;
   });
 
+  const securityAnomalies = $derived.by(() => activeAnomalies.filter((a) => !isLinesExceededAnomaly(a)));
+  const linesAnomalies = $derived.by(() => activeAnomalies.filter((a) => isLinesExceededAnomaly(a)));
+
   const hasSecurityAlert = $derived(
-    activeAnomalies.length > 0 ||
+    securityAnomalies.length > 0 ||
       Boolean(symbol?.has_security_violation) ||
       (Boolean(symbol?.is_file) && siblingSymbols.some((s) => s.has_security_violation))
   );
+
+  const hasLinesAlert = $derived(
+    linesAnomalies.length > 0 || (symbol ? getNodeAlertKind(symbol) === 'lines_exceeded' : false)
+  );
+
+  // Contrat modifiable depuis Aether (par dossier ou par fichier, scellé BLAKE3)
+  const folderContractNode = $derived.by(() => {
+    if (symbol) return symbol;
+    if (selectedFolder) {
+      return folderNodes.find((n) => n.metadata?.max_lines_limit || n.metadata?.blake3_hash) || folderNodes[0] || null;
+    }
+    return null;
+  });
+
+  const effectiveContractMaxLines = $derived(
+    symbol?.metadata?.max_lines_limit ||
+      folderContractNode?.metadata?.max_lines_limit ||
+      300
+  );
+
+  let contractMaxLinesInput = $state(300);
+  let contractSaveStatus = $state('');
+  let contractSaving = $state(false);
+
+  $effect(() => {
+    contractMaxLinesInput = effectiveContractMaxLines;
+    contractSaveStatus = '';
+  });
+
+  async function saveContractBudget(mode: 'file' | 'folder' | 'clear_file') {
+    const folder = symbol?.folder || symbol?.cluster_id || selectedFolder || 'root';
+    const filePath = symbol?.file_path;
+    const limit = Math.max(10, Number(contractMaxLinesInput) || 300);
+    contractSaving = true;
+    contractSaveStatus = 'Scellement BLAKE3...';
+    try {
+      const payload: Parameters<typeof api.updateContract>[0] = {
+        project_path: cockpitState.graph.project_path || '.',
+        folder,
+      };
+      if (mode === 'file' && filePath) {
+        payload.file_path = filePath;
+        payload.file_max_lines = limit;
+      } else if (mode === 'clear_file' && filePath) {
+        payload.file_path = filePath;
+        payload.clear_file_override = true;
+      } else {
+        payload.max_lines_per_file = limit;
+      }
+      const res = await api.updateContract(payload);
+      if (res.status === 'ok') {
+        if (res.graph) {
+          cockpitState.setGraph(res.graph, true);
+        }
+        contractSaveStatus = `✓ Scellé BLAKE3 (${res.blake3_hash ? res.blake3_hash.slice(0, 8) : 'OK'})`;
+      } else {
+        contractSaveStatus = `Erreur: ${res.message}`;
+      }
+    } catch (e: any) {
+      contractSaveStatus = String(e?.message || e || 'Erreur réseau');
+    } finally {
+      contractSaving = false;
+      setTimeout(() => {
+        contractSaveStatus = '';
+      }, 3800);
+    }
+  }
 
   // Relations filter inside Flux tab
   let relationQuery = $state('');
@@ -378,6 +448,7 @@
 
   function formatRelColor(rel?: string): string {
     const r = normalizeEdgeRelation(rel);
+    if (r === 'warns') return 'bg-orange-500/20 text-orange-300 border-orange-500/40';
     if (r === 'violates') return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
     if (r === 'queries') return 'bg-purple-500/20 text-purple-300 border-purple-500/40';
     if (r === 'imports' || r === 'contains') return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
@@ -407,9 +478,13 @@
               <FolderOpen class="w-2.5 h-2.5" />
               {symbol.folder || symbol.cluster_id || 'root'}
             </button>
-            {#if activeAnomalies.length > 0 || symbol.has_security_violation}
+            {#if hasSecurityAlert}
               <span class="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-rose-500/25 text-rose-200 border border-rose-500/50 animate-pulse">
-                🚨 {activeAnomalies.length || 1} CWE
+                🚨 {securityAnomalies.length || 1} CWE
+              </span>
+            {:else if hasLinesAlert}
+              <span class="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-orange-500/25 text-orange-200 border border-orange-500/50">
+                ⚠️ {symbol.loc || 0}/{symbol.metadata?.max_lines_limit || 300} L
               </span>
             {/if}
           </div>
@@ -537,7 +612,7 @@
               <div class="flex items-center justify-between gap-2">
                 <span class="text-[11px] font-extrabold text-rose-200 flex items-center gap-1.5">
                   <ShieldAlert class="w-4 h-4 text-rose-400" />
-                  🚨 ALERTE CWE & SAST ({activeAnomalies.length || 1})
+                  🚨 ALERTE CWE & SAST ({securityAnomalies.length || 1})
                 </span>
                 <button
                   type="button"
@@ -547,7 +622,7 @@
                   Détails ➔
                 </button>
               </div>
-              {#if activeAnomalies.length === 0}
+              {#if securityAnomalies.length === 0}
                 <div class="p-2 rounded-lg bg-black/45 border border-rose-500/35 space-y-1">
                   <div class="text-[11px] text-rose-100">Violation SAST / CWE détectée dans ce fichier ou l'un de ses symboles.</div>
                   <div class="pt-0.5 flex gap-1.5">
@@ -561,7 +636,7 @@
                   </div>
                 </div>
               {/if}
-              {#each activeAnomalies.slice(0, 3) as alert}
+              {#each securityAnomalies.slice(0, 3) as alert}
                 <div class="p-2 rounded-lg bg-black/45 border border-rose-500/35 space-y-1">
                   <div class="flex items-center justify-between gap-1.5">
                     <span class="px-1.5 py-0.5 rounded bg-rose-500/30 text-rose-200 font-mono text-[10px] font-bold">
@@ -589,6 +664,24 @@
             </div>
           {/if}
 
+          <!-- Orange Exceeded Lines Warning Box -->
+          {#if hasLinesAlert}
+            <div class="p-2.5 rounded-xl bg-orange-950/60 border border-orange-500/60 space-y-1.5 shadow-lg">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] font-extrabold text-orange-200 flex items-center gap-1.5">
+                  <ShieldAlert class="w-4 h-4 text-orange-400" />
+                  ⚠️ BUDGET LIGNES DÉPASSÉ ({symbol.loc || 0} / {effectiveContractMaxLines} L)
+                </span>
+                <span class="px-1.5 py-0.5 rounded bg-orange-500/25 text-orange-200 font-mono text-[9.5px] font-bold">
+                  RULE_MAX_LINES
+                </span>
+              </div>
+              <p class="text-[11px] text-orange-100/90 leading-snug">
+                Ce fichier dépasse la limite de lignes du contrat BLAKE3 ({effectiveContractMaxLines} lignes). Ajustez le contrat du fichier ou du dossier ci-dessous.
+              </p>
+            </div>
+          {/if}
+
           <!-- Layer & BLAKE3 seals -->
           <div class="flex flex-wrap gap-1.5 items-center">
             <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-white/5 border border-white/10 text-slate-300">
@@ -600,13 +693,94 @@
                 BLAKE3 {symbol.metadata.lock_verified ? 'Scellé' : 'Modifié'} ({symbol.metadata.ears_count || 0} EARS)
               </span>
             {/if}
+            {#if symbol.metadata?.file_blake3_hash}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-sky-500/10 border border-sky-500/30 text-sky-300" title="Empreinte BLAKE3 du fichier source">
+                # {symbol.metadata.file_blake3_hash.slice(0, 10)}
+              </span>
+            {/if}
+          </div>
+
+          <!-- Contrat Modifiable BLAKE3 (Fichier & Dossier) -->
+          <div class="p-2.5 rounded-xl bg-slate-900/90 border {hasLinesAlert ? 'border-orange-500/50' : 'border-emerald-500/30'} space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-[10.5px] font-mono font-bold text-emerald-300 flex items-center gap-1.5">
+                <Lock class="w-3.5 h-3.5 text-emerald-400" />
+                <span>CONTRAT BLAKE3 ({symbol.metadata?.contract_folder || symbol.folder || 'root'})</span>
+              </div>
+              {#if symbol.metadata?.file_max_lines_override}
+                <span class="px-1.5 py-0.5 rounded bg-orange-500/20 border border-orange-500/40 text-orange-200 font-mono text-[9px]">
+                  Override fichier actif
+                </span>
+              {/if}
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-[10px] font-mono text-slate-300 shrink-0" for="inspector-max-lines-file">
+                Max lignes :
+              </label>
+              <input
+                id="inspector-max-lines-file"
+                type="number"
+                min="10"
+                max="50000"
+                step="50"
+                bind:value={contractMaxLinesInput}
+                class="w-24 px-2 py-1 rounded bg-black/60 border border-white/15 text-white font-mono text-xs focus:border-emerald-400 focus:outline-none"
+              />
+              <div class="flex items-center gap-1 flex-wrap">
+                {#each [200, 300, 500, 800, 1500] as preset}
+                  <button
+                    type="button"
+                    onclick={() => (contractMaxLinesInput = preset)}
+                    class="px-1.5 py-0.5 rounded text-[9.5px] font-mono border cursor-pointer {contractMaxLinesInput === preset ? 'bg-emerald-500/25 border-emerald-500/50 text-emerald-200' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'}"
+                  >
+                    {preset}
+                  </button>
+                {/each}
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-1.5 pt-0.5">
+              <button
+                type="button"
+                disabled={contractSaving}
+                onclick={() => saveContractBudget('file')}
+                class="flex-1 py-1 px-2 rounded bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/45 text-orange-200 font-mono text-[10px] font-semibold cursor-pointer disabled:opacity-50"
+                title="Appliquer cette limite uniquement à ce fichier et sceller BLAKE3"
+              >
+                📄 Sceller Fichier
+              </button>
+              <button
+                type="button"
+                disabled={contractSaving}
+                onclick={() => saveContractBudget('folder')}
+                class="flex-1 py-1 px-2 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/45 text-emerald-200 font-mono text-[10px] font-semibold cursor-pointer disabled:opacity-50"
+                title="Appliquer cette limite par défaut à tout le dossier et sceller BLAKE3"
+              >
+                📁 Sceller Dossier
+              </button>
+              {#if symbol.metadata?.file_max_lines_override}
+                <button
+                  type="button"
+                  disabled={contractSaving}
+                  onclick={() => saveContractBudget('clear_file')}
+                  class="py-1 px-2 rounded bg-white/5 hover:bg-white/15 border border-white/15 text-slate-300 font-mono text-[10px] cursor-pointer disabled:opacity-50"
+                  title="Supprimer l'override spécifique du fichier et hériter du dossier"
+                >
+                  ↺ Hériter
+                </button>
+              {/if}
+            </div>
+            {#if contractSaveStatus}
+              <div class="text-[10px] font-mono text-emerald-300">{contractSaveStatus}</div>
+            {/if}
           </div>
 
           <!-- KPI grid -->
           <div class="grid grid-cols-2 gap-2">
-            <div class="p-2.5 rounded-lg bg-white/[0.03] border border-white/10">
-              <div class="text-[10px] text-slate-400 uppercase font-mono">Lignes (LOC)</div>
-              <div class="text-base font-bold text-white font-mono">{symbol.loc || 1}</div>
+            <div class="p-2.5 rounded-lg bg-white/[0.03] border {hasLinesAlert ? 'border-orange-500/50 bg-orange-500/5' : 'border-white/10'}">
+              <div class="text-[10px] text-slate-400 uppercase font-mono">Lignes (LOC / Max)</div>
+              <div class="text-base font-bold font-mono {hasLinesAlert ? 'text-orange-400' : 'text-white'}">
+                {symbol.loc || 1} <span class="text-xs font-normal text-slate-400">/ {effectiveContractMaxLines}</span>
+              </div>
             </div>
             <div class="p-2.5 rounded-lg bg-white/[0.03] border border-white/10">
               <div class="text-[10px] text-slate-400 uppercase font-mono">Complexité McCabe</div>
@@ -711,9 +885,9 @@
             </div>
           {/if}
         {:else if isFolderMode}
-          {#if activeAnomalies.length > 0}
+          {#if securityAnomalies.length > 0}
             <div class="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/50 space-y-1">
-              <div class="text-[11px] font-bold text-rose-200">🚨 {activeAnomalies.length} Alerte(s) CWE dans ce dossier</div>
+              <div class="text-[11px] font-bold text-rose-200">🚨 {securityAnomalies.length} Alerte(s) CWE dans ce dossier</div>
               <button
                 type="button"
                 onclick={() => (cockpitState.activeTab = 'cve')}
@@ -723,6 +897,68 @@
               </button>
             </div>
           {/if}
+          {#if linesAnomalies.length > 0}
+            <div class="p-2.5 rounded-xl bg-orange-950/60 border border-orange-500/50 space-y-1">
+              <div class="text-[11px] font-bold text-orange-200">
+                ⚠️ {linesAnomalies.length} fichier(s) dépassent la limite de {effectiveContractMaxLines} lignes
+              </div>
+              <div class="text-[10px] text-orange-100/85">
+                Ajustez le budget de lignes du dossier ci-dessous pour mettre à jour et sceller le contrat BLAKE3.
+              </div>
+            </div>
+          {/if}
+
+          <!-- Contrat Modifiable BLAKE3 du Dossier -->
+          <div class="p-2.5 rounded-xl bg-slate-900/90 border {linesAnomalies.length > 0 ? 'border-orange-500/50' : 'border-emerald-500/30'} space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-[10.5px] font-mono font-bold text-emerald-300 flex items-center gap-1.5">
+                <Lock class="w-3.5 h-3.5 text-emerald-400" />
+                <span>CONTRAT DU DOSSIER ({selectedFolder})</span>
+              </div>
+              {#if folderContractNode?.metadata?.blake3_hash}
+                <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono text-[9px]">
+                  #{folderContractNode.metadata.blake3_hash.slice(0, 8)}
+                </span>
+              {/if}
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-[10px] font-mono text-slate-300 shrink-0" for="inspector-max-lines-folder">
+                Max lignes / fichier :
+              </label>
+              <input
+                id="inspector-max-lines-folder"
+                type="number"
+                min="10"
+                max="50000"
+                step="50"
+                bind:value={contractMaxLinesInput}
+                class="w-24 px-2 py-1 rounded bg-black/60 border border-white/15 text-white font-mono text-xs focus:border-emerald-400 focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={contractSaving}
+                onclick={() => saveContractBudget('folder')}
+                class="flex-1 py-1 px-2 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/45 text-emerald-200 font-mono text-[10px] font-semibold cursor-pointer disabled:opacity-50"
+              >
+                🔒 Sceller BLAKE3
+              </button>
+            </div>
+            <div class="flex items-center gap-1 flex-wrap">
+              {#each [200, 300, 500, 800, 1500] as preset}
+                <button
+                  type="button"
+                  onclick={() => (contractMaxLinesInput = preset)}
+                  class="px-1.5 py-0.5 rounded text-[9.5px] font-mono border cursor-pointer {contractMaxLinesInput === preset ? 'bg-emerald-500/25 border-emerald-500/50 text-emerald-200' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'}"
+                >
+                  {preset} L
+                </button>
+              {/each}
+            </div>
+            {#if contractSaveStatus}
+              <div class="text-[10px] font-mono text-emerald-300">{contractSaveStatus}</div>
+            {/if}
+          </div>
+
           <div class="grid grid-cols-2 gap-2">
             <div class="p-2.5 rounded-lg bg-white/[0.03] border border-white/10">
               <div class="text-[10px] text-slate-400 uppercase font-mono">Fichiers</div>
@@ -737,8 +973,12 @@
               <div class="text-base font-bold text-sky-300 font-mono">{folderTotalLoc}</div>
             </div>
             <div class="p-2.5 rounded-lg bg-white/[0.03] border border-white/10">
-              <div class="text-[10px] text-slate-400 uppercase font-mono">Alertes SAST</div>
-              <div class="text-base font-bold text-rose-400 font-mono">{activeAnomalies.length}</div>
+              <div class="text-[10px] text-slate-400 uppercase font-mono">Alertes CWE / Lignes</div>
+              <div class="text-base font-bold font-mono">
+                <span class="text-rose-400">{securityAnomalies.length}</span>
+                <span class="text-slate-500 text-xs"> / </span>
+                <span class="text-orange-400">{linesAnomalies.length}</span>
+              </div>
             </div>
           </div>
 
@@ -748,15 +988,16 @@
             </div>
             <div class="space-y-1 max-h-72 overflow-y-auto pr-1">
               {#each folderNodes.slice(0, 45) as item}
+                {@const itemKind = getNodeAlertKind(item)}
                 <button
                   type="button"
                   onclick={() => jumpToSymbol(item.id)}
                   class="w-full flex items-center justify-between px-2.5 py-1.5 rounded bg-white/[0.03] hover:bg-sky-500/15 border border-white/5 hover:border-sky-500/35 text-left cursor-pointer"
                 >
-                  <span class="truncate font-mono text-[11px] text-slate-200">
-                    {item.has_security_violation ? '🚨' : item.is_file ? '📄' : item.is_class ? '🏛️' : '⚡'} {item.name}
+                  <span class="truncate font-mono text-[11px] {itemKind === 'security' ? 'text-rose-200' : itemKind === 'lines_exceeded' ? 'text-orange-300' : 'text-slate-200'}">
+                    {itemKind === 'security' ? '🚨' : itemKind === 'lines_exceeded' ? '⚠️' : item.is_file ? '📄' : item.is_class ? '🏛️' : '⚡'} {item.name}
                   </span>
-                  <span class="text-[10px] text-slate-400 shrink-0 ml-2">{item.layer}</span>
+                  <span class="text-[10px] text-slate-400 shrink-0 ml-2">{item.loc || 0} L • {item.layer}</span>
                 </button>
               {/each}
             </div>
@@ -1120,12 +1361,13 @@
         {:else}
           <div class="space-y-2">
             {#each displayedCves as cve}
-              <div class="p-2.5 rounded-lg bg-rose-500/5 border border-rose-500/25 space-y-1.5">
+              {@const isLines = isLinesExceededAnomaly(cve)}
+              <div class="p-2.5 rounded-lg {isLines ? 'bg-orange-500/5 border-orange-500/30' : 'bg-rose-500/5 border-rose-500/25'} border space-y-1.5">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                    {cve.cve_id || cve.rule_id}
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border {isLines ? 'bg-orange-500/20 text-orange-300 border-orange-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'}">
+                    {isLines ? '⚠️ ' : '🚨 '}{cve.cve_id || cve.rule_id}
                   </span>
-                  <span class="text-[10px] font-mono text-slate-400">
+                  <span class="text-[10px] font-mono {isLines ? 'text-orange-300' : 'text-slate-400'}">
                     {cve.severity} • L{cve.line_number}
                   </span>
                 </div>

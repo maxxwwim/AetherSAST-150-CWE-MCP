@@ -94,14 +94,14 @@ function computeFolderClusters(zoom = 1.0) {
 
     let maxDist = 0;
     let sumDist = 0;
-    const minBaseR = Math.max(96, Math.sqrt(st.count) * 48);
+    const minBaseR = Math.max(120, Math.sqrt(st.count) * 62);
     const rawSectors = new Float32Array(SECTORS);
 
     for (let ni = 0; ni < st.nodes.length; ni++) {
       const nd = st.nodes[ni];
       const dx = nd.x - cx;
       const dy = nd.y - cy;
-      const nodePad = nd.is_file ? 22 : 14;
+      const nodePad = nd.is_file ? 34 : (nd.is_class ? 30 : 22);
       const d = Math.hypot(dx, dy) + nodePad;
       sumDist += d;
       if (d > maxDist) maxDist = d;
@@ -117,8 +117,8 @@ function computeFolderClusters(zoom = 1.0) {
     }
 
     const meanDist = sumDist / Math.max(1, st.count);
-    const coreR = Math.max(meanDist * 1.35 + comfortPadding * 0.65, minBaseR);
-    const baseR = Math.max(coreR, maxDist + comfortPadding * 0.72);
+    const coreR = Math.max(meanDist * 1.48 + comfortPadding * 0.85, minBaseR);
+    const baseR = Math.max(coreR, maxDist + comfortPadding * 0.92);
     st.computedRadius = baseR;
     st.naturalRadius = coreR;
 
@@ -201,7 +201,7 @@ function stepWorkerPhysics(zoom = 1.0) {
     const dx = t.x - s.x;
     const dy = t.y - s.y;
     const dist = Math.hypot(dx, dy) || 1;
-    const restLen = e.relation === 'contains' ? 65 : 160;
+    const restLen = e.relation === 'contains' ? 110 : 185;
     const force = Math.max(-4.5, Math.min(4.5, (dist - restLen) * 0.012)) * springFactor;
     const fx = (dx / dist) * force;
     const fy = (dy / dist) * force;
@@ -226,34 +226,54 @@ function stepWorkerPhysics(zoom = 1.0) {
     }
     const folderStats = cachedFolderStats || computeFolderClusters(zoom).folderStats;
 
-    // Intra-cellular node anti-stick & comfort spacing
+    // Intra-cellular node anti-stick & comfort spacing (classes, functions, files)
     folderStats.forEach((st) => {
       if (!st.nodes || st.nodes.length <= 1) return;
       const count = st.nodes.length;
       const innerStep = count > 180 ? 2 : 1;
-      const minD = 58; // Distance de confort augmentée : les bulles ne se collent jamais
-      const minD2 = minD * minD;
 
       for (let i = 0; i < count; i++) {
         const na = st.nodes[i];
+        const isClassA = na.is_class || na.kind === 'ClassOrStruct' || na.kind === 'TraitOrInterface' || na.kind === 'Enum';
+        const isFuncA = na.is_func || na.kind === 'FunctionOrMethod';
+        const isFileA = na.is_file || na.kind === 'File';
+
         for (let j = i + 1; j < count; j += innerStep) {
           const nb = st.nodes[j];
+          const isClassB = nb.is_class || nb.kind === 'ClassOrStruct' || nb.kind === 'TraitOrInterface' || nb.kind === 'Enum';
+          const isFuncB = nb.is_func || nb.kind === 'FunctionOrMethod';
+          const isFileB = nb.is_file || nb.kind === 'File';
+
+          // Distances de confort organiques accrues entre classes et fonctions
+          let pairMinD = 78;
+          if (isClassA && isClassB) {
+            pairMinD = 125; // Espace généreux entre organites classes/structs
+          } else if ((isClassA && isFuncB) || (isFuncA && isClassB)) {
+            pairMinD = 98;  // Espace net entre une classe et ses fonctions
+          } else if (isFuncA && isFuncB) {
+            pairMinD = 84;  // Espace entre fonctions sœurs
+          } else if (isFileA || isFileB) {
+            pairMinD = 115; // Orbite dégagée autour du pôle fichier
+          }
+
           const bdx = nb.x - na.x;
-          if (Math.abs(bdx) >= minD) continue;
+          if (Math.abs(bdx) >= pairMinD) continue;
           const bdy = nb.y - na.y;
-          if (Math.abs(bdy) >= minD) continue;
+          if (Math.abs(bdy) >= pairMinD) continue;
           const bdist2 = bdx * bdx + bdy * bdy;
-          if (bdist2 < minD2 && bdist2 > 0.0001) {
+          const pairMinD2 = pairMinD * pairMinD;
+
+          if (bdist2 < pairMinD2 && bdist2 > 0.0001) {
             const bdist = Math.sqrt(bdist2);
-            const overlap = minD - bdist;
-            const repulse = Math.min(5.5, overlap * 0.10);
+            const overlap = pairMinD - bdist;
+            const repulse = Math.min(6.5, overlap * 0.12);
             const pfx = (bdx / bdist) * repulse;
             const pfy = (bdy / bdist) * repulse;
             if (!activeDragId || na.id !== activeDragId) { na.vx = (na.vx || 0) - pfx; na.vy = (na.vy || 0) - pfy; }
             if (!activeDragId || nb.id !== activeDragId) { nb.vx = (nb.vx || 0) + pfx; nb.vy = (nb.vy || 0) + pfy; }
 
             // Séparation instantanée anti-overlap (Verlet push)
-            const pushRatio = 0.28;
+            const pushRatio = 0.32;
             const px = (bdx / bdist) * overlap * pushRatio;
             const py = (bdy / bdist) * overlap * pushRatio;
             if (!activeDragId || na.id !== activeDragId) { na.x -= px; na.y -= py; }
@@ -283,7 +303,7 @@ function stepWorkerPhysics(zoom = 1.0) {
         const rB = cB.computedRadius || 120;
 
         const cdx = cxB - cxA;
-        const massPadding = Math.max(160, Math.sqrt(cA.count + cB.count) * 26);
+        const massPadding = Math.max(220, Math.sqrt(cA.count + cB.count) * 34);
         const safeClusterDist = rA + rB + massPadding;
         if (Math.abs(cdx) >= safeClusterDist) continue;
 
@@ -317,30 +337,41 @@ function stepWorkerPhysics(zoom = 1.0) {
       }
     }
   } else {
-    // In Structured Views
+    // In Structured Views (Z-2 System, Z-3 DAG, Z-4 Classes)
     const count = nodes.length;
     const step = count > 500 ? 2 : 1;
-    const minD = 48;
-    const minD2 = minD * minD;
     for (let i = 0; i < count; i += step) {
       const na = nodes[i];
+      const isClassA = na.is_class || na.kind === 'ClassOrStruct' || na.kind === 'TraitOrInterface' || na.kind === 'Enum';
+      const isFuncA = na.is_func || na.kind === 'FunctionOrMethod';
+
       for (let j = i + 1; j < Math.min(count, i + 48); j++) {
         const nb = nodes[j];
+        const isClassB = nb.is_class || nb.kind === 'ClassOrStruct' || nb.kind === 'TraitOrInterface' || nb.kind === 'Enum';
+        const isFuncB = nb.is_func || nb.kind === 'FunctionOrMethod';
+
+        let pairMinD = 68;
+        if (isClassA && isClassB) pairMinD = 115;
+        else if (isClassA || isClassB) pairMinD = 92;
+        else if (isFuncA && isFuncB) pairMinD = 76;
+
         const bdx = nb.x - na.x;
-        if (Math.abs(bdx) >= minD) continue;
+        if (Math.abs(bdx) >= pairMinD) continue;
         const bdy = nb.y - na.y;
-        if (Math.abs(bdy) >= minD) continue;
+        if (Math.abs(bdy) >= pairMinD) continue;
         const bdist2 = bdx * bdx + bdy * bdy;
-        if (bdist2 < minD2 && bdist2 > 0.0001) {
+        const pairMinD2 = pairMinD * pairMinD;
+
+        if (bdist2 < pairMinD2 && bdist2 > 0.0001) {
           const bdist = Math.sqrt(bdist2);
-          const overlap = minD - bdist;
-          const repulse = Math.min(4.5, overlap * 0.09);
+          const overlap = pairMinD - bdist;
+          const repulse = Math.min(4.8, overlap * 0.10);
           const pfx = (bdx / bdist) * repulse;
           const pfy = (bdy / bdist) * repulse;
           if (!activeDragId || na.id !== activeDragId) { na.vx = (na.vx || 0) - pfx; na.vy = (na.vy || 0) - pfy; }
           if (!activeDragId || nb.id !== activeDragId) { nb.vx = (nb.vx || 0) + pfx; nb.vy = (nb.vy || 0) + pfy; }
 
-          const pushRatio = 0.22;
+          const pushRatio = 0.25;
           const px = (bdx / bdist) * overlap * pushRatio;
           const py = (bdy / bdist) * overlap * pushRatio;
           if (!activeDragId || na.id !== activeDragId) { na.x -= px; na.y -= py; }
@@ -350,9 +381,9 @@ function stepWorkerPhysics(zoom = 1.0) {
     }
   }
 
-  // 3. Integration & Friction Damping
-  const maxSpeed = (d === 1) ? 3.6 : 18.0;
-  const friction = (d === 1) ? 0.82 : 0.74;
+  // 3. Integration & Friction Damping (with velocity deadzone to prevent micro-jitter)
+  const maxSpeed = (d === 1) ? 3.2 : 16.0;
+  const friction = (d === 1) ? 0.76 : 0.70;
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     if (activeDragId && n.id === activeDragId) {
@@ -363,6 +394,11 @@ function stepWorkerPhysics(zoom = 1.0) {
     n.vx = (n.vx || 0) * friction;
     n.vy = (n.vy || 0) * friction;
     const sp = Math.hypot(n.vx, n.vy);
+    if (sp < 0.08) {
+      n.vx = 0;
+      n.vy = 0;
+      continue;
+    }
     if (sp > maxSpeed) {
       n.vx = (n.vx / sp) * maxSpeed;
       n.vy = (n.vy / sp) * maxSpeed;

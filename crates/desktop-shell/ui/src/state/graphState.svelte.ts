@@ -1,4 +1,75 @@
-import type { AetherGraph, SymbolBubble, TaskItem, CveAnomalyRecord } from '../types/graph';
+import type { AetherGraph, SymbolBubble, TaskItem, CveAnomalyRecord, GitStatusResponse, GitFileChange, EditActivityKind } from '../types/graph';
+import { playSpatialTone } from '../lib/sound';
+import { api } from '../lib/api';
+
+export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): boolean {
+  if (!a) return false;
+  const rule = String(a.rule_id || '').toUpperCase();
+  const cve = String(a.cve_id || a.cwe_class || '').toUpperCase();
+  const msg = String(a.message || a.description || '').toUpperCase();
+  const sev = String(a.severity || '').toUpperCase();
+  return (
+    rule === 'RULE_MAX_LINES' ||
+    cve.includes('ARCH-BUDGET-EXCEEDED') ||
+    cve.includes('CWE-1075') ||
+    msg.includes('RULE_MAX_LINES') ||
+    msg.includes('MAXIMUM LINE LIMIT') ||
+    sev === 'WARNING'
+  );
+}
+
+export function getNodeAlertKind(n?: SymbolBubble | null): 'security' | 'lines_exceeded' | 'none' {
+  if (!n) return 'none';
+  if (n.has_security_violation) return 'security';
+  const list = [
+    ...(n.anomalies || []),
+    ...(n.violations || []),
+    ...(n.metadata?.cve_anomalies || []),
+  ];
+  let hasLines = false;
+  for (const a of list) {
+    if (isLinesExceededAnomaly(a)) {
+      hasLines = true;
+    } else {
+      return 'security';
+    }
+  }
+  const strViolations = n.metadata?.violations || [];
+  for (const v of strViolations) {
+    const up = String(v || '').toUpperCase();
+    if (up.includes('RULE_MAX_LINES') || up.includes('ARCH-BUDGET-EXCEEDED') || up.includes('MAXIMUM LINE LIMIT')) {
+      hasLines = true;
+    } else {
+      return 'security';
+    }
+  }
+  if (hasLines) return 'lines_exceeded';
+  const maxLimit = n.metadata?.max_lines_limit;
+  if (maxLimit && maxLimit > 0 && (n.loc || n.metadata?.lines || 0) > maxLimit) {
+    return 'lines_exceeded';
+  }
+  return 'none';
+}
+
+export function isTextOrDocFile(path?: string, layer?: string, kind?: string): boolean {
+  const l = String(layer || '').toLowerCase();
+  const k = String(kind || '').toLowerCase();
+  if (l === 'docs' || k === 'note' || k === 'doc' || k === 'markdown') return true;
+  const p = String(path || '').toLowerCase().trim();
+  return (
+    p.endsWith('.md') ||
+    p.endsWith('.txt') ||
+    p.endsWith('.rst') ||
+    p.endsWith('.adoc') ||
+    p.endsWith('.toml') ||
+    p.endsWith('.json') ||
+    p.endsWith('.yaml') ||
+    p.endsWith('.yml') ||
+    p.endsWith('.ears') ||
+    p.endsWith('.ini') ||
+    p.endsWith('.env')
+  );
+}
 
 export interface CockpitSettings {
   maxLabelLength: number;
@@ -46,6 +117,18 @@ function loadSavedSettings(): CockpitSettings {
     // ignore invalid localStorage
   }
   return { ...DEFAULT_SETTINGS };
+}
+
+function loadSavedRadar(): boolean {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const val = localStorage.getItem('aetherscope_show_radar');
+      if (val !== null) return val === 'true';
+    }
+  } catch {
+    // ignore localStorage errors
+  }
+  return true;
 }
 
 export function normalizeEdgeRelation(raw?: string): string {
@@ -106,6 +189,7 @@ export class CockpitState {
   isIgnoredCweModalOpen = $state(false);
   isChatOpen = $state(false);
   isMcpModalOpen = $state(false);
+  showRadar = $state(loadSavedRadar());
   physicsPaused = $state(false);
   snapshotRequestTick = $state(0);
   graphVersion = $state(0);
@@ -113,6 +197,12 @@ export class CockpitState {
   bountyOutOfScopePatterns = $state<string[]>([]);
   isScanningProject = $state(false);
   scanningTargetPath = $state('');
+  gitStatus = $state<GitStatusResponse | null>(null);
+  folderEdits = $state<Record<string, { kind: EditActivityKind; count: number; lastTs: number; label: string }>>({});
+  private lastGitSignature = '';
+  private prevGitFileStates = new Map<string, string>();
+  private knownTrackedFolders = new Set<string>();
+  engine: any = null;
 
   // Live Multi-Agent AI Swarm, MCP & Copilot Telemetry
   activeAgents = $state<{
@@ -302,6 +392,27 @@ export class CockpitState {
     }
   }
 
+  toggleSound(): boolean {
+    this.settings.soundEnabled = !this.settings.soundEnabled;
+    this.saveLocalSettings();
+    if (this.settings.soundEnabled) {
+      playSpatialTone(true, 'action');
+    }
+    return this.settings.soundEnabled;
+  }
+
+  toggleRadar(): boolean {
+    this.showRadar = !this.showRadar;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('aetherscope_show_radar', String(this.showRadar));
+      }
+    } catch {
+      // ignore storage quota errors
+    }
+    return this.showRadar;
+  }
+
   requestCameraFit() {
     this.fitRequestTick += 1;
   }
@@ -485,9 +596,91 @@ export class CockpitState {
     this.graph.nodes.filter((n) => n.cyclomatic_complexity >= 10)
   );
 
+  private recomputeFolderEdits(nodes: SymbolBubble[]) {
+    const map: Record<string, {
+      modif: number;
+      text: number;
+      new_file: number;
+      new_folder: number;
+      violation: number;
+      lastTs: number;
+    }> = {};
+
+    for (const n of nodes) {
+      const ek = n.edit_kind || (
+        n.git_status === 'violation' ? 'violation'
+          : n.git_status === 'new_folder' ? 'new_folder'
+            : n.git_status === 'untracked' ? 'new_file'
+              : n.git_status === 'text' ? 'text'
+                : n.git_status === 'modified' ? 'modif'
+                  : 'none'
+      );
+      if (ek === 'none') continue;
+      const folder = n.folder || n.cluster_id || 'root';
+      if (!map[folder]) {
+        map[folder] = { modif: 0, text: 0, new_file: 0, new_folder: 0, violation: 0, lastTs: 0 };
+      }
+      map[folder][ek] += 1;
+      if ((n.last_edit_ts || 0) > map[folder].lastTs) {
+        map[folder].lastTs = n.last_edit_ts || 0;
+      }
+    }
+
+    const next: Record<string, { kind: EditActivityKind; count: number; lastTs: number; label: string }> = {};
+    for (const [folder, counts] of Object.entries(map)) {
+      const total = counts.violation + counts.new_folder + counts.new_file + counts.text + counts.modif;
+      if (total === 0) continue;
+      let kind: EditActivityKind = 'modif';
+      let label = `✏️ MODIF (${counts.modif})`;
+      if (counts.violation > 0) {
+        kind = 'violation';
+        label = `🚨 FAILLE (${counts.violation})`;
+      } else if (counts.new_folder > 0) {
+        kind = 'new_folder';
+        label = `📁✨ NOUVEAU DOSSIER`;
+      } else if (counts.new_file > 0) {
+        kind = 'new_file';
+        label = `✨ +FICHIER (${counts.new_file})`;
+      } else if (counts.text > 0 && counts.modif === 0) {
+        kind = 'text';
+        label = `📝 TEXTE/DOC (${counts.text})`;
+      } else if (counts.text > 0 && counts.modif > 0) {
+        kind = 'modif';
+        label = `✏️ CODE (${counts.modif}) · 📝 DOC (${counts.text})`;
+      }
+      next[folder] = { kind, count: total, lastTs: counts.lastTs, label };
+    }
+    this.folderEdits = next;
+  }
+
   // Actions
-  setGraph(g: AetherGraph) {
+  setGraph(g: AetherGraph, isIncremental = false) {
     const rawNodes = Array.isArray(g?.nodes) ? g.nodes : [];
+    const prevNodes = this.graph.nodes || [];
+    const isSameProject = prevNodes.length > 0 && (!g?.project_name || g.project_name === this.graph.project_name);
+    const incremental = isIncremental || isSameProject;
+
+    const prevMap = new Map<string, SymbolBubble>();
+    const prevFolders = new Set<string>();
+    const folderSums = new Map<string, { sx: number; sy: number; count: number }>();
+
+    if (incremental) {
+      for (const pn of prevNodes) {
+        prevMap.set(pn.id, pn);
+        const f = pn.folder || pn.cluster_id || 'root';
+        prevFolders.add(f);
+        if (Number.isFinite(pn.x) && Number.isFinite(pn.y)) {
+          const cur = folderSums.get(f) || { sx: 0, sy: 0, count: 0 };
+          cur.sx += pn.x;
+          cur.sy += pn.y;
+          cur.count += 1;
+          folderSums.set(f, cur);
+        }
+      }
+    }
+
+    const nowTs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
     const normalizedNodes = rawNodes.map((rawNode) => {
       const meta = rawNode.metadata || {};
       const methods = (rawNode.methods && rawNode.methods.length > 0 ? rawNode.methods : meta.methods || []).map((m) => ({
@@ -515,26 +708,142 @@ export class CockpitState {
         description: a.description || a.message || '',
       }));
       if (anomalies.length === 0 && meta.violations && meta.violations.length > 0) {
-        anomalies = meta.violations.map((msg) => ({
-          rule_id: 'SAST-VIOLATION',
-          cve_id: 'CWE-SAST',
-          cwe_class: 'CWE-SAST',
-          severity: 'HIGH',
-          title: 'Violation SAST / Contrat',
-          description: msg,
-          message: msg,
-          remediation: 'Inspecter la source et sceller les entrées/sorties.',
-          file_path: rawNode.file_path,
-          line_number: rawNode.line_number || 1,
-        }));
+        anomalies = meta.violations.map((msg) => {
+          const isMaxLines =
+            msg.includes('RULE_MAX_LINES') ||
+            msg.includes('ARCH-BUDGET-EXCEEDED') ||
+            msg.includes('maximum line limit');
+          return {
+            rule_id: isMaxLines ? 'RULE_MAX_LINES' : 'SAST-VIOLATION',
+            cve_id: isMaxLines ? 'CWE-1075 / ARCH-BUDGET-EXCEEDED' : 'CWE-SAST',
+            cwe_class: isMaxLines ? 'CWE-1075 / ARCH-BUDGET-EXCEEDED' : 'CWE-SAST',
+            severity: isMaxLines ? 'WARNING' : 'HIGH',
+            title: isMaxLines ? 'Dépassement Budget Lignes' : 'Violation SAST / Contrat',
+            description: msg,
+            message: msg,
+            remediation: isMaxLines
+              ? 'Découper le fichier ou ajuster la limite max_lines dans le contrat BLAKE3.'
+              : 'Inspecter la source et sceller les entrées/sorties.',
+            file_path: rawNode.file_path,
+            line_number: rawNode.line_number || 1,
+          };
+        });
+      }
+
+      const folder = rawNode.folder || rawNode.cluster_id || 'root';
+      const loc = rawNode.loc || rawNode.lines_count || meta.lines || 1;
+      const cc = rawNode.cyclomatic_complexity || rawNode.complexity || 1;
+      const isText = isTextOrDocFile(rawNode.file_path, rawNode.layer, String(rawNode.kind));
+
+      let nodeGitStatus: SymbolBubble['git_status'] = rawNode.git_status;
+      let editKind: EditActivityKind = rawNode.edit_kind || 'none';
+      let lastEditTs = rawNode.last_edit_ts || 0;
+      let birthTime = rawNode.birth_time;
+      let posX = rawNode.x;
+      let posY = rawNode.y;
+
+      const prev = incremental ? prevMap.get(rawNode.id) : undefined;
+      if (prev) {
+        // Preserve live physics coordinates & birth_time so navigation never jumps or resets!
+        if (Number.isFinite(prev.x)) posX = prev.x;
+        if (Number.isFinite(prev.y)) posY = prev.y;
+        birthTime = prev.birth_time;
+        nodeGitStatus = prev.git_status || nodeGitStatus;
+        editKind = prev.edit_kind || editKind;
+        lastEditTs = prev.last_edit_ts || 0;
+
+        // Detect live AST modification on this node
+        const locChanged = loc !== prev.loc;
+        const ccChanged = cc !== prev.cyclomatic_complexity;
+        const docChanged = (rawNode.docstring || '') !== (prev.docstring || '');
+        const methodsChanged = methods.length !== (prev.methods?.length || 0);
+        const anomChanged = anomalies.length !== (prev.anomalies?.length || 0);
+        const secAnomCount = anomalies.filter((a) => !isLinesExceededAnomaly(a)).length;
+        const prevSecAnomCount = (prev.anomalies || []).filter((a) => !isLinesExceededAnomaly(a)).length;
+
+        if (locChanged || ccChanged || docChanged || methodsChanged || anomChanged) {
+          lastEditTs = nowTs;
+          if (secAnomCount > prevSecAnomCount || Boolean(rawNode.has_security_violation && !prev.has_security_violation)) {
+            editKind = 'violation';
+            nodeGitStatus = 'violation';
+          } else if (isText || (docChanged && !locChanged && !ccChanged)) {
+            editKind = 'text';
+            nodeGitStatus = 'text';
+          } else {
+            editKind = 'modif';
+            nodeGitStatus = 'modified';
+          }
+        }
+      } else if (incremental) {
+        // Brand new node created during live session!
+        birthTime = nowTs;
+        lastEditTs = nowTs;
+        const isNewFolder = !prevFolders.has(folder) && !this.knownTrackedFolders.has(folder);
+        if (isNewFolder) {
+          editKind = 'new_folder';
+          nodeGitStatus = 'new_folder';
+        } else if (isText) {
+          editKind = 'text';
+          nodeGitStatus = 'text';
+        } else {
+          editKind = 'new_file';
+          nodeGitStatus = 'untracked';
+        }
+        // Spawn inside parent folder cell centroid if available
+        const fCenter = folderSums.get(folder);
+        if (fCenter && fCenter.count > 0) {
+          posX = fCenter.sx / fCenter.count + (Math.random() - 0.5) * 42;
+          posY = fCenter.sy / fCenter.count + (Math.random() - 0.5) * 42;
+        }
+      } else {
+        this.knownTrackedFolders.add(folder);
+      }
+
+      if ((!nodeGitStatus || nodeGitStatus === 'clean') && this.gitStatus && Array.isArray(this.gitStatus.files)) {
+        const cleanPath = (p: string) => p.replace(/\\/g, '/').toLowerCase().trim();
+        const np = cleanPath(rawNode.file_path || '');
+        const match = this.gitStatus.files.find((f) => {
+          const fp = cleanPath(f.path);
+          return np === fp || np.endsWith(fp) || fp.endsWith(np);
+        });
+        if (match) {
+          const isViolation = match.has_security_violation || match.ears_violation || Boolean(rawNode.has_security_violation);
+          if (isViolation) {
+            nodeGitStatus = 'violation';
+            editKind = 'violation';
+          } else if (match.status === 'untracked' || match.status === 'added') {
+            if (!this.knownTrackedFolders.has(folder) && incremental) {
+              nodeGitStatus = 'new_folder';
+              editKind = 'new_folder';
+            } else if (isText) {
+              nodeGitStatus = 'text';
+              editKind = 'text';
+            } else {
+              nodeGitStatus = 'untracked';
+              editKind = 'new_file';
+            }
+          } else if (isText) {
+            nodeGitStatus = 'text';
+            editKind = 'text';
+          } else {
+            nodeGitStatus = 'modified';
+            editKind = 'modif';
+          }
+        }
       }
 
       return {
         ...rawNode,
-        folder: rawNode.folder || rawNode.cluster_id || 'root',
-        cluster_id: rawNode.cluster_id || rawNode.folder || 'root',
-        loc: rawNode.loc || rawNode.lines_count || meta.lines || 1,
-        cyclomatic_complexity: rawNode.cyclomatic_complexity || rawNode.complexity || 1,
+        x: posX,
+        y: posY,
+        birth_time: birthTime,
+        git_status: nodeGitStatus || 'clean',
+        edit_kind: editKind,
+        last_edit_ts: lastEditTs,
+        folder,
+        cluster_id: rawNode.cluster_id || folder,
+        loc,
+        cyclomatic_complexity: cc,
         is_orphan: Boolean(
           rawNode.is_orphan ?? rawNode.is_dead_code ?? (rawNode.in_degree === 0 && rawNode.out_degree === 0)
         ),
@@ -544,6 +853,8 @@ export class CockpitState {
       };
     });
 
+    this.recomputeFolderEdits(normalizedNodes);
+
     this.graph = {
       ...g,
       nodes: normalizedNodes,
@@ -552,6 +863,125 @@ export class CockpitState {
     };
     if (normalizedNodes.length > 0 && !this.activeSymbol) {
       this.activeSymbol = normalizedNodes[0];
+    } else if (this.activeSymbol) {
+      const updatedActive = normalizedNodes.find((n) => n.id === this.activeSymbol?.id);
+      if (updatedActive) this.activeSymbol = updatedActive;
+    }
+    if (this.engine) {
+      this.engine.syncGraphToEngine(!incremental);
+    }
+  }
+
+  async fetchGitStatus(forceRefresh = false): Promise<GitStatusResponse | null> {
+    try {
+      const data: GitStatusResponse = typeof (api as any).getGitStatus === 'function'
+        ? await (api as any).getGitStatus()
+        : await (await fetch('/api/git/status')).json();
+
+      if (!data) return null;
+
+      const cleanPath = (p: string) => p.replace(/\\/g, '/').toLowerCase().trim();
+      const files = Array.isArray(data.files) ? data.files : [];
+      const sig = files
+        .map((f) => `${cleanPath(f.path)}:${f.status}:${f.has_security_violation ? 1 : 0}:${f.cwe_count}:${f.ears_violation ? 1 : 0}`)
+        .sort()
+        .join('|');
+
+      // Zero re-init if Git status hasn't changed!
+      if (!forceRefresh && this.lastGitSignature !== '' && sig === this.lastGitSignature) {
+        return data;
+      }
+
+      const isInitialGitLoad = this.lastGitSignature === '';
+      this.lastGitSignature = sig;
+      this.gitStatus = data;
+
+      const gitMap = new Map<string, GitFileChange>();
+      const newlyChangedPaths = new Set<string>();
+      for (const f of files) {
+        const cp = cleanPath(f.path);
+        gitMap.set(cp, f);
+        const stateToken = `${f.status}:${f.cwe_count}:${f.ears_violation ? 1 : 0}`;
+        if (!isInitialGitLoad && this.prevGitFileStates.get(cp) !== stateToken) {
+          newlyChangedPaths.add(cp);
+        }
+      }
+      this.prevGitFileStates.clear();
+      for (const [cp, f] of gitMap.entries()) {
+        this.prevGitFileStates.set(cp, `${f.status}:${f.cwe_count}:${f.ears_violation ? 1 : 0}`);
+      }
+
+      // Identify folders that have at least one clean (already tracked) file
+      const trackedFolders = new Set<string>(this.knownTrackedFolders);
+      for (const n of this.graph.nodes) {
+        const np = cleanPath(n.file_path || '');
+        const m = gitMap.get(np);
+        if (!m || (m.status !== 'untracked' && m.status !== 'added')) {
+          trackedFolders.add(n.folder || n.cluster_id || 'root');
+        }
+      }
+
+      const nowTs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+      for (const n of this.graph.nodes) {
+        const nodePath = cleanPath(n.file_path || '');
+        let match = gitMap.get(nodePath);
+        let matchedKey = nodePath;
+        if (!match && nodePath) {
+          for (const [fPath, f] of gitMap.entries()) {
+            if (nodePath.endsWith(fPath) || fPath.endsWith(nodePath)) {
+              match = f;
+              matchedKey = fPath;
+              break;
+            }
+          }
+        }
+
+        const folder = n.folder || n.cluster_id || 'root';
+        const isText = isTextOrDocFile(n.file_path, n.layer, String(n.kind));
+
+        if (match) {
+          const isViolation = match.has_security_violation || match.ears_violation || Boolean(n.has_security_violation);
+          if (isViolation) {
+            n.git_status = 'violation';
+            n.edit_kind = 'violation';
+          } else if (match.status === 'untracked' || match.status === 'added') {
+            if (!trackedFolders.has(folder)) {
+              n.git_status = 'new_folder';
+              n.edit_kind = 'new_folder';
+            } else if (isText) {
+              n.git_status = 'text';
+              n.edit_kind = 'text';
+            } else {
+              n.git_status = 'untracked';
+              n.edit_kind = 'new_file';
+            }
+          } else if (isText) {
+            n.git_status = 'text';
+            n.edit_kind = 'text';
+          } else {
+            n.git_status = 'modified';
+            n.edit_kind = 'modif';
+          }
+
+          if (newlyChangedPaths.has(matchedKey) || (!n.last_edit_ts && !isInitialGitLoad)) {
+            n.last_edit_ts = nowTs;
+          }
+        } else {
+          n.git_status = 'clean';
+          n.edit_kind = 'none';
+        }
+      }
+
+      this.recomputeFolderEdits(this.graph.nodes);
+
+      // Update WebGL instance attributes in-place WITHOUT resetting camera, positions, or physics!
+      if (this.engine && typeof this.engine.updateGitAndEditHighlights === 'function') {
+        this.engine.updateGitAndEditHighlights();
+      }
+      return data;
+    } catch {
+      return null;
     }
   }
 

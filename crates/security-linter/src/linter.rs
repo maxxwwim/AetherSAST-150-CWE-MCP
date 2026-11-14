@@ -1316,25 +1316,12 @@ impl SecurityLinter {
             || (norm_path.ends_with(".sol") && content.contains("interface ") && !content.contains("contract "))
             || (norm_path.ends_with(".java") && content.contains("interface "));
 
-        // 1. Règle max_lines_per_file (Architecture)
-        // Exclut formellement les tests, scripts, mocks, interfaces et déclarations de types
-        if !is_test_file && !is_interface_or_types {
-            if let Some(c) = contract {
-                let is_java = norm_path.ends_with(".java");
-                // Pour les contrats Solidity de production, relever le seuil par défaut à 600 si aucun contrat README local ne fixe de budget strict différent de 300.
-                // Pour Java : langage structurellement très verbeux (imports, packages, annotations Spring/Jakarta, getters/setters, modèles DTO/Entités),
-                // porter le seuil à 10 000 lignes (ou ne pas pénaliser la verbosité standard) afin d'éviter les faux positifs d'excédent de lignes.
-                let limit = if is_java {
-                    if c.frontmatter.max_lines_per_file == 300 {
-                        10_000
-                    } else {
-                        c.frontmatter.max_lines_per_file.max(10_000)
-                    }
-                } else if norm_path.ends_with(".sol") && c.frontmatter.max_lines_per_file == 300 {
-                    600
-                } else {
-                    c.frontmatter.max_lines_per_file
-                };
+        // 1. Règle max_lines_per_file / file_max_lines (Architecture & Contrat BLAKE3)
+        // Exclut formellement les tests, scripts, mocks, interfaces et déclarations de types (sauf si un contrat fichier explicite est défini)
+        if let Some(c) = contract {
+            let has_explicit_file_contract = c.file_override_for(file_path).is_some();
+            if has_explicit_file_contract || (!is_test_file && !is_interface_or_types) {
+                let limit = c.effective_max_lines(file_path);
 
                 if lines.len() > limit {
                     violations.push(LinterViolation {
@@ -3971,6 +3958,7 @@ mod tests {
                 id: "domain".to_string(),
                 layer: "domain".to_string(),
                 max_lines_per_file: 2,
+                file_max_lines: std::collections::HashMap::new(),
                 allowed_imports: vec![],
                 forbidden_imports: vec!["sqlx".to_string()],
                 security_rules: SecurityRules {

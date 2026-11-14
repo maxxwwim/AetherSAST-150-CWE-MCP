@@ -38,9 +38,10 @@
     imports: { label: 'Imports Modules (imports)', color: '#fbbf24', dashed: true, order: 7 },
     contains: { label: 'Contient (contains)', color: '#64748b', dashed: true, order: 8 },
     inherits: { label: 'Héritage (inherits)', color: '#fb923c', order: 9 },
-    violates: { label: 'Violations CWE (violates)', color: '#ef4444', order: 10 },
-    documents: { label: 'Doc -> Code (documents)', color: '#10b981', dashed: true, order: 11 },
-    binds: { label: 'Contrats (binds)', color: '#818cf8', order: 12 },
+    warns: { label: 'Budget Lignes (warns)', color: '#f97316', dashed: true, order: 10 },
+    violates: { label: 'Violations CWE (violates)', color: '#ef4444', order: 11 },
+    documents: { label: 'Doc -> Code (documents)', color: '#10b981', dashed: true, order: 12 },
+    binds: { label: 'Contrats (binds)', color: '#818cf8', order: 13 },
   };
 
   let moduleFilter = $state('');

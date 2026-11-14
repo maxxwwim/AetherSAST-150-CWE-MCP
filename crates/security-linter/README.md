@@ -1,46 +1,33 @@
 ---
 id: security-linter
 layer: domain
-max_lines_per_file: 5000
-allowed_imports: ["core_graph::*", "serde::*", "serde_json::*", "serde_yaml::*", "blake3::*", "regex::*", "std::*"]
+max_lines_per_file: 4000
+allowed_imports: ["core_graph::*", "regex::*", "serde::*", "serde_yaml::*", "blake3::*", "std::*"]
 forbidden_imports: ["ast_scanner::*", "ai_file_bridge::*", "arch_templates::*", "desktop_shell::*", "axum::*", "tokio::*"]
 security_rules:
   no_raw_sql: true
   no_env_access: true
-  deterministic_only: true
 ---
-# 🛡️ security-linter — Moteur SAST, lexer & contrats BLAKE3
+# 🛡️ security-linter — Moteur SAST 215 Règles (CWE + AETHER-*), Lexer & Contrats BLAKE3 (v2.4.0)
 
-Audit statique temps réel : 185+ règles CWE / Zero-Day, masquage lexical anti-faux-positifs, routage des règles par extension de fichier, et parsing des contrats `README.md` (frontmatter YAML + EARS + empreinte BLAKE3).
+Moteur d'audit statique temps réel évaluant 215 règles de sécurité (CWE Zero-Day & détecteurs hors-CWE `AETHER-*`), doublé d'un validateur de contrats d'architecture `README.md` (règles EARS, budgets `max_lines_per_file` par dossier et surcharges `file_max_lines` par fichier) scellés par empreinte cryptographique BLAKE3.
 
 ## 📦 Contenu
 
 | Fichier | Rôle |
 | :--- | :--- |
-| `src/contract.rs` | `ReadmeContract::parse`, `ReadmeFrontmatter`, `EarsRequirement`, `verify_lock` |
-| `src/lexer.rs` | Masquage des commentaires et littéraux, troncature de `#[cfg(test)]` |
-| `src/linter.rs` | Catalogue central des règles, routage typé par extension, orchestrateur d'audit |
-| `src/rules.rs` | Règles DeFi, vaults, oracles, taint tracking |
-| `src/deep_rules.rs` | Règles bas niveau (Rust LLVM/UB/ABI, ZK-SNARKs, runtimes VM) |
-| `src/php_rules.rs` | 25 règles PHP (SQLi, RCE, désérialisation, LFI/RFI, SSRF, SSTI…) |
-| `src/zig_rules.rs` | 15 règles Zig (UAF, Error Union, Wrapping Overflow, `@ptrCast`, C-ABI, `@Vector` SIMD, OS Command…) |
-| `src/csharp_rules.rs` | 20 règles C# / .NET (Désérialisation, SQLi, SSRF, JWT, TLS Bypass, Mass Assignment, ReDoS, `stackalloc`…) |
-| `tests/` | Tests de règles et `self_scan.rs` (le linter s'audite lui-même) |
-
-> [!NOTE]
-> `linter.rs` dépasse largement le budget standard de 300 lignes : le plafond de ce dossier est relevé en conséquence et un découpage par famille de CWE est recommandé.
+| `src/contract.rs` | Parseur/Éditeur de frontmatter YAML (`max_lines_per_file`, `file_max_lines`, `effective_max_lines`, `upsert_contract_content`), règles EARS et hachage BLAKE3 (`compute_blake3_hex`) |
+| `src/lexer.rs` | Masquage lexical double passe des commentaires et littéraux (anti-faux-positifs) |
+| `src/rules.rs` | Règles avancées DeFi, Smart Contracts, Oracles et suivi de teinte intra-fichier |
+| `src/deep_rules.rs` | Règles bas-niveau Rust/LLVM/UB/ABI, ZK-SNARKs et machines virtuelles distribuées |
+| `src/php_rules.rs` | 25 règles de sécurité dédiées à l'écosystème PHP Web & API |
+| `src/zig_rules.rs` | 15 règles Zig Systems, pointeurs, SIMD et interopérabilité C-ABI |
+| `src/csharp_rules.rs` | 20 règles C# / .NET 8+ et ASP.NET Core |
+| `src/epic_novel_rules.rs` | 28 règles exclusives hors-CWE (`AETHER-*`) : failles runtime/compilateur, backdoors invisibles et RCE furtives |
+| `src/linter.rs` | Orchestrateur central des 215 règles, routage par extension et remédiations |
 
 ## 🛡️ Règles EARS
 
-- WHEN a source file is audited THE SYSTEM SHALL mask comments and non-relevant string literals before evaluating syntactic rules.
-- WHEN a rule declares its `target_file_types` THE SYSTEM SHALL run it only on files with a matching extension.
-- WHEN a contract `README.md` has a hash different from the one in `aether.lock.toml` THE SYSTEM SHALL raise the `BLAKE3_TAMPERED` violation.
-- WHEN the same input is audited twice THE SYSTEM SHALL return identical findings.
-- IF a contract frontmatter is not valid YAML THEN THE SYSTEM SHALL return an explicit parse error naming the folder.
-
-## 🔌 API publique
-
-```rust
-pub fn parse(folder_path: &str, content: &str) -> Result<ReadmeContract, String>
-pub fn verify_lock(&self, expected_hash: &str) -> bool
-```
+- WHEN a source file is audited THE SYSTEM SHALL mask comments and string literals before evaluating syntax rules.
+- WHEN a rule specifies file extensions THE SYSTEM SHALL only evaluate that rule on matching file types.
+- WHEN a folder contains a `README.md` contract THE SYSTEM SHALL verify its BLAKE3 hash and enforce `effective_max_lines` (`file_max_lines` override or `max_lines_per_file`) as an orange `WARNING` (`RULE_MAX_LINES`) and `forbidden_imports` as a red `CRITICAL`/`HIGH` violation.

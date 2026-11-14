@@ -72,13 +72,19 @@
     });
   });
 
-  // Best Markdown doc node for the currently selected folder or active symbol's folder
+  // Best Markdown doc node for the currently selected folder or active symbol's folder (with parent hierarchy fallback)
   const folderDocNode = $derived.by(() => {
-    const folder = cockpitState.activeSymbol?.folder || cockpitState.selectedFolder;
-    if (folder) {
-      const inFolder = docLibraryFiles.filter((d) => d.folder === folder);
-      if (inFolder.length > 0) {
-        return inFolder.find((d) => d.name.toLowerCase().includes('readme')) || inFolder[0];
+    const startFolder = cockpitState.selectedFolder || cockpitState.activeSymbol?.folder;
+    if (startFolder) {
+      let cur = startFolder.replace(/\\/g, '/');
+      while (true) {
+        const inFolder = docLibraryFiles.filter((d) => d.folder === cur);
+        if (inFolder.length > 0) {
+          return inFolder.find((d) => d.name.toLowerCase().includes('readme')) || inFolder[0];
+        }
+        if (!cur || cur === 'root' || cur === '.') break;
+        const idx = cur.lastIndexOf('/');
+        cur = idx >= 0 ? cur.slice(0, idx) : 'root';
       }
     }
     return docLibraryFiles.find((d) => d.path.toLowerCase() === 'readme.md') || docLibraryFiles[0] || null;
@@ -514,6 +520,9 @@
         content: draftContent,
       });
       loadedContent = draftContent;
+      if (res.graph) {
+        cockpitState.setGraph(res.graph, true);
+      }
       saveStatus = res.blake3_hash
         ? `${isAuto ? '✓ Auto-save' : 'Enregistré'} (${res.blake3_hash.slice(0, 8)})`
         : isAuto
@@ -534,7 +543,7 @@
         project_path: cockpitState.graph.project_path || '.',
         folder,
       });
-      if (res.graph) cockpitState.setGraph(res.graph);
+      if (res.graph) cockpitState.setGraph(res.graph, true);
       saveStatus = `Signé (${res.signed_count})`;
       setTimeout(() => (saveStatus = ''), 3000);
     } catch (e: any) {
@@ -589,7 +598,7 @@
   <button
     type="button"
     onclick={() => cockpitState.openDoc('library')}
-    class="fixed left-3 top-14 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0b0f19]/92 hover:bg-emerald-500/20 backdrop-blur-md border border-emerald-500/35 text-[11px] font-semibold text-emerald-200 shadow-xl cursor-pointer transition-all"
+    class="fixed left-3 top-[80px] z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0b0f19]/92 hover:bg-emerald-500/20 backdrop-blur-md border border-emerald-500/35 text-[11px] font-semibold text-emerald-200 shadow-xl cursor-pointer transition-all"
     title="Ouvrir le panneau Docs, README & Contrats EARS à gauche"
   >
     <BookOpen class="w-3.5 h-3.5 text-emerald-400" />
@@ -603,7 +612,7 @@
 
 {#if cockpitState.isDocPanelOpen}
   <aside
-    class="fixed left-3 top-14 bottom-10 {wideMode ? 'w-[680px]' : 'w-[470px]'} max-w-[94vw] bg-[#0b0e17]/96 backdrop-blur-xl border border-emerald-500/35 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] z-40 flex flex-col overflow-hidden transition-all"
+    class="fixed left-3 top-[80px] bottom-10 {wideMode ? 'w-[680px]' : 'w-[470px]'} max-w-[94vw] bg-[#0b0e17]/96 backdrop-blur-xl border border-emerald-500/35 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] z-40 flex flex-col overflow-hidden transition-all"
   >
     <!-- Header -->
     <div class="px-3.5 py-2.5 bg-[#0f172a] border-b border-white/10 flex items-center justify-between gap-2">

@@ -11,7 +11,7 @@ import {
 } from './shaders';
 import { PhysicsController, type FolderClusterEntry } from './physics';
 import { getLayerRgba, getFolderColor, formatFolderLabel, SEVERITY_COLORS, type RgbaColor } from './palette';
-import { normalizeEdgeRelation, type CockpitState } from '../state/graphState.svelte';
+import { normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly, type CockpitState } from '../state/graphState.svelte';
 import { playSpatialTone } from '../lib/sound';
 import type { SymbolBubble } from '../types/graph';
 
@@ -70,6 +70,7 @@ export class AetherEngine {
   private hoveredNodeId: string | null = null;
   private hoveredFolder: string | null = null;
   private selectedFolder: string | null = null;
+  private hasInitialCameraFit = false;
   private folderPillBounds: { folder: string; x: number; y: number; w: number; h: number }[] = [];
 
   // Mouse interaction state
@@ -110,6 +111,8 @@ export class AetherEngine {
     this.handleResize();
     this.setupMouseEvents();
 
+    this.state.engine = this;
+
     if (this.state.graph.nodes.length > 0) {
       this.syncGraphToEngine();
     }
@@ -124,9 +127,9 @@ export class AetherEngine {
         nodes[i].x = positions[i * 2];
         nodes[i].y = positions[i * 2 + 1];
 
-        if (this.instanceData.length >= (i + 1) * 9) {
-          this.instanceData[i * 9 + 0] = nodes[i].x;
-          this.instanceData[i * 9 + 1] = nodes[i].y;
+        if (this.instanceData.length >= (i + 1) * 10) {
+          this.instanceData[i * 10 + 0] = nodes[i].x;
+          this.instanceData[i * 10 + 1] = nodes[i].y;
         }
       }
 
@@ -245,36 +248,70 @@ export class AetherEngine {
     });
   }
 
-  public syncGraphToEngine() {
+  private getNodeGitShaderVal(n: SymbolBubble): number {
+    const ek = n.edit_kind;
+    if (ek === 'violation' || n.git_status === 'violation') return 3.0;
+    if (ek === 'new_folder' || n.git_status === 'new_folder') return 5.0;
+    if (ek === 'new_file' || n.git_status === 'untracked') return 2.0;
+    if (ek === 'text' || n.git_status === 'text') return 4.0;
+    if (ek === 'modif' || n.git_status === 'modified') return 1.0;
+    return 0.0;
+  }
+
+  public updateGitAndEditHighlights() {
+    const nodes = this.state.graph.nodes;
+    if (!nodes || this.instanceData.length < nodes.length * 10) return;
+
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const offset = i * 10;
+      if (typeof n.birth_time === 'number') {
+        this.instanceData[offset + 8] = n.birth_time;
+      }
+      this.instanceData[offset + 9] = this.getNodeGitShaderVal(n);
+    }
+
+    this.refreshVisionColors(false);
+    this.uploadInstanceSubData();
+  }
+
+  public syncGraphToEngine(resetCamera = false) {
     const nodes = this.state.graph.nodes;
     this.nodeMap.clear();
     this.clusters.clear();
 
-    const floatCount = nodes.length * 9;
+    const floatCount = nodes.length * 10;
     if (this.instanceData.length !== floatCount) {
       this.instanceData = new Float32Array(floatCount);
     }
 
-    const birthStamp = Math.max(0, performance.now() - 16);
+    const defaultBirthStamp = Math.max(0, performance.now() - 320);
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       if (!Number.isFinite(n.x)) n.x = (Math.random() - 0.5) * 800;
       if (!Number.isFinite(n.y)) n.y = (Math.random() - 0.5) * 800;
+      if (typeof n.birth_time !== 'number') {
+        n.birth_time = resetCamera || !this.hasInitialCameraFit ? Math.max(0, performance.now() - 16) : defaultBirthStamp;
+      }
       this.nodeMap.set(n.id, n);
 
-      const offset = i * 9;
+      const offset = i * 10;
       const { shaderType, baseRadius } = this.classifyNode(n);
 
       this.instanceData[offset + 0] = n.x;
       this.instanceData[offset + 1] = n.y;
       this.instanceData[offset + 2] = baseRadius;
       this.instanceData[offset + 7] = shaderType;
-      this.instanceData[offset + 8] = birthStamp;
+      this.instanceData[offset + 8] = n.birth_time;
+      this.instanceData[offset + 9] = this.getNodeGitShaderVal(n);
     }
 
     this.seedInitialClusters(nodes);
     this.refreshVisionColors(false);
-    this.fitCameraToGraph(true);
+    if (resetCamera || !this.hasInitialCameraFit) {
+      this.hasInitialCameraFit = true;
+      this.fitCameraToGraph(true);
+    }
 
     const { gl, pipeline } = this;
     gl.bindBuffer(gl.ARRAY_BUFFER, pipeline.instanceVbo);
@@ -303,7 +340,7 @@ export class AetherEngine {
     const spanX = Math.max(400, maxX - minX);
     const spanY = Math.max(400, maxY - minY);
     const fitZoom = Math.max(
-      0.06,
+      0.0001,
       Math.min(1.1, Math.min(this.logicalWidth / (spanX + 240), this.logicalHeight / (spanY + 240)))
     );
 
@@ -319,7 +356,7 @@ export class AetherEngine {
 
   public refreshVisionColors(upload = true) {
     const nodes = this.state.graph.nodes;
-    if (!nodes || this.instanceData.length < nodes.length * 9) return;
+    if (!nodes || this.instanceData.length < nodes.length * 10) return;
 
     const mode = this.state.visionMode;
     const activeId = this.state.activeSymbol?.id || null;
@@ -341,7 +378,7 @@ export class AetherEngine {
 
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
-      const offset = i * 9;
+      const offset = i * 10;
       const { baseRadius } = this.classifyNode(n);
       const folder = n.folder || n.cluster_id || 'root';
       let col: RgbaColor = lod <= 2 ? getFolderColor(folder) : getLayerRgba(n.layer);
@@ -375,13 +412,13 @@ export class AetherEngine {
         }
       }
 
-      const hasVuln =
-        n.has_security_violation ||
-        (n.anomalies && n.anomalies.length > 0) ||
-        (n.violations && n.violations.length > 0);
-      if (hasVuln && mode === 'standard') {
+      const alertKind = getNodeAlertKind(n);
+      if (alertKind === 'security' && mode === 'standard') {
         col = SEVERITY_COLORS.CRITICAL;
         r *= 1.3;
+      } else if (alertKind === 'lines_exceeded' && mode === 'standard') {
+        col = SEVERITY_COLORS.HIGH;
+        r *= 1.18;
       }
 
       if (disabledLayers[n.layer || 'utility'] || this.state.disabledModules[folder]) {
@@ -389,11 +426,17 @@ export class AetherEngine {
         r *= 0.42;
       }
 
+      let gitStatusVal = 0.0;
+      if (n.git_status === 'modified') gitStatusVal = 1.0;
+      else if (n.git_status === 'untracked') gitStatusVal = 2.0;
+      else if (n.git_status === 'violation') gitStatusVal = 3.0;
+
       this.instanceData[offset + 2] = r;
       this.instanceData[offset + 3] = col.r;
       this.instanceData[offset + 4] = col.g;
       this.instanceData[offset + 5] = col.b;
       this.instanceData[offset + 6] = alpha;
+      this.instanceData[offset + 9] = gitStatusVal;
     }
 
     if (upload) {
@@ -439,10 +482,11 @@ export class AetherEngine {
 
   private getNodeScreenRadius(n: SymbolBubble, activeId: string | null): number {
     const zoom = this.camera.zoom;
-    const zoomFactor = Math.max(0.85, Math.min(2.5, 1.0 / Math.sqrt(Math.max(0.08, Math.min(3.5, zoom)))));
+    const zoomFactor = Math.max(0.85, Math.min(4.5, 1.0 / Math.sqrt(Math.max(0.001, Math.min(5.0, zoom)))));
     const { baseRadius } = this.classifyNode(n);
     const scaleMult = n.id === activeId ? 1.65 : n.id === this.hoveredNodeId ? 1.35 : 1.0;
-    return baseRadius * scaleMult * 2.8 * zoomFactor * zoom;
+    const rawR = baseRadius * scaleMult * 2.85 * zoomFactor * zoom;
+    return Math.max(2.0, rawR);
   }
 
   private pickNode(sx: number, sy: number): SymbolBubble | null {
@@ -501,7 +545,7 @@ export class AetherEngine {
       e.preventDefault();
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
       const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-      const newZoom = Math.max(0.06, Math.min(3.5, this.camera.targetZoom * zoomFactor));
+      const newZoom = Math.max(0.00005, Math.min(6.0, this.camera.targetZoom * zoomFactor));
 
       const mouseWorldBefore = this.screenToWorld(sx, sy);
       this.camera.targetZoom = newZoom;
@@ -783,6 +827,7 @@ export class AetherEngine {
     this.renderLayoutScenery(ctx);
     this.renderMembranes(ctx, now);
     this.renderEdges(ctx, now);
+    this.renderGitDiffBadges(ctx, now);
     this.renderSecurityBeacons(ctx, now);
     this.renderAiAgentOverlay(ctx, now);
     this.renderLabels(ctx);
@@ -884,6 +929,124 @@ export class AetherEngine {
     ctx.restore();
   }
 
+  private renderGitDiffBadges(ctx: CanvasRenderingContext2D, now: number) {
+    const nodes = this.state.graph.nodes;
+    if (!nodes || nodes.length === 0) return;
+
+    const disabledLayers = this.state.disabledLayers;
+    const disabledModules = this.state.disabledModules;
+    const zoom = this.camera.zoom;
+
+    ctx.save();
+    ctx.font = '700 9.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+
+    let drawn = 0;
+    for (let i = 0; i < nodes.length && drawn < 96; i++) {
+      const n = nodes[i];
+      const ek = n.edit_kind || (
+        n.git_status === 'violation' ? 'violation'
+          : n.git_status === 'new_folder' ? 'new_folder'
+            : n.git_status === 'untracked' ? 'new_file'
+              : n.git_status === 'text' ? 'text'
+                : n.git_status === 'modified' ? 'modif'
+                  : 'none'
+      );
+      if (ek === 'none') continue;
+      if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
+
+      const p = this.worldToScreen(n.x, n.y);
+      if (p.x < -80 || p.x > this.logicalWidth + 80 || p.y < -80 || p.y > this.logicalHeight + 80) continue;
+
+      let badgeText = '';
+      let ringHex = '#facc15';
+      let strokeColor = '';
+      let fillColor = '';
+      let textColor = '';
+
+      if (ek === 'modif') {
+        badgeText = n.is_file ? '✏️ FICHIER MODIFIÉ' : '✏️ MODIF';
+        ringHex = '#facc15';
+        strokeColor = 'rgba(250, 204, 21, 0.95)';
+        fillColor = 'rgba(38, 28, 6, 0.92)';
+        textColor = '#fef08a';
+      } else if (ek === 'text') {
+        badgeText = '📝 TEXTE / DOC';
+        ringHex = '#22d3ee';
+        strokeColor = 'rgba(34, 211, 238, 0.95)';
+        fillColor = 'rgba(6, 32, 44, 0.92)';
+        textColor = '#a5f3fc';
+      } else if (ek === 'new_file') {
+        badgeText = n.is_file ? '✨ NOUVEAU FICHIER' : '✨ +SYMBOLE';
+        ringHex = '#34d399';
+        strokeColor = 'rgba(52, 211, 153, 0.95)';
+        fillColor = 'rgba(6, 36, 24, 0.92)';
+        textColor = '#a7f3d0';
+      } else if (ek === 'new_folder') {
+        badgeText = '📁✨ +DOSSIER';
+        ringHex = '#c084fc';
+        strokeColor = 'rgba(192, 132, 252, 0.95)';
+        fillColor = 'rgba(32, 12, 48, 0.92)';
+        textColor = '#e9d5ff';
+      } else if (ek === 'violation') {
+        badgeText = '🚨 FAILLE ÉDIT';
+        ringHex = '#ef4444';
+        strokeColor = 'rgba(239, 68, 68, 0.95)';
+        fillColor = 'rgba(45, 10, 10, 0.95)';
+        textColor = '#fecaca';
+      } else {
+        continue;
+      }
+
+      const baseR = n.is_file || n.is_class ? 16 : 11;
+      const screenR = Math.max(10, baseR * Math.sqrt(Math.max(0.22, zoom)));
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.0008 + i * 0.7);
+      const isRecent = Boolean(n.last_edit_ts && now - n.last_edit_ts < 15000);
+
+      // 1. Calm, Steady Bioluminescent Bubble Corona Ring (no rapid spinning or strobing)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, screenR + 5 + pulse * 1.2, 0, Math.PI * 2);
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = isRecent ? 2.0 : 1.4;
+      ctx.shadowColor = ringHex;
+      ctx.shadowBlur = isRecent ? 10 : 6;
+      ctx.globalAlpha = isRecent ? 0.88 : 0.70;
+      ctx.stroke();
+      ctx.restore();
+
+      const isFocus = n.id === this.hoveredNodeId || n.id === this.state.activeSymbol?.id;
+      if (!isFocus && !isRecent && zoom < 0.28 && !n.is_file) {
+        drawn++;
+        continue;
+      }
+
+      const tw = ctx.measureText(badgeText).width + 10;
+      const hasSec = Boolean(n.has_security_violation || (n.anomalies && n.anomalies.length > 0) || (n.violations && n.violations.length > 0));
+      const by = hasSec ? p.y + screenR + 6 : p.y - screenR - 18;
+      const bx = p.x - tw * 0.5;
+
+      ctx.fillStyle = fillColor;
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1.1;
+      ctx.shadowColor = ringHex;
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, tw, 15, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = textColor;
+      ctx.shadowBlur = 0;
+      ctx.fillText(badgeText, p.x, by + 7.5);
+
+      drawn++;
+    }
+
+    ctx.restore();
+  }
+
   private renderSecurityBeacons(ctx: CanvasRenderingContext2D, now: number) {
     const nodes = this.state.graph.nodes;
     if (!nodes || nodes.length === 0) return;
@@ -900,14 +1063,15 @@ export class AetherEngine {
     for (let i = 0; i < nodes.length && drawn < 48; i++) {
       const n = nodes[i];
       if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
+      const alertKind = getNodeAlertKind(n);
+      if (alertKind === 'none') continue;
+      const isLinesWarn = alertKind === 'lines_exceeded';
       const anom = n.anomalies || [];
-      const hasSec = Boolean(n.has_security_violation || anom.length > 0 || (n.violations && n.violations.length > 0));
-      if (!hasSec) continue;
 
       const p = this.worldToScreen(n.x, n.y);
       if (p.x < -50 || p.x > this.logicalWidth + 50 || p.y < -50 || p.y > this.logicalHeight + 50) continue;
 
-      // Calm, slow breathing crimson aura (no rapid strobe or jitter)
+      // Calm, slow breathing aura (crimson for security, orange for exceeded lines)
       const gentleBreath = 0.5 + 0.5 * Math.sin(now * 0.0014 + i * 0.45);
       const baseR = n.is_file || n.is_class ? 16 : 11;
       const ringR = Math.max(11, baseR * Math.sqrt(Math.max(0.25, zoom)) + gentleBreath * 2.0);
@@ -915,36 +1079,47 @@ export class AetherEngine {
       // Soft ambient outer halo
       ctx.beginPath();
       ctx.arc(p.x, p.y, ringR + 4, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(239, 68, 68, ${(0.06 + gentleBreath * 0.05).toFixed(3)})`;
+      ctx.fillStyle = isLinesWarn
+        ? `rgba(249, 115, 22, ${(0.07 + gentleBreath * 0.05).toFixed(3)})`
+        : `rgba(239, 68, 68, ${(0.06 + gentleBreath * 0.05).toFixed(3)})`;
       ctx.fill();
 
-      // Steady inner crimson ring
+      // Steady inner ring
       ctx.beginPath();
       ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(248, 113, 113, ${(0.52 + gentleBreath * 0.24).toFixed(2)})`;
+      ctx.strokeStyle = isLinesWarn
+        ? `rgba(251, 146, 60, ${(0.62 + gentleBreath * 0.24).toFixed(2)})`
+        : `rgba(248, 113, 113, ${(0.52 + gentleBreath * 0.24).toFixed(2)})`;
       ctx.lineWidth = 1.35;
       ctx.stroke();
 
       // Alert pill on files, focused/hovered nodes, or when zoomed in (steady position, legible)
       const isFocus = n.id === this.hoveredNodeId || n.id === this.state.activeSymbol?.id;
       if (isFocus || n.is_file || zoom >= 0.42) {
-        const primary = anom[0];
-        const tagText = primary ? `🚨 ${primary.cve_id || primary.rule_id || 'CWE'}` : '🚨 SAST CWE';
-        const shortTag = tagText.length > 18 ? tagText.slice(0, 17) + '…' : tagText;
+        let shortTag: string;
+        if (isLinesWarn) {
+          const maxLim = n.metadata?.max_lines_limit || 300;
+          const curLoc = n.loc || n.metadata?.lines || 0;
+          shortTag = curLoc > 0 ? `⚠️ ${curLoc}/${maxLim} L` : '⚠️ LIGNES MAX';
+        } else {
+          const primary = anom.find((a) => !isLinesExceededAnomaly(a)) || anom[0];
+          const tagText = primary ? `🚨 ${primary.cve_id || primary.rule_id || 'CWE'}` : '🚨 SAST CWE';
+          shortTag = tagText.length > 18 ? tagText.slice(0, 17) + '…' : tagText;
+        }
         const tw = ctx.measureText(shortTag).width + 10;
         const fixedOffset = Math.max(12, baseR * Math.sqrt(Math.max(0.25, zoom)) + 4);
         const bx = p.x - tw * 0.5;
         const by = p.y - fixedOffset - 16;
 
-        ctx.fillStyle = 'rgba(127, 29, 29, 0.90)';
-        ctx.strokeStyle = 'rgba(248, 113, 113, 0.85)';
+        ctx.fillStyle = isLinesWarn ? 'rgba(124, 45, 18, 0.92)' : 'rgba(127, 29, 29, 0.90)';
+        ctx.strokeStyle = isLinesWarn ? 'rgba(251, 146, 60, 0.88)' : 'rgba(248, 113, 113, 0.85)';
         ctx.lineWidth = 1.0;
         ctx.beginPath();
         ctx.roundRect(bx, by, tw, 15, 4);
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = '#fecaca';
+        ctx.fillStyle = isLinesWarn ? '#fed7aa' : '#fecaca';
         ctx.textAlign = 'center';
         ctx.fillText(shortTag, p.x, by + 7.5);
       }
@@ -959,17 +1134,38 @@ export class AetherEngine {
     if (!agents || agents.length === 0) return;
 
     ctx.save();
-    ctx.font = '700 10px ui-sans-serif, system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    const zoom = this.camera.zoom;
 
-    const nodeBadgeStack = new Map<string, number>();
+    // Count agents per target node for orbital distribution
+    const agentsByNode = new Map<string, number>();
+    agents.forEach((ag) => {
+      const targetId = ag.nodeId;
+      if (targetId) {
+        agentsByNode.set(targetId, (agentsByNode.get(targetId) || 0) + 1);
+      }
+    });
+
+    const nodeAgentCounter = new Map<string, number>();
+
+    // 3D inclined celestial orbit constants:
+    // Tilt alpha = 35° (0.6108 rad), inclination psi = 25° (0.4363 rad)
+    const TILT_ALPHA = 0.610865;
+    const INCLINATION_PSI = 0.436332;
+    const cosAlpha = Math.cos(TILT_ALPHA);
+    const cosPsi = Math.cos(INCLINATION_PSI);
+    const sinPsi = Math.sin(INCLINATION_PSI);
+    const omega = 0.0018;
 
     for (let idx = 0; idx < agents.length; idx++) {
       const ag = agents[idx];
-      const agColor = ag.color || '#c084fc';
-      const agTrail = trails[ag.agentId] || [];
+      let agColor = ag.color || '#c084fc';
+      const agNameLower = (ag.agentName || ag.agentId || '').toLowerCase();
+      if (agNameLower.includes('claude')) agColor = '#f97316';
+      else if (agNameLower.includes('gemini')) agColor = '#38bdf8';
+      else if (agNameLower.includes('cursor')) agColor = '#10b981';
 
+      // 1. Trail path rendering
+      const agTrail = trails[ag.agentId] || [];
       if (this.state.settings.aiTrail && agTrail.length > 1) {
         ctx.beginPath();
         let started = false;
@@ -989,44 +1185,209 @@ export class AetherEngine {
         ctx.setLineDash([6, 5]);
         ctx.lineDashOffset = -(now * 0.018);
         ctx.strokeStyle = agColor;
-        ctx.globalAlpha = 0.65;
-        ctx.lineWidth = 1.7;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = Math.max(1.2, 1.8 * Math.sqrt(zoom));
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.globalAlpha = 1.0;
       }
 
+      // 2. Resolve target bubble position in world space (X_N, Y_N)
+      let targetNode: SymbolBubble | undefined;
       if (ag.nodeId) {
-        const targetNode = this.nodeMap.get(ag.nodeId);
-        if (targetNode) {
-          const p = this.worldToScreen(targetNode.x, targetNode.y);
-          const stackIdx = nodeBadgeStack.get(ag.nodeId) || 0;
-          nodeBadgeStack.set(ag.nodeId, stackIdx + 1);
-
-          const r = 19 + stackIdx * 6 + Math.sin(now * 0.0018 + idx) * 2.2;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-          ctx.strokeStyle = agColor;
-          ctx.globalAlpha = 0.85;
-          ctx.lineWidth = 1.7;
-          ctx.stroke();
-          ctx.globalAlpha = 1.0;
-
-          const label = `🤖 ${ag.agentName}: ${ag.action || 'Focus'}`;
-          const tw = ctx.measureText(label).width + 12;
-          const badgeY = p.y + 24 + stackIdx * 21;
-          ctx.fillStyle = 'rgba(11, 14, 24, 0.92)';
-          ctx.strokeStyle = agColor;
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.roundRect(p.x - tw * 0.5, badgeY, tw, 18, 6);
-          ctx.fill();
-          ctx.stroke();
-          ctx.fillStyle = '#f8fafc';
-          ctx.fillText(label, p.x, badgeY + 9);
-        }
+        targetNode = this.nodeMap.get(ag.nodeId);
       }
+      if (!targetNode && ag.target) {
+        targetNode = this.state.resolveTargetNode(ag.target);
+      }
+      if (!targetNode) continue;
+
+      const totalOnNode = agentsByNode.get(targetNode.id) || 1;
+      const subIdx = nodeAgentCounter.get(targetNode.id) || 0;
+      nodeAgentCounter.set(targetNode.id, subIdx + 1);
+
+      // Phase spacing for agents orbiting the same node
+      const phiAgent = (subIdx / totalOnNode) * (Math.PI * 2) + (idx * 0.618);
+      const theta = (now * omega) + phiAgent;
+
+      // 3. Orbit radius in world space: R_orbit = R_node * 2.85 + 24.0
+      const { baseRadius } = this.classifyNode(targetNode);
+      const orbitR = baseRadius * 2.85 + 24.0;
+
+      // 3D celestial coordinates calculation in world space:
+      // In orbital plane: x_plane = R * cos(theta), y_plane = R * sin(theta)
+      // Tilt alpha = 35° around X-axis: x1 = x_plane, y1 = y_plane * cos(alpha)
+      // Inclination psi = 25° in (x, y) plane:
+      // x_rot = x1 * cos(psi) - y1 * sin(psi)
+      // y_rot = x1 * sin(psi) + y1 * cos(psi)
+      const xPlane = orbitR * Math.cos(theta);
+      const yPlane = orbitR * Math.sin(theta) * cosAlpha;
+      const xRot = xPlane * cosPsi - yPlane * sinPsi;
+      const yRot = xPlane * sinPsi + yPlane * cosPsi;
+
+      const xOrbWorld = targetNode.x + xRot;
+      const yOrbWorld = targetNode.y + yRot;
+
+      // 4. Smoothly project to screen coordinates using worldToScreen
+      const pOrb = this.worldToScreen(xOrbWorld, yOrbWorld);
+      const pNode = this.worldToScreen(targetNode.x, targetNode.y);
+
+      // Culling
+      if (
+        pOrb.x < -120 || pOrb.x > this.logicalWidth + 120 ||
+        pOrb.y < -120 || pOrb.y > this.logicalHeight + 120
+      ) {
+        continue;
+      }
+
+      // Calculate target bubble surface intersection
+      const targetR = this.getNodeScreenRadius(targetNode, this.state.activeSymbol?.id || null);
+      const dx = pNode.x - pOrb.x;
+      const dy = pNode.y - pOrb.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const impactDist = Math.max(0, targetR * 0.45);
+      const pImpact = {
+        x: pNode.x - (dx / len) * impactDist,
+        y: pNode.y - (dy / len) * impactDist
+      };
+
+      // 5. Multi-Pass Connecting Laser Beam from avatar to target bubble surface:
+      // Pass 1: Diffused colored glow aura (lineWidth = 3.5 * Math.sqrt(zoom), globalAlpha = 0.35)
+      ctx.beginPath();
+      ctx.moveTo(pOrb.x, pOrb.y);
+      ctx.lineTo(pImpact.x, pImpact.y);
+      ctx.strokeStyle = agColor;
+      ctx.lineWidth = Math.max(1.8, 3.5 * Math.sqrt(zoom));
+      ctx.shadowColor = agColor;
+      ctx.shadowBlur = 10;
+      ctx.globalAlpha = 0.35;
+      ctx.stroke();
+
+      // Pass 2: High-intensity inner white laser core (lineWidth = 1.2, globalAlpha = 0.95)
+      ctx.beginPath();
+      ctx.moveTo(pOrb.x, pOrb.y);
+      ctx.lineTo(pImpact.x, pImpact.y);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.2;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 4;
+      ctx.globalAlpha = 0.95;
+      ctx.stroke();
+
+      // Pass 3: 3 traveling photon beads animated along the vector
+      ctx.shadowColor = agColor;
+      ctx.shadowBlur = 6;
+      for (let b = 0; b < 3; b++) {
+        const u = ((now * 0.0024 + b * 0.333) % 1.0 + 1.0) % 1.0;
+        const bx = pOrb.x + (pImpact.x - pOrb.x) * u;
+        const by = pOrb.y + (pImpact.y - pOrb.y) * u;
+        ctx.beginPath();
+        ctx.arc(bx, by, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.95;
+        ctx.fill();
+      }
+
+      // Pass 4: Concentric circular scanning reticle on bubble surface with animated rotation
+      const reticleAngle = now * 0.0035 + idx;
+      const reticleRadius = Math.max(5, Math.min(14, 6 * Math.sqrt(Math.max(0.3, zoom))));
+      ctx.save();
+      ctx.translate(pImpact.x, pImpact.y);
+      ctx.rotate(reticleAngle);
+
+      ctx.beginPath();
+      ctx.arc(0, 0, reticleRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = agColor;
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = 0.85;
+      ctx.shadowColor = agColor;
+      ctx.shadowBlur = 5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, reticleRadius + 3.5, 0, Math.PI * 1.3);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.0;
+      ctx.globalAlpha = 0.75;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, reticleRadius + 3.5, Math.PI * 1.5, Math.PI * 1.8);
+      ctx.strokeStyle = agColor;
+      ctx.lineWidth = 1.0;
+      ctx.stroke();
+      ctx.restore();
+
+      // 6. Stellar Avatar Orb at (pOrb.x, pOrb.y):
+      // Layer 2: Colored luminous corona (radius 9px, glowing radial gradient)
+      const coronaGrad = ctx.createRadialGradient(pOrb.x, pOrb.y, 1, pOrb.x, pOrb.y, 16);
+      coronaGrad.addColorStop(0, '#ffffff');
+      coronaGrad.addColorStop(0.35, agColor);
+      coronaGrad.addColorStop(0.70, `${agColor}55`);
+      coronaGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = coronaGrad;
+      ctx.globalAlpha = 0.90;
+      ctx.beginPath();
+      ctx.arc(pOrb.x, pOrb.y, 16, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Layer 3: Spinning accretion ring / halo with animated rotation angle
+      const haloR = 9.0 + Math.sin(now * 0.0032 + idx) * 1.5;
+      ctx.save();
+      ctx.translate(pOrb.x, pOrb.y);
+      ctx.rotate(now * 0.003 + idx * 1.2);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, haloR, haloR * 0.45, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = agColor;
+      ctx.lineWidth = 1.4;
+      ctx.shadowColor = agColor;
+      ctx.shadowBlur = 8;
+      ctx.globalAlpha = 0.90;
+      ctx.stroke();
+      ctx.restore();
+
+      // Layer 1: White-hot core nucleus (radius 4.5px, #ffffff)
+      ctx.beginPath();
+      ctx.arc(pOrb.x, pOrb.y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 8;
+      ctx.globalAlpha = 1.0;
+      ctx.fill();
+
+      // 7. Billboard Badge floating above cursor (pOrb.x, pOrb.y - 18)
+      const agentIcon = agNameLower.includes('claude') ? '✨'
+        : agNameLower.includes('gemini') ? '⚡'
+        : agNameLower.includes('cursor') ? '🎯'
+        : '🤖';
+      const agentCleanName = ag.agentName || ag.agentId || 'Agent';
+      const actionText = ag.action || 'Auditing AST';
+      const tagText = `${agentIcon} ${agentCleanName} · ${actionText}`;
+
+      ctx.font = '600 10px ui-sans-serif, system-ui, -apple-system, sans-serif';
+      const tw = ctx.measureText(tagText).width + 16;
+      const badgeH = 19;
+      const badgeY = pOrb.y - 18;
+
+      // Glassmorphic pill badge
+      ctx.fillStyle = 'rgba(10, 14, 26, 0.90)';
+      ctx.strokeStyle = agColor;
+      ctx.lineWidth = 1.1;
+      ctx.shadowColor = agColor;
+      ctx.shadowBlur = 6;
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath();
+      ctx.roundRect(pOrb.x - tw * 0.5, badgeY - badgeH * 0.5, tw, badgeH, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.shadowBlur = 0;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tagText, pOrb.x, badgeY + 0.5);
     }
+
     ctx.restore();
   }
 
@@ -1043,10 +1404,11 @@ export class AetherEngine {
     const ptsY = new Float32Array(12);
     for (let i = 0; i < 12; i++) {
       const prof = lobeProfile && lobeProfile[i] ? lobeProfile[i] : 1.0;
+      // Ondulation amiboïde organique fluide (membrane lipidique vivante)
       const harmonic =
         1.0 +
-        0.042 * Math.sin(breathPhase + phaseShift + i * 1.618) +
-        0.024 * Math.cos(breathPhase * 0.62 - phaseShift * 0.7 + i * 2.51);
+        0.034 * Math.sin(breathPhase * 1.35 + phaseShift + i * 1.57) +
+        0.018 * Math.cos(breathPhase * 0.90 - phaseShift * 0.75 + i * 2.62);
       const r = radius * prof * harmonic;
       ptsX[i] = cx + _COS12[i] * r;
       ptsY[i] = cy + _SIN12[i] * r;
@@ -1124,8 +1486,20 @@ export class AetherEngine {
       const minBaseR = Math.max(54, Math.sqrt(list.length) * 32);
       const baseR = Math.max(minBaseR, maxDist + padding);
 
+      const rawLobes = new Float32Array(12);
+      for (let s = 0; s < 12; s++) {
+        const neededR = rawSectors[s] > 0 ? rawSectors[s] + padding : baseR * 0.88;
+        rawLobes[s] = Math.max(0.84, Math.min(1.45, neededR / baseR));
+      }
+
       let entry = this.clusters.get(folder);
       if (!entry) {
+        const initialLobes = new Float32Array(12);
+        for (let s = 0; s < 12; s++) {
+          const prev = rawLobes[(s + 11) % 12];
+          const next = rawLobes[(s + 1) % 12];
+          initialLobes[s] = (prev * 0.25 + rawLobes[s] * 0.50 + next * 0.25) * 1.06;
+        }
         entry = {
           cx,
           cy,
@@ -1134,30 +1508,28 @@ export class AetherEngine {
           count: list.length,
           computedRadius: baseR,
           naturalRadius: baseR,
-          lobeProfile: new Float32Array(12),
+          lobeProfile: initialLobes,
         };
         this.clusters.set(folder, entry);
       } else {
-        entry.cx = cx;
-        entry.cy = cy;
+        // Exponential temporal smoothing prevents any frame-to-frame jitter or snapping
+        const alpha = 0.12;
+        entry.cx += (cx - entry.cx) * alpha;
+        entry.cy += (cy - entry.cy) * alpha;
         entry.sumX = sumX;
         entry.sumY = sumY;
         entry.count = list.length;
-        entry.computedRadius = baseR;
-        entry.naturalRadius = baseR;
+        entry.computedRadius += (baseR - entry.computedRadius) * alpha;
+        entry.naturalRadius += (baseR - entry.naturalRadius) * alpha;
         if (entry.lobeProfile.length !== 12) entry.lobeProfile = new Float32Array(12);
-      }
-
-      const rawLobes = new Float32Array(12);
-      for (let s = 0; s < 12; s++) {
-        const neededR = rawSectors[s] > 0 ? rawSectors[s] + padding : baseR * 0.88;
-        rawLobes[s] = Math.max(0.84, Math.min(1.45, neededR / baseR));
-      }
-      for (let s = 0; s < 12; s++) {
-        const prev = rawLobes[(s + 11) % 12];
-        const next = rawLobes[(s + 1) % 12];
-        // Slight 1.06 outward factor compensates quadratic Bezier midpoint inward curve
-        entry.lobeProfile[s] = (prev * 0.25 + rawLobes[s] * 0.50 + next * 0.25) * 1.06;
+        for (let s = 0; s < 12; s++) {
+          const prev = rawLobes[(s + 11) % 12];
+          const next = rawLobes[(s + 1) % 12];
+          const targetLobe = (prev * 0.25 + rawLobes[s] * 0.50 + next * 0.25) * 1.06;
+          entry.lobeProfile[s] = entry.lobeProfile[s]
+            ? entry.lobeProfile[s] + (targetLobe - entry.lobeProfile[s]) * alpha
+            : targetLobe;
+        }
       }
     });
   }
@@ -1168,8 +1540,18 @@ export class AetherEngine {
     if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();
-    const breathPhase = now * 0.00095;
-    const badges: { folder: string; label: string; count: number; cx: number; topY: number; rgb: string; sel: boolean }[] = [];
+    const breathPhase = now * 0.00075;
+    const badges: {
+      folder: string;
+      label: string;
+      count: number;
+      cx: number;
+      topY: number;
+      rgb: string;
+      sel: boolean;
+      editLabel?: string;
+      editHex?: string;
+    }[] = [];
 
     this.clusters.forEach((cl, folder) => {
       if (cl.count <= 0 || this.state.disabledModules[folder]) return;
@@ -1186,49 +1568,92 @@ export class AetherEngine {
       }
 
       const col = getFolderColor(folder);
-      const rR = Math.round(col.r * 255);
-      const rG = Math.round(col.g * 255);
-      const rB = Math.round(col.b * 255);
-      const lR = Math.min(255, rR + 85);
-      const lG = Math.min(255, rG + 85);
-      const lB = Math.min(255, rB + 100);
+      let rR = Math.round(col.r * 255);
+      let rG = Math.round(col.g * 255);
+      let rB = Math.round(col.b * 255);
+      let lR = Math.min(255, rR + 85);
+      let lG = Math.min(255, rG + 85);
+      let lB = Math.min(255, rB + 100);
       const isSel = folder === this.selectedFolder || folder === this.hoveredFolder;
       const folderPhase = (rR * 0.03 + rG * 0.07) % 6.28;
 
-      // 1. Living Outer Cytoplasmic Membrane with soft radial gradient
+      const folderEdit = this.state.folderEdits?.[folder];
+      let editHex: string | undefined;
+      if (folderEdit && folderEdit.count > 0) {
+        if (folderEdit.kind === 'violation') {
+          rR = 239; rG = 68; rB = 68;
+          lR = 252; lG = 165; lB = 165;
+          editHex = '#ef4444';
+        } else if (folderEdit.kind === 'new_folder') {
+          rR = 192; rG = 132; rB = 252;
+          lR = 233; lG = 213; lB = 255;
+          editHex = '#c084fc';
+        } else if (folderEdit.kind === 'new_file') {
+          rR = 16; rG = 185; rB = 129;
+          lR = 110; lG = 231; lB = 183;
+          editHex = '#34d399';
+        } else if (folderEdit.kind === 'text') {
+          rR = 34; rG = 211; rB = 238;
+          lR = 165; lG = 243; lB = 252;
+          editHex = '#22d3ee';
+        } else {
+          rR = 250; rG = 204; rB = 21;
+          lR = 254; lG = 240; lB = 138;
+          editHex = '#facc15';
+        }
+      }
+
+      const isEditedCell = Boolean(folderEdit && folderEdit.count > 0);
+      const cellPulse = isEditedCell ? 0.5 + 0.5 * Math.sin(now * 0.00075 + folderPhase) : 0;
+
+      // 1. Living Outer Cytoplasmic Membrane with soft radial gradient (illuminated when edited)
       const topCrestY = this.traceMembraneSpline(ctx, center.x, center.y, baseR, cl.lobeProfile, breathPhase, folderPhase);
       const grad = ctx.createRadialGradient(center.x, center.y, Math.max(4, baseR * 0.15), center.x, center.y, Math.max(12, baseR * 1.15));
-      grad.addColorStop(0, `rgba(${rR}, ${rG}, ${rB}, ${isSel ? 0.16 : 0.085})`);
-      grad.addColorStop(0.7, `rgba(${rR}, ${rG}, ${rB}, ${isSel ? 0.10 : 0.04})`);
-      grad.addColorStop(1, `rgba(${rR}, ${rG}, ${rB}, 0.01)`);
+      const bioPulse = 0.5 + 0.5 * Math.sin(now * 0.0012 + folderPhase);
+      const innerAlpha = isEditedCell ? (0.16 + cellPulse * 0.04) : isSel ? 0.16 : (0.075 + 0.022 * bioPulse);
+      const midAlpha = isEditedCell ? (0.10 + cellPulse * 0.025) : isSel ? 0.10 : 0.04;
+      grad.addColorStop(0, `rgba(${rR}, ${rG}, ${rB}, ${innerAlpha.toFixed(3)})`);
+      grad.addColorStop(0.7, `rgba(${rR}, ${rG}, ${rB}, ${midAlpha.toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${rR}, ${rG}, ${rB}, 0.015)`);
       ctx.fillStyle = grad;
       ctx.fill();
-      ctx.lineWidth = Math.min(3.5, Math.max(1.1, isSel ? 2.4 : 1.5));
-      ctx.strokeStyle = isSel ? 'rgba(56, 189, 248, 0.85)' : `rgba(${lR}, ${lG}, ${lB}, 0.44)`;
+
+      ctx.save();
+      if (isEditedCell && editHex) {
+        ctx.shadowColor = editHex;
+        ctx.shadowBlur = 10 + cellPulse * 3;
+      }
+      ctx.lineWidth = Math.min(3.4, Math.max(1.2, isEditedCell ? 2.3 : isSel ? 2.4 : 1.5));
+      ctx.strokeStyle = isSel
+        ? 'rgba(56, 189, 248, 0.90)'
+        : isEditedCell
+          ? `rgba(${lR}, ${lG}, ${lB}, ${(0.76 + cellPulse * 0.12).toFixed(2)})`
+          : `rgba(${lR}, ${lG}, ${lB}, 0.44)`;
       ctx.stroke();
+      ctx.restore();
 
       // 2. Living Inner Phospholipid Bilayer Cortex (breathing out-of-phase)
       if (baseR >= 26) {
         this.traceMembraneSpline(ctx, center.x, center.y, baseR * 0.88, cl.lobeProfile, breathPhase * 0.88, folderPhase + 2.1);
-        ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isSel ? 0.05 : 0.022})`;
+        ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isEditedCell ? 0.065 : isSel ? 0.05 : 0.022})`;
         ctx.fill();
-        ctx.lineWidth = 0.9;
-        ctx.strokeStyle = `rgba(${lR}, ${lG}, ${lB}, ${isSel ? 0.35 : 0.18})`;
+        ctx.lineWidth = isEditedCell ? 1.2 : 0.9;
+        ctx.strokeStyle = `rgba(${lR}, ${lG}, ${lB}, ${isEditedCell ? 0.48 : isSel ? 0.35 : 0.18})`;
         ctx.stroke();
       }
 
       // 3. LoD 2 Nucleus Core
-      if ((this.state.lodLevel === 2 || isSel) && baseR >= 45) {
+      if ((this.state.lodLevel === 2 || isSel || isEditedCell) && baseR >= 45) {
         const nucR = Math.max(12, baseR * 0.20);
         this.traceMembraneSpline(ctx, center.x, center.y, nucR, undefined, breathPhase * 1.25, 1.1);
-        ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isSel ? 0.20 : 0.10})`;
+        ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isEditedCell ? 0.22 : isSel ? 0.20 : 0.10})`;
         ctx.fill();
         ctx.lineWidth = 1.0;
-        ctx.strokeStyle = `rgba(${lR}, ${lG}, ${lB}, 0.30)`;
+        ctx.strokeStyle = `rgba(${lR}, ${lG}, ${lB}, ${isEditedCell ? 0.55 : 0.30})`;
         ctx.stroke();
       }
 
-      if (isSel || (this.state.settings.showFolderBadges && cl.count >= 4 && baseR >= 34)) {
+      if (isSel || isEditedCell || (this.state.settings.showFolderBadges && cl.count >= 4 && baseR >= 34)) {
         badges.push({
           folder,
           label: formatFolderLabel(folder),
@@ -1236,7 +1661,9 @@ export class AetherEngine {
           cx: center.x,
           topY: topCrestY,
           rgb: `${lR}, ${lG}, ${lB}`,
-          sel: isSel
+          sel: isSel,
+          editLabel: folderEdit?.label,
+          editHex,
         });
       }
     });
@@ -1247,16 +1674,26 @@ export class AetherEngine {
 
   private renderFolderBadges(
     ctx: CanvasRenderingContext2D,
-    badges: { folder: string; label: string; count: number; cx: number; topY: number; rgb: string; sel: boolean }[]
+    badges: {
+      folder: string;
+      label: string;
+      count: number;
+      cx: number;
+      topY: number;
+      rgb: string;
+      sel: boolean;
+      editLabel?: string;
+      editHex?: string;
+    }[]
   ) {
     if (badges.length === 0) return;
     ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, sans-serif';
     ctx.textBaseline = 'middle';
 
-    const maxDraw = Math.min(badges.length, 32);
+    const maxDraw = Math.min(badges.length, 36);
     for (let i = 0; i < maxDraw; i++) {
       const b = badges[i];
-      const text = `${b.label}`;
+      const text = b.editLabel ? `${b.label} · ${b.editLabel}` : `${b.label}`;
       const countText = `${b.count}`;
       const textW = ctx.measureText(text).width;
       const countW = ctx.measureText(countText).width;
@@ -1266,32 +1703,42 @@ export class AetherEngine {
       const pillY = b.topY - pillH - 8;
       this.folderPillBounds.push({ folder: b.folder, x: pillX, y: pillY, w: pillW, h: pillH });
 
+      const strokeCol = b.sel ? '#38bdf8' : b.editHex ? b.editHex : `rgba(${b.rgb}, 0.55)`;
+
       // Tether line from cellular crest to pill badge
       ctx.beginPath();
       ctx.moveTo(b.cx, b.topY);
       ctx.lineTo(b.cx, pillY + pillH);
-      ctx.strokeStyle = b.sel ? '#38bdf8' : `rgba(${b.rgb}, 0.55)`;
-      ctx.lineWidth = 1.0;
+      ctx.strokeStyle = strokeCol;
+      ctx.lineWidth = b.editHex ? 1.3 : 1.0;
       ctx.stroke();
 
-      ctx.fillStyle = b.sel ? 'rgba(12, 74, 110, 0.92)' : 'rgba(11, 14, 23, 0.86)';
-      ctx.strokeStyle = b.sel ? '#38bdf8' : `rgba(${b.rgb}, 0.55)`;
+      ctx.save();
+      if (b.editHex) {
+        ctx.shadowColor = b.editHex;
+        ctx.shadowBlur = 8;
+      }
+      ctx.fillStyle = b.sel ? 'rgba(12, 74, 110, 0.92)' : b.editHex ? 'rgba(15, 19, 32, 0.94)' : 'rgba(11, 14, 23, 0.86)';
+      ctx.strokeStyle = strokeCol;
+      ctx.lineWidth = b.editHex ? 1.3 : 1.0;
       ctx.beginPath();
       ctx.roundRect(pillX, pillY, pillW, pillH, 6);
       ctx.fill();
       ctx.stroke();
+      ctx.restore();
 
-      ctx.fillStyle = '#e2e8f0';
+      ctx.fillStyle = b.editHex ? '#ffffff' : '#e2e8f0';
       ctx.textAlign = 'left';
       ctx.fillText(text, pillX + 8, pillY + pillH * 0.5);
 
-      ctx.fillStyle = `rgba(${b.rgb}, 0.95)`;
+      ctx.fillStyle = b.editHex || `rgba(${b.rgb}, 0.95)`;
       ctx.textAlign = 'right';
       ctx.fillText(countText, pillX + pillW - 7, pillY + pillH * 0.5);
     }
   }
 
   private getRelationVisual(rel: string, isViolation: boolean, isDbTarget: boolean, isIncoming: boolean) {
+    if (rel === 'warns') return { color: '#f97316', dashed: true, tag: 'MAX LIGNES' };
     if (isViolation) return { color: '#f87171', dashed: false, tag: 'SAST' };
     if (rel === 'submits') return { color: '#ff7a18', dashed: false, tag: 'FORM' };
     if (rel === 'network') return { color: '#22d3ee', dashed: false, tag: 'NET' };
@@ -1347,10 +1794,11 @@ export class AetherEngine {
     const pImports = new Path2D();
     const pQueries = new Path2D();
     const pViolates = new Path2D();
+    const pWarns = new Path2D();
     const pRealtime = new Path2D();
     const pNetwork = new Path2D();
     const pSubmits = new Path2D();
-    let hasCalls = false, hasImports = false, hasQueries = false, hasViolates = false, hasRealtime = false, hasNetwork = false, hasSubmits = false;
+    let hasCalls = false, hasImports = false, hasQueries = false, hasViolates = false, hasWarns = false, hasRealtime = false, hasNetwork = false, hasSubmits = false;
     const pulseParticles: { x: number; y: number; color: string }[] = [];
     const midChevrons: { x: number; y: number; angle: number; color: string }[] = [];
     const focusEdges: {
@@ -1402,6 +1850,12 @@ export class AetherEngine {
       const cx = isCurved ? (p1.x + p2.x) * 0.5 - dy * 0.14 : null;
       const cy = isCurved ? (p1.y + p2.y) * 0.5 + dx * 0.14 : null;
 
+      const isWarnEdge =
+        rel === 'warns' ||
+        e.severity === 'WARNING' ||
+        Boolean(e.cve_id && e.cve_id.includes('ARCH-BUDGET-EXCEEDED'));
+      const isViolEdge = !isWarnEdge && (rel === 'violates' || Boolean(e.cve_id));
+
       if (isIncident && focusEdges.length < 64) {
         focusEdges.push({
           sourceNode: s,
@@ -1410,14 +1864,15 @@ export class AetherEngine {
           p2,
           cx,
           cy,
-          rel,
-          isViolation: rel === 'violates' || Boolean(e.cve_id),
+          rel: isWarnEdge ? 'warns' : rel,
+          isViolation: isViolEdge,
           isIncoming: e.target === focusId && e.source !== focusId,
         });
       }
 
       let targetPath = pCalls;
-      if (rel === 'violates' || e.cve_id) { targetPath = pViolates; hasViolates = true; }
+      if (isWarnEdge) { targetPath = pWarns; hasWarns = true; }
+      else if (isViolEdge) { targetPath = pViolates; hasViolates = true; }
       else if (rel === 'submits') { targetPath = pSubmits; hasSubmits = true; }
       else if (rel === 'network') { targetPath = pNetwork; hasNetwork = true; }
       else if (rel === 'realtime') { targetPath = pRealtime; hasRealtime = true; }
@@ -1435,7 +1890,7 @@ export class AetherEngine {
           pulseParticles.push({
             x: inv * inv * p1.x + 2 * inv * u * cx + u * u * p2.x,
             y: inv * inv * p1.y + 2 * inv * u * cy + u * u * p2.y,
-            color: rel === 'violates' ? '#f87171' : rel === 'realtime' ? '#34d399' : rel === 'queries' ? '#c084fc' : '#38bdf8',
+            color: isWarnEdge ? '#fb923c' : isViolEdge ? '#f87171' : rel === 'realtime' ? '#34d399' : rel === 'queries' ? '#c084fc' : '#38bdf8',
           });
         }
       } else {
@@ -1458,7 +1913,8 @@ export class AetherEngine {
     ctx.save();
     ctx.lineCap = 'round';
     const w = Math.max(0.75, Math.min(2.0, 1.15 * Math.sqrt(zoom)));
-    const bgDim = isHoverFocus && focusEdges.length > 0 ? 0.45 : 1.0;
+    const zoomFade = zoom < 0.08 ? Math.max(0.12, zoom * 12.5) : 1.0;
+    const bgDim = (isHoverFocus && focusEdges.length > 0 ? 0.45 : 1.0) * zoomFade;
 
     if (hasImports) {
       ctx.lineWidth = w * 0.85;
@@ -1491,6 +1947,13 @@ export class AetherEngine {
       ctx.lineWidth = pipe ? w * 2.1 : w * 1.35;
       ctx.strokeStyle = `rgba(52, 211, 153, ${(pipe ? 0.90 : 0.48) * bgDim})`;
       ctx.stroke(pRealtime);
+    }
+    if (hasWarns) {
+      ctx.lineWidth = w * 1.45;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = `rgba(249, 115, 22, ${0.68 * bgDim})`;
+      ctx.stroke(pWarns);
+      ctx.setLineDash([]);
     }
     if (hasViolates) {
       ctx.lineWidth = w * 1.55;
@@ -1661,6 +2124,9 @@ export class AetherEngine {
 
   public destroy() {
     this.isDestroyed = true;
+    if (this.state.engine === this) {
+      this.state.engine = null;
+    }
     window.removeEventListener('resize', this.resizeHandler);
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);

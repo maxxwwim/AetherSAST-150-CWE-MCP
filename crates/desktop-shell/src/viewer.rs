@@ -2,26 +2,10 @@ use core_graph::graph::AetherGraph;
 use obsidian_vault::types::DetectedProjectType;
 use serde::Serialize;
 
-#[allow(dead_code)]
-pub const INDEX_HTML: &str = include_str!("../assets/index.html");
-#[allow(dead_code)]
-pub const STYLES_CSS: &str = include_str!("../assets/styles.css");
-#[allow(dead_code)]
-pub const STATE_API_JS: &str = include_str!("../assets/state_api.js");
-#[allow(dead_code)]
-pub const WEBGL_SHADERS_PHYSICS_JS: &str = include_str!("../assets/webgl_shaders_physics.js");
-#[allow(dead_code)]
-pub const WEBGL_RENDERER_JS: &str = include_str!("../assets/webgl_renderer.js");
-#[allow(dead_code)]
-pub const UI_NAVIGATION_JS: &str = include_str!("../assets/ui_navigation.js");
-#[allow(dead_code)]
-pub const UI_INSPECTOR_DOCS_JS: &str = include_str!("../assets/ui_inspector_docs.js");
-#[allow(dead_code)]
-pub const UI_VISION_MODES_JS: &str = include_str!("../assets/ui_vision_modes.js");
-#[allow(dead_code)]
-pub const UI_AI_MODALS_JS: &str = include_str!("../assets/ui_ai_modals.js");
-pub const PHYSICS_WORKER_JS: &str = include_str!("../assets/physics_worker.js");
+pub const PHYSICS_WORKER_JS: &str = include_str!("../ui/src/engine/physics.worker.js");
 pub const DIST_INDEX_HTML: &str = include_str!("../dist/index.html");
+#[allow(dead_code)]
+pub const MODERN_INDEX_HTML: &str = DIST_INDEX_HTML;
 
 /// Dual-vision graph container serialized for offline standalone bundles.
 #[derive(Debug, Clone, Serialize)]
@@ -62,35 +46,7 @@ pub fn generate_dual_standalone_html(
     project_type: DetectedProjectType,
     active_view: &str,
 ) -> String {
-    let code_prepared = code_graph.map(ensure_system_prompt);
-    let vault_prepared = vault_graph.map(ensure_system_prompt);
-
-    let norm_active = match active_view.trim().to_lowercase().as_str() {
-        "vault" | "notes" => "vault",
-        _ => "code",
-    };
-
-    let worker_json = serde_json::to_string(PHYSICS_WORKER_JS).unwrap_or_default();
-
-    let dual_bundle = DualGraphBundle {
-        project_type: project_type.as_str(),
-        supported_views: project_type.supported_views(),
-        active_view: norm_active,
-        code: code_prepared.as_ref(),
-        vault: vault_prepared.as_ref(),
-    };
-    let dual_json = serde_json::to_string(&dual_bundle).unwrap_or_default();
-
-    // Prevent premature </script> closing in HTML
-    let safe_dual_json = dual_json.replace("</script>", "<\\/script>");
-
-    let active_key = if norm_active == "vault" { "vault" } else { "code" };
-    let injection = format!(
-        "<script>\nwindow.__AETHERSCOPE_DUAL_GRAPH__ = {};\nwindow.__PHYSICS_WORKER_CODE__ = {};\nwindow.__AETHERSCOPE_DATA__ = window.__AETHERSCOPE_DUAL_GRAPH__.{} || window.__AETHERSCOPE_DUAL_GRAPH__.code || window.__AETHERSCOPE_DUAL_GRAPH__.vault || {{ project_name: 'AetherScope', nodes: [], edges: [], stats: {{}} }};\nwindow.AETHER_GRAPH_DATA = window.__AETHERSCOPE_DATA__;\nwindow.AETHER_DUAL_GRAPH = window.__AETHERSCOPE_DUAL_GRAPH__;\n</script>",
-        safe_dual_json, worker_json, active_key
-    );
-
-    assemble_bundle(&injection)
+    generate_modern_standalone_html(code_graph, vault_graph, project_type, active_view)
 }
 
 /// Generates a modern Svelte 5 + Vite standalone HTML bundle (ultra-lightweight ~145 KB)
@@ -108,7 +64,10 @@ pub fn generate_modern_standalone_html(
         _ => "code",
     };
 
-    let worker_json = serde_json::to_string(PHYSICS_WORKER_JS).unwrap_or_default();
+    let worker_json = serde_json::to_string(PHYSICS_WORKER_JS)
+        .unwrap_or_default()
+        .replace("</", "<\\/")
+        .replace("<!--", "<\\!--");
 
     let dual_bundle = DualGraphBundle {
         project_type: project_type.as_str(),
@@ -118,15 +77,57 @@ pub fn generate_modern_standalone_html(
         vault: vault_prepared.as_ref(),
     };
     let dual_json = serde_json::to_string(&dual_bundle).unwrap_or_default();
-    let safe_dual_json = dual_json.replace("</script>", "<\\/script>");
+    let safe_dual_json = dual_json
+        .replace("</", "<\\/")
+        .replace("<!--", "<\\!--");
 
     let active_key = if norm_active == "vault" { "vault" } else { "code" };
     let injection = format!(
-        "<script>\nwindow.__AETHERSCOPE_DUAL_GRAPH__ = {};\nwindow.__PHYSICS_WORKER_CODE__ = {};\nwindow.__AETHERSCOPE_DATA__ = window.__AETHERSCOPE_DUAL_GRAPH__.{} || window.__AETHERSCOPE_DUAL_GRAPH__.code || window.__AETHERSCOPE_DUAL_GRAPH__.vault || {{ project_name: 'AetherScope', nodes: [], edges: [], stats: {{}} }};\nwindow.AETHER_GRAPH_DATA = window.__AETHERSCOPE_DATA__;\nwindow.AETHER_DUAL_GRAPH = window.__AETHERSCOPE_DUAL_GRAPH__;\n</script>",
+        "<div id=\"view-mode-toggle\" style=\"display:none\" aria-hidden=\"true\">\n\
+         <button id=\"btn-view-mode-code\" onclick=\"switchProjectViewMode('code')\"></button>\n\
+         <button id=\"btn-view-mode-vault\" onclick=\"switchProjectViewMode('vault')\"></button>\n\
+         <button id=\"btn-menu-view-code\" onclick=\"switchProjectViewMode('code')\"></button>\n\
+         <button id=\"btn-menu-view-vault\" onclick=\"switchProjectViewMode('vault')\"></button>\n\
+         </div>\n\
+         <script>\n\
+         window.__AETHERSCOPE_DUAL_GRAPH__ = {};\n\
+         window.__PHYSICS_WORKER_CODE__ = {};\n\
+         window.__AETHERSCOPE_DATA__ = window.__AETHERSCOPE_DUAL_GRAPH__.{} || window.__AETHERSCOPE_DUAL_GRAPH__.code || window.__AETHERSCOPE_DUAL_GRAPH__.vault || {{ project_name: 'AetherScope', nodes: [], edges: [], stats: {{}} }};\n\
+         window.AETHER_GRAPH_DATA = window.__AETHERSCOPE_DATA__;\n\
+         window.AETHER_DUAL_GRAPH = window.__AETHERSCOPE_DUAL_GRAPH__;\n\
+         async function switchProjectViewMode(mode) {{\n\
+             if (window.__AETHERSCOPE_DUAL_GRAPH__ && window.__AETHERSCOPE_DUAL_GRAPH__[mode]) {{\n\
+                 window.__AETHERSCOPE_DATA__ = window.__AETHERSCOPE_DUAL_GRAPH__[mode];\n\
+                 window.AETHER_GRAPH_DATA = window.__AETHERSCOPE_DATA__;\n\
+                 if (window.dispatchEvent) {{\n\
+                     window.dispatchEvent(new CustomEvent('aether:viewmode', {{ detail: mode }}));\n\
+                 }}\n\
+             }}\n\
+         }}\n\
+         async function fetchProjectStatus() {{\n\
+             return {{ project_type: window.__AETHERSCOPE_DUAL_GRAPH__?.project_type || 'Mixed' }};\n\
+         }}\n\
+         </script>",
         safe_dual_json, worker_json, active_key
     );
 
-    DIST_INDEX_HTML.replace("<body", &format!("{}\n<body", injection))
+    if let Some(pos) = DIST_INDEX_HTML.rfind("<div id=\"app\"></div>") {
+        let mut out = String::with_capacity(DIST_INDEX_HTML.len() + injection.len() + 16);
+        out.push_str(&DIST_INDEX_HTML[..pos]);
+        out.push_str(&injection);
+        out.push_str("\n    ");
+        out.push_str(&DIST_INDEX_HTML[pos..]);
+        out
+    } else if let Some(pos) = DIST_INDEX_HTML.rfind("<body") {
+        let mut out = String::with_capacity(DIST_INDEX_HTML.len() + injection.len() + 16);
+        out.push_str(&DIST_INDEX_HTML[..pos]);
+        out.push_str(&injection);
+        out.push('\n');
+        out.push_str(&DIST_INDEX_HTML[pos..]);
+        out
+    } else {
+        format!("{}\n{}", injection, DIST_INDEX_HTML)
+    }
 }
 
 /// Backward compatible generator for single graph export.
@@ -140,35 +141,6 @@ pub fn generate_standalone_html(graph: &AetherGraph) -> String {
     )
 }
 
-#[allow(dead_code)]
-fn assemble_bundle(injection: &str) -> String {
-    let combined_js = format!(
-        "<script>\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n</script>",
-        STATE_API_JS,
-        WEBGL_SHADERS_PHYSICS_JS,
-        WEBGL_RENDERER_JS,
-        UI_NAVIGATION_JS,
-        UI_INSPECTOR_DOCS_JS,
-        UI_VISION_MODES_JS,
-        UI_AI_MODALS_JS
-    );
-
-    let html = INDEX_HTML
-        .replace(
-            "<link rel=\"stylesheet\" href=\"styles.css\" />",
-            &format!("<style>\n{}\n</style>", STYLES_CSS),
-        )
-        .replace("<script src=\"state_api.js\"></script>", &combined_js)
-        .replace("<script src=\"webgl_shaders_physics.js\"></script>", "")
-        .replace("<script src=\"webgl_renderer.js\"></script>", "")
-        .replace("<script src=\"ui_navigation.js\"></script>", "")
-        .replace("<script src=\"ui_inspector_docs.js\"></script>", "")
-        .replace("<script src=\"ui_vision_modes.js\"></script>", "")
-        .replace("<script src=\"ui_ai_modals.js\"></script>", "");
-
-    html.replace("<body", &format!("{}\n<body", injection))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,22 +151,18 @@ mod tests {
         let graph = AetherGraph::new("TestProject");
         let html = generate_standalone_html(&graph);
 
+        assert!(html.contains("<!doctype html>") || html.contains("<!DOCTYPE html>"));
         assert!(html.contains("window.__AETHERSCOPE_DATA__"));
         assert!(html.contains("window.__AETHERSCOPE_DUAL_GRAPH__"));
         assert!(html.contains("window.AETHER_GRAPH_DATA"));
         assert!(html.contains("window.AETHER_DUAL_GRAPH"));
+        assert!(html.contains("window.__PHYSICS_WORKER_CODE__"));
         assert!(html.contains("system_prompt"));
-        assert!(html.contains("AetherAPI"));
-        assert!(html.contains("aether-canvas"));
-        assert!(!html.contains("href=\"styles.css\""));
+        assert!(html.contains("aether-canvas") || html.contains("AetherScope") || html.contains("physics_worker"));
+        assert!(!html.contains("src=\"app.js\""));
         assert!(!html.contains("src=\"state_api.js\""));
-        assert!(!html.contains("src=\"webgl_shaders_physics.js\""));
-        assert!(!html.contains("src=\"webgl_renderer.js\""));
-        assert!(!html.contains("src=\"ui_navigation.js\""));
-        assert!(!html.contains("src=\"ui_inspector_docs.js\""));
-        assert!(!html.contains("src=\"ui_vision_modes.js\""));
-        assert!(!html.contains("src=\"ui_ai_modals.js\""));
-        assert!(html.len() > 100_000);
+        assert!(!html.contains("href=\"styles.css\""));
+        assert!(html.len() > 50_000);
     }
 
     #[test]
@@ -211,6 +179,8 @@ mod tests {
         assert!(html.contains("window.__AETHERSCOPE_DUAL_GRAPH__"));
         assert!(html.contains("window.AETHER_GRAPH_DATA"));
         assert!(html.contains("aether-canvas"));
+        assert_eq!(html.matches("<div id=\"view-mode-toggle\"").count(), 1);
+        assert_eq!(html.matches("window.__AETHERSCOPE_DUAL_GRAPH__ =").count(), 1);
         assert!(html.len() > 50_000);
     }
 

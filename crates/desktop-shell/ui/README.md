@@ -1,47 +1,34 @@
-# Svelte + TS + Vite
+---
+id: desktop-shell-ui
+layer: ui
+max_lines_per_file: 3000
+allowed_imports: ["svelte::*", "@lucide/svelte::*", "../state::*", "../lib::*", "../engine::*", "../types::*"]
+forbidden_imports: ["fs::*", "child_process::*"]
+security_rules:
+  no_raw_sql: true
+  no_env_access: true
+---
+# 🎨 desktop-shell-ui — Cockpit Spatial Svelte 5 Runes & WebGL 2 (v2.4.0)
 
-This template should help get you started developing with Svelte and TypeScript in Vite.
+Interface utilisateur réactive du cockpit **AetherScope v2.4.0**, construite avec **Svelte 5 Runes (`$state`, `$derived`, `$effect`)**, **TypeScript**, **Tailwind CSS v4** et **Vite 8 (`vite-plugin-singlefile`)**. Compilée en un bundle HTML autonome unique (`../dist/index.html`) embarqué dans `aether-engine.exe`.
 
-## Recommended IDE Setup
+## 📦 Contenu
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+| Dossier / Fichier | Rôle |
+| :--- | :--- |
+| `src/App.svelte` | Orchestrateur racine, raccourcis clavier globaux et montage des tiroirs/modales |
+| `src/state/graphState.svelte.ts` | Store réactif Svelte 5 Runes (`CockpitState`), filtres, télémétrie Git et contrats BLAKE3 |
+| `src/engine/engine.ts` | Moteur de rendu hybride WebGL 2 instancié 120 FPS + Canvas 2D vectoriel (bulles, halos oranges/rouges, lasers) |
+| `src/engine/physics.worker.ts` | Simulation physique off-thread (répulsion de Coulomb, ressorts de Hooke, membranes à 12 lobes) |
+| `src/lib/api.ts` | Client REST typé (`AetherAPI`) incluant `/api/contracts/update`, `/api/contracts/sign` et `/api/git/status` |
+| `src/components/InspectorDrawer.svelte` | Inspecteur 4 onglets + Éditeur de contrat BLAKE3 en direct (fichier `file_max_lines` & dossier `max_lines_per_file`) |
+| `src/components/DocReaderDrawer.svelte` | Lecteur/Éditeur Markdown GitHub-grade, diagrammes Mermaid, coloration syntaxique et sceau BLAKE3 |
+| `src/components/SynthesisHud.svelte` | Tiroir de synthèse architecturale (filtres de couches, alertes SAST rouges et budgets de lignes oranges) |
+| `src/components/CanvasTooltip.svelte` | Infobulle spatiale temps réel avec statut de contrat BLAKE3 et budgets de lignes |
+| `src/components/GitDiffModal.svelte` | Visualiseur Git Diff côte-à-côte et unifié |
 
-## Need an official Svelte framework?
+## 🛡️ Règles EARS
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
-
-## Technical considerations
-
-**Why use this over SvelteKit?**
-
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
-
-This template contains as little as possible to get started with Vite + TypeScript + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
-
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
-
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
-
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
-
-**Why include `.vscode/extensions.json`?**
-
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
-
-**Why enable `allowJs` in the TS template?**
-
-While `allowJs: false` would indeed prevent the use of `.js` files in the project, it does not prevent the use of JavaScript syntax in `.svelte` files. In addition, it would force `checkJs: false`, bringing the worst of both worlds: not being able to guarantee the entire codebase is TypeScript, and also having worse typechecking for the existing JavaScript. In addition, there are valid use cases in which a mixed codebase may be relevant.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/rixo/svelte-hmr#svelte-hmr).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```ts
-// store.ts
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
-```
+- WHEN the graph is rendered THE SYSTEM SHALL display `RULE_MAX_LINES` budget warnings in orange (`#f97316`) and security/CWE violations in red (`#ef4444`).
+- WHEN the user updates a file or folder line budget in the Inspector THE SYSTEM SHALL call `POST /api/contracts/update` to seal the new contract with BLAKE3 and refresh the graph.
+- IF a file of this folder exceeds `max_lines_per_file` (or its `file_max_lines` override) THEN THE SYSTEM SHALL report a `RULE_MAX_LINES` warning.

@@ -91,9 +91,17 @@ pub struct SymbolMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blake3_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_blake3_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock_verified: Option<bool>,
     #[serde(default)]
     pub ears_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_folder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_lines_limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_max_lines_override: Option<usize>,
     #[serde(default)]
     pub violations: Vec<String>,
     #[serde(default)]

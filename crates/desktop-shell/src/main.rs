@@ -27,7 +27,7 @@ use tao::{
 use wry::WebViewBuilder;
 
 #[derive(Parser, Debug, Clone)]
-#[command(author, version, about = "AetherScope V2 - Autonomous Graph Engine & AI Guardrail Bridge", long_about = None)]
+#[command(author, version, about = "AetherScope V2.4 - Autonomous Graph Engine & AI Guardrail Bridge", long_about = None)]
 pub struct Args {
     #[arg(short, long, default_value = ".")]
     pub path: String,
@@ -768,55 +768,74 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
         detection_report,
     ));
 
-    // FileWatcher background loop
+    // FileWatcher background loop with debouncer quiet-window
     let watcher_root = project_root.clone();
     let watcher_state = shared_state.clone();
 
     tokio::spawn(async move {
         if let Ok(mut watcher) = FileWatcherBridge::new(&watcher_root) {
+            let mut pending_changes = std::collections::HashSet::new();
+            let mut last_change_time: Option<std::time::Instant> = None;
+            let debounce_delay = std::time::Duration::from_millis(250);
+
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                 let current_root = watcher_state.project_root.read().await.clone();
                 if current_root != watcher.project_root {
                     let _ = watcher.switch_root(&current_root);
+                    pending_changes.clear();
+                    last_change_time = None;
                 }
 
                 let changed = watcher.poll_changed_files();
                 if !changed.is_empty() {
-                    let current_mode = watcher_state.get_active_view_mode().await;
-                    let has_md_changes = changed.iter().any(|p| p.extension().map_or(false, |ext| ext == "md"));
-                    let has_code_changes = changed.iter().any(|p| p.extension().map_or(false, |ext| ext != "md"));
+                    for file in changed {
+                        pending_changes.insert(file);
+                    }
+                    last_change_time = Some(std::time::Instant::now());
+                }
 
-                    // Refresh vault graph if md changed or in vault mode
-                    if has_md_changes || current_mode == "vault" {
-                        let scan_root = current_root.clone();
-                        if let Ok(updated_vault) = tokio::task::spawn_blocking(move || {
-                            obsidian_vault::scan_obsidian_vault(&scan_root)
-                        }).await {
-                            if let Ok(v_graph) = updated_vault {
-                                *watcher_state.vault_graph.write().await = Some(v_graph.clone());
-                                if current_mode == "vault" {
-                                    *watcher_state.graph.write().await = v_graph;
-                                    watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                // Trigger re-scan only when quiet window (250ms) has elapsed
+                if let Some(t) = last_change_time {
+                    if t.elapsed() >= debounce_delay && !pending_changes.is_empty() {
+                        let files_to_process = std::mem::take(&mut pending_changes);
+                        last_change_time = None;
+
+                        let current_mode = watcher_state.get_active_view_mode().await;
+                        let has_md_changes = files_to_process.iter().any(|p| p.extension().map_or(false, |ext| ext == "md"));
+                        let has_code_changes = files_to_process.iter().any(|p| p.extension().map_or(false, |ext| ext != "md"));
+
+                        // Refresh vault graph if md changed or in vault mode
+                        if has_md_changes || current_mode == "vault" {
+                            let scan_root = current_root.clone();
+                            if let Ok(updated_vault) = tokio::task::spawn_blocking(move || {
+                                obsidian_vault::scan_obsidian_vault(&scan_root)
+                            }).await {
+                                if let Ok(v_graph) = updated_vault {
+                                    *watcher_state.vault_graph.write().await = Some(v_graph.clone());
+                                    if current_mode == "vault" {
+                                        *watcher_state.graph.write().await = v_graph;
+                                        watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // Refresh code graph if code changed or in code mode
-                    if has_code_changes || current_mode == "code" {
-                        let custom_excl = watcher_state.custom_exclusions.read().await.clone();
-                        let scan_root = current_root.clone();
-                        if let Ok(updated_graph) = tokio::task::spawn_blocking(move || {
-                            let scanner = ProjectScanner::default();
-                            scanner.scan_project_with_exclusions(&scan_root, &custom_excl)
-                        }).await {
-                            let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
-                            let _ = AuditWriter::write_live_audit(&current_root, &violations, file_count);
-                            *watcher_state.code_graph.write().await = Some(updated_graph.clone());
-                            if current_mode == "code" {
-                                *watcher_state.graph.write().await = updated_graph;
-                                watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        // Refresh code graph if code changed or in code mode
+                        if has_code_changes || current_mode == "code" {
+                            let custom_excl = watcher_state.custom_exclusions.read().await.clone();
+                            let scan_root = current_root.clone();
+                            if let Ok(updated_graph) = tokio::task::spawn_blocking(move || {
+                                let scanner = ProjectScanner::default();
+                                scanner.scan_project_with_exclusions(&scan_root, &custom_excl)
+                            }).await {
+                                let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
+                                let _ = AuditWriter::write_live_audit(&current_root, &violations, file_count);
+                                *watcher_state.code_graph.write().await = Some(updated_graph.clone());
+                                if current_mode == "code" {
+                                    *watcher_state.graph.write().await = updated_graph;
+                                    watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                }
                             }
                         }
                     }
@@ -834,6 +853,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     let state_export = shared_state.clone();
     let state_savedoc = shared_state.clone();
     let state_sign_contracts = shared_state.clone();
+    let state_update_contract = shared_state.clone();
     let state_pick_ws = shared_state.clone();
     let state_pick_proj = shared_state.clone();
     let state_init_proj = shared_state.clone();
@@ -849,6 +869,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     let state_ai_session = shared_state.clone();
     let state_ai_cli = shared_state.clone();
     let state_settings = shared_state.clone();
+    let state_git_status = shared_state.clone();
     let state_tasks = shared_state.clone();
     let state_project_status = shared_state.clone();
     let state_view_mode = shared_state.clone();
@@ -1039,6 +1060,38 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
+        // ─────────────────────────────────────────────────────────────────────────────
+        // M1: LIVE GIT DIFF & STATUS API
+        // ─────────────────────────────────────────────────────────────────────────────
+        .route(
+            "/api/git/status",
+            axum::routing::get({
+                let state = state_git_status.clone();
+                move || {
+                    let state = state.clone();
+                    async move {
+                        let p_root = state.project_root.read().await.clone();
+                        let graph = state.get_active_graph().await;
+                        let resp = tokio::task::spawn_blocking(move || {
+                            inspect_git_status(&p_root, &graph)
+                        })
+                        .await
+                        .unwrap_or_else(|_| GitStatusResponse {
+                            is_git_repo: false,
+                            branch: None,
+                            clean: true,
+                            files: Vec::new(),
+                            modified_count: 0,
+                            untracked_count: 0,
+                            staged_count: 0,
+                            deleted_count: 0,
+                            security_alert_count: 0,
+                        });
+                        axum::Json(resp)
+                    }
+                }
+            }),
+        )
         .route(
             "/api/view_mode",
             axum::routing::post({
@@ -1168,11 +1221,16 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<SaveDocRequest>| {
                 let state = state_savedoc.clone();
                 async move {
-                    let base = Path::new(&req.project_path);
-                    let path = if req.folder.is_empty() || req.folder == "root" || req.folder == "." {
-                        base.join(&req.file_name)
+                    let p_root = state.project_root.read().await.clone();
+                    let target_root = if req.project_path.trim().is_empty() || req.project_path.trim() == "." {
+                        p_root
                     } else {
-                        base.join(&req.folder).join(&req.file_name)
+                        PathBuf::from(&req.project_path)
+                    };
+                    let path = if req.folder.is_empty() || req.folder == "root" || req.folder == "." {
+                        target_root.join(&req.file_name)
+                    } else {
+                        target_root.join(&req.folder).join(&req.file_name)
                     };
                     if let Some(parent) = path.parent() {
                         let _ = fs::create_dir_all(parent);
@@ -1180,21 +1238,29 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let _ = fs::write(&path, &req.content);
 
                     let mut blake3_hash = None;
+                    let mut graph_opt = None;
                     if req.file_name.eq_ignore_ascii_case("README.md") {
-                        if let Ok((_, h)) = sign_project_contracts(base, Some(&req.folder)) {
+                        if let Ok((_, h)) = sign_project_contracts(&target_root, Some(&req.folder)) {
                             blake3_hash = h;
                         }
+                        let exclusions = state.custom_exclusions.read().await.clone();
                         let scanner = ProjectScanner::default();
-                        let updated_graph = scanner.scan_project(base);
-                        let mut g_guard = state.graph.write().await;
-                        *g_guard = updated_graph;
+                        let updated_graph = scanner.scan_project_with_exclusions(&target_root, &exclusions);
+                        {
+                            let mut cg_guard = state.code_graph.write().await;
+                            *cg_guard = Some(updated_graph.clone());
+                            let mut g_guard = state.graph.write().await;
+                            *g_guard = updated_graph.clone();
+                        }
                         state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        graph_opt = Some(updated_graph);
                     }
 
                     axum::Json(SaveDocResponse {
                         status: "ok".to_string(),
                         saved_path: path.to_string_lossy().to_string(),
                         blake3_hash,
+                        graph: graph_opt,
                     })
                 }
             }),
@@ -1209,16 +1275,19 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let target_root = req
                         .project_path
                         .as_deref()
-                        .filter(|s| !s.trim().is_empty())
+                        .filter(|s| !s.trim().is_empty() && s.trim() != ".")
                         .map(PathBuf::from)
                         .unwrap_or(p_root);
 
                     let (signed_count, blake3_hash) = sign_project_contracts(&target_root, req.folder.as_deref())
                         .unwrap_or((0, None));
 
+                    let exclusions = state.custom_exclusions.read().await.clone();
                     let scanner = ProjectScanner::default();
-                    let new_graph = scanner.scan_project(&target_root);
+                    let new_graph = scanner.scan_project_with_exclusions(&target_root, &exclusions);
                     {
+                        let mut cg_guard = state.code_graph.write().await;
+                        *cg_guard = Some(new_graph.clone());
                         let mut g_guard = state.graph.write().await;
                         *g_guard = new_graph.clone();
                     }
@@ -1231,6 +1300,62 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         blake3_hash,
                         graph: new_graph,
                     })
+                }
+            }),
+        )
+        // Modification directe d'un contrat (dossier ou fichier) depuis Aether + scellement BLAKE3
+        .route(
+            "/api/contracts/update",
+            axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<UpdateContractRequest>| {
+                let state = state_update_contract.clone();
+                async move {
+                    let p_root = state.project_root.read().await.clone();
+                    let target_root = req
+                        .project_path
+                        .as_deref()
+                        .filter(|s| !s.trim().is_empty() && s.trim() != ".")
+                        .map(PathBuf::from)
+                        .unwrap_or(p_root);
+
+                    match update_contract_rules(&target_root, &req) {
+                        Ok((contract_path, blake3_hash, file_blake3_hash, effective_max_lines)) => {
+                            let exclusions = state.custom_exclusions.read().await.clone();
+                            let scanner = ProjectScanner::default();
+                            let new_graph = scanner.scan_project_with_exclusions(&target_root, &exclusions);
+                            {
+                                let mut cg_guard = state.code_graph.write().await;
+                                *cg_guard = Some(new_graph.clone());
+                                let mut g_guard = state.graph.write().await;
+                                *g_guard = new_graph.clone();
+                            }
+                            state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+                            axum::Json(UpdateContractResponse {
+                                status: "ok".to_string(),
+                                message: format!(
+                                    "Contrat '{}' mis a jour (max {} lignes) et scelle BLAKE3",
+                                    contract_path, effective_max_lines
+                                ),
+                                contract_path,
+                                blake3_hash,
+                                file_blake3_hash,
+                                effective_max_lines,
+                                graph: new_graph,
+                            })
+                        }
+                        Err(e) => {
+                            let cur_graph = state.graph.read().await.clone();
+                            axum::Json(UpdateContractResponse {
+                                status: "error".to_string(),
+                                message: e,
+                                contract_path: req.folder.unwrap_or_else(|| "README.md".to_string()),
+                                blake3_hash: String::new(),
+                                file_blake3_hash: None,
+                                effective_max_lines: 300,
+                                graph: cur_graph,
+                            })
+                        }
+                    }
                 }
             }),
         )
@@ -1272,16 +1397,30 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         let callers: Vec<String> = incoming_edges.iter().map(|e| e.source.clone()).collect();
                         let dependencies: Vec<String> = outgoing_edges.iter().map(|e| e.target.clone()).collect();
 
-                        // Recherche du contrat README.md applicable au dossier du symbole
-                        let readme_path = if sym.folder.is_empty() || sym.folder == "root" {
-                            p_root.join("README.md")
-                        } else {
-                            let direct = p_root.join(&sym.folder).join("README.md");
-                            if direct.exists() {
-                                direct
-                            } else {
-                                p_root.join(&sym.galaxy).join("README.md")
+                        // Recherche du contrat README.md applicable au dossier ou fichier du symbole
+                        let readme_path = {
+                            let mut current = sym.folder.replace('\\', "/");
+                            let mut found = None;
+                            loop {
+                                let candidate = if current.is_empty() || current == "root" || current == "." {
+                                    p_root.join("README.md")
+                                } else {
+                                    p_root.join(&current).join("README.md")
+                                };
+                                if candidate.exists() {
+                                    found = Some(candidate);
+                                    break;
+                                }
+                                if current.is_empty() || current == "root" || current == "." {
+                                    break;
+                                }
+                                if let Some(idx) = current.rfind('/') {
+                                    current = current[..idx].to_string();
+                                } else {
+                                    current = "root".to_string();
+                                }
                             }
+                            found.unwrap_or_else(|| p_root.join("README.md"))
                         };
 
                         let contract = fs::read_to_string(&readme_path)
@@ -1376,7 +1515,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             sym.folder,
                             contract.as_ref().map(|c| &c.frontmatter.allowed_imports).unwrap_or(&vec![]),
                             contract.as_ref().map(|c| &c.frontmatter.forbidden_imports).unwrap_or(&vec![]),
-                            contract.as_ref().map(|c| c.frontmatter.max_lines_per_file).unwrap_or(300),
+                            contract.as_ref().map(|c| c.effective_max_lines(&sym.file_path)).or(sym.metadata.max_lines_limit).unwrap_or(300),
                             contract.as_ref().map(|c| c.ears_requirements.len()).unwrap_or(sym.metadata.ears_count)
                         );
 

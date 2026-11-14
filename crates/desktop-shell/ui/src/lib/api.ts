@@ -289,7 +289,7 @@ export class AetherApiClient {
     folder: string;
     file_name: string;
     content: string;
-  }): Promise<{ status: string; saved_path: string; blake3_hash?: string }> {
+  }): Promise<{ status: string; saved_path: string; blake3_hash?: string; graph?: AetherGraph }> {
     const res = await fetch(`${this.baseUrl}/api/save_doc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -303,6 +303,31 @@ export class AetherApiClient {
     folder?: string;
   }): Promise<{ status: string; message: string; signed_count: number; blake3_hash?: string; graph?: AetherGraph }> {
     const res = await fetch(`${this.baseUrl}/api/contracts/sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  }
+
+  async updateContract(payload: {
+    project_path?: string;
+    folder?: string;
+    file_path?: string;
+    max_lines_per_file?: number;
+    file_max_lines?: number;
+    clear_file_override?: boolean;
+    allowed_imports?: string[];
+    forbidden_imports?: string[];
+  }): Promise<{
+    status: string;
+    message: string;
+    folder: string;
+    blake3_hash?: string;
+    effective_max_lines: number;
+    graph?: AetherGraph;
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/contracts/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

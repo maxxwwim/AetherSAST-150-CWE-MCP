@@ -126,9 +126,9 @@ impl FileWatcherBridge {
         let mut changed = Vec::new();
         while let Ok(res) = self.rx.try_recv() {
             if let Ok(event) = res {
-                if event.kind.is_modify() || event.kind.is_create() {
+                if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() {
                     for path in event.paths {
-                        if !path.is_file() {
+                        if !event.kind.is_remove() && !path.is_file() {
                             continue;
                         }
                         let p_str = path.to_string_lossy();
@@ -170,3 +170,38 @@ impl FileWatcherBridge {
         changed
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::thread::sleep;
+
+    #[test]
+    fn test_watcher_detects_file_deletion() {
+        let temp_dir = std::env::temp_dir().join(format!("aether_watcher_del_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).expect("Create temp dir");
+
+        let test_file = temp_dir.join("test_deleted.rs");
+        fs::write(&test_file, "// will be deleted\n").expect("Write test file");
+
+        let watcher = FileWatcherBridge::new(&temp_dir).expect("Create watcher");
+        sleep(Duration::from_millis(300));
+        let _ = watcher.poll_changed_files(); // drain initial events
+
+        // Delete the file
+        fs::remove_file(&test_file).expect("Delete file");
+        sleep(Duration::from_millis(800));
+
+        let changed = watcher.poll_changed_files();
+        assert!(
+            changed.iter().any(|p| p.ends_with("test_deleted.rs")),
+            "Expected test_deleted.rs in changed files after deletion, but got: {:?}",
+            changed
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+}
+

@@ -27,6 +27,13 @@ export const SEVERITY_COLORS: Record<string, RgbaColor> = {
   LOW: { r: 0.29, g: 0.69, b: 0.31, a: 1.0 }       // #4caf50 Green
 };
 
+export const GIT_STATUS_COLORS = {
+  clean: '#64748b',
+  modified: '#facc15', // Pulsing yellow/amber
+  untracked: '#34d399', // Radiant emerald green
+  violation: '#ef4444', // Warning crimson red
+};
+
 export function getLayerRgba(layer?: string): RgbaColor {
   if (!layer) return LAYER_COLORS.default;
   const key = layer.toLowerCase();

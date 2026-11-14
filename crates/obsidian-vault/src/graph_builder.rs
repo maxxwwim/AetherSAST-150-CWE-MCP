@@ -244,8 +244,12 @@ pub fn create_note_bubble(rel_path: &str, doc: &ParsedNote) -> SymbolBubble {
         attributes,
         raw_content: None,
         blake3_hash: None,
+        file_blake3_hash: None,
         lock_verified: None,
         ears_count: 0,
+        contract_folder: None,
+        max_lines_limit: None,
+        file_max_lines_override: None,
         violations: Vec::new(),
         cve_anomalies: Vec::new(),
     };

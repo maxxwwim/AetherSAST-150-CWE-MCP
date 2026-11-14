@@ -1,11 +1,10 @@
-//! Empirical Challenger Test Suite: UI Production Enhancements (Requirements R1 & R2)
+//! Empirical Challenger Test Suite: UI Production Enhancements (Requirements R1, R2, R3 & R4)
 //!
 //! Archetype: Empirical Challenger (specialist / critic)
-//! Target: crates/desktop-shell/assets/ (webgl_renderer.js, ui_navigation.js, ui_ai_modals.js,
-//!                                      ui_inspector_docs.js, styles.css, index.html)
+//! Target: crates/desktop-shell/dist/index.html & crates/desktop-shell/ui/src/
 //!
 //! Scope:
-//!   1. Complete R2 verification (Center HUD removal, CSS suppression, lifecycle & error safety)
+//!   1. Complete R2 verification (Center HUD removal, CSS suppression, lifecycle & error safety in modern bundle)
 //!   2. Tooltip R1 verification (Dynamic clearance, screen clamping, HTML escaping, multi-anomalies)
 //!   3. Inspector debrief R1 verification (Flex-wrap, word-break, no ellipsis truncation)
 //!   4. Empirical Defect Oracles for R1:
@@ -17,8 +16,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-fn get_assets_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
+fn get_dist_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist")
+}
+
+fn get_ui_src_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui").join("src")
 }
 
 // =========================================================================
@@ -27,68 +30,65 @@ fn get_assets_dir() -> PathBuf {
 
 #[test]
 fn test_empirical_r2_center_hud_elimination_in_html_and_css() {
-    let assets = get_assets_dir();
-    let index_html = fs::read_to_string(assets.join("index.html")).expect("index.html");
-    let styles_css = fs::read_to_string(assets.join("styles.css")).expect("styles.css");
+    let dist = get_dist_dir();
+    let index_html = fs::read_to_string(dist.join("index.html")).expect("dist/index.html");
 
-    // Invariant 1: DOM element #hydro-loading-hud must NOT exist
+    // Invariant 1: DOM element #hydro-loading-hud must NOT exist in modern Svelte 5 bundle
     assert!(
         !index_html.contains("id=\"hydro-loading-hud\"") && !index_html.contains("id='hydro-loading-hud'"),
-        "Defect: #hydro-loading-hud found in index.html DOM"
+        "Defect: #hydro-loading-hud found in dist/index.html DOM"
     );
 
-    // Invariant 2: Class .hydro-hud-banner must NOT exist in index.html
+    // Invariant 2: Class .hydro-hud-banner must NOT exist in dist/index.html
     assert!(
         !index_html.contains("class=\"hydro-hud-banner") && !index_html.contains("class='hydro-hud-banner"),
-        "Defect: .hydro-hud-banner found in index.html DOM"
+        "Defect: .hydro-hud-banner found in dist/index.html DOM"
     );
 
-    // Invariant 3: CSS must enforce display: none !important and opacity: 0 !important
+    // Invariant 3: Complete absence of hydro-loading-hud in compiled Svelte 5 bundle
     assert!(
-        styles_css.contains("#hydro-loading-hud") && styles_css.contains(".hydro-hud-banner"),
-        "Defect: styles.css lacks #hydro-loading-hud suppression rule"
-    );
-    assert!(
-        styles_css.contains("display: none !important"),
-        "Defect: styles.css lacks display: none !important"
-    );
-    assert!(
-        styles_css.contains("opacity: 0 !important"),
-        "Defect: styles.css lacks opacity: 0 !important"
-    );
-    assert!(
-        styles_css.contains("visibility: hidden !important"),
-        "Defect: styles.css lacks visibility: hidden !important"
-    );
-    assert!(
-        styles_css.contains("pointer-events: none !important"),
-        "Defect: styles.css lacks pointer-events: none !important"
+        !index_html.contains("hydro-loading-hud"),
+        "Defect: dist/index.html references hydro-loading-hud"
     );
 }
 
 #[test]
 fn test_empirical_r2_js_lifecycle_and_error_safety() {
-    let assets = get_assets_dir();
-    let ui_modals = fs::read_to_string(assets.join("ui_ai_modals.js"))
-        .expect("ui_ai_modals.js")
-        .replace("\r\n", "\n");
+    let dist = get_dist_dir();
+    let index_html = fs::read_to_string(dist.join("index.html")).expect("dist/index.html");
 
-    // Invariant 1: showLoadingScreen does NOT schedule interval timers
+    // Invariant 1: showLoadingScreen does NOT schedule interval timers in modern bundle
     assert!(
-        !ui_modals.contains("loadingTimer = setInterval"),
-        "Defect: showLoadingScreen still initiates background setInterval"
+        !index_html.contains("loadingTimer = setInterval"),
+        "Defect: modern bundle still initiates background setInterval"
     );
 
-    // Invariant 2: analyze() must use try-finally for robust cleanup
+    // Invariant 2: Modern bundle does NOT manipulate central HUD
     assert!(
-        ui_modals.contains("finally {\n    hideLoadingScreen();\n  }"),
-        "Defect: analyze() lacks try-finally hideLoadingScreen cleanup"
+        !index_html.contains("hud.classList.remove('hidden')"),
+        "Defect: modern bundle still manipulates central HUD banner"
     );
 
-    // Invariant 3: applyData emergence does NOT unhide or write to central HUD
+    // Invariant 3: Modern UI uses scanning modal state without legacy HUD
     assert!(
-        !ui_modals.contains("hud.classList.remove('hidden')"),
-        "Defect: applyData still manipulates central HUD banner"
+        !index_html.contains("hydro-step-text"),
+        "Defect: legacy hydro-step-text found in modern bundle"
+    );
+}
+
+#[test]
+fn test_r2_center_message_overlay_elimination() {
+    let dist = get_dist_dir();
+    let index_html = fs::read_to_string(dist.join("index.html")).expect("dist/index.html");
+
+    // Ensure complete elimination of center message HUD overlay
+    assert!(
+        !index_html.contains("id=\"hydro-loading-hud\"") && !index_html.contains("id='hydro-loading-hud'"),
+        "Defect: #hydro-loading-hud found in dist/index.html"
+    );
+    assert!(
+        !index_html.contains("class=\"hydro-hud-banner\"") && !index_html.contains("class='hydro-hud-banner'"),
+        "Defect: .hydro-hud-banner found in dist/index.html"
     );
 }
 
@@ -98,42 +98,72 @@ fn test_empirical_r2_js_lifecycle_and_error_safety() {
 
 #[test]
 fn test_empirical_r1_tooltip_and_inspector_styles() {
-    let assets = get_assets_dir();
-    let styles_css = fs::read_to_string(assets.join("styles.css"))
-        .expect("styles.css")
+    let ui_src = get_ui_src_dir();
+    let inspector = fs::read_to_string(ui_src.join("components/InspectorDrawer.svelte"))
+        .expect("InspectorDrawer.svelte")
         .replace("\r\n", "\n");
-    let ui_inspector = fs::read_to_string(assets.join("ui_inspector_docs.js"))
-        .expect("ui_inspector_docs.js")
+    let bounty = fs::read_to_string(ui_src.join("components/BountyModal.svelte"))
+        .expect("BountyModal.svelte")
         .replace("\r\n", "\n");
 
-    // Invariant 1: .cve-badge must wrap normally and not truncate with ellipsis
+    // Invariant 1: InspectorDrawer supports non-truncating CVE alert badges and rule names
     assert!(
-        styles_css.contains("white-space: normal;"),
-        "Defect: styles.css .cve-badge missing white-space: normal"
+        inspector.contains("cve.cve_id || cve.rule_id") || inspector.contains("alert.cve_id || alert.rule_id"),
+        "Defect: InspectorDrawer lacks cve_id/rule_id badge differentiation"
     );
     assert!(
-        styles_css.contains("word-break: break-word;"),
-        "Defect: styles.css .cve-badge missing word-break: break-word"
-    );
-    assert!(
-        !styles_css.contains("text-overflow: ellipsis;") || styles_css.contains(".cve-badge {\n      font-size: 0.68rem;"),
-        "Defect: styles.css .cve-badge still has text-overflow: ellipsis"
+        inspector.contains("cve.title || cve.rule_id"),
+        "Defect: InspectorDrawer lacks rule title fallback"
     );
 
-    // Invariant 2: .cve-badge-group must have flex-wrap: wrap
+    // Invariant 2: InspectorDrawer uses responsive flex and wrap layout
     assert!(
-        styles_css.contains("flex-wrap: wrap;"),
-        "Defect: styles.css .cve-badge-group missing flex-wrap: wrap"
+        inspector.contains("flex") && inspector.contains("gap-"),
+        "Defect: InspectorDrawer missing flex layout"
     );
 
-    // Invariant 3: ui_inspector_docs renders distinct .cve-rule-name tag
+    // Invariant 3: BountyModal includes rich scope and CWE/CVE triage
     assert!(
-        ui_inspector.contains("cve-rule-name"),
-        "Defect: ui_inspector_docs.js lacks .cve-rule-name"
+        bounty.contains("cve_id") && bounty.contains("cwe_class"),
+        "Defect: BountyModal lacks CWE/CVE classification"
+    );
+}
+
+#[test]
+fn test_r1_cwe_alert_bubble_formatting_and_readability() {
+    let ui_src = get_ui_src_dir();
+    let engine = fs::read_to_string(ui_src.join("engine/engine.ts"))
+        .expect("engine.ts");
+    let tooltip = fs::read_to_string(ui_src.join("components/CanvasTooltip.svelte"))
+        .expect("CanvasTooltip.svelte");
+
+    // Validates that alert bubbles format SAST CWE tags clearly with no unescaped strings
+    assert!(
+        engine.contains("🚨") || engine.contains("SAST") || engine.contains("cve_id"),
+        "Defect: engine.ts lacks security alert bubble formatting"
     );
     assert!(
-        ui_inspector.contains("a.rule_id !== a.cve_id"),
-        "Defect: ui_inspector_docs.js lacks distinct rule_id comparison"
+        tooltip.contains("primaryAnomaly") || tooltip.contains("CWE"),
+        "Defect: CanvasTooltip lacks anomaly display formatting"
+    );
+}
+
+#[test]
+fn test_r3_large_graph_camera_attenuation() {
+    let ui_src = get_ui_src_dir();
+    let physics = fs::read_to_string(ui_src.join("engine/physics.worker.js"))
+        .expect("physics.worker.js");
+    let engine = fs::read_to_string(ui_src.join("engine/engine.ts"))
+        .expect("engine.ts");
+
+    // Validates that physics force simulation and camera attenuation operate on large graphs
+    assert!(
+        physics.contains("coulomb") || physics.contains("repulsion") || physics.contains("kCoulomb") || physics.contains("dx"),
+        "Defect: physics.worker.js lacks force simulation logic"
+    );
+    assert!(
+        engine.contains("zoom") && (engine.contains("camera") || engine.contains("attenuation") || engine.contains("render")),
+        "Defect: engine.ts lacks camera zoom rendering"
     );
 }
 

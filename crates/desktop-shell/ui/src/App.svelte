@@ -22,6 +22,111 @@
   import { api } from './lib/api';
   import { onMount } from 'svelte';
 
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    const target = e.target as HTMLElement | null;
+    const tag = target?.tagName?.toLowerCase() || '';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) {
+      return;
+    }
+
+    // Alt+1 and Alt+2 view modes (Code AST vs Obsidian Vault Notes)
+    if (e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (e.key === '1' || e.code === 'Digit1') {
+        e.preventDefault();
+        cockpitState.viewMode = 'code';
+        api.switchViewMode('code').catch(() => {});
+        return;
+      }
+      if (e.key === '2' || e.code === 'Digit2') {
+        e.preventDefault();
+        cockpitState.viewMode = 'vault';
+        api.switchViewMode('vault').catch(() => {});
+        return;
+      }
+    }
+
+    // Ctrl+0 or Meta+0 (Zoom reset / Fit camera)
+    if ((e.ctrlKey || e.metaKey) && (e.key === '0' || e.code === 'Digit0')) {
+      e.preventDefault();
+      cockpitState.requestCameraFit();
+      return;
+    }
+
+    // Guard: ignore single-key hotkeys when Ctrl or Meta or Alt is pressed
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      return;
+    }
+
+    // Zoom in / out shortcuts (+, -, =)
+    if (e.key === '+' || e.key === '=') {
+      e.preventDefault();
+      const canvas = document.getElementById('aether-canvas');
+      canvas?.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }));
+      return;
+    }
+    if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      const canvas = document.getElementById('aether-canvas');
+      canvas?.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }));
+      return;
+    }
+
+    const k = e.key.toLowerCase();
+    switch (k) {
+      case 'x':
+        cockpitState.visionMode = cockpitState.visionMode === 'xray' ? 'standard' : 'xray';
+        break;
+      case 'd':
+        cockpitState.visionMode = cockpitState.visionMode === 'deadcode' ? 'standard' : 'deadcode';
+        break;
+      case 'h':
+        cockpitState.visionMode = cockpitState.visionMode === 'heatmap' ? 'standard' : 'heatmap';
+        break;
+      case 'v':
+        cockpitState.visionMode = 'standard';
+        break;
+      case 'p':
+        cockpitState.togglePhysicsPaused();
+        break;
+      case 'n':
+        cockpitState.isCreateFileModalOpen = !cockpitState.isCreateFileModalOpen;
+        break;
+      case 's':
+        cockpitState.isSettingsModalOpen = !cockpitState.isSettingsModalOpen;
+        break;
+      case 'c':
+        cockpitState.isMcpModalOpen = !cockpitState.isMcpModalOpen;
+        break;
+      case '1':
+        cockpitState.lodLevel = 1;
+        cockpitState.activeLayout = 'Z-1';
+        break;
+      case '2':
+        cockpitState.lodLevel = 2;
+        cockpitState.activeLayout = 'Z-2';
+        break;
+      case '3':
+        cockpitState.lodLevel = 3;
+        cockpitState.activeLayout = 'Z-3';
+        break;
+      case '4':
+        cockpitState.activeLayout = 'Z-4';
+        break;
+      case 'f':
+        cockpitState.requestCameraFit();
+        break;
+      case 'b':
+        cockpitState.isBountyModalOpen = !cockpitState.isBountyModalOpen;
+        break;
+      case 'm':
+        cockpitState.toggleDocPanel();
+        break;
+      case 'i':
+        cockpitState.toggleInspector();
+        break;
+    }
+  }
+
   onMount(() => {
     let versionTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -40,7 +145,7 @@
         }
       }
 
-      // Sync saved CWE settings & tasks count from backend if online
+      // Sync saved CWE settings, tasks count & initial Git status from backend if online
       try {
         const [verRes, tasksList, settingsRes] = await Promise.allSettled([
           api.getGraphVersion(),
@@ -59,12 +164,13 @@
             cockpitState.settings.ignoredCwes = settingsRes.value.ignored_cwes;
           }
         }
+        await cockpitState.fetchGitStatus().catch(() => {});
       } catch {
         // standalone offline mode
       }
     })();
 
-    // Live graph version watcher (polls /api/graph/version every 3s)
+    // Live graph version watcher, Git diff & AI agent telemetry (polls every 2s)
     versionTimer = setInterval(async () => {
       try {
         const res = await api.getGraphVersion();
@@ -72,21 +178,36 @@
         if (typeof res?.version === 'number' && cockpitState.graphVersion > 0 && res.version !== cockpitState.graphVersion) {
           cockpitState.graphVersion = res.version;
           const updated = await api.getGraph();
-          cockpitState.setGraph(updated);
-          cockpitState.filterVersion += 1;
+          cockpitState.setGraph(updated, true);
+          await cockpitState.fetchGitStatus(true).catch(() => {});
         } else if (typeof res?.version === 'number' && cockpitState.graphVersion === 0) {
           cockpitState.graphVersion = res.version;
         }
       } catch {
         cockpitState.liveConnected = false;
       }
-    }, 3000);
+
+      // Continuous Git diff status poll
+      cockpitState.fetchGitStatus().catch(() => {});
+
+      // Continuous AI telemetry poll so agent avatars orbit and animate on WebGL canvas even when AI chat drawer is closed
+      try {
+        const teleRes = await api.getTelemetry();
+        if (teleRes && (teleRes.telemetry || teleRes.agents)) {
+          cockpitState.recordAiTelemetry(teleRes.telemetry as any, teleRes.agents);
+        }
+      } catch {
+        // offline or quiet telemetry
+      }
+    }, 2000);
 
     return () => {
       if (versionTimer) clearInterval(versionTimer);
     };
   });
 </script>
+
+<svelte:window onkeydown={handleGlobalKeydown} />
 
 <div class="w-full h-full flex flex-col bg-[#07090e] text-slate-100 overflow-hidden font-sans">
   <HeaderDeck />

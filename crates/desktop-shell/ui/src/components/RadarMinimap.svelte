@@ -5,7 +5,7 @@
 
   let { engine }: { engine: AetherEngine | null } = $props();
 
-  let radarCanvas: HTMLCanvasElement;
+  let radarCanvas = $state<HTMLCanvasElement | null>(null);
   let animId: number | null = null;
 
   function renderRadar() {
@@ -92,6 +92,12 @@
     engine.camera.targetY = gCenterY + clickY / scale;
   }
 
+  const rightOffset = $derived.by(() => {
+    if (cockpitState.isChatOpen) return 420;
+    if (cockpitState.isInspectorOpen) return 412;
+    return 16;
+  });
+
   onMount(() => {
     let frame = 0;
     const loop = () => {
@@ -109,20 +115,23 @@
   });
 </script>
 
-<div
-  class="absolute bottom-10 right-4 w-36 h-36 bg-[#070a12]/85 backdrop-blur-md border border-cyan-500/20 rounded-xl shadow-2xl p-1 z-30 select-none flex flex-col items-center justify-between pointer-events-auto"
->
-  <!-- Header / Zoom level indicator -->
-  <div class="w-full flex items-center justify-between px-1.5 text-[9px] font-mono text-cyan-400/80">
-    <span>RADAR</span>
-    <span>{engine ? `${engine.camera.zoom.toFixed(2)}x` : '1.00x'}</span>
-  </div>
+{#if cockpitState.showRadar}
+  <div
+    style="right: {rightOffset}px;"
+    class="absolute bottom-10 w-36 h-36 bg-[#070a12]/85 backdrop-blur-md border border-cyan-500/20 rounded-xl shadow-2xl p-1 z-30 select-none flex flex-col items-center justify-between pointer-events-auto transition-[right] duration-300 ease-in-out"
+  >
+    <!-- Header / Zoom level indicator -->
+    <div class="w-full flex items-center justify-between px-1.5 text-[9px] font-mono text-cyan-400/80">
+      <span>RADAR</span>
+      <span>{engine ? `${engine.camera.zoom.toFixed(2)}x` : '1.00x'}</span>
+    </div>
 
-  <canvas
-    bind:this={radarCanvas}
-    width={130}
-    height={108}
-    onclick={handleRadarClick}
-    class="cursor-crosshair rounded"
-  ></canvas>
-</div>
+    <canvas
+      bind:this={radarCanvas}
+      width={130}
+      height={108}
+      onclick={handleRadarClick}
+      class="cursor-crosshair rounded"
+    ></canvas>
+  </div>
+{/if}

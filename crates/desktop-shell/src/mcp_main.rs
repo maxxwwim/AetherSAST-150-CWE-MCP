@@ -4,7 +4,7 @@ mod mcp;
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone)]
-#[command(author, version, about = "AetherScope V2.2 - Dedicated MCP Server for AI Agents", long_about = None)]
+#[command(author, version, about = "AetherScope V2.4 - Dedicated MCP Server for AI Agents", long_about = None)]
 pub struct Args {
     #[arg(short, long, default_value = ".")]
     pub path: String,

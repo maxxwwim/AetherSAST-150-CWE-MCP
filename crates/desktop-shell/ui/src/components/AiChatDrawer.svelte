@@ -240,7 +240,7 @@
 
 <!-- Top Floating Multi-Agent Swarm Telemetry HUD -->
 {#if cockpitState.activeAgents.length > 0}
-  <div class="fixed top-13 left-1/2 -translate-x-1/2 z-40 max-w-3xl w-[94vw] sm:w-auto px-3 py-1.5 rounded-2xl bg-[#130d24]/92 backdrop-blur-xl border border-purple-500/45 shadow-xl flex flex-wrap items-center justify-center gap-2 text-[11px]">
+  <div class="fixed top-[80px] left-1/2 -translate-x-1/2 z-40 max-w-3xl w-[94vw] sm:w-auto px-3 py-1.5 rounded-2xl bg-[#130d24]/92 backdrop-blur-xl border border-purple-500/45 shadow-xl flex flex-wrap items-center justify-center gap-2 text-[11px]">
     <span class="flex items-center gap-1 text-purple-200 font-bold shrink-0">
       <Bot class="w-3.5 h-3.5 text-purple-400" />
       {cockpitState.activeAgents.length} Agent{cockpitState.activeAgents.length > 1 ? 's' : ''}

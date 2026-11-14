@@ -123,13 +123,12 @@ impl PatchVerifier {
                 }
             }
 
-            // 2. Contrôle RULE_MAX_LINES
+            // 2. Contrôle RULE_MAX_LINES (basé sur le contrat dossier ou fichier BLAKE3)
             if let Some(ref c) = contract {
-                let limit = if clean_rel.ends_with(".java") { 10_000 }
-                else if clean_rel.ends_with(".sol") && c.frontmatter.max_lines_per_file == 300 { 600 }
-                else { c.frontmatter.max_lines_per_file };
+                let limit = c.effective_max_lines(&clean_rel);
+                let has_file_override = c.file_override_for(&clean_rel).is_some();
 
-                let is_exempt = clean_rel.ends_with("_test.rs") || clean_rel.contains("/tests/") || clean_rel.ends_with(".t.sol");
+                let is_exempt = !has_file_override && (clean_rel.ends_with("_test.rs") || clean_rel.contains("/tests/") || clean_rel.ends_with(".t.sol"));
                 if !is_exempt && line_count > limit {
                     violations.push(make_violation(
                         &clean_rel,

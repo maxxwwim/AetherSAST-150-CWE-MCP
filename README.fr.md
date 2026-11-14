@@ -14,7 +14,7 @@
 ### **Cockpit Spatial d'Architecture WebGL 2 • Linter SAST Zero-Day & Hors-CWE (200+ Patterns, Stealth Backdoors & Règles CWE) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.3.0_Gemini_4_Hydrogen_Extra-38bdf8?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.4.0_Svelte_5_%26_Contrats_BLAKE3_Live-f97316?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -49,21 +49,55 @@
 ## 📌 Sommaire Exécutif
 
 1. [⚡ Qu'est-ce qu'AetherScope V2 ?](#-quest-ce-quaetherscope-v2-)
-2. [☢️ Nouveautés V2.3.0 — Gemini 4 Hydrogen Extra : Moteur Hors-CWE (`AETHER-*`), Portes Dérobées Invisibles & RCE Furtives](#-nouveautés-v230--gemini-4-hydrogen-extra--moteur-hors-cwe-aether--portes-dérobées-invisibles--rce-furtives)
-3. [📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques](#-nouveautés-v222--moteur-de-documentation-markdown-github-grade-rendu-mermaid-interactif-coloration-syntaxique--highlighting-diff-endpoint-raw-binary-file--kpi-métriques)
-3. [🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian](#-nouveautés-v221--support-zig--cnet-semgrep-communautaire-ssa-dataflow-sca-reachable--mode-vault-obsidian)
-3. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
-4. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
-5. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 200+ Règles (CWE + AETHER-*)](#-moteur-sast-chasse-zero-day--catalogue-des-200-règles-cwe--aether-)
-6. [🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
-7. [🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3](#-gouvernance-spec-driven-contrats-ears--sceau-blake3)
-8. [🏛️ Architecture Globale & Structure du Workspace Cargo](#-architecture-globale--structure-du-workspace-cargo)
-9. [🎨 Cockpit GPU WebGL 2 : Membranes, Bulles, Lasers & Layouts](#-cockpit-gpu-webgl-2--membranes-bulles-lasers--layouts)
-10. [🛠️ Outillage IDE Intégré, Scaffolding Multi-Stack & Export](#-outillage-ide-intégré-scaffolding-multi-stack--export)
-11. [🕹️ Raccourcis Clavier, Compilation & Licence](#-raccourcis-clavier-compilation--licence)
-12. [📄 Licence](#-licence)
-13. [📚 Liste détaillée des règles CWE (répertoire dédié)](./cwe/)
-14. [🔭 Feuille de Route & Architecture 2027 (SoA 100k+ Nœuds, WebGPU WGSL, Dual-Pass Laser & Économie de Tokens IA)](./docs/roadmap_2027.md)
+2. [🔶 Nouveautés V2.4.0 — Cockpit Svelte 5 WebGL 2, Contrats BLAKE3 Modifiables en Direct (Dossier & Fichier) & Gouvernance Visuelle Orange/Rouge](#-nouveautés-v240--cockpit-svelte-5-webgl-2-contrats-blake3-modifiables-en-direct-dossier--fichier--gouvernance-visuelle-orangerouge)
+3. [☢️ Nouveautés V2.3.0 — Gemini 4 Hydrogen Extra : Moteur Hors-CWE (`AETHER-*`), Portes Dérobées Invisibles & RCE Furtives](#-nouveautés-v230--gemini-4-hydrogen-extra--moteur-hors-cwe-aether--portes-dérobées-invisibles--rce-furtives)
+4. [📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques](#-nouveautés-v222--moteur-de-documentation-markdown-github-grade-rendu-mermaid-interactif-coloration-syntaxique--highlighting-diff-endpoint-raw-binary-file--kpi-métriques)
+5. [🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian](#-nouveautés-v221--support-zig--cnet-semgrep-communautaire-ssa-dataflow-sca-reachable--mode-vault-obsidian)
+6. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
+7. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
+8. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 200+ Règles (CWE + AETHER-*)](#-moteur-sast-chasse-zero-day--catalogue-des-200-règles-cwe--aether-)
+9. [🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
+10. [🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3](#-gouvernance-spec-driven-contrats-ears--sceau-blake3)
+11. [🏛️ Architecture Globale & Structure du Workspace Cargo](#-architecture-globale--structure-du-workspace-cargo)
+12. [🎨 Cockpit GPU WebGL 2 : Membranes, Bulles, Lasers & Layouts](#-cockpit-gpu-webgl-2--membranes-bulles-lasers--layouts)
+13. [🛠️ Outillage IDE Intégré, Scaffolding Multi-Stack & Export](#-outillage-ide-intégré-scaffolding-multi-stack--export)
+14. [🕹️ Raccourcis Clavier, Compilation & Licence](#-raccourcis-clavier-compilation--licence)
+15. [📄 Licence](#-licence)
+16. [📚 Liste détaillée des règles CWE (répertoire dédié)](./cwe/)
+17. [🔭 Feuille de Route & Architecture 2027 (SoA 100k+ Nœuds, WebGPU WGSL, Dual-Pass Laser & Économie de Tokens IA)](./docs/roadmap_2027.md)
+
+---
+
+## 🔶 Nouveautés V2.4.0 — Cockpit Svelte 5 WebGL 2, Contrats BLAKE3 Modifiables en Direct (Dossier & Fichier) & Gouvernance Visuelle Orange/Rouge
+
+### 1. 🔒 Contrats BLAKE3 Modifiables en Direct par Dossier ET par Fichier (`POST /api/contracts/update`)
+- **Budgets de Lignes Granulaires (`max_lines_per_file` + `file_max_lines`) :** Le frontmatter YAML de chaque contrat `README.md` accepte désormais à la fois une limite par défaut pour le dossier (`max_lines_per_file`) et un dictionnaire de surcharges par fichier (`file_max_lines`) permettant d'attribuer un budget dédié à un fichier spécifique (`linter.rs`, `scanner.rs` ou chemin relatif).
+- **Empreintes BLAKE3 par Fichier & par Contrat :** Chaque nœud AST embarque désormais son empreinte `file_blake3_hash`, son dossier contrat `contract_folder`, sa limite effective `max_lines_limit` et sa surcharge éventuelle `file_max_lines_override` dans `SymbolMetadata`, tandis que `aether.lock.toml` scelle cryptographiquement chaque `README.md` (`readme_blake3`).
+- **Édition 1-Clic depuis l'Inspecteur Aether (`InspectorDrawer.svelte`) :**
+  - **📄 Sceller Fichier :** Enregistre une limite sur-mesure pour le fichier inspecté dans `file_max_lines`, met à jour le `README.md` parent, re-signe `aether.lock.toml` en BLAKE3 et rafraîchit le graphe 3D à chaud.
+  - **📁 Sceller Dossier :** Met à jour `max_lines_per_file` pour tout le dossier et re-scelle `aether.lock.toml`.
+  - **↺ Hériter :** Supprime la surcharge spécifique du fichier afin qu'il hérite à nouveau du `max_lines_per_file` de son dossier.
+
+### 2. 🟠 Séparation Visuelle Sémantique : Lignes Dépassées en Orange vs Failles de Sécurité en Rouge
+- **Avertissements Architecturaux en Orange (`#f97316` — `RULE_MAX_LINES` / `CWE-1075 / ARCH-BUDGET-EXCEEDED`) :**
+  - Les fichiers dépassant le budget de lignes de leur contrat BLAKE3 s'affichent désormais en **orange ambré** sur le graphe WebGL 2 (remplissage de bulle, anneau halo pulsant, pilule `⚠️ <loc>/<max> L`, arête pointillée orange `warns`, infobulle de survol et cartes de l'inspecteur).
+  - Les dépassements de lignes ne faussent plus le compteur de failles critiques et ne déclenchent plus de fausse alerte rouge sur les badges Git (`/api/git/status`).
+- **Rouge Cramoisi Réservé aux Vraies Violations de Sécurité & d'Intégrité (`#ef4444` — `violates`) :**
+  - Strictement réservé aux vulnérabilités SAST/CWE & `AETHER-*`, aux imports inter-couches interdits (`RULE_FORBIDDEN_IMPORT`) et aux ruptures de sceau cryptographique (`BLAKE3_TAMPERED`).
+
+### 3. ⚡ Cockpit Modulaire Svelte 5 Runes + TypeScript + Vite 8 Single-File (`crates/desktop-shell/ui`)
+- **Architecture Svelte 5 Runes :** Migration complète de l'interface vers Svelte 5 (`$state`, `$derived`, `$effect`) dans `crates/desktop-shell/ui/src/`, compilée via `vite-plugin-singlefile` en un bundle unique `crates/desktop-shell/dist/index.html` embarqué dans `aether-engine.exe`.
+- **Statut Git Temps Réel & Diff Côte-à-Côte (`/api/git/status`, `GitDiffModal.svelte`) :** Badges Git (`M`, `A`, `D`, `??`) directement sur les bulles 3D et inspection des diffs unifiés/côte-à-côte.
+
+### 4. 🌌 Dézoom à l'Infini pour les Projets Massifs (Plancher `0.00005` & Garantie Stellaire GPU)
+- **Navigation Ultra-Échelle :** Plancher minimal de dézoom abaissé de `0.06` à **`0.00005`** à la molette et à **`0.0001`** pour le cadrage `fitCamera`, permettant de visualiser sans coupure des bases de code massives de 10 000 à 100 000+ nœuds.
+- **Suppression du Clipping Sous-Pixel (`screen_r = max(2.0, actual_r * u_zoom)`) :** Le shader de sommets WebGL 2 maintient un diamètre minimal de 2 pixels, empêchant l'aliasing et faisant scintiller l'ensemble des modules comme une constellation galactique vivante.
+- **Atténuation Douce des Arêtes (`zoomFade`) :** Les liaisons d'arrière-plan s'estompent subtilement au grand large pour préserver la netteté des membranes cellulaires.
+
+### 5. 🌊 Espacement Cellulaire Organique & Animation Vivante des Membranes
+- **Topologie Aérée Classes & Fonctions :** Distances de confort dynamiques dans le moteur physique Web Worker : **125 px** entre classes/structs (auparavant 58 px), **98 px** entre classes et fonctions, **84 px** entre fonctions sœurs et ressorts Hooke `contains` portés à **110 px**.
+- **Ondulation Amiboïde des Membranes à 12 Lobes :** Double onde harmonique fluide (`0.034 * sin(...) + 0.018 * cos(...)`) avec respiration cytoplasmique rythmée (`bioPulse`).
+- **Organites Bioluminescents :** Vagues de tension de surface dans les shaders fragment GLSL, clignotement synaptique des fonctions et pulsation du cœur des classes hexagonales.
 
 ---
 
@@ -307,8 +341,10 @@ Le serveur Axum embarqué sert le cockpit spatial directement sur la route racin
 | `POST /api/dialog/pick_workspace`| Ouvre le sélecteur de dossier natif OS pour choisir un workspace multi-projets. |
 | `POST /api/dialog/pick_project` | Ouvre le sélecteur de dossier natif OS pour charger un projet unique. |
 | `POST /api/init_project` | Forge une architecture multi-stack complète (`rust`, `python`, `ts`, `hybrid`). |
-| `POST /api/contracts/sign` | Calcule et scelle les empreintes BLAKE3 des `README.md` dans `aether.lock.toml`. |
-| `POST /api/save_doc` | Sauvegarde un fichier Markdown et rescelle automatiquement son contrat BLAKE3. |
+| `POST /api/contracts/sign` | Calcule et scelle les empreintes BLAKE3 des `README.md` dans `aether.lock.toml` et retourne le graphe mis à jour. |
+| `POST /api/contracts/update` | **[Nouveau v2.4.0]** Modifie la limite de lignes du dossier (`max_lines_per_file`) ou d'un fichier (`file_max_lines`) dans `README.md`, rescelle BLAKE3 dans `aether.lock.toml` et retourne l'`AetherGraph` réévalué. |
+| `POST /api/save_doc` | Sauvegarde un fichier Markdown, rescelle automatiquement son contrat BLAKE3 et retourne le graphe mis à jour. |
+| `GET /api/git/status` | **[Nouveau v2.4.0]** Retourne la branche Git active, les fichiers modifiés, les diffs de lignes et le statut de sécurité réel. |
 | `GET /api/file_content` | Charge à la demande (*Lazy-Loading*) le contenu brut d'un fichier ou `README.md`. |
 | `POST /api/ai/target` | Écrit `.aether/ACTIVE_TARGET.md` et retourne le paquet `<aether_handshake version="2.0">`. |
 | `GET` / `POST /api/ai/telemetry` | Lit ou émet un événement de télémétrie spatiale IA (téléportation caméra & balise). |
@@ -512,13 +548,15 @@ Ouvrez la modale **🔌 Connecter MCP** dans le cockpit pour copier la configura
 
 ## 🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3
 
-Pour empêcher les agents IA ou les développeurs de dégrader l'architecture (imports circulaires, logique I/O dans le domaine pur, fichiers monolithiques de 3000 lignes), chaque dossier peut contenir un contrat `README.md` doté d'un en-tête YAML et de règles **EARS** (*Easy Approach to Requirements Syntax*) :
+Pour empêcher les agents IA ou les développeurs de dégrader l'architecture (imports circulaires, logique I/O dans le domaine pur, fichiers monolithiques de 3000 lignes), chaque dossier peut contenir un contrat `README.md` doté d'un en-tête YAML, de surcharges optionnelles par fichier (`file_max_lines`) et de règles **EARS** (*Easy Approach to Requirements Syntax*) :
 
 ```markdown
 ---
 id: server-domain
 layer: domain
 max_lines_per_file: 200
+file_max_lines:
+  engine.rs: 450
 allowed_imports: ["contracts::*"]
 forbidden_imports: ["server/api::*", "client::*", "data-nodes::*"]
 security_rules:
@@ -533,19 +571,21 @@ security_rules:
 - IF input nights exceed 90 THEN THE SYSTEM SHALL return a domain validation error.
 ```
 
-1. **Vérification Continue (< 50 ms) :** À chaque sauvegarde, `security-linter` vérifie que nul fichier du dossier ne dépasse `max_lines_per_file` (`RULE_MAX_LINES`), n'importe un module de `forbidden_imports` (`RULE_FORBIDDEN_IMPORT`), ni n'accède aux variables d'environnement ou au réseau si `deterministic_only: true` (`SAST_DIRECT_ENV_ACCESS`).
-2. **Sceau Cryptographique BLAKE3 (`aether.lock.toml`) :** L'empreinte BLAKE3 de chaque `README.md` est enregistrée dans `aether.lock.toml`. Si un agent IA modifie le `README.md` pour assouplir une règle sans que l'ingénieur humain ne clique sur **« 🔒 Signer Contrat »**, la violation critique `BLAKE3_TAMPERED` illumine le graphe en rouge.
+1. **Vérification Continue (< 50 ms) & Surcharges par Fichier :** À chaque sauvegarde, `security-linter` résout `effective_max_lines(file_path)` (en consultant `file_max_lines` en priorité puis `max_lines_per_file`) pour évaluer `RULE_MAX_LINES`, vérifie `forbidden_imports` (`RULE_FORBIDDEN_IMPORT`) et contrôle l'absence d'accès réseau/environnement si `deterministic_only: true` (`SAST_DIRECT_ENV_ACCESS`).
+2. **Gouvernance Visuelle Sémantique (Orange vs Rouge) :** Les dépassements de budget de lignes (`RULE_MAX_LINES`) s'affichent en **orange (`#f97316`, `warns`)** sur le graphe 3D et dans l'inspecteur, tandis que les vraies failles de sécurité (`CWE`, `AETHER-*`, `RULE_FORBIDDEN_IMPORT`) et ruptures de sceau (`BLAKE3_TAMPERED`) déclenchent une alerte **rouge cramoisi (`#ef4444`, `violates`)**.
+3. **Sceau Cryptographique BLAKE3 Modifiable en Direct (`aether.lock.toml` & `/api/contracts/update`) :** L'empreinte BLAKE3 de chaque `README.md` et de chaque fichier source (`file_blake3_hash`) est calculée et verrouillée dans `aether.lock.toml`. Depuis l'inspecteur d'Aether (**📄 Sceller Fichier** / **📁 Sceller Dossier**), vous pouvez ajuster et re-signer en 1 clic le budget de lignes d'un fichier ou d'un dossier.
 
 ---
 
 ## 🏛️ Architecture Globale & Structure du Workspace Cargo
 
-Le moteur est découpé en **6 crates Rust** strictement isolés selon les principes de l'Architecture Hexagonale :
+Le moteur est découpé en **7 crates Rust** strictement isolés selon les principes de l'Architecture Hexagonale :
 
 ```text
 aether-engine/
-├── Cargo.toml                              # Workspace Cargo unifié (Edition 2021)
-├── README.md                               # Spécification officielle & documentation exhaustive
+├── Cargo.toml                              # Workspace Cargo unifié (Edition 2021, v2.4.0)
+├── README.md                               # Spécification officielle & documentation (English)
+├── README.fr.md                            # Spécification officielle & documentation (Français)
 ├── AETHER_AI_RULES.md                      # Directives système injectées aux Agents IA
 ├── aether.lock.toml                        # Sceau cryptographique BLAKE3 des contrats de dossiers
 ├── .aether/                                # Pont de fichiers temps réel Zero-Shell (< 50 ms)
@@ -565,17 +605,17 @@ aether-engine/
 │
 └── crates/
     ├── core-graph/                         # 1. Modèle de données & Algorithmes géométriques
-    │   ├── src/bubble.rs                   # SymbolBubble, SymbolKind, Point2D, CveAnomalyRecord
+    │   ├── src/bubble.rs                   # SymbolBubble, SymbolKind, Point2D, CveAnomalyRecord, BLAKE3 metadata
     │   ├── src/edge.rs                     # AffiliationEdge, CategorizedLiaisons, FilterAffiliation (bitflags)
     │   ├── src/graph.rs                    # AetherGraph, calculs de degrés, stats & métriques
     │   ├── src/layout.rs                   # 4 Algorithmes de layout (Obsidian, System, Flow DAG, UML)
     │   └── src/manifest.rs                 # Manifestes de topologies logicielles & verrou BLAKE3
     │
-    ├── ast-scanner/                        # 2. Scanner AST Polyglotte Multithread (Rayon)
+    ├── ast-scanner/                        # 2. Scanner AST Polyglotte Multithread (Rayon) & Empreintes BLAKE3
     │   └── src/scanner.rs                  # Regex OnceLock (Rust, PHP, Zig, C#, Java, TS/JS, Python, C/C++, Smart Contracts, MD)
     │
     ├── security-linter/                    # 3. Moteur SAST Zero-Day, Lexer & Contrats BLAKE3
-    │   ├── src/contract.rs                 # Parseur README.md (YAML frontmatter + règles EARS + BLAKE3)
+    │   ├── src/contract.rs                 # Parseur/Éditeur README.md (YAML frontmatter + file_max_lines + EARS + BLAKE3)
     │   ├── src/lexer.rs                    # Masquage lexical des littéraux/commentaires (Anti-Faux-Positifs)
     │   ├── src/rules.rs                    # Règles avancées DeFi, Vaults, Oracles & Taint Tracking
     │   ├── src/deep_rules.rs               # Règles d'élite (Rust LLVM/UB/ABI/Kernel, ZK-SNARKs, Runtimes VM)
@@ -604,20 +644,15 @@ aether-engine/
     └── desktop-shell/                      # 7. Exécutable Desktop Natif (tao/wry) & Serveur MCP
         ├── src/main.rs                     # Fenêtre native WebView2 GPU, serveur Axum (port 3030)
         ├── src/mcp_main.rs                 # Binaire autonome aetherscope-mcp.exe (Stdio JSON-RPC 2.0)
-        ├── src/mcp.rs                      # Implémentation des 10 outils MCP d'élite avec fallback direct sur disque
-        ├── src/api_routes.rs               # Modèles DTO, signature BLAKE3, scaffolding & dialogues OS natifs
+        ├── src/mcp.rs                      # Implémentation des outils MCP d'élite avec fallback direct sur disque
+        ├── src/api_routes.rs               # Modèles DTO, édition live de contrats BLAKE3, Git status & dialogues OS natifs
         ├── src/viewer.rs                   # Compilateur d'assets et exportateur HTML standalone
-        └── assets/                         # Cockpit Frontend modulaire (Zéro framework lourd, 100% natif)
-            ├── index.html                  # Squelette DOM sémantique, topbar, inspecteur & modales
-            ├── styles.css                  # Design system cosmique (:root, lasers néon, badges BLAKE3)
-            ├── state_api.js                # State store réactif, synthétiseur AudioSys & client REST AetherAPI
-            ├── physics_worker.js           # ⚡ Web Worker Off-Thread (Physique Coulomb/Hooke & 12 lobes sans lag UI)
-            ├── webgl_shaders_physics.js    # Shaders GLSL SDF WebGL 2 & pont de communication Web Worker
-            ├── webgl_renderer.js           # Rendu instancié 120 FPS, membranes à 12 lobes & photons lasers
-            ├── ui_navigation.js            # Caméra inertielle lerp, zoom LoD, survol spatial & sélection
-            ├── ui_inspector_docs.js        # Inspecteur 4 onglets, lecteur/éditeur Markdown, sceau BLAKE3
-            ├── ui_vision_modes.js          # Modes X-Ray, Dead Code, Heatmap, CVE Triage & Bug Bounty Scope
-            └── ui_ai_modals.js             # Omnibox, Copilot Chat, Tâches, Télémétrie, MCP & Paramètres
+        ├── dist/index.html                 # Bundle WebGL 2 single-file compilé
+        └── ui/                             # Cockpit Frontend Svelte 5 Runes + TypeScript + Vite 8
+            ├── src/engine/                 # Moteur WebGL 2 instancié 120 FPS (engine.ts) & Web Worker (physics.worker.ts)
+            ├── src/state/                  # Store réactif Svelte 5 Runes (graphState.svelte.ts)
+            ├── src/lib/                    # Client REST AetherAPI (api.ts), Markdown/Mermaid & rapports d'audit
+            └── src/components/             # Inspecteur BLAKE3, DocReader, SynthesisHud, GitDiffModal, BountyModal & HUDs
 ```
 
 ---

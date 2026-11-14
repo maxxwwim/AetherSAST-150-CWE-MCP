@@ -1,15 +1,20 @@
 <script lang="ts">
-  import { cockpitState, normalizeEdgeRelation } from '../state/graphState.svelte';
+  import { cockpitState, normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly } from '../state/graphState.svelte';
   import { ShieldAlert, FileCode2, ArrowRight, ArrowLeft } from '@lucide/svelte';
 
   const node = $derived(cockpitState.hoveredSymbol);
   const pos = $derived(cockpitState.hoverScreenPos);
 
-  const primaryAnomaly = $derived(node?.anomalies && node.anomalies.length > 0 ? node.anomalies[0] : null);
+  const alertKind = $derived(getNodeAlertKind(node));
+  const hasSec = $derived(alertKind === 'security');
+  const hasLinesWarn = $derived(alertKind === 'lines_exceeded');
+  const primaryAnomaly = $derived.by(() => {
+    const list = node?.anomalies || [];
+    if (list.length === 0) return null;
+    if (hasSec) return list.find((a) => !isLinesExceededAnomaly(a)) || list[0];
+    return list[0];
+  });
   const anomaliesCount = $derived(node?.anomalies?.length || 0);
-  const hasSec = $derived(
-    Boolean(node && (node.has_security_violation || anomaliesCount > 0 || (node.violations && node.violations.length > 0)))
-  );
 
   const nodeById = $derived.by(() => {
     const map = new Map<string, string>();
@@ -92,7 +97,7 @@
 
 {#if node}
   <div
-    class="fixed z-50 w-[336px] pointer-events-none rounded-xl bg-[#090d16]/95 backdrop-blur-xl border shadow-[0_14px_40px_rgba(0,0,0,0.85)] p-3 space-y-2 text-xs transition-transform duration-75 {hasSec ? 'border-rose-500/70' : 'border-sky-500/40'}"
+    class="fixed z-50 w-[336px] pointer-events-none rounded-xl bg-[#090d16]/95 backdrop-blur-xl border shadow-[0_14px_40px_rgba(0,0,0,0.85)] p-3 space-y-2 text-xs transition-transform duration-75 {hasSec ? 'border-rose-500/70' : hasLinesWarn ? 'border-orange-500/70' : 'border-sky-500/40'}"
     style={stylePos}
   >
     <div class="flex items-start justify-between gap-2">
@@ -112,7 +117,9 @@
         </div>
       </div>
       <div class="text-right font-mono text-[10px] text-slate-400 shrink-0">
-        <div>{node.loc || 1} LOC</div>
+        <div class={hasLinesWarn ? 'text-orange-400 font-bold' : ''}>
+          {node.loc || 1}{node.metadata?.max_lines_limit ? ` / ${node.metadata.max_lines_limit}` : ''} LOC
+        </div>
         <div class={(node.cyclomatic_complexity || 1) >= 10 ? 'text-amber-300 font-bold' : ''}>
           CC {node.cyclomatic_complexity || 1}
         </div>
@@ -184,6 +191,21 @@
         </div>
         <p class="text-[10.5px] text-rose-100/95 leading-snug line-clamp-2">
           {primaryAnomaly?.description || primaryAnomaly?.message || 'Vulnérabilité détectée sur ce fichier — cliquez pour inspecter.'}
+        </p>
+      </div>
+    {:else if hasLinesWarn}
+      <div class="p-2 rounded-lg bg-orange-950/75 border border-orange-500/60 space-y-1">
+        <div class="flex items-center justify-between gap-1.5">
+          <span class="flex items-center gap-1 text-[10px] font-bold text-orange-200">
+            <ShieldAlert class="w-3.5 h-3.5 text-orange-400" />
+            ⚠️ BUDGET LIGNES DÉPASSÉ
+          </span>
+          <span class="px-1.5 py-0.5 rounded bg-orange-500/30 text-orange-200 font-mono text-[9.5px] font-bold">
+            {node.loc || 0} / {node.metadata?.max_lines_limit || 300} L
+          </span>
+        </div>
+        <p class="text-[10.5px] text-orange-100/95 leading-snug line-clamp-2">
+          {primaryAnomaly?.description || primaryAnomaly?.message || 'Ce fichier dépasse la limite de lignes du contrat BLAKE3 — modifiable depuis l’Inspecteur.'}
         </p>
       </div>
     {/if}

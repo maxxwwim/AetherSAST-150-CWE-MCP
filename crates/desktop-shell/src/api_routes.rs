@@ -80,6 +80,8 @@ pub struct SaveDocResponse {
     pub saved_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blake3_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graph: Option<AetherGraph>,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +99,38 @@ pub struct SignContractsResponse {
     pub signed_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blake3_hash: Option<String>,
+    pub graph: AetherGraph,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateContractRequest {
+    #[serde(default)]
+    pub project_path: Option<String>,
+    #[serde(default)]
+    pub folder: Option<String>,
+    #[serde(default)]
+    pub file_path: Option<String>,
+    #[serde(default)]
+    pub max_lines_per_file: Option<usize>,
+    #[serde(default)]
+    pub file_max_lines: Option<usize>,
+    #[serde(default)]
+    pub clear_file_override: bool,
+    #[serde(default)]
+    pub allowed_imports: Option<Vec<String>>,
+    #[serde(default)]
+    pub forbidden_imports: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+pub struct UpdateContractResponse {
+    pub status: String,
+    pub message: String,
+    pub contract_path: String,
+    pub blake3_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_blake3_hash: Option<String>,
+    pub effective_max_lines: usize,
     pub graph: AetherGraph,
 }
 
@@ -157,6 +191,42 @@ pub struct InitProjectResponse {
     pub status: String,
     pub message: String,
     pub created_dirs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GitFileStatusKind {
+    Modified,
+    Untracked,
+    Staged,
+    Deleted,
+    Renamed,
+    Conflict,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitFileChange {
+    pub path: String,
+    pub status: GitFileStatusKind,
+    pub index_code: char,
+    pub worktree_code: char,
+    pub has_security_violation: bool,
+    pub cwe_count: usize,
+    pub ears_violation: bool,
+    pub max_severity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitStatusResponse {
+    pub is_git_repo: bool,
+    pub branch: Option<String>,
+    pub clean: bool,
+    pub files: Vec<GitFileChange>,
+    pub modified_count: usize,
+    pub untracked_count: usize,
+    pub staged_count: usize,
+    pub deleted_count: usize,
+    pub security_alert_count: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -703,6 +773,137 @@ pub fn sign_project_contracts(base: &Path, folder_filter: Option<&str>) -> Resul
     Ok((signed_count, last_hash))
 }
 
+/// Met à jour le contrat README.md (pour un dossier ou un fichier spécifique) et scelle son empreinte BLAKE3 dans aether.lock.toml
+pub fn update_contract_rules(
+    base: &Path,
+    req: &UpdateContractRequest,
+) -> Result<(String, String, Option<String>, usize), String> {
+    let norm_file = req.file_path.as_ref().map(|f| {
+        f.trim_start_matches("./")
+            .trim_start_matches('/')
+            .replace('\\', "/")
+    });
+
+    // Déterminer le dossier cible du contrat README.md
+    let target_folder = if let Some(ref f) = req.folder {
+        let cf = f
+            .trim_start_matches("./")
+            .trim_start_matches('/')
+            .trim_end_matches('/')
+            .replace('\\', "/");
+        if cf.is_empty() || cf == "." || cf == "root" {
+            "root".to_string()
+        } else {
+            cf
+        }
+    } else if let Some(ref fp) = norm_file {
+        // Remonter depuis le dossier parent du fichier jusqu'à trouver un README.md existant, sinon utiliser le dossier direct du fichier
+        let file_folder = fp
+            .rfind('/')
+            .map(|idx| &fp[..idx])
+            .unwrap_or("root");
+        let mut chosen = file_folder.to_string();
+        if chosen != "root" {
+            let mut cur = file_folder;
+            loop {
+                if base.join(cur).join("README.md").exists() {
+                    chosen = cur.to_string();
+                    break;
+                }
+                if let Some(idx) = cur.rfind('/') {
+                    cur = &cur[..idx];
+                } else {
+                    if base.join("README.md").exists() {
+                        chosen = "root".to_string();
+                    }
+                    break;
+                }
+            }
+        }
+        chosen
+    } else {
+        "root".to_string()
+    };
+
+    let readme_path = if target_folder == "root" {
+        base.join("README.md")
+    } else {
+        base.join(&target_folder).join("README.md")
+    };
+
+    // Si le README cible n'existe pas encore dans ce sous-dossier, hériter éventuellement du parent le plus proche
+    let existing_content = if readme_path.exists() {
+        fs::read_to_string(&readme_path).ok()
+    } else {
+        let mut parent_content = None;
+        let mut cur = target_folder.as_str();
+        while let Some(idx) = cur.rfind('/') {
+            cur = &cur[..idx];
+            let p_readme = base.join(cur).join("README.md");
+            if p_readme.exists() {
+                parent_content = fs::read_to_string(&p_readme).ok();
+                break;
+            }
+        }
+        if parent_content.is_none() {
+            parent_content = fs::read_to_string(base.join("README.md")).ok();
+        }
+        parent_content
+    };
+
+    let file_override_arg = norm_file.as_deref().and_then(|fp| {
+        if req.clear_file_override {
+            Some((fp, None))
+        } else {
+            req.file_max_lines.map(|lim| (fp, Some(lim)))
+        }
+    });
+
+    let updated_content = ReadmeContract::upsert_contract_content(
+        existing_content.as_deref(),
+        &target_folder,
+        req.max_lines_per_file,
+        file_override_arg,
+        req.allowed_imports.clone(),
+        req.forbidden_imports.clone(),
+    );
+
+    if let Some(parent) = readme_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&readme_path, &updated_content).map_err(|e| e.to_string())?;
+
+    let parsed = ReadmeContract::parse(&target_folder, &updated_content)?;
+    let _ = sign_project_contracts(base, Some(&target_folder))?;
+
+    let file_blake3_hash = norm_file.as_ref().and_then(|fp| {
+        let full_fp = base.join(fp);
+        fs::read_to_string(&full_fp)
+            .ok()
+            .map(|s| ReadmeContract::compute_blake3_hex(&s))
+    });
+
+    let effective_max = if let Some(ref fp) = norm_file {
+        parsed.effective_max_lines(fp)
+    } else {
+        parsed.frontmatter.max_lines_per_file
+    };
+
+    let rel_contract_path = if target_folder == "root" {
+        "README.md".to_string()
+    } else {
+        format!("{}/README.md", target_folder)
+    };
+
+    Ok((
+        rel_contract_path,
+        parsed.blake3_hash,
+        file_blake3_hash,
+        effective_max,
+    ))
+}
+
+#[allow(dead_code)]
 pub fn init_project_structure(base: &Path, stack_str: &str) -> Vec<String> {
     init_project_structure_with_topology(base, stack_str, None)
 }
@@ -1398,6 +1599,424 @@ pub fn pick_folder_dialog(title: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Inspecte le statut Git du projet en exécutant `git status --porcelain=v1 -uall --ignored=no`
+/// et croise les fichiers modifiés / non suivis avec les bulles du graphe AetherGraph pour
+/// détecter les violations de sécurité SAST CWE et les ruptures de contrats EARS.
+pub fn inspect_git_status(project_root: &Path, graph: &AetherGraph) -> GitStatusResponse {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["status", "--porcelain=v1", "-uall", "--ignored=no"])
+        .current_dir(project_root);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    let output = match cmd.output() {
+        Ok(out) if out.status.success() => out,
+        _ => {
+            return GitStatusResponse {
+                is_git_repo: false,
+                branch: None,
+                clean: true,
+                files: Vec::new(),
+                modified_count: 0,
+                untracked_count: 0,
+                staged_count: 0,
+                deleted_count: 0,
+                security_alert_count: 0,
+            };
+        }
+    };
+
+    let mut branch_cmd = std::process::Command::new("git");
+    branch_cmd
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(project_root);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        branch_cmd.creation_flags(0x08000000);
+    }
+
+    let branch = branch_cmd
+        .output()
+        .ok()
+        .and_then(|out| {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if s.is_empty() { None } else { Some(s) }
+            } else {
+                None
+            }
+        });
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    parse_git_status_porcelain(&stdout_str, branch, true, graph)
+}
+
+/// Analyse la sortie porcelain v1 de Git et effectue la corrélation avec l'AetherGraph.
+pub fn parse_git_status_porcelain(
+    stdout_str: &str,
+    branch: Option<String>,
+    is_git_repo: bool,
+    graph: &AetherGraph,
+) -> GitStatusResponse {
+    let mut files = Vec::new();
+    let mut modified_count = 0;
+    let mut untracked_count = 0;
+    let mut staged_count = 0;
+    let mut deleted_count = 0;
+    let mut security_alert_count = 0;
+
+    for line in stdout_str.lines() {
+        let trimmed_line = line.trim();
+        if trimmed_line.is_empty() || trimmed_line.starts_with('#') {
+            continue;
+        }
+        if line.len() < 3 {
+            continue;
+        }
+        let mut chars = line.chars();
+        let index_code = chars.next().unwrap_or(' ');
+        let worktree_code = chars.next().unwrap_or(' ');
+        if index_code == '#' || (index_code == ' ' && worktree_code == ' ') {
+            continue;
+        }
+        let raw_path = if line.len() >= 3 && line.as_bytes()[2] == b' ' {
+            &line[3..]
+        } else {
+            let _ = chars.next();
+            chars.as_str()
+        };
+
+        let trimmed_raw = raw_path.trim();
+        let unquoted = if trimmed_raw.starts_with('"') && trimmed_raw.ends_with('"') && trimmed_raw.len() >= 2 {
+            &trimmed_raw[1..trimmed_raw.len() - 1]
+        } else {
+            trimmed_raw
+        };
+
+        let target_part = unquoted.split(" -> ").last().unwrap_or(unquoted).trim_matches('"');
+        let file_path = target_part
+            .trim_start_matches("./")
+            .replace('\\', "/");
+
+        if file_path.trim().is_empty() {
+            continue;
+        }
+
+        let status = match (index_code, worktree_code) {
+            ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D') => {
+                modified_count += 1;
+                GitFileStatusKind::Conflict
+            }
+            ('?', '?') => {
+                untracked_count += 1;
+                GitFileStatusKind::Untracked
+            }
+            ('D', _) | (_, 'D') => {
+                deleted_count += 1;
+                GitFileStatusKind::Deleted
+            }
+            ('R', _) => {
+                staged_count += 1;
+                GitFileStatusKind::Renamed
+            }
+            ('A', ' ') | ('M', ' ') | ('C', ' ') => {
+                staged_count += 1;
+                GitFileStatusKind::Staged
+            }
+            _ => {
+                modified_count += 1;
+                GitFileStatusKind::Modified
+            }
+        };
+
+        // Corrélation avec les alertes SAST et contrats EARS du graphe
+        let mut has_sec = false;
+        let mut cwe_count = 0;
+        let mut ears_violation = false;
+        let mut max_severity: Option<String> = None;
+
+        for node in &graph.nodes {
+            let node_path = node.file_path.trim_start_matches("./").replace('\\', "/");
+            if node_path == file_path {
+                if node.has_security_violation {
+                    has_sec = true;
+                }
+                cwe_count += node
+                    .metadata
+                    .cve_anomalies
+                    .iter()
+                    .filter(|a| {
+                        a.rule_id != "RULE_MAX_LINES"
+                            && !a.cve_id.contains("ARCH-BUDGET-EXCEEDED")
+                            && a.severity != "WARNING"
+                    })
+                    .count();
+                for anomaly in &node.metadata.cve_anomalies {
+                    let sev = anomaly.severity.to_uppercase();
+                    if sev == "CRITICAL" {
+                        max_severity = Some("CRITICAL".to_string());
+                    } else if sev == "HIGH" && max_severity.as_deref() != Some("CRITICAL") {
+                        max_severity = Some("HIGH".to_string());
+                    } else if (sev == "MEDIUM" || sev == "WARNING")
+                        && (max_severity.is_none()
+                            || max_severity.as_deref() == Some("LOW")
+                            || max_severity.as_deref() == Some("INFO"))
+                    {
+                        max_severity = Some(sev);
+                    } else if max_severity.is_none() {
+                        max_severity = Some(sev);
+                    }
+                }
+                for v in &node.metadata.violations {
+                    if v.contains("RULE_MAX_LINES") || v.contains("ARCH-BUDGET-EXCEEDED") {
+                        continue;
+                    }
+                    if v.contains("RULE_FORBIDDEN_IMPORT")
+                        || v.contains("BLAKE3_TAMPERED")
+                        || !v.is_empty()
+                    {
+                        ears_violation = true;
+                        has_sec = true;
+                    }
+                }
+            }
+        }
+
+        if cwe_count > 0 {
+            has_sec = true;
+        }
+
+        if has_sec || ears_violation {
+            security_alert_count += 1;
+        }
+
+        files.push(GitFileChange {
+            path: file_path,
+            status,
+            index_code,
+            worktree_code,
+            has_security_violation: has_sec,
+            cwe_count,
+            ears_violation,
+            max_severity,
+        });
+    }
+
+    let clean = files.is_empty();
+
+    GitStatusResponse {
+        is_git_repo,
+        branch,
+        clean,
+        files,
+        modified_count,
+        untracked_count,
+        staged_count,
+        deleted_count,
+        security_alert_count,
+    }
+}
+
+#[cfg(test)]
+mod git_status_tests {
+    use super::*;
+    use core_graph::bubble::{CveAnomalyRecord, SymbolBubble, SymbolKind};
+
+    #[test]
+    fn test_parse_git_status_porcelain_clean() {
+        let graph = AetherGraph::new("TestProject");
+        let resp = parse_git_status_porcelain("", Some("main".to_string()), true, &graph);
+        assert!(resp.is_git_repo);
+        assert_eq!(resp.branch.as_deref(), Some("main"));
+        assert!(resp.clean);
+        assert!(resp.files.is_empty());
+        assert_eq!(resp.modified_count, 0);
+        assert_eq!(resp.untracked_count, 0);
+        assert_eq!(resp.staged_count, 0);
+        assert_eq!(resp.deleted_count, 0);
+        assert_eq!(resp.security_alert_count, 0);
+    }
+
+    #[test]
+    fn test_parse_git_status_porcelain_various_statuses() {
+        let graph = AetherGraph::new("TestProject");
+        let porcelain = [
+            " M crates/desktop-shell/src/viewer.rs",
+            "M  crates/desktop-shell/src/main.rs",
+            "?? new_untracked_file.rs",
+            " D deleted_worktree.rs",
+            "D  deleted_staged.rs",
+            "R  old_name.rs -> new_name.rs",
+            "UU conflicted_merge.rs",
+        ].join("\n");
+        let resp = parse_git_status_porcelain(&porcelain, Some("feature/diff".to_string()), true, &graph);
+        assert!(resp.is_git_repo);
+        assert_eq!(resp.branch.as_deref(), Some("feature/diff"));
+        assert!(!resp.clean);
+        assert_eq!(resp.files.len(), 7);
+
+        assert_eq!(resp.files[0].path, "crates/desktop-shell/src/viewer.rs");
+        assert_eq!(resp.files[0].status, GitFileStatusKind::Modified);
+        assert_eq!(resp.files[0].index_code, ' ');
+        assert_eq!(resp.files[0].worktree_code, 'M');
+
+        assert_eq!(resp.files[1].path, "crates/desktop-shell/src/main.rs");
+        assert_eq!(resp.files[1].status, GitFileStatusKind::Staged);
+        assert_eq!(resp.files[1].index_code, 'M');
+        assert_eq!(resp.files[1].worktree_code, ' ');
+
+        assert_eq!(resp.files[2].path, "new_untracked_file.rs");
+        assert_eq!(resp.files[2].status, GitFileStatusKind::Untracked);
+
+        assert_eq!(resp.files[3].path, "deleted_worktree.rs");
+        assert_eq!(resp.files[3].status, GitFileStatusKind::Deleted);
+
+        assert_eq!(resp.files[4].path, "deleted_staged.rs");
+        assert_eq!(resp.files[4].status, GitFileStatusKind::Deleted);
+
+        assert_eq!(resp.files[5].path, "new_name.rs");
+        assert_eq!(resp.files[5].status, GitFileStatusKind::Renamed);
+
+        assert_eq!(resp.files[6].path, "conflicted_merge.rs");
+        assert_eq!(resp.files[6].status, GitFileStatusKind::Conflict);
+
+        assert_eq!(resp.modified_count, 2);
+        assert_eq!(resp.untracked_count, 1);
+        assert_eq!(resp.staged_count, 2);
+        assert_eq!(resp.deleted_count, 2);
+        assert_eq!(resp.security_alert_count, 0);
+    }
+
+    #[test]
+    fn test_parse_git_status_porcelain_security_and_ears_cross_reference() {
+        let mut graph = AetherGraph::new("TestProject");
+
+        // Safe node
+        let safe_node = SymbolBubble::new(
+            "file::safe.rs".to_string(),
+            "safe.rs".to_string(),
+            "safe.rs".to_string(),
+            1,
+            SymbolKind::File,
+            "server".to_string(),
+            "domain".to_string(),
+        );
+        graph.nodes.push(safe_node);
+
+        // Vulnerable node with CRITICAL anomaly
+        let mut vuln_node = SymbolBubble::new(
+            "file::vuln.rs".to_string(),
+            "vuln.rs".to_string(),
+            "vuln.rs".to_string(),
+            1,
+            SymbolKind::File,
+            "server".to_string(),
+            "domain".to_string(),
+        );
+        vuln_node.has_security_violation = true;
+        vuln_node.metadata.cve_anomalies.push(CveAnomalyRecord {
+            rule_id: "RULE_SQL_INJECTION".to_string(),
+            cve_id: "CWE-89".to_string(),
+            severity: "HIGH".to_string(),
+            line_number: 10,
+            file_path: "vuln.rs".to_string(),
+            message: "SQL Injection vulnerability".to_string(),
+            ..Default::default()
+        });
+        vuln_node.metadata.cve_anomalies.push(CveAnomalyRecord {
+            rule_id: "RULE_COMMAND_INJECTION".to_string(),
+            cve_id: "CWE-78".to_string(),
+            severity: "CRITICAL".to_string(),
+            line_number: 25,
+            file_path: "vuln.rs".to_string(),
+            message: "Command Injection vulnerability".to_string(),
+            ..Default::default()
+        });
+        graph.nodes.push(vuln_node);
+
+        // EARS contract violation node
+        let mut ears_node = SymbolBubble::new(
+            "file::ears_fail.rs".to_string(),
+            "ears_fail.rs".to_string(),
+            "ears_fail.rs".to_string(),
+            1,
+            SymbolKind::File,
+            "server".to_string(),
+            "domain".to_string(),
+        );
+        ears_node.metadata.violations.push("RULE_FORBIDDEN_IMPORT: forbidden import found".to_string());
+        graph.nodes.push(ears_node);
+
+        let porcelain = " M safe.rs\n M vuln.rs\n M ears_fail.rs\n";
+        let resp = parse_git_status_porcelain(porcelain, Some("main".to_string()), true, &graph);
+        assert_eq!(resp.files.len(), 3);
+
+        // Safe file
+        assert_eq!(resp.files[0].path, "safe.rs");
+        assert!(!resp.files[0].has_security_violation);
+        assert_eq!(resp.files[0].cwe_count, 0);
+        assert!(!resp.files[0].ears_violation);
+        assert_eq!(resp.files[0].max_severity, None);
+
+        // Vuln file
+        assert_eq!(resp.files[1].path, "vuln.rs");
+        assert!(resp.files[1].has_security_violation);
+        assert_eq!(resp.files[1].cwe_count, 2);
+        assert!(!resp.files[1].ears_violation);
+        assert_eq!(resp.files[1].max_severity.as_deref(), Some("CRITICAL"));
+
+        // EARS violation file
+        assert_eq!(resp.files[2].path, "ears_fail.rs");
+        assert!(resp.files[2].has_security_violation);
+        assert_eq!(resp.files[2].cwe_count, 0);
+        assert!(resp.files[2].ears_violation);
+
+        assert_eq!(resp.security_alert_count, 2);
+    }
+
+    #[test]
+    fn test_parse_git_status_porcelain_windows_paths_and_quotes() {
+        let graph = AetherGraph::new("TestProject");
+        let porcelain = " M \"crates\\sub folder\\file.rs\"\n";
+        let resp = parse_git_status_porcelain(porcelain, None, true, &graph);
+        assert_eq!(resp.files.len(), 1);
+        assert_eq!(resp.files[0].path, "crates/sub folder/file.rs");
+        assert_eq!(resp.files[0].status, GitFileStatusKind::Modified);
+    }
+
+    #[test]
+    fn test_parse_git_status_porcelain_whitespace_and_branch_headers() {
+        let graph = AetherGraph::new("TestProject");
+        let porcelain = "## main\n   \n\t\n# comment\n M valid.rs\n";
+        let resp = parse_git_status_porcelain(porcelain, Some("main".to_string()), true, &graph);
+        assert_eq!(resp.files.len(), 1);
+        assert_eq!(resp.files[0].path, "valid.rs");
+        assert_eq!(resp.files[0].status, GitFileStatusKind::Modified);
+        assert_eq!(resp.modified_count, 1);
+    }
+
+    #[test]
+    fn test_inspect_git_status_non_git_repo() {
+        let temp_dir = std::env::temp_dir().join(format!("aether_non_git_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let graph = AetherGraph::new("NonGitProject");
+
+        let resp = inspect_git_status(&temp_dir, &graph);
+        assert!(!resp.is_git_repo);
+        assert!(resp.clean);
+        assert!(resp.files.is_empty());
+        assert_eq!(resp.modified_count, 0);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 }
 
 #[cfg(test)]

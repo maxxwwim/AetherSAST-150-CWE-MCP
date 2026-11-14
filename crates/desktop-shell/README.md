@@ -1,36 +1,30 @@
 ---
 id: desktop-shell
-layer: api
-max_lines_per_file: 2000
-allowed_imports: ["core_graph::*", "ast_scanner::*", "arch_templates::*", "security_linter::*", "ai_file_bridge::*", "axum::*", "tokio::*", "clap::*", "wry::*", "tao::*", "rfd::*", "serde::*", "serde_json::*", "serde_yaml::*", "std::*"]
+layer: ui
+max_lines_per_file: 5000
+allowed_imports: ["core_graph::*", "ast_scanner::*", "security_linter::*", "ai_file_bridge::*", "arch_templates::*", "obsidian_vault::*", "axum::*", "tokio::*", "clap::*", "colored::*", "webbrowser::*", "walkdir::*", "toml::*", "wry::*", "tao::*", "rfd::*", "serde::*", "serde_json::*", "serde_yaml::*", "std::*"]
 forbidden_imports: []
 security_rules:
   no_raw_sql: true
-  untrusted_client_input: true
+  no_env_access: false
 ---
-# 🖥️ desktop-shell — Exécutables natifs, API locale & serveur MCP
+#  🖥️ desktop-shell — Cockpit Desktop WebGL 2, Serveur Axum & Serveur MCP (v2.4.0)
 
-Point d'entrée de l'application. Produit deux binaires :
-
-| Binaire | Source | Rôle |
-| :--- | :--- | :--- |
-| `aether-engine` | `src/main.rs` | Fenêtre native (tao/wry), serveur Axum sur `127.0.0.1:3030`, API REST locale |
-| `aetherscope-mcp` | `src/mcp_main.rs` | Serveur MCP JSON-RPC 2.0 sur stdio (9 outils) |
+Exécutable principal d'AetherScope V2 (`aether-engine`) et serveur MCP dédié (`aetherscope-mcp`). Héberge la fenêtre native WebView2 (`tao`/`wry`), le serveur REST local (`Axum`), l'éditeur live de contrats BLAKE3 et le moteur graphique hybride Svelte 5 + WebGL 2.
 
 ## 📦 Contenu
 
-| Fichier | Rôle |
+| Fichier / Dossier | Rôle |
 | :--- | :--- |
-| `src/main.rs` | Fenêtre WebView2, routes Axum, options CLI |
-| `src/api_routes.rs` | DTOs, signature BLAKE3, scaffolding, dialogues OS natifs |
-| `src/local_guard.rs` | Garde anti-CSRF / DNS rebinding (`Host` et `Origin` de bouclage) |
-| `src/mcp.rs` | Implémentation des outils MCP avec repli direct sur disque |
-| `src/viewer.rs` | Export HTML standalone |
-| `assets/` | Cockpit frontend (voir son README) |
+| `src/main.rs` | Entrée principale, CLI `clap`, serveur HTTP Axum (`127.0.0.1:3030`) et fenêtre native `tao`/`wry` |
+| `src/api_routes.rs` | Routes REST (`/api/contracts/update`, `/api/contracts/sign`, `/api/git/status`, `/api/save_doc`, `/api/ai/*`, `/api/tasks/*`) |
+| `src/mcp_main.rs` | Binaire dédié `aetherscope-mcp` pour la boucle JSON-RPC 2.0 sur `stdio` |
+| `src/mcp.rs` | Implémentation des outils MCP (`aetherscope_*`) et synchronisation cockpit |
+| `src/viewer.rs` | Chargement et assemblage du bundle single-file (`dist/index.html`) et export standalone |
+| `ui/` | Cockpit Frontend Svelte 5 Runes + TypeScript + Vite 8 (`vite-plugin-singlefile`) |
 
 ## 🛡️ Règles EARS
 
-- WHEN a request reaches the local server THE SYSTEM SHALL reject it if its `Host` is not a loopback address with the server port.
-- WHEN a request carries a foreign `Origin` THE SYSTEM SHALL reject it.
-- WHEN the cockpit is closed and an MCP tool is called THE SYSTEM SHALL fall back to direct disk access instead of failing.
-- WHEN a payload comes from the client THE SYSTEM SHALL treat it as untrusted and validate it before use.
+- WHEN `aether-engine` starts THE SYSTEM SHALL bind the local REST API to `127.0.0.1` and initialize the FileWatcher.
+- WHEN `aetherscope-mcp` receives a JSON-RPC 2.0 tool call THE SYSTEM SHALL return a structured MCP response and synchronize telemetry with the cockpit if active.
+- WHEN a file of this folder exceeds `max_lines_per_file` (or its `file_max_lines` override) THE SYSTEM SHALL report a `RULE_MAX_LINES` warning in orange.

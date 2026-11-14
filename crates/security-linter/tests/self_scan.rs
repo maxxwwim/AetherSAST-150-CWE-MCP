@@ -22,9 +22,9 @@ fn self_scan_report_and_reflexive_false_positives() {
         "crates/security-linter/src/linter.rs",
         "crates/security-linter/src/rules.rs",
         "crates/security-linter/src/contract.rs",
-        "crates/desktop-shell/assets/ui_vision_modes.js",
-        "crates/desktop-shell/assets/ui_ai_modals.js",
-        "crates/desktop-shell/assets/ui_inspector_docs.js",
+        "crates/desktop-shell/ui/src/engine/physics.worker.js",
+        "crates/desktop-shell/ui/src/engine/shaders.ts",
+        "crates/desktop-shell/dist/index.html",
     ];
     let mut total = 0;
     for f in files {
@@ -38,10 +38,10 @@ fn self_scan_report_and_reflexive_false_positives() {
     }
     println!("TOTAL (6 fichiers): {}", total);
 
-    // Le catalogue de documentation JS ne contient aucun appel réel à eval/exec/sendFile.
+    // Le code JS du worker physique ne contient aucun appel réel à eval/exec/sendFile.
     // Limite connue : CVE-WEB3-AUTH-BYPASS-MOCK, SAST_HARDCODED_SECRET et CVE-JS-XSS-DOM
     // restent signalés (règles sensibles aux littéraux / innerHTML réels à trier à la main).
-    let js = scan("crates/desktop-shell/assets/ui_vision_modes.js");
+    let js = scan("crates/desktop-shell/ui/src/engine/physics.worker.js");
     for rule in [
         "CVE-JS-CODE-INJ",
         "CVE-JS-CMD-INJ",
@@ -49,7 +49,7 @@ fn self_scan_report_and_reflexive_false_positives() {
     ] {
         assert!(
             !js.iter().any(|v| v.rule_id == rule),
-            "faux positif réflexif {} dans ui_vision_modes.js",
+            "faux positif réflexif {} dans physics.worker.js",
             rule
         );
     }
