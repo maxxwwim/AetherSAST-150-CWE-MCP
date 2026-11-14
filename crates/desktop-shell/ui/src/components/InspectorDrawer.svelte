@@ -459,7 +459,7 @@
 
 {#if cockpitState.isInspectorOpen}
   <aside
-    class="absolute top-0 right-0 bottom-7 w-[396px] max-w-[92vw] bg-[#0b0e17]/95 backdrop-blur-xl border-l border-white/10 flex flex-col z-40 select-none shadow-[-16px_0_48px_rgba(0,0,0,0.6)]"
+    class="absolute top-0 right-0 bottom-7 w-full sm:w-[396px] max-w-full sm:max-w-[92vw] bg-[#0b0e17]/95 backdrop-blur-xl border-l border-white/10 flex flex-col z-40 select-none shadow-[-16px_0_48px_rgba(0,0,0,0.6)]"
   >
     <!-- Drawer Header -->
     <div class="px-3.5 py-2.5 border-b border-white/10 bg-[#0f172a]/70 flex items-start justify-between gap-2">

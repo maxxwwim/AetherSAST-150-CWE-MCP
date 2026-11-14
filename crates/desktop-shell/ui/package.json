@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "test": "node verify_header_bindings.mjs && node empirical_stress_test.mjs && node adversarial_challenge_m4.mjs"
   },
   "devDependencies": {
     "@lucide/svelte": "^1.69.0",

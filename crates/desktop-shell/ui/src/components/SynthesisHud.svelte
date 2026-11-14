@@ -110,7 +110,12 @@
       }));
   });
 
-  const rightOffset = $derived(cockpitState.isInspectorOpen ? 'right-[408px]' : 'right-3');
+  const rightOffset = $derived.by(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return 'right-3';
+    }
+    return cockpitState.isInspectorOpen ? 'right-[408px]' : 'right-3';
+  });
 </script>
 
 <!-- Floating Right-Side Synthesis & Multi-Layer Dock -->
@@ -147,7 +152,7 @@
   </div>
 
   {#if cockpitState.isSynthesisOpen}
-    <div class="w-[340px] max-h-[calc(100vh-110px)] flex flex-col rounded-xl bg-[#0a0d16]/96 backdrop-blur-xl border border-white/15 shadow-2xl text-xs select-none overflow-hidden">
+    <div class="w-[340px] max-w-[calc(100vw-24px)] max-h-[calc(100vh-110px)] flex flex-col rounded-xl bg-[#0a0d16]/96 backdrop-blur-xl border border-white/15 shadow-2xl text-xs select-none overflow-hidden">
       <!-- Header -->
       <div class="px-3.5 py-2.5 bg-[#0f172a]/80 border-b border-white/10 flex items-center justify-between">
         <div>

@@ -268,9 +268,9 @@
       {/if}
 
       <!-- Split View -->
-      <div class="flex-1 flex overflow-hidden min-h-[380px]">
+      <div class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-[380px]">
         <!-- Left List -->
-        <div class="w-80 border-r border-white/10 flex flex-col bg-black/25">
+        <div class="w-full md:w-80 border-b md:border-b-0 md:border-r border-white/10 flex flex-col bg-black/25 shrink-0 max-h-56 md:max-h-none">
           <div class="flex p-2 gap-1 border-b border-white/10 text-[10px] font-mono">
             {#each (['all', 'pending', 'in_progress', 'done'] as const) as st}
               <button

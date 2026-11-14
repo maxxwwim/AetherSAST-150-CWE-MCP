@@ -183,7 +183,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
       <button
         onclick={() => (cockpitState.isHubModalOpen = true)}
         title="Hub Multi-Architectures : Créer Projet (7 Stacks), Changer de Dépôt, Export HTML"
-        class="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md font-mono bg-sky-950/60 hover:bg-sky-900/80 border border-sky-500/35 text-sky-300 max-w-[140px] xl:max-w-[200px] truncate cursor-pointer transition-colors shadow-xs"
+        class="flex items-center gap-1.5 text-[11px] px-2 sm:px-2.5 py-1 rounded-md font-mono bg-sky-950/60 hover:bg-sky-900/80 border border-sky-500/35 text-sky-300 max-w-[90px] sm:max-w-[140px] xl:max-w-[200px] truncate cursor-pointer transition-colors shadow-xs"
       >
         <FolderGit2 class="w-3.5 h-3.5 shrink-0 text-sky-400" />
         <span class="truncate font-semibold">{cockpitState.graph.project_name || 'Projet'}</span>
@@ -237,7 +237,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
     </div>
 
     <!-- Zone 1-B : Omnibox Recherche Globale ("La Totale") -->
-    <div class="relative flex items-center justify-center flex-1 min-w-[200px] max-w-lg mx-2 z-50">
+    <div class="relative flex items-center justify-center flex-1 min-w-[110px] sm:min-w-[180px] max-w-lg mx-1 sm:mx-2 z-50">
       <div class="w-full flex items-center justify-between gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] focus-within:bg-white/[0.08] border border-white/10 focus-within:border-sky-400/60 transition-all shadow-xs group">
         <Search class="w-3.5 h-3.5 shrink-0 text-slate-400 group-focus-within:text-sky-400 transition-colors" />
         <input
@@ -328,7 +328,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
         title="Préférences Cockpit (Affichage, Exclusions, 120+ Règles CWE) (S)"
       >
         <Settings class="w-3.5 h-3.5 text-sky-400" />
-        <span class="hidden xl:inline text-[11px]">Options</span>
+        <span class="hidden sm:inline text-[11px]">Options</span>
       </button>
     </div>
   </div>

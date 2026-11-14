@@ -57,17 +57,30 @@
       return;
     }
 
-    // Zoom in / out shortcuts (+, -, =)
-    if (e.key === '+' || e.key === '=') {
+    // Zoom in / out shortcuts (+, -, =, NumpadAdd, NumpadSubtract, 0)
+    if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') {
       e.preventDefault();
-      const canvas = document.getElementById('aether-canvas');
-      canvas?.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }));
+      if (cockpitState.engine) {
+        cockpitState.engine.zoomIn();
+      } else {
+        const canvas = document.getElementById('aether-canvas');
+        canvas?.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }));
+      }
       return;
     }
-    if (e.key === '-' || e.key === '_') {
+    if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') {
       e.preventDefault();
-      const canvas = document.getElementById('aether-canvas');
-      canvas?.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }));
+      if (cockpitState.engine) {
+        cockpitState.engine.zoomOut();
+      } else {
+        const canvas = document.getElementById('aether-canvas');
+        canvas?.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }));
+      }
+      return;
+    }
+    if (e.key === '0' || e.code === 'Numpad0') {
+      e.preventDefault();
+      cockpitState.engine?.resetZoom();
       return;
     }
 

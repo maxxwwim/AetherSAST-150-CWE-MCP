@@ -60,8 +60,10 @@
 
     // 3. Camera Viewport Box
     const cam = engine.camera;
-    const vw = Math.min(w * 2.2, (window.innerWidth / cam.zoom) * scale);
-    const vh = Math.min(h * 2.2, (window.innerHeight / cam.zoom) * scale);
+    const logW = engine.logicalWidth || (typeof window !== 'undefined' ? window.innerWidth : 800);
+    const logH = engine.logicalHeight || (typeof window !== 'undefined' ? window.innerHeight : 600);
+    const vw = Math.min(w * 2.2, (logW / cam.zoom) * scale);
+    const vh = Math.min(h * 2.2, (logH / cam.zoom) * scale);
     const vx = cx + (cam.x - gCenterX) * scale - vw / 2;
     const vy = cy + (cam.y - gCenterY) * scale - vh / 2;
 
@@ -93,9 +95,16 @@
   }
 
   const rightOffset = $derived.by(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 640) {
+      if (cockpitState.isChatOpen || cockpitState.isInspectorOpen) return 16;
+    }
     if (cockpitState.isChatOpen) return 420;
     if (cockpitState.isInspectorOpen) return 412;
     return 16;
+  });
+
+  const shouldHideOnMobileDrawer = $derived.by(() => {
+    return typeof window !== 'undefined' && window.innerWidth < 640 && (cockpitState.isChatOpen || cockpitState.isInspectorOpen);
   });
 
   onMount(() => {
@@ -115,7 +124,7 @@
   });
 </script>
 
-{#if cockpitState.showRadar}
+{#if cockpitState.showRadar && !shouldHideOnMobileDrawer}
   <div
     style="right: {rightOffset}px;"
     class="absolute bottom-10 w-36 h-36 bg-[#070a12]/85 backdrop-blur-md border border-cyan-500/20 rounded-xl shadow-2xl p-1 z-30 select-none flex flex-col items-center justify-between pointer-events-auto transition-[right] duration-300 ease-in-out"

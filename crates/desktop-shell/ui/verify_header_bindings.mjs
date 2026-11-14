@@ -1,6 +1,16 @@
 import fs from 'fs';
+import path from 'path';
 
-const headerDeckCode = fs.readFileSync('crates/desktop-shell/ui/src/components/HeaderDeck.svelte', 'utf-8');
+function findFile(relPath) {
+  if (fs.existsSync(relPath)) return relPath;
+  const sub = path.join('crates/desktop-shell/ui', relPath);
+  if (fs.existsSync(sub)) return sub;
+  const stripped = relPath.replace(/^crates\/desktop-shell\/ui\//, '');
+  if (fs.existsSync(stripped)) return stripped;
+  return relPath;
+}
+
+const headerDeckCode = fs.readFileSync(findFile('crates/desktop-shell/ui/src/components/HeaderDeck.svelte'), 'utf-8');
 
 console.log('=== HEADERDECK STATIC & EMPIRICAL INSPECTION ===\n');
 
@@ -79,8 +89,8 @@ const bountyMatch = headerDeckCode.includes("cockpitState.isBountyModalOpen = tr
 console.log(`[PASS] Scope / Bounty modal trigger wired: ${bountyMatch}`);
 
 // 10. Check Drawer offsets in DocReaderDrawer and AiChatDrawer
-const docReaderCode = fs.readFileSync('crates/desktop-shell/ui/src/components/DocReaderDrawer.svelte', 'utf-8');
-const aiChatCode = fs.readFileSync('crates/desktop-shell/ui/src/components/AiChatDrawer.svelte', 'utf-8');
+const docReaderCode = fs.readFileSync(findFile('crates/desktop-shell/ui/src/components/DocReaderDrawer.svelte'), 'utf-8');
+const aiChatCode = fs.readFileSync(findFile('crates/desktop-shell/ui/src/components/AiChatDrawer.svelte'), 'utf-8');
 
 const docTopMatch = docReaderCode.includes('top-[80px]');
 const aiTopMatch = aiChatCode.includes('top-[80px]');

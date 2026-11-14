@@ -35,9 +35,21 @@ export class AetherEngine {
   private isDestroyed = false;
 
   // Logical CSS viewport dimensions (independent of devicePixelRatio)
-  private logicalWidth = 800;
-  private logicalHeight = 600;
+  public logicalWidth = 800;
+  public logicalHeight = 600;
   private dpr = 1;
+
+  // Pointer tracking & multi-touch pinch
+  private activePointers = new Map<number, { x: number; y: number }>();
+  private initialPinchDist = 0;
+  private initialPinchZoom = 1;
+  private initialPinchCenter = { x: 0, y: 0 };
+  private initialPinchFocalWorld = { x: 0, y: 0 };
+  private resizeObserver: ResizeObserver | null = null;
+  private dprMediaQuery: MediaQueryList | null = null;
+  private dprListener: (() => void) | null = null;
+  private pointerMoveHandler: ((e: PointerEvent) => void) | null = null;
+  private pointerUpHandler: ((e: PointerEvent) => void) | null = null;
 
   // Camera & viewport
   public camera = {
@@ -340,7 +352,7 @@ export class AetherEngine {
     const spanX = Math.max(400, maxX - minX);
     const spanY = Math.max(400, maxY - minY);
     const fitZoom = Math.max(
-      0.0001,
+      0.04,
       Math.min(1.1, Math.min(this.logicalWidth / (spanX + 240), this.logicalHeight / (spanY + 240)))
     );
 
@@ -446,16 +458,46 @@ export class AetherEngine {
 
   public handleResize() {
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.logicalWidth = this.canvas.clientWidth || window.innerWidth;
-    this.logicalHeight = this.canvas.clientHeight || (window.innerHeight - 44);
+    const rect = this.canvas.getBoundingClientRect();
+    this.logicalWidth = Math.max(1, rect.width || this.canvas.clientWidth || window.innerWidth);
+    this.logicalHeight = Math.max(1, rect.height || this.canvas.clientHeight || (window.innerHeight - 78));
 
-    this.canvas.width = Math.floor(this.logicalWidth * this.dpr);
-    this.canvas.height = Math.floor(this.logicalHeight * this.dpr);
-    this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    const newW = Math.floor(this.logicalWidth * this.dpr);
+    const newH = Math.floor(this.logicalHeight * this.dpr);
 
-    this.lineCanvas.width = Math.floor(this.logicalWidth * this.dpr);
-    this.lineCanvas.height = Math.floor(this.logicalHeight * this.dpr);
-    this.lineCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if (this.canvas.width !== newW || this.canvas.height !== newH) {
+      this.canvas.width = newW;
+      this.canvas.height = newH;
+      this.gl.viewport(0, 0, newW, newH);
+    }
+
+    if (this.lineCanvas.width !== newW || this.lineCanvas.height !== newH) {
+      this.lineCanvas.width = newW;
+      this.lineCanvas.height = newH;
+      this.lineCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    }
+  }
+
+  public zoomAtScreenPoint(factor: number, sx: number, sy: number) {
+    const clampedZoom = Math.max(0.04, Math.min(5.0, this.camera.targetZoom * factor));
+    const focalWorld = this.screenToWorld(sx, sy);
+    this.camera.targetZoom = clampedZoom;
+    this.camera.targetX = focalWorld.x - (sx - this.logicalWidth / 2) / clampedZoom;
+    this.camera.targetY = focalWorld.y - (sy - this.logicalHeight / 2) / clampedZoom;
+    this.physics.wake(60);
+  }
+
+  public zoomIn(factor = 1.25) {
+    this.zoomAtScreenPoint(factor, this.logicalWidth / 2, this.logicalHeight / 2);
+  }
+
+  public zoomOut(factor = 0.8) {
+    this.zoomAtScreenPoint(factor, this.logicalWidth / 2, this.logicalHeight / 2);
+  }
+
+  public resetZoom() {
+    this.camera.targetZoom = 1.0;
+    this.physics.wake(60);
   }
 
   private getCanvasLocalCoords(clientX: number, clientY: number) {
@@ -541,35 +583,67 @@ export class AetherEngine {
   private setupMouseEvents() {
     window.addEventListener('resize', this.resizeHandler);
 
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.handleResize());
+      this.resizeObserver.observe(this.canvas);
+      if (this.canvas.parentElement) {
+        this.resizeObserver.observe(this.canvas.parentElement);
+      }
+    }
+
+    const setupDprListener = () => {
+      if (typeof window === 'undefined' || !window.matchMedia) return;
+      this.dprMediaQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      this.dprListener = () => {
+        this.handleResize();
+        setupDprListener();
+      };
+      this.dprMediaQuery.addEventListener('change', this.dprListener, { once: true });
+    };
+    setupDprListener();
+
     this.canvas.addEventListener('wheel', (e: WheelEvent) => {
       e.preventDefault();
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
-      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-      const newZoom = Math.max(0.00005, Math.min(6.0, this.camera.targetZoom * zoomFactor));
-
-      const mouseWorldBefore = this.screenToWorld(sx, sy);
-      this.camera.targetZoom = newZoom;
-      this.camera.zoom = newZoom;
-
-      const mouseWorldAfter = this.screenToWorld(sx, sy);
-      this.camera.targetX += mouseWorldBefore.x - mouseWorldAfter.x;
-      this.camera.targetY += mouseWorldBefore.y - mouseWorldAfter.y;
-      this.camera.x = this.camera.targetX;
-      this.camera.y = this.camera.targetY;
-
-      this.physics.wake(60);
+      const normalizedDelta = e.deltaMode === 1 ? e.deltaY * 24 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const zoomFactor = Math.exp(-normalizedDelta * 0.0018);
+      this.zoomAtScreenPoint(zoomFactor, sx, sy);
     }, { passive: false });
 
     this.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
-      if (e.button !== 0) return;
+      try {
+        this.canvas.setPointerCapture?.(e.pointerId);
+      } catch {
+        // ignore
+      }
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
-      this.dragStartX = sx;
-      this.dragStartY = sy;
-      this.pointerDownX = sx;
-      this.pointerDownY = sy;
-      this.pointerDownOnCanvas = true;
-      const hit = this.pickNode(sx, sy);
-      this.pointerDownHitId = hit ? hit.id : null;
+      this.activePointers.set(e.pointerId, { x: sx, y: sy });
+
+      if (this.activePointers.size === 1) {
+        if (e.button !== 0 && e.pointerType === 'mouse') return;
+        this.dragStartX = sx;
+        this.dragStartY = sy;
+        this.pointerDownX = sx;
+        this.pointerDownY = sy;
+        this.pointerDownOnCanvas = true;
+        const hit = this.pickNode(sx, sy);
+        this.pointerDownHitId = hit ? hit.id : null;
+      } else if (this.activePointers.size === 2) {
+        if (this.isDraggingNode && this.draggedNodeId) {
+          this.physics.dragEnd();
+        }
+        this.isDragging = false;
+        this.isDraggingNode = false;
+        this.draggedNodeId = null;
+        this.pointerDownOnCanvas = false;
+        this.pointerDownHitId = null;
+
+        const pts = Array.from(this.activePointers.values());
+        this.initialPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        this.initialPinchZoom = this.camera.targetZoom;
+        this.initialPinchCenter = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        this.initialPinchFocalWorld = this.screenToWorld(this.initialPinchCenter.x, this.initialPinchCenter.y);
+      }
     });
 
     this.canvas.addEventListener('dblclick', (e: MouseEvent) => {
@@ -594,8 +668,31 @@ export class AetherEngine {
       }
     });
 
-    window.addEventListener('pointermove', (e: PointerEvent) => {
+    this.pointerMoveHandler = (e: PointerEvent) => {
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
+      if (this.activePointers.has(e.pointerId)) {
+        this.activePointers.set(e.pointerId, { x: sx, y: sy });
+      }
+
+      if (this.activePointers.size >= 2) {
+        const pts = Array.from(this.activePointers.values());
+        const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        const currentCenter = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+
+        if (this.initialPinchDist > 8 && currentDist > 8) {
+          const scale = currentDist / this.initialPinchDist;
+          const newTargetZoom = Math.max(0.04, Math.min(5.0, this.initialPinchZoom * scale));
+          this.camera.targetZoom = newTargetZoom;
+
+          const panDx = (currentCenter.x - this.initialPinchCenter.x) / newTargetZoom;
+          const panDy = (currentCenter.y - this.initialPinchCenter.y) / newTargetZoom;
+
+          this.camera.targetX = this.initialPinchFocalWorld.x - (this.initialPinchCenter.x - this.logicalWidth / 2) / newTargetZoom - panDx;
+          this.camera.targetY = this.initialPinchFocalWorld.y - (this.initialPinchCenter.y - this.logicalHeight / 2) / newTargetZoom - panDy;
+          this.physics.wake(30);
+        }
+        return;
+      }
 
       if (this.pointerDownOnCanvas && !this.isDraggingNode && !this.isDragging) {
         if (Math.hypot(sx - this.pointerDownX, sy - this.pointerDownY) >= 6) {
@@ -645,7 +742,8 @@ export class AetherEngine {
           this.refreshVisionColors(true);
         }
       }
-    });
+    };
+    window.addEventListener('pointermove', this.pointerMoveHandler);
 
     this.canvas.addEventListener('pointerleave', () => {
       if (this.hoveredNodeId !== null || this.state.hoveredSymbol !== null) {
@@ -655,7 +753,28 @@ export class AetherEngine {
       }
     });
 
-    window.addEventListener('pointerup', (e: PointerEvent) => {
+    this.pointerUpHandler = (e: PointerEvent) => {
+      try {
+        if (this.canvas.hasPointerCapture?.(e.pointerId)) {
+          this.canvas.releasePointerCapture?.(e.pointerId);
+        }
+      } catch {
+        // ignore
+      }
+      this.activePointers.delete(e.pointerId);
+
+      if (this.activePointers.size === 1) {
+        const remaining = Array.from(this.activePointers.values())[0];
+        this.dragStartX = remaining.x;
+        this.dragStartY = remaining.y;
+        this.pointerDownX = remaining.x;
+        this.pointerDownY = remaining.y;
+        this.isDragging = false;
+        this.pointerDownOnCanvas = false;
+      } else if (this.activePointers.size === 0) {
+        this.initialPinchDist = 0;
+      }
+
       if (!this.pointerDownOnCanvas && !this.isDraggingNode && !this.isDragging) return;
       const { sx, sy } = this.getCanvasLocalCoords(e.clientX, e.clientY);
       const wasDownOnCanvas = this.pointerDownOnCanvas;
@@ -698,7 +817,10 @@ export class AetherEngine {
           this.refreshVisionColors(true);
         }
       }
-    });
+    };
+
+    window.addEventListener('pointerup', this.pointerUpHandler);
+    window.addEventListener('pointercancel', this.pointerUpHandler);
   }
 
   private findFolderAt(sx: number, sy: number): string | null {
@@ -781,7 +903,7 @@ export class AetherEngine {
   }
 
   private updateCamera(dt: number) {
-    const factor = Math.min(1.0, (dt / 1000) * 10.0);
+    const factor = 1 - Math.exp(-14.0 * (dt / 1000));
     this.camera.x += (this.camera.targetX - this.camera.x) * factor;
     this.camera.y += (this.camera.targetY - this.camera.y) * factor;
     this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * factor;
@@ -2128,6 +2250,24 @@ export class AetherEngine {
       this.state.engine = null;
     }
     window.removeEventListener('resize', this.resizeHandler);
+    if (this.pointerMoveHandler) {
+      window.removeEventListener('pointermove', this.pointerMoveHandler);
+      this.pointerMoveHandler = null;
+    }
+    if (this.pointerUpHandler) {
+      window.removeEventListener('pointerup', this.pointerUpHandler);
+      window.removeEventListener('pointercancel', this.pointerUpHandler);
+      this.pointerUpHandler = null;
+    }
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+    if (this.dprMediaQuery && this.dprListener) {
+      this.dprMediaQuery.removeEventListener('change', this.dprListener);
+      this.dprMediaQuery = null;
+      this.dprListener = null;
+    }
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
     }

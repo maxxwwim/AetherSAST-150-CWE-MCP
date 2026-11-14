@@ -273,7 +273,7 @@
     const targetLine = symbol?.line_number || 1;
 
     if (fullCodeView || allLines.length <= 110) {
-      return allLines.map((text, idx) => ({
+      return allLines.map((text: string, idx: number) => ({
         lineNum: idx + 1,
         text,
         isTarget: idx + 1 === targetLine,
@@ -282,7 +282,7 @@
 
     const start = Math.max(0, targetLine - 25);
     const end = Math.min(allLines.length, targetLine + 75);
-    return allLines.slice(start, end).map((text, idx) => ({
+    return allLines.slice(start, end).map((text: string, idx: number) => ({
       lineNum: start + idx + 1,
       text,
       isTarget: start + idx + 1 === targetLine,
@@ -290,7 +290,7 @@
   });
 
   function copyCodeSnippet() {
-    const code = displayedCodeLines.map((l) => l.text).join('\n');
+    const code = displayedCodeLines.map((l: { text: string }) => l.text).join('\n');
     navigator.clipboard?.writeText(code);
     copiedSnippet = true;
     setTimeout(() => (copiedSnippet = false), 1500);
@@ -645,9 +645,9 @@
           targetIds.add(n.id);
         }
       }
-      if (targetIds.size === 0 && symbol) {
-        targetIds.add(symbol.id);
-        scopeLabel = symbol.name;
+      if (targetIds.size === 0 && cockpitState.activeSymbol) {
+        targetIds.add(cockpitState.activeSymbol.id);
+        scopeLabel = cockpitState.activeSymbol.name;
       }
     }
 
@@ -724,7 +724,7 @@
 
 {#if cockpitState.isDocPanelOpen}
   <aside
-    class="fixed left-3 top-[76px] bottom-6 {wideMode ? 'w-[740px]' : 'w-[520px]'} max-w-[95vw] bg-[#070b14]/96 backdrop-blur-2xl border border-emerald-500/35 rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.92)] z-40 flex flex-col overflow-hidden transition-all duration-200"
+    class="fixed left-0 sm:left-3 top-[76px] bottom-0 sm:bottom-6 w-full {wideMode ? 'sm:w-[740px]' : 'sm:w-[520px]'} max-w-full sm:max-w-[95vw] bg-[#070b14]/96 backdrop-blur-2xl border border-emerald-500/35 rounded-none sm:rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.92)] z-40 flex flex-col overflow-hidden transition-all duration-200"
   >
     <!-- Top Header Bar -->
     <div class="px-3.5 py-2.5 bg-gradient-to-r from-[#0c1426] via-[#09101d] to-[#0b1322] border-b border-white/10 flex items-center justify-between gap-2 shrink-0">

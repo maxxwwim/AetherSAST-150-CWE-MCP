@@ -498,6 +498,9 @@ export class CockpitState {
   }
 
   openDoc(mode?: 'library' | 'folder' | 'symbol' | 'system', filePath?: string) {
+    if (typeof window !== 'undefined' && window.innerWidth < 940) {
+      this.isInspectorOpen = false;
+    }
     if (filePath) {
       this.docSelectedPath = filePath;
     }
@@ -991,6 +994,9 @@ export class CockpitState {
       this.activeSymbol = found;
       this.selectedFolder = found.folder || found.cluster_id || null;
       this.isInspectorOpen = true;
+      if (typeof window !== 'undefined' && window.innerWidth < 940) {
+        this.isDocPanelOpen = false;
+      }
       if (this.docMode !== 'system') {
         this.docMode = 'symbol';
       }
@@ -1007,8 +1013,16 @@ export class CockpitState {
     if (openDoc) {
       this.docMode = 'folder';
       this.isDocPanelOpen = true;
-    } else if (this.docMode !== 'system') {
-      this.docMode = 'folder';
+      if (typeof window !== 'undefined' && window.innerWidth < 940) {
+        this.isInspectorOpen = false;
+      }
+    } else {
+      if (typeof window !== 'undefined' && window.innerWidth < 940) {
+        this.isDocPanelOpen = false;
+      }
+      if (this.docMode !== 'system') {
+        this.docMode = 'folder';
+      }
     }
   }
 
@@ -1019,11 +1033,17 @@ export class CockpitState {
 
   toggleInspector() {
     this.isInspectorOpen = !this.isInspectorOpen;
+    if (this.isInspectorOpen && typeof window !== 'undefined' && window.innerWidth < 940) {
+      this.isDocPanelOpen = false;
+    }
   }
 
   toggleDocPanel() {
     if (!this.isDocPanelOpen) {
       this.docMode = this.activeSymbol ? 'symbol' : this.selectedFolder ? 'folder' : 'library';
+      if (typeof window !== 'undefined' && window.innerWidth < 940) {
+        this.isInspectorOpen = false;
+      }
     }
     this.isDocPanelOpen = !this.isDocPanelOpen;
   }
