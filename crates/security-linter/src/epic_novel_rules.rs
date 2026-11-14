@@ -547,6 +547,27 @@ impl EpicNovelRules {
         let Some(end) = Self::find_scope_end(lines, struct_idx) else {
             return false;
         };
+        if end <= struct_idx {
+            let head = lines[struct_idx];
+            if let (Some(open), Some(close)) = (head.find('{'), head.rfind('}')) {
+                if close > open + 1 {
+                    for f in head[open + 1..close].split(',') {
+                        let f = f.trim();
+                        if f.is_empty() || f.starts_with('#') || f.starts_with("//") {
+                            continue;
+                        }
+                        if let Some((lhs, _)) = f.split_once(':') {
+                            let lhs = lhs.trim();
+                            let is_ident = !lhs.is_empty() && lhs.bytes().all(is_ident_byte);
+                            if is_ident && !f.starts_with("pub ") && !f.starts_with("pub(") {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }
         for l in &lines[struct_idx + 1..end] {
             let f = l.trim();
             if f.is_empty() || f.starts_with('#') || f.starts_with("//") || f.starts_with("/*") || f.starts_with('*') {
