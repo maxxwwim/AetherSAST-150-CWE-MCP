@@ -13,6 +13,7 @@
 </p>
 
 [![Release](https://img.shields.io/badge/Release-v2.4.0_Svelte_5_%26_Live_BLAKE3-f97316?style=for-the-badge&logo=github)](./CHANGELOG.md)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
 [![M8ven Score](https://m8ven.ai/badge/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7)](https://m8ven.ai/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?s=readme)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![SAST Linter](https://img.shields.io/badge/SAST-215_Active_Rules-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
