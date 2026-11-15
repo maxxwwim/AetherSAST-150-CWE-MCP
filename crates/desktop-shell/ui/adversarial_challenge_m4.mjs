@@ -688,6 +688,96 @@ async function runAdversarialStress() {
     const xssMd = generateAuditMarkdown(xssCockpit);
     assert(typeof xssMd === 'string' && xssMd.length > 0, 'Adversarial XSS Markdown generated cleanly without breaking');
 
+    // ========================================================================
+    // SUITE 6: Line Count Budget Exceeded vs CWE Security Isolation
+    // ========================================================================
+    console.log('\n--- Suite 6: Line Count Budget Exceeded vs CWE Security Isolation ---');
+    const { isLinesExceededAnomaly, getNodeAlertKind } = await viteServer.ssrLoadModule('./src/state/graphState.svelte.ts');
+    const { CONTRACT_WARNING_COLOR, SEVERITY_COLORS } = await viteServer.ssrLoadModule('./src/engine/palette.ts');
+
+    // 6.1 isLinesExceededAnomaly Classification
+    assert(isLinesExceededAnomaly({ rule_id: 'RULE_MAX_LINES' }) === true, 'RULE_MAX_LINES is recognized as lines exceeded');
+    assert(isLinesExceededAnomaly({ cve_id: 'CONTRACT / ARCH-BUDGET-EXCEEDED' }) === true, 'CONTRACT / ARCH-BUDGET-EXCEEDED is recognized as lines exceeded');
+    assert(isLinesExceededAnomaly({ cwe_class: 'CONTRACT_BUDGET' }) === true, 'CONTRACT_BUDGET is recognized as lines exceeded');
+    assert(isLinesExceededAnomaly({ message: 'File exceeds contract maximum line limit (1200 > 300 lines)' }) === true, 'Contract maximum line limit message is recognized as lines exceeded');
+    assert(isLinesExceededAnomaly({ cve_id: 'CWE-89', rule_id: 'SQL-INJECTION' }) === false, 'CWE-89 SQL Injection is NOT lines exceeded');
+    assert(isLinesExceededAnomaly({ cve_id: 'CWE-78', rule_id: 'COMMAND-INJECTION' }) === false, 'CWE-78 Command Injection is NOT lines exceeded');
+
+    // 6.2 getNodeAlertKind Isolation
+    const pureLinesNode = {
+      id: 'file::PrestaShop/Product.php',
+      name: 'Product.php',
+      loc: 1500,
+      metadata: { max_lines_limit: 300 },
+      has_security_violation: true, // Inadvertently set or stale
+      anomalies: [
+        {
+          rule_id: 'RULE_MAX_LINES',
+          cve_id: 'CONTRACT / ARCH-BUDGET-EXCEEDED',
+          severity: 'WARNING',
+          message: 'File exceeds contract maximum line limit (1500 > 300 lines)'
+        }
+      ]
+    };
+    assert(getNodeAlertKind(pureLinesNode) === 'lines_exceeded', 'Node with only RULE_MAX_LINES must be "lines_exceeded" and NEVER "security"');
+
+    const realCweNode = {
+      id: 'file::PrestaShop/AuthController.php',
+      name: 'AuthController.php',
+      loc: 150,
+      metadata: { max_lines_limit: 300 },
+      has_security_violation: true,
+      anomalies: [
+        {
+          rule_id: 'SAST-SQL-INJECTION',
+          cve_id: 'CWE-89',
+          severity: 'CRITICAL',
+          message: 'Unsanitized input passed to DB query'
+        }
+      ]
+    };
+    assert(getNodeAlertKind(realCweNode) === 'security', 'Node with CWE-89 must be "security"');
+
+    const mixedNode = {
+      id: 'file::PrestaShop/Order.php',
+      name: 'Order.php',
+      loc: 1200,
+      metadata: { max_lines_limit: 300 },
+      has_security_violation: true,
+      anomalies: [
+        {
+          rule_id: 'RULE_MAX_LINES',
+          cve_id: 'CONTRACT / ARCH-BUDGET-EXCEEDED',
+          severity: 'WARNING'
+        },
+        {
+          rule_id: 'SAST-RCE',
+          cve_id: 'CWE-78',
+          severity: 'CRITICAL'
+        }
+      ]
+    };
+    assert(getNodeAlertKind(mixedNode) === 'security', 'Node with both lines excess and real CWE must be "security"');
+
+    const cleanNode = {
+      id: 'file::PrestaShop/Tools.php',
+      name: 'Tools.php',
+      loc: 250,
+      metadata: { max_lines_limit: 300 },
+      has_security_violation: false,
+      anomalies: []
+    };
+    assert(getNodeAlertKind(cleanNode) === 'none', 'Clean node within limits must be "none"');
+
+    // 6.3 Palette Contract Color vs Critical Security Red
+    assert(CONTRACT_WARNING_COLOR.r > 0.9 && CONTRACT_WARNING_COLOR.g > 0.6 && CONTRACT_WARNING_COLOR.b < 0.3, 'CONTRACT_WARNING_COLOR is warm amber/gold (#fbbf24)');
+    assert(
+      CONTRACT_WARNING_COLOR.r !== SEVERITY_COLORS.CRITICAL.r ||
+      CONTRACT_WARNING_COLOR.g !== SEVERITY_COLORS.CRITICAL.g ||
+      CONTRACT_WARNING_COLOR.b !== SEVERITY_COLORS.CRITICAL.b,
+      'CONTRACT_WARNING_COLOR strictly differs from SEVERITY_COLORS.CRITICAL'
+    );
+
     console.log('\n================================================================');
     console.log(`🏁 EMPIRICAL CHALLENGE SUITE COMPLETE: ${passedAssertions}/${totalAssertions} PASSED`);
     if (failures.length > 0) {

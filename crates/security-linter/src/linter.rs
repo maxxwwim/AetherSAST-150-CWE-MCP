@@ -734,7 +734,7 @@ impl SecurityLinter {
             },
             CveRuleDef {
                 rule_id: "RULE_MAX_LINES".to_string(),
-                cve_id: "CWE-1075 / ARCH-BUDGET-EXCEEDED".to_string(),
+                cve_id: "CONTRACT / ARCH-BUDGET-EXCEEDED".to_string(),
                 name: "Dépassement de Budget de Lignes de Fichier".to_string(),
                 category: "Architecture / Boundary".to_string(),
                 severity: "WARNING".to_string(),
@@ -1328,7 +1328,7 @@ impl SecurityLinter {
                         file_path: file_path.to_string(),
                         line_number: lines.len(),
                         rule_id: "RULE_MAX_LINES".to_string(),
-                        cve_id: "CWE-1075 / ARCH-BUDGET-EXCEEDED".to_string(),
+                        cve_id: "CONTRACT / ARCH-BUDGET-EXCEEDED".to_string(),
                         severity: "WARNING".to_string(),
                         message: format!(
                             "File exceeds contract maximum line limit ({} > {} lines)",

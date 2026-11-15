@@ -2362,7 +2362,16 @@ pub fn parse_git_status_porcelain(
         for node in nodes_by_path.get(file_path.as_str()).map(|v| v.as_slice()).unwrap_or(&[]) {
             {
                 if node.has_security_violation {
-                    has_sec = true;
+                    let only_lines = !node.metadata.cve_anomalies.is_empty()
+                        && node.metadata.cve_anomalies.iter().all(|a| {
+                            a.rule_id == "RULE_MAX_LINES"
+                                || a.cve_id.contains("ARCH-BUDGET-EXCEEDED")
+                                || a.cve_id.contains("CONTRACT")
+                                || a.severity == "WARNING"
+                        });
+                    if !only_lines {
+                        has_sec = true;
+                    }
                 }
                 cwe_count += node
                     .metadata
@@ -2371,6 +2380,7 @@ pub fn parse_git_status_porcelain(
                     .filter(|a| {
                         a.rule_id != "RULE_MAX_LINES"
                             && !a.cve_id.contains("ARCH-BUDGET-EXCEEDED")
+                            && !a.cve_id.contains("CONTRACT")
                             && a.severity != "WARNING"
                     })
                     .count();
@@ -2391,7 +2401,7 @@ pub fn parse_git_status_porcelain(
                     }
                 }
                 for v in &node.metadata.violations {
-                    if v.contains("RULE_MAX_LINES") || v.contains("ARCH-BUDGET-EXCEEDED") {
+                    if v.contains("RULE_MAX_LINES") || v.contains("ARCH-BUDGET-EXCEEDED") || v.contains("CONTRACT") {
                         continue;
                     }
                     if v.contains("RULE_FORBIDDEN_IMPORT")

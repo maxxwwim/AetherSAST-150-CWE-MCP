@@ -93,7 +93,7 @@
 
 {#if node}
   <div
-    class="fixed z-50 w-[336px] pointer-events-none rounded-xl bg-[#090d16]/95 backdrop-blur-xl border shadow-[0_14px_40px_rgba(0,0,0,0.85)] p-3 space-y-2 text-xs transition-transform duration-75 {hasSec ? 'border-rose-500/70' : hasLinesWarn ? 'border-orange-500/70' : 'border-sky-500/40'}"
+    class="fixed z-50 w-[336px] pointer-events-none rounded-xl bg-[#090d16]/95 backdrop-blur-xl border shadow-[0_14px_40px_rgba(0,0,0,0.85)] p-3 space-y-2 text-xs transition-transform duration-75 {hasSec ? 'border-rose-500/70' : hasLinesWarn ? 'border-amber-500/70' : 'border-sky-500/40'}"
     style={stylePos}
   >
     <div class="flex items-start justify-between gap-2">
@@ -113,7 +113,7 @@
         </div>
       </div>
       <div class="text-right font-mono text-[10px] text-slate-400 shrink-0">
-        <div class={hasLinesWarn ? 'text-orange-400 font-bold' : ''}>
+        <div class={hasLinesWarn ? 'text-amber-400 font-bold' : ''}>
           {node.loc || 1}{node.metadata?.max_lines_limit ? ` / ${node.metadata.max_lines_limit}` : ''} LOC
         </div>
         <div class={(node.cyclomatic_complexity || 1) >= 10 ? 'text-amber-300 font-bold' : ''}>
@@ -190,17 +190,17 @@
         </p>
       </div>
     {:else if hasLinesWarn}
-      <div class="p-2 rounded-lg bg-orange-950/75 border border-orange-500/60 space-y-1">
+      <div class="p-2 rounded-lg bg-amber-950/75 border border-amber-500/60 space-y-1">
         <div class="flex items-center justify-between gap-1.5">
-          <span class="flex items-center gap-1 text-[10px] font-bold text-orange-200">
-            <ShieldAlert class="w-3.5 h-3.5 text-orange-400" />
-            ⚠️ BUDGET LIGNES DÉPASSÉ
+          <span class="flex items-center gap-1 text-[10px] font-bold text-amber-200">
+            <ShieldAlert class="w-3.5 h-3.5 text-amber-400" />
+            ⚠️ DÉPASSEMENT CONTRAT LIGNES
           </span>
-          <span class="px-1.5 py-0.5 rounded bg-orange-500/30 text-orange-200 font-mono text-[9.5px] font-bold">
+          <span class="px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-200 font-mono text-[9.5px] font-bold">
             {node.loc || 0} / {node.metadata?.max_lines_limit || 300} L
           </span>
         </div>
-        <p class="text-[10.5px] text-orange-100/95 leading-snug line-clamp-2">
+        <p class="text-[10.5px] text-amber-100/95 leading-snug line-clamp-2">
           {primaryAnomaly?.description || primaryAnomaly?.message || 'Ce fichier dépasse la limite de lignes du contrat BLAKE3 — modifiable depuis l’Inspecteur.'}
         </p>
       </div>

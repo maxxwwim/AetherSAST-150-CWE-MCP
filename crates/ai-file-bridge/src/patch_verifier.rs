@@ -134,7 +134,7 @@ impl PatchVerifier {
                         &clean_rel,
                         line_count,
                         "RULE_MAX_LINES",
-                        "CWE-1075 / ARCH-BUDGET-EXCEEDED",
+                        "CONTRACT / ARCH-BUDGET-EXCEEDED",
                         "WARNING",
                         format!("File exceeds contract maximum line limit ({} > {} lines)", line_count, limit),
                         Some("file_line_count"),

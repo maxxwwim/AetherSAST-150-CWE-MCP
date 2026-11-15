@@ -10,7 +10,7 @@ import {
   type BackdropPipeline
 } from './shaders';
 import { PhysicsController, type FolderClusterEntry } from './physics';
-import { getLayerRgba, getFolderColor, formatFolderLabel, SEVERITY_COLORS, type RgbaColor } from './palette';
+import { getLayerRgba, getFolderColor, formatFolderLabel, SEVERITY_COLORS, CONTRACT_WARNING_COLOR, type RgbaColor } from './palette';
 import { normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly, type CockpitState } from '../state/graphState.svelte';
 import { playSpatialTone } from '../lib/sound';
 import type { SymbolBubble } from '../types/graph';
@@ -476,7 +476,7 @@ export class AetherEngine {
           col = SEVERITY_COLORS.CRITICAL;
           r *= 1.3;
         } else if (isLinesAlert && mode === 'standard') {
-          col = SEVERITY_COLORS.HIGH;
+          col = CONTRACT_WARNING_COLOR;
           r *= 1.18;
         }
       }
@@ -1252,7 +1252,7 @@ export class AetherEngine {
       const p = this.worldToScreen(n.x, n.y);
       if (p.x < -50 || p.x > this.logicalWidth + 50 || p.y < -50 || p.y > this.logicalHeight + 50) continue;
 
-      // Calm, slow breathing aura (crimson for security, orange for exceeded lines)
+      // Calm, slow breathing aura (crimson for security, amber for contract lines warning)
       const gentleBreath = 0.5 + 0.5 * Math.sin(now * 0.0014 + i * 0.45);
       const baseR = n.is_file || n.is_class ? 16 : 11;
       const ringR = Math.max(11, baseR * Math.sqrt(Math.max(0.25, zoom)) + gentleBreath * 2.0);
@@ -1261,7 +1261,7 @@ export class AetherEngine {
       ctx.beginPath();
       ctx.arc(p.x, p.y, ringR + 4, 0, Math.PI * 2);
       ctx.fillStyle = isLinesWarn
-        ? `rgba(249, 115, 22, ${(0.07 + gentleBreath * 0.05).toFixed(3)})`
+        ? `rgba(245, 158, 11, ${(0.07 + gentleBreath * 0.05).toFixed(3)})`
         : `rgba(239, 68, 68, ${(0.06 + gentleBreath * 0.05).toFixed(3)})`;
       ctx.fill();
 
@@ -1269,7 +1269,7 @@ export class AetherEngine {
       ctx.beginPath();
       ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
       ctx.strokeStyle = isLinesWarn
-        ? `rgba(251, 146, 60, ${(0.62 + gentleBreath * 0.24).toFixed(2)})`
+        ? `rgba(251, 191, 36, ${(0.62 + gentleBreath * 0.24).toFixed(2)})`
         : `rgba(248, 113, 113, ${(0.52 + gentleBreath * 0.24).toFixed(2)})`;
       ctx.lineWidth = 1.35;
       ctx.stroke();
@@ -1281,7 +1281,7 @@ export class AetherEngine {
         if (isLinesWarn) {
           const maxLim = n.metadata?.max_lines_limit || 300;
           const curLoc = n.loc || n.metadata?.lines || 0;
-          shortTag = curLoc > 0 ? `⚠️ ${curLoc}/${maxLim} L` : '⚠️ LIGNES MAX';
+          shortTag = curLoc > 0 ? `⚠️ ${curLoc}/${maxLim} L` : '⚠️ CONTRAT LIGNES';
         } else {
           const primary = anom.find((a) => !isLinesExceededAnomaly(a)) || anom[0];
           const tagText = primary ? `🚨 ${primary.cve_id || primary.rule_id || 'CWE'}` : '🚨 SAST CWE';
@@ -1292,15 +1292,15 @@ export class AetherEngine {
         const bx = p.x - tw * 0.5;
         const by = p.y - fixedOffset - 16;
 
-        ctx.fillStyle = isLinesWarn ? 'rgba(124, 45, 18, 0.92)' : 'rgba(127, 29, 29, 0.90)';
-        ctx.strokeStyle = isLinesWarn ? 'rgba(251, 146, 60, 0.88)' : 'rgba(248, 113, 113, 0.85)';
+        ctx.fillStyle = isLinesWarn ? 'rgba(120, 53, 15, 0.92)' : 'rgba(127, 29, 29, 0.90)';
+        ctx.strokeStyle = isLinesWarn ? 'rgba(245, 158, 11, 0.88)' : 'rgba(248, 113, 113, 0.85)';
         ctx.lineWidth = 1.0;
         ctx.beginPath();
         ctx.roundRect(bx, by, tw, 15, 4);
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = isLinesWarn ? '#fed7aa' : '#fecaca';
+        ctx.fillStyle = isLinesWarn ? '#fde68a' : '#fecaca';
         ctx.textAlign = 'center';
         ctx.fillText(shortTag, p.x, by + 7.5);
       }

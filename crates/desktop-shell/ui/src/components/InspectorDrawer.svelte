@@ -182,8 +182,8 @@
 
   const hasSecurityAlert = $derived(
     securityAnomalies.length > 0 ||
-      Boolean(symbol?.has_security_violation) ||
-      (Boolean(symbol?.is_file) && siblingSymbols.some((s) => s.has_security_violation))
+      (Boolean(symbol?.has_security_violation) && linesAnomalies.length === 0 && getNodeAlertKind(symbol) === 'security') ||
+      (Boolean(symbol?.is_file) && siblingSymbols.some((s) => s.has_security_violation && getNodeAlertKind(s) === 'security'))
   );
 
   const hasLinesAlert = $derived(
@@ -695,20 +695,20 @@
             </div>
           {/if}
 
-          <!-- Orange Exceeded Lines Warning Box -->
+          <!-- Amber Exceeded Lines Warning Box (Contrat Architectural) -->
           {#if hasLinesAlert}
-            <div class="p-2.5 rounded-xl bg-orange-950/60 border border-orange-500/60 space-y-1.5 shadow-lg">
+            <div class="p-2.5 rounded-xl bg-amber-950/60 border border-amber-500/60 space-y-1.5 shadow-lg">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[11px] font-extrabold text-orange-200 flex items-center gap-1.5">
-                  <ShieldAlert class="w-4 h-4 text-orange-400" />
-                  ⚠️ BUDGET LIGNES DÉPASSÉ ({symbol.loc || 0} / {effectiveContractMaxLines} L)
+                <span class="text-[11px] font-extrabold text-amber-200 flex items-center gap-1.5">
+                  <ShieldAlert class="w-4 h-4 text-amber-400" />
+                  ⚠️ DÉPASSEMENT CONTRAT LIGNES ({symbol.loc || 0} / {effectiveContractMaxLines} L)
                 </span>
-                <span class="px-1.5 py-0.5 rounded bg-orange-500/25 text-orange-200 font-mono text-[9.5px] font-bold">
-                  RULE_MAX_LINES
+                <span class="px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-200 font-mono text-[9.5px] font-bold">
+                  CONTRAT ARCHITECTURAL
                 </span>
               </div>
-              <p class="text-[11px] text-orange-100/90 leading-snug">
-                Ce fichier dépasse la limite de lignes du contrat BLAKE3 ({effectiveContractMaxLines} lignes). Ajustez le contrat du fichier ou du dossier ci-dessous.
+              <p class="text-[11px] text-amber-100/90 leading-snug">
+                Ce fichier dépasse la limite contractuelle de lignes ({effectiveContractMaxLines} lignes). C'est un avertissement de budget d'architecture et non une alerte CWE. Ajustez le seuil du contrat ou découpez le fichier.
               </p>
             </div>
           {/if}
@@ -1025,7 +1025,7 @@
                   onclick={() => jumpToSymbol(item.id)}
                   class="w-full flex items-center justify-between px-2.5 py-1.5 rounded bg-white/[0.03] hover:bg-sky-500/15 border border-white/5 hover:border-sky-500/35 text-left cursor-pointer"
                 >
-                  <span class="truncate font-mono text-[11px] {itemKind === 'security' ? 'text-rose-200' : itemKind === 'lines_exceeded' ? 'text-orange-300' : 'text-slate-200'}">
+                  <span class="truncate font-mono text-[11px] {itemKind === 'security' ? 'text-rose-200' : itemKind === 'lines_exceeded' ? 'text-amber-300' : 'text-slate-200'}">
                     {itemKind === 'security' ? '🚨' : itemKind === 'lines_exceeded' ? '⚠️' : item.is_file ? '📄' : item.is_class ? '🏛️' : '⚡'} {item.name}
                   </span>
                   <span class="text-[10px] text-slate-400 shrink-0 ml-2">{item.loc || 0} L • {item.layer}</span>

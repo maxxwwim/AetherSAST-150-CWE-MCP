@@ -2223,7 +2223,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 true
                             });
                             if node.metadata.cve_anomalies.is_empty()
-                                || node.metadata.cve_anomalies.iter().all(|a| a.rule_id == "RULE_MAX_LINES" || a.severity == "WARNING" || a.cve_id.contains("ARCH-BUDGET-EXCEEDED"))
+                                || node.metadata.cve_anomalies.iter().all(|a| a.rule_id == "RULE_MAX_LINES" || a.severity == "WARNING" || a.cve_id.contains("ARCH-BUDGET-EXCEEDED") || a.cve_id.contains("CONTRACT"))
                             {
                                 node.has_security_violation = false;
                             }

@@ -7,48 +7,85 @@ export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): bo
   if (!a) return false;
   const rule = String(a.rule_id || '').toUpperCase();
   const cve = String(a.cve_id || a.cwe_class || '').toUpperCase();
-  const msg = String(a.message || a.description || '').toUpperCase();
+  const msg = String(a.message || a.description || a.title || '').toUpperCase();
   const sev = String(a.severity || '').toUpperCase();
   return (
     rule === 'RULE_MAX_LINES' ||
-    cve.includes('ARCH-BUDGET-EXCEEDED') ||
+    rule.includes('MAX_LINES') ||
+    rule.includes('LINE_LIMIT') ||
+    rule.includes('LINE_BUDGET') ||
+    cve.includes('ARCH-BUDGET') ||
+    cve.includes('CONTRACT-BUDGET') ||
+    cve.includes('CONTRACT / ARCH-BUDGET') ||
     cve.includes('CWE-1075') ||
+    cve === 'CONTRACT_BUDGET' ||
     msg.includes('RULE_MAX_LINES') ||
     msg.includes('MAXIMUM LINE LIMIT') ||
-    sev === 'WARNING'
+    msg.includes('EXCEEDS CONTRACT MAXIMUM LINE') ||
+    msg.includes('BUDGET DE LIGNES') ||
+    msg.includes('BUDGET LIGNES') ||
+    (sev === 'WARNING' &&
+      (rule.includes('LINE') ||
+        cve.includes('BUDGET') ||
+        cve.includes('CONTRACT') ||
+        msg.includes('LINE') ||
+        msg.includes('BUDGET')))
   );
 }
 
 export function getNodeAlertKind(n?: SymbolBubble | null): 'security' | 'lines_exceeded' | 'none' {
   if (!n) return 'none';
-  if (n.has_security_violation) return 'security';
   const list = [
     ...(n.anomalies || []),
     ...(n.violations || []),
     ...(n.metadata?.cve_anomalies || []),
   ];
+  const strViolations = n.metadata?.violations || [];
+
   let hasLines = false;
+  let hasRealSecurity = false;
+
   for (const a of list) {
     if (isLinesExceededAnomaly(a)) {
       hasLines = true;
     } else {
-      return 'security';
+      hasRealSecurity = true;
+      break;
     }
   }
-  const strViolations = n.metadata?.violations || [];
-  for (const v of strViolations) {
-    const up = String(v || '').toUpperCase();
-    if (up.includes('RULE_MAX_LINES') || up.includes('ARCH-BUDGET-EXCEEDED') || up.includes('MAXIMUM LINE LIMIT')) {
-      hasLines = true;
-    } else {
-      return 'security';
+
+  if (!hasRealSecurity) {
+    for (const v of strViolations) {
+      const up = String(v || '').toUpperCase();
+      if (
+        up.includes('RULE_MAX_LINES') ||
+        up.includes('ARCH-BUDGET-EXCEEDED') ||
+        up.includes('MAXIMUM LINE LIMIT') ||
+        up.includes('BUDGET LIGNES') ||
+        up.includes('EXCEEDS CONTRACT MAXIMUM LINE')
+      ) {
+        hasLines = true;
+      } else {
+        hasRealSecurity = true;
+        break;
+      }
     }
   }
-  if (hasLines) return 'lines_exceeded';
+
+  if (hasRealSecurity) return 'security';
+
   const maxLimit = n.metadata?.max_lines_limit;
-  if (maxLimit && maxLimit > 0 && (n.loc || n.metadata?.lines || 0) > maxLimit) {
-    return 'lines_exceeded';
+  const currentLoc = n.loc || n.metadata?.lines || 0;
+  if (maxLimit && maxLimit > 0 && currentLoc > maxLimit) {
+    hasLines = true;
   }
+
+  if (hasLines) return 'lines_exceeded';
+
+  if (n.has_security_violation) {
+    return 'security';
+  }
+
   return 'none';
 }
 
@@ -1164,22 +1201,28 @@ export class CockpitState {
         rawNode.anomalies && rawNode.anomalies.length > 0 ? rawNode.anomalies : meta.cve_anomalies;
       let anomalies = EMPTY_ANOMALIES;
       if (rawAnomalies && rawAnomalies.length > 0) {
-        anomalies = rawAnomalies.map((a) => ({
-          ...a,
-          cwe_class: a.cwe_class || a.cve_id || a.rule_id || 'CWE',
-          title: a.title || a.rule_id || a.cve_id || 'Security Alert',
-          description: a.description || a.message || '',
-        }));
+        anomalies = rawAnomalies.map((a) => {
+          const isMax = isLinesExceededAnomaly(a);
+          return {
+            ...a,
+            cve_id: isMax ? 'CONTRACT / ARCH-BUDGET-EXCEEDED' : a.cve_id || a.cwe_class || 'CWE',
+            cwe_class: isMax ? 'CONTRACT_BUDGET' : a.cwe_class || a.cve_id || 'CWE',
+            title: isMax ? 'Dépassement Budget Lignes' : a.title || a.rule_id || a.cve_id || 'Security Alert',
+            description: a.description || a.message || '',
+          };
+        });
       } else if (meta.violations && meta.violations.length > 0) {
         anomalies = meta.violations.map((msg) => {
           const isMaxLines =
             msg.includes('RULE_MAX_LINES') ||
             msg.includes('ARCH-BUDGET-EXCEEDED') ||
-            msg.includes('maximum line limit');
+            msg.includes('CONTRACT') ||
+            msg.includes('maximum line limit') ||
+            msg.includes('BUDGET LIGNES');
           return {
             rule_id: isMaxLines ? 'RULE_MAX_LINES' : 'SAST-VIOLATION',
-            cve_id: isMaxLines ? 'CWE-1075 / ARCH-BUDGET-EXCEEDED' : 'CWE-SAST',
-            cwe_class: isMaxLines ? 'CWE-1075 / ARCH-BUDGET-EXCEEDED' : 'CWE-SAST',
+            cve_id: isMaxLines ? 'CONTRACT / ARCH-BUDGET-EXCEEDED' : 'CWE-SAST',
+            cwe_class: isMaxLines ? 'CONTRACT_BUDGET' : 'CWE-SAST',
             severity: isMaxLines ? 'WARNING' : 'HIGH',
             title: isMaxLines ? 'Dépassement Budget Lignes' : 'Violation SAST / Contrat',
             description: msg,
@@ -1197,6 +1240,15 @@ export class CockpitState {
       const loc = rawNode.loc || rawNode.lines_count || meta.lines || 1;
       const cc = rawNode.cyclomatic_complexity || rawNode.complexity || 1;
       const isText = isTextOrDocFile(rawNode.file_path, rawNode.layer, String(rawNode.kind));
+
+      const prelimAlertKind = getNodeAlertKind({
+        ...rawNode,
+        loc,
+        anomalies,
+        metadata: meta,
+      });
+      const isPureLinesWarn = prelimAlertKind === 'lines_exceeded';
+      const effectiveHasSec = isPureLinesWarn ? false : Boolean(rawNode.has_security_violation);
 
       // Heap Optimization: Prune excessive metadata strings on massive graphs (>2500 nodes)
       let docstring = rawNode.docstring || '';
@@ -1235,7 +1287,7 @@ export class CockpitState {
 
         if (locChanged || ccChanged || docChanged || methodsChanged || anomChanged) {
           lastEditTs = nowTs;
-          if (secAnomCount > prevSecAnomCount || Boolean(rawNode.has_security_violation && !prev.has_security_violation)) {
+          if (secAnomCount > prevSecAnomCount || Boolean(effectiveHasSec && !prev.has_security_violation)) {
             editKind = 'violation';
             nodeGitStatus = 'violation';
           } else if (isText || (docChanged && !locChanged && !ccChanged)) {
@@ -1279,7 +1331,8 @@ export class CockpitState {
           return np === fp || np.endsWith(fp) || fp.endsWith(np);
         });
         if (match) {
-          const isViolation = match.has_security_violation || match.ears_violation || Boolean(rawNode.has_security_violation);
+          const isViolation =
+            (match.has_security_violation || match.ears_violation || effectiveHasSec) && !isPureLinesWarn;
           if (isViolation) {
             nodeGitStatus = 'violation';
             editKind = 'violation';
@@ -1306,6 +1359,7 @@ export class CockpitState {
 
       return {
         ...rawNode,
+        has_security_violation: effectiveHasSec,
         docstring,
         x: posX,
         y: posY,
@@ -1432,7 +1486,9 @@ export class CockpitState {
         const isText = isTextOrDocFile(n.file_path, n.layer, String(n.kind));
 
         if (match) {
-          const isViolation = match.has_security_violation || match.ears_violation || Boolean(n.has_security_violation);
+          const isLines = getNodeAlertKind(n) === 'lines_exceeded';
+          const isViolation =
+            (match.has_security_violation || match.ears_violation || Boolean(n.has_security_violation)) && !isLines;
           if (isViolation) {
             n.git_status = 'violation';
             n.edit_kind = 'violation';

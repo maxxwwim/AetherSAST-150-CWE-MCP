@@ -977,20 +977,20 @@
               {/if}
             </div>
 
-            <!-- Orange Alert Banner if Lines Exceeded -->
+            <!-- Amber Alert Banner if Lines Exceeded (Contrat Architectural) -->
             {#if hasLinesAlert}
-              <div class="p-2.5 rounded-xl bg-orange-950/40 border border-orange-500/60 flex flex-col gap-1 shadow-inner">
+              <div class="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/60 flex flex-col gap-1 shadow-inner">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-[11px] font-extrabold text-orange-200 flex items-center gap-1.5">
-                    <ShieldAlert class="w-4 h-4 text-orange-400 shrink-0" />
-                    ⚠️ BUDGET LIGNES DÉPASSÉ ({activeTargetNode?.loc || 0} / {effectiveContractMaxLines} L)
+                  <span class="text-[11px] font-extrabold text-amber-200 flex items-center gap-1.5">
+                    <ShieldAlert class="w-4 h-4 text-amber-400 shrink-0" />
+                    ⚠️ DÉPASSEMENT CONTRAT LIGNES ({activeTargetNode?.loc || 0} / {effectiveContractMaxLines} L)
                   </span>
-                  <span class="px-1.5 py-0.5 rounded bg-orange-500/30 text-orange-200 font-mono text-[9px] font-bold">
-                    RULE_MAX_LINES
+                  <span class="px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-200 font-mono text-[9px] font-bold">
+                    CONTRAT ARCHITECTURAL
                   </span>
                 </div>
-                <p class="text-[10.5px] text-orange-100/90 leading-relaxed">
-                  Ce fichier dépasse la limite contractuelle BLAKE3 ({effectiveContractMaxLines} lignes). Vous pouvez augmenter la limite ou sceller un override ci-dessous.
+                <p class="text-[10.5px] text-amber-100/90 leading-relaxed">
+                  Ce fichier dépasse le budget de lignes du contrat ({effectiveContractMaxLines} lignes). Il s'agit d'un dépassement de contrat d'architecture et non d'une faille de sécurité CWE. Vous pouvez augmenter le budget ou sceller une règle ci-dessous.
                 </p>
               </div>
             {/if}

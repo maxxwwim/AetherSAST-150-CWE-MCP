@@ -27,6 +27,8 @@ export const SEVERITY_COLORS: Record<string, RgbaColor> = {
   LOW: { r: 0.29, g: 0.69, b: 0.31, a: 1.0 }       // #4caf50 Green
 };
 
+export const CONTRACT_WARNING_COLOR: RgbaColor = { r: 0.98, g: 0.72, b: 0.15, a: 1.0 }; // #fbbf24 Warm Amber Gold
+
 export const GIT_STATUS_COLORS = {
   clean: '#64748b',
   modified: '#facc15', // Pulsing yellow/amber

@@ -834,7 +834,7 @@ impl ProjectScanner {
 
                 // Mark file node and closest symbol node in that file (RULE_MAX_LINES is strictly file-level, never attached to a symbol)
                 let is_file_level_rule = v.rule_id == "RULE_MAX_LINES";
-                let is_lines_warning = v.rule_id == "RULE_MAX_LINES" || v.cve_id.contains("ARCH-BUDGET-EXCEEDED") || v.severity == "WARNING";
+                let is_lines_warning = v.rule_id == "RULE_MAX_LINES" || v.cve_id.contains("ARCH-BUDGET-EXCEEDED") || v.cve_id.contains("CONTRACT") || v.severity == "WARNING";
                 let mut best_sym_id: Option<String> = None;
                 let mut best_line = 0usize;
 
