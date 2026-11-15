@@ -1,12 +1,13 @@
 name: Deploy AetherScope WebGL Demo to GitHub Pages
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "crates/desktop-shell/ui/**"
-      - ".github/workflows/deploy-pages.yml"
-  workflow_dispatch:
+  workflow_dispatch: # Déclenchement manuel uniquement (évite les erreurs de billing sur git push)
+  # Pour réactiver le build CI automatique après déblocage de votre facturation GitHub :
+  # push:
+  #   branches: ["main"]
+  #   paths:
+  #     - "crates/desktop-shell/ui/**"
+  #     - ".github/workflows/deploy-pages.yml"
 
 permissions:
   contents: read
