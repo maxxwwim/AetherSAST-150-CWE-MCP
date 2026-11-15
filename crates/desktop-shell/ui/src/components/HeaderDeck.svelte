@@ -392,6 +392,16 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
         <span>Dossiers: <strong>{cockpitState.settings.showFolderTitles ? 'ON' : 'OFF'}</strong></span>
       </button>
 
+      <!-- Toggle Membranes Cellulaires 1-Clic -->
+      <button
+        onclick={() => cockpitState.toggleFolderMembranes()}
+        class="hidden lg:flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer {cockpitState.settings.showFolderMembranes ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300' : 'bg-white/[0.02] border-white/5 text-slate-500 hover:text-slate-300'}"
+        title="Afficher/Masquer les membranes cellulaires des modules (allège l'affichage)"
+      >
+        <FolderTree class="w-3 h-3 text-indigo-400" />
+        <span>Cellules: <strong>{cockpitState.settings.showFolderMembranes ? 'ON' : 'OFF'}</strong></span>
+      </button>
+
       <!-- Masquage Facile : Alertes, Bulles CWE & Titres -->
       <div class="flex items-center bg-white/[0.03] border border-white/10 rounded-md p-0.5 gap-0.5" title="Masquer / Afficher facilement les alertes, bulles CWE et titres">
         <!-- 1-Clic Bascule Alertes -->
@@ -476,6 +486,21 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
                 </div>
                 <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {cockpitState.settings.showFolderTitles ? 'bg-indigo-500/25 text-indigo-300' : 'bg-white/5 text-slate-500'}">
                   {cockpitState.settings.showFolderTitles ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <!-- Bascule Membranes Cellulaires -->
+              <button
+                type="button"
+                onclick={() => cockpitState.toggleFolderMembranes()}
+                class="flex items-center justify-between px-2 py-1.5 rounded hover:bg-white/10 text-slate-200 transition-colors cursor-pointer text-left"
+              >
+                <div class="flex items-center gap-2">
+                  <FolderTree class="w-3.5 h-3.5 text-purple-400" />
+                  <span class="text-[11px]">Membranes Cellules</span>
+                </div>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {cockpitState.settings.showFolderMembranes ? 'bg-purple-500/25 text-purple-300' : 'bg-white/5 text-slate-500'}">
+                  {cockpitState.settings.showFolderMembranes ? 'ON' : 'OFF'}
                 </span>
               </button>
 

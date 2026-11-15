@@ -72,6 +72,18 @@ export function isTextOrDocFile(path?: string, layer?: string, kind?: string): b
   );
 }
 
+/**
+ * Agrège un chemin de dossier en module architectural haut niveau (ex. "src/Core", "classes/order").
+ * Évite d'exploser en milliers de micro-cellules pour chaque sous-sous-dossier dans les gros projets.
+ */
+export function getArchitecturalModule(folderPath?: string): string {
+  if (!folderPath || folderPath === 'root') return 'root';
+  const clean = folderPath.replace(/\\/g, '/').replace(/^\.\//, '').trim();
+  const parts = clean.split('/').filter(Boolean);
+  if (parts.length <= 1) return clean;
+  return parts.slice(0, 2).join('/');
+}
+
 export interface CockpitSettings {
   maxLabelLength: number;
   hideBubbleLabelsOver20: boolean;
@@ -759,6 +771,16 @@ export class CockpitState {
     return this.settings.showFolderTitles;
   }
 
+  toggleFolderMembranes(): boolean {
+    this.settings.showFolderMembranes = !this.settings.showFolderMembranes;
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+    if (this.engine) {
+      this.engine.handleResize();
+    }
+    return this.settings.showFolderMembranes;
+  }
+
   toggleFileTitles(): boolean {
     this.settings.showFileTitles = !this.settings.showFileTitles;
     this.saveLocalSettings();
@@ -1292,7 +1314,7 @@ export class CockpitState {
         edit_kind: editKind,
         last_edit_ts: lastEditTs,
         folder,
-        cluster_id: rawNode.cluster_id || folder,
+        cluster_id: rawNode.cluster_id || getArchitecturalModule(folder),
         loc,
         cyclomatic_complexity: cc,
         is_orphan: Boolean(
@@ -1326,6 +1348,10 @@ export class CockpitState {
       clusters: g?.clusters || {},
     };
     this.syncTelemetryCoordinates();
+    if (normalizedNodes.length > 2500 && !incremental) {
+      this.lodLevel = 1;
+      this.settings.lowMemoryMode = true;
+    }
     if (normalizedNodes.length > 0 && !this.activeSymbol) {
       this.activeSymbol = normalizedNodes[0];
     } else if (this.activeSymbol) {

@@ -101,7 +101,7 @@ export class PhysicsController {
           y: Number(n.y) || 0,
           vx: 0,
           vy: 0,
-          folder: String(n.folder || n.cluster_id || 'root'),
+          folder: String(n.cluster_id || n.folder || 'root'),
           layer: String(n.layer || 'domain'),
           is_file: Boolean(n.is_file || n.kind === 'File'),
           is_class: Boolean(n.is_class || n.kind === 'ClassOrStruct' || n.kind === 'TraitOrInterface' || n.kind === 'Enum'),

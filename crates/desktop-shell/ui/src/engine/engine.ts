@@ -198,29 +198,29 @@ export class AetherEngine {
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
-  private classifyNode(n: SymbolBubble): { shaderType: number; baseRadius: number } {
+  private classifyNode(n: SymbolBubble): { shaderType: number; baseRadius: number; isFunction: boolean; isClass: boolean; isFile: boolean } {
     const kind = String(n.kind || n.symbol_type || '').toLowerCase();
     const isFunc =
       kind === 'function' ||
       kind === 'method' ||
       n.stereotype === '«Function»' ||
       n.stereotype === '«Method»';
-    if (isFunc) return { shaderType: 0.0, baseRadius: 4.6 };
-    if (n.is_file || kind === 'file') return { shaderType: 1.0, baseRadius: 13.0 };
-    if (n.is_class || kind === 'class' || kind === 'struct' || kind === 'interface' || kind === 'trait') {
-      return { shaderType: 2.0, baseRadius: 14.5 };
-    }
-    if (n.is_form || kind === 'endpoint' || n.stereotype === '«Endpoint»' || n.stereotype === '«Form»') {
-      return { shaderType: 3.0, baseRadius: 12.0 };
-    }
-    return { shaderType: 1.0, baseRadius: 9.5 };
+    const isFile = Boolean(n.is_file || kind === 'file' || n.stereotype === '«File»');
+    const isClass = Boolean(n.is_class || kind === 'class' || kind === 'struct' || kind === 'interface' || kind === 'trait' || n.stereotype === '«Class»');
+    const isForm = Boolean(n.is_form || kind === 'endpoint' || n.stereotype === '«Endpoint»' || n.stereotype === '«Form»');
+
+    if (isFunc) return { shaderType: 0.0, baseRadius: 4.6, isFunction: true, isClass: false, isFile: false };
+    if (isFile) return { shaderType: 1.0, baseRadius: 13.0, isFunction: false, isClass: false, isFile: true };
+    if (isClass) return { shaderType: 2.0, baseRadius: 14.5, isFunction: false, isClass: true, isFile: false };
+    if (isForm) return { shaderType: 3.0, baseRadius: 12.0, isFunction: false, isClass: false, isFile: false };
+    return { shaderType: 1.0, baseRadius: 9.5, isFunction: false, isClass: false, isFile: false };
   }
 
   private seedInitialClusters(nodes: SymbolBubble[]) {
     const buckets = new Map<string, SymbolBubble[]>();
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
-      const folder = n.folder || n.cluster_id || 'root';
+      const folder = n.cluster_id || n.folder || 'root';
       let list = buckets.get(folder);
       if (!list) {
         list = [];
@@ -411,17 +411,38 @@ export class AetherEngine {
       }
     }
 
+    const isHugeProject = nodes.length > 2500;
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       const offset = i * 10;
-      const { baseRadius } = this.classifyNode(n);
-      const folder = n.folder || n.cluster_id || 'root';
+      const { baseRadius, isFunction } = this.classifyNode(n);
+      const folder = n.cluster_id || n.folder || 'root';
       let col: RgbaColor = lod <= 2 ? getFolderColor(folder) : getLayerRgba(n.layer);
       let alpha = 1.0;
       let r = baseRadius;
 
+      const isFocus = n.id === activeId || n.id === this.hoveredNodeId;
       if (n.id === activeId) r *= 1.65;
       else if (n.id === this.hoveredNodeId) r *= 1.35;
+
+      const alertKind = getNodeAlertKind(n);
+      const isSecurityAlert = alertKind === 'security';
+      const isLinesAlert = alertKind === 'lines_exceeded';
+
+      // --- LoD BUBBLE FILTERING & SMART COLLAPSE ---
+      // LoD 1 (Architecture Macro): Masque les 25 000+ fonctions/méthodes secondaires pour une vue claire des fichiers/classes/alertes
+      // LoD 2 (Méso): Affiche fichiers, classes, et fonctions à forte complexité (cc >= 5) ou alertées
+      // LoD 3 (Micro): Affiche l'intégralité des symboles AST
+      if (lod === 1 && isFunction && !isSecurityAlert && !isFocus) {
+        r = 0.0;
+        alpha = 0.0;
+      } else if (lod === 2 && isFunction && !isSecurityAlert && !isFocus) {
+        const cc = n.cyclomatic_complexity || 1;
+        if (isHugeProject && cc < 5) {
+          r = 0.0;
+          alpha = 0.0;
+        }
+      }
 
       if (mode === 'heatmap') {
         const cc = n.cyclomatic_complexity || 1;
@@ -446,10 +467,6 @@ export class AetherEngine {
           col = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
         }
       }
-
-      const alertKind = getNodeAlertKind(n);
-      const isSecurityAlert = alertKind === 'security';
-      const isLinesAlert = alertKind === 'lines_exceeded';
 
       if (!this.state.settings.showCweBubbles && isSecurityAlert) {
         alpha = 0.0;
@@ -1771,7 +1788,7 @@ export class AetherEngine {
       const n = nodes[i];
       if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
       if (disabledLayers[n.layer || 'utility']) continue;
-      const folder = n.folder || n.cluster_id || 'root';
+      const folder = n.cluster_id || n.folder || 'root';
       if (disabledModules[folder]) continue;
       let list = grouped.get(folder);
       if (!list) {
@@ -1893,6 +1910,13 @@ export class AetherEngine {
 
     this.clusters.forEach((cl, folder) => {
       if (cl.count <= 0 || this.state.disabledModules[folder]) return;
+      const isSel = folder === this.selectedFolder || folder === this.hoveredFolder;
+      const folderEdit = this.state.folderEdits?.[folder];
+      const isEditedCell = Boolean(folderEdit && folderEdit.count > 0);
+
+      // Skip micro-clusters (less than 3 nodes) on dense views to eliminate cell clutter
+      if (cl.count < 3 && !isSel && !isEditedCell) return;
+
       const center = this.worldToScreen(cl.cx, cl.cy);
       const rawR = (cl.computedRadius || 100) * this.camera.zoom;
       const baseR = Math.max(5.5, rawR);
@@ -1905,6 +1929,7 @@ export class AetherEngine {
       ) {
         return;
       }
+      if (baseR < 14 && !isSel && !isEditedCell) return;
 
       const col = getFolderColor(folder);
       let rR = Math.round(col.r * 255);
@@ -1913,10 +1938,8 @@ export class AetherEngine {
       let lR = Math.min(255, rR + 85);
       let lG = Math.min(255, rG + 85);
       let lB = Math.min(255, rB + 100);
-      const isSel = folder === this.selectedFolder || folder === this.hoveredFolder;
       const folderPhase = (rR * 0.03 + rG * 0.07) % 6.28;
 
-      const folderEdit = this.state.folderEdits?.[folder];
       let editHex: string | undefined;
       if (folderEdit && folderEdit.count > 0) {
         if (folderEdit.kind === 'violation') {
@@ -1942,7 +1965,6 @@ export class AetherEngine {
         }
       }
 
-      const isEditedCell = Boolean(folderEdit && folderEdit.count > 0);
       const cellPulse = isEditedCell ? 0.5 + 0.5 * Math.sin(now * 0.00075 + folderPhase) : 0;
 
       // 1. Living Outer Cytoplasmic Membrane (high-perf flat fill for dense clusters)

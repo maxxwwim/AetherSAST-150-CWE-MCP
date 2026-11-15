@@ -36,7 +36,7 @@ export const vsSource = `#version 300 es
     v_phase = fract(sin(float(gl_InstanceID) * 12.9898 + 78.233) * 43758.5453) * 6.283185;
 
     float dt = u_time - a_birth_time;
-    if (dt <= 0.0) {
+    if (dt <= 0.0 || a_radius <= 0.0001 || a_color.a <= 0.0001) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       v_scale = 0.0;
       v_spawn_progress = 0.0;
