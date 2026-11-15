@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed Svelte 5 Proxy `DataCloneError` in Web Worker physics transfers.
 - Fixed canvas 100vh height collapse during responsive browser window resizing.
 - Restored HiDPI display alignment, auto-fit camera motion, and bubble/folder picking.
+- Fixed settings persistence by writing to `.aether/settings.json` on disk and auto-syncing without requiring AST rescan.
+- Fixed AI agent telemetry jitter by synchronizing movement timestamp clocks (`performance.now()`) and applying continuous exponential smoothing (LERP).
+- Added 1-click visibility toggles for security alerts, CWE bubbles, CWE titles, folder titles, and file titles in HeaderDeck and Settings.
+- Updated standalone web demo (`docs/index.html`) with latest UI bundle and 1,000+ symbol graph.
 
 ### Security
 - Reinforced `LocalGuard` middleware on Axum to prevent DNS rebinding and cross-site request forgery (CSRF).
