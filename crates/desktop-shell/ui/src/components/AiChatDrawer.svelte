@@ -238,45 +238,75 @@
   }
 </script>
 
-<!-- Top Floating Multi-Agent Swarm Telemetry HUD -->
+<!-- Top Floating Multi-Agent Swarm Telemetry HUD (Allégé & Compact) -->
 {#if cockpitState.activeAgents.length > 0}
-  <div class="fixed top-[80px] left-1/2 -translate-x-1/2 z-40 max-w-3xl w-[94vw] sm:w-auto px-3 py-1.5 rounded-2xl bg-[#130d24]/92 backdrop-blur-xl border border-purple-500/45 shadow-xl flex flex-wrap items-center justify-center gap-2 text-[11px]">
+  <div class="fixed top-[76px] left-1/2 -translate-x-1/2 z-40 max-w-2xl w-[94vw] sm:w-auto px-2.5 py-1 rounded-xl bg-[#130d24]/92 backdrop-blur-xl border border-purple-500/40 shadow-lg flex flex-wrap items-center justify-center gap-1.5 text-[10px]">
     <span class="flex items-center gap-1 text-purple-200 font-bold shrink-0">
-      <Bot class="w-3.5 h-3.5 text-purple-400" />
-      {cockpitState.activeAgents.length} Agent{cockpitState.activeAgents.length > 1 ? 's' : ''}
+      <Bot class="w-3 h-3 text-purple-400" />
+      {cockpitState.activeAgents.length} IA
     </span>
-    <div class="flex flex-wrap items-center gap-1.5">
-      {#each cockpitState.activeAgents.slice(0, 6) as ag (ag.agentId)}
+    <div class="flex flex-wrap items-center gap-1">
+      {#each cockpitState.activeAgents.slice(0, 5) as ag (ag.agentId)}
         <button
           type="button"
           onclick={() => focusSymbolByName(ag.target)}
-          class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/45 hover:bg-white/10 border text-[10px] font-mono text-slate-100 cursor-pointer transition-colors"
+          class="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/40 hover:bg-white/10 border text-[9.5px] font-mono text-slate-200 cursor-pointer transition-colors"
           style="border-color: {ag.color}"
           title="{ag.agentName} • {ag.action}: {ag.details}"
         >
-          <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {ag.color}"></span>
+          <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color: {ag.color}"></span>
           <span class="font-bold">{ag.agentName}</span>
-          <span class="text-slate-400">➔</span>
-          <span class="truncate max-w-[110px]">{ag.target}</span>
+          {#if ag.target}
+            <span class="text-slate-500">➔</span>
+            <span class="truncate max-w-[75px] text-slate-300">{ag.target}</span>
+          {/if}
         </button>
       {/each}
     </div>
     <button
       type="button"
-      onclick={() => (cockpitState.isChatOpen = true)}
-      class="px-2 py-0.5 rounded-full bg-purple-600/30 hover:bg-purple-600/50 text-purple-100 text-[10px] font-semibold cursor-pointer shrink-0"
+      onclick={() => (cockpitState.isChatOpen = !cockpitState.isChatOpen)}
+      class="px-2 py-0.5 rounded-full bg-purple-600/35 hover:bg-purple-600/50 text-purple-100 text-[9.5px] font-semibold cursor-pointer shrink-0"
     >
-      💬 Chat ({cockpitState.aiChatMessages.length})
+      💬 Chat
     </button>
     <button
       type="button"
       onclick={clearAllAgentsTelemetry}
-      class="text-slate-400 hover:text-white cursor-pointer"
+      class="text-slate-400 hover:text-white cursor-pointer p-0.5"
       title="Réinitialiser télémétrie agents"
     >
-      <X class="w-3.5 h-3.5" />
+      <X class="w-3 h-3" />
     </button>
   </div>
+{/if}
+
+<!-- Bouton Flottant Permanent (Toujours visible en bas à droite quand le Chat IA est fermé) -->
+{#if !cockpitState.isChatOpen}
+  <button
+    type="button"
+    onclick={() => (cockpitState.isChatOpen = true)}
+    class="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#130d24]/95 hover:bg-purple-600/90 text-white font-semibold text-xs shadow-[0_8px_30px_rgba(147,51,234,0.45)] border border-purple-400/50 backdrop-blur-xl transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer group"
+    title="Ouvrir le Chat IA & Copilot (Touche C)"
+  >
+    <div class="relative">
+      <Bot class="w-4 h-4 text-purple-300 group-hover:rotate-12 transition-transform" />
+      {#if cockpitState.activeAgents.length > 0}
+        <span class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        <span class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400"></span>
+      {/if}
+    </div>
+    <span class="tracking-wide">Chat IA</span>
+    {#if cockpitState.activeAgents.length > 0}
+      <span class="px-1.5 py-0.2 rounded-full bg-emerald-500/25 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold">
+        {cockpitState.activeAgents.length}
+      </span>
+    {:else if cockpitState.aiChatMessages.length > 0}
+      <span class="px-1.5 py-0.2 rounded-full bg-purple-500/30 border border-purple-400/40 text-purple-200 font-mono text-[10px]">
+        {cockpitState.aiChatMessages.length}
+      </span>
+    {/if}
+  </button>
 {/if}
 
 <!-- Draggable / Floating AI Chat, Agents & MCP Hub -->

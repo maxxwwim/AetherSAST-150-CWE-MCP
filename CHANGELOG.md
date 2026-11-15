@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-11-15
+
+### Security & Hardening (Moltbook Audit Zero-Shell Immunity)
+- **Ultra Path Guard Confinement Jail (`PathGuard`)**: Complete remediation of CWE-22 arbitrary file read/write vulnerabilities identified in the Moltbook security analysis (*"Your zero-shell executor can still be a privileged file thief"*).
+- **Lexical Zero-I/O Path Validation**: Strict rejection of absolute paths (`is_absolute()`, leading slashes), UNC network paths (`\\`, `//`), NT namespace paths (`\\?\`), drive letters (`C:`), URL protocols (`file://`, `http://`), null bytes (`\0`), and parent directory traversals (`..`).
+- **Canonical Boundary Containment**: Enforced `canonical_target.starts_with(&canonical_root)` on all target paths, accompanied by symlink escape defenses and prospective write target resolution (`resolve_write_target`).
+- **Sensitive File & Secret Blacklisting**: Case-insensitive blocking for credentials, private keys, and critical system configs (`.env*`, `.git/config`, `.ssh*`, `.aws*`, `.pem`, `.key`, `id_rsa*`, `id_ed25519*`, `win.ini`, `/etc/passwd`, `/etc/shadow`).
+- **Whitelisted Raw Media API**: Restricted `/api/raw_file` exclusively to verified media/doc extensions (`png`, `jpg`, `jpeg`, `gif`, `svg`, `webp`, `ico`, `bmp`, `tiff`, `pdf`, `json`, `md`, `txt`, `csv`) and eliminated arbitrary binary fallbacks.
+- **Endpoint Hardening**: Guarded `/api/raw_file`, `/api/file_content`, `/api/ai/create_file`, and `/api/save_doc` in `crates/desktop-shell/src/main.rs` with structured HTTP error codes (400 Bad Request, 403 Forbidden, 404 Not Found).
+- **Automated 4-Tier Security Test Suite**: Authored 1,109-line live integration test suite (`crates/desktop-shell/tests/e2e_path_confinement_security.rs`) validating 23/23 tests against 541 real-world adversarial attack vectors (100% pass rate, zero bypasses).
+
+### Added
+- **Cryptographic BLAKE3 Contract Sealing**: Automated on-the-fly BLAKE3 integrity sealing in `aether.lock.toml` for live contract and budget adjustments via `/api/contracts/update` and `/api/contracts/sign`.
+- **Permanent Chat IA Floating Action Button (FAB)**: Persistent neon-styled trigger in the bottom-right corner whenever the chat drawer is closed, displaying live agent presence and unread counts.
+- **Restored Keyboard Hotkey**: Pressing <kbd>C</kbd> globally toggles the AI Chat drawer cleanly without modal conflicts.
+
+### Changed
+- **Stationary AI Agent Badges**: Agent billboard labels are now firmly anchored directly above target symbol nodes (`pNode`) rather than following revolving 3D orbital particle trajectories, eliminating erratic motion and visual nausea.
+- **Streamlined Agent HUD Display**: Stripped verbose action sentences from persistent graph badges in favor of compact, high-contrast agent pills (`✨ Claude-Sec`, `⚡ Gemini-UI`, `🪐 Antigravity`), with automatic text attenuation at wide zoom levels (`zoom < 0.22`).
+- **HeaderDeck Chat Trigger**: Removed responsive clipping (`hidden lg:inline`) to keep the "Chat IA" indicator permanently visible across all viewport dimensions.
+
 ## [2.4.0] - 2026-11-14 / 2026-11-15
 
 ### Added

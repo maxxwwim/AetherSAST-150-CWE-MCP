@@ -667,17 +667,17 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
 
       <button
         onclick={() => (cockpitState.isChatOpen = !cockpitState.isChatOpen)}
-        class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition-colors shadow-xs cursor-pointer {cockpitState.isChatOpen ? 'bg-purple-500/30 border-purple-400 text-purple-100' : 'bg-purple-500/12 hover:bg-purple-500/22 border-purple-500/35 text-purple-200'}"
-        title="Journal Copilot IA, Déplacements & Chat Multi-Agents"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all shadow-xs cursor-pointer {cockpitState.isChatOpen ? 'bg-purple-600/40 border-purple-400 text-purple-100 shadow-[0_0_12px_rgba(168,85,247,0.35)]' : 'bg-purple-500/20 hover:bg-purple-500/30 border-purple-400/45 text-purple-200'}"
+        title="Journal Copilot IA, Déplacements & Chat Multi-Agents (Touche C)"
       >
         <Bot class="w-3.5 h-3.5 text-purple-300" />
-        <span class="hidden lg:inline">Chat IA</span>
+        <span class="inline">Chat IA</span>
         {#if cockpitState.activeAgents.length > 0}
-          <span class="px-1 rounded-full bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 font-mono text-[10px]" title="Agents simultanés">
+          <span class="px-1.5 py-0.2 rounded-full bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 font-mono text-[10px] font-bold" title="Agents simultanés">
             {cockpitState.activeAgents.length}
           </span>
         {:else if cockpitState.aiChatMessages.length > 0}
-          <span class="px-1 rounded-full bg-purple-400/25 text-purple-100 font-mono text-[10px]">
+          <span class="px-1.5 py-0.2 rounded-full bg-purple-400/30 text-purple-100 font-mono text-[10px]">
             {cockpitState.aiChatMessages.length}
           </span>
         {/if}

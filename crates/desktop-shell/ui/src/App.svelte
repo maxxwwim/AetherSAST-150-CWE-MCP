@@ -109,7 +109,7 @@
         cockpitState.isSettingsModalOpen = !cockpitState.isSettingsModalOpen;
         break;
       case 'c':
-        cockpitState.isMcpModalOpen = !cockpitState.isMcpModalOpen;
+        cockpitState.isChatOpen = !cockpitState.isChatOpen;
         break;
       case '1':
         cockpitState.lodLevel = 1;

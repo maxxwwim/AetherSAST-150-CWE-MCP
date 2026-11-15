@@ -1708,36 +1708,42 @@ export class AetherEngine {
       ctx.fill();
 
       // ───────────────────────────────────────────────────────────────────────
-      // D. BILLBOARD BADGE (STAGGERED VERTICALLY SO SIMULTANEOUS BADGES DON'T CLASH)
+      // D. STATIC & SLEEK BILLBOARD BADGE (ANCHORED TO NODE, NOT REVOLVING WITH ORBIT)
       // ───────────────────────────────────────────────────────────────────────
-      const agentIcon = agNameLower.includes('claude') ? '✨'
-        : agNameLower.includes('gemini') ? '⚡'
-        : agNameLower.includes('cursor') ? '🎯'
-        : agNameLower.includes('antigravity') ? '🪐'
-        : '🤖';
-      const actionText = ag.action || 'Auditing AST';
-      const tagText = `${agentIcon} ${agentCleanName} · ${actionText}`;
+      // Hide full text badges when zoomed out far to prevent cluttering the cosmos
+      if (zoom >= 0.22) {
+        const agentIcon = agNameLower.includes('claude') ? '✨'
+          : agNameLower.includes('gemini') ? '⚡'
+          : agNameLower.includes('cursor') ? '🎯'
+          : agNameLower.includes('antigravity') ? '🪐'
+          : '🤖';
+        // Lighten display: Only show icon + clean name (no long noisy action sentence)
+        const shortName = agentCleanName.length > 14 ? agentCleanName.slice(0, 12) + '…' : agentCleanName;
+        const tagText = `${agentIcon} ${shortName}`;
 
-      ctx.font = '600 10px ui-sans-serif, system-ui, -apple-system, sans-serif';
-      const tw = ctx.measureText(tagText).width + 16;
-      const badgeH = 19;
-      // Stagger vertical offset per agent on the node to prevent overlapping badges!
-      const badgeY = pOrb.y - 18 - ((subIdx % 2) * 18);
+        ctx.font = '600 9px ui-sans-serif, system-ui, -apple-system, sans-serif';
+        const tw = ctx.measureText(tagText).width + 10;
+        const badgeH = 15;
 
-      // Glassmorphic pill badge
-      ctx.fillStyle = 'rgba(10, 14, 26, 0.92)';
-      ctx.strokeStyle = agColor;
-      ctx.lineWidth = 1.2;
-      ctx.globalAlpha = 0.95;
-      ctx.beginPath();
-      ctx.roundRect(pOrb.x - tw * 0.5, badgeY - badgeH * 0.5, tw, badgeH, 6);
-      ctx.fill();
-      ctx.stroke();
+        // FIXED ANCHOR TO NODE (pNode), NOT MOVING WITH THE ORBITING CELL (pOrb)
+        const badgeX = pNode.x;
+        const badgeY = pNode.y - targetR - 8 - (subIdx * (badgeH + 3));
 
-      ctx.fillStyle = '#f8fafc';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(tagText, pOrb.x, badgeY + 0.5);
+        // Compact glassmorphic pill badge
+        ctx.fillStyle = 'rgba(10, 14, 26, 0.92)';
+        ctx.strokeStyle = agColor;
+        ctx.lineWidth = 1.0;
+        ctx.globalAlpha = 0.92;
+        ctx.beginPath();
+        ctx.roundRect(badgeX - tw * 0.5, badgeY - badgeH * 0.5, tw, badgeH, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(tagText, badgeX, badgeY + 0.5);
+      }
     }
 
     ctx.restore();

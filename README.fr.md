@@ -9,12 +9,12 @@
   <img src="./assets/aetherscope-banner-logo.png" alt="AetherScope V2 Logo Bannière" width="100%" style="border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);" />
 </p>
 
-# 🪐 AetherScope V2 (`aether-engine`)
+# 🪐 AetherScope V2 (`aether-engine` v2.5.0)
 
-### **Cockpit Spatial d'Architecture WebGL 2 • Linter SAST Zero-Day & Hors-CWE (200+ Patterns, Stealth Backdoors & Règles CWE) • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
+### **Cockpit Spatial d'Architecture WebGL 2 • Linter SAST Zero-Day & Hors-CWE (200+ Patterns, Stealth Backdoors & Règles CWE) • Forteresse Confinement Ultra Path Guard • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.4.0_Svelte_5_%26_Contrats_BLAKE3_Live-f97316?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.5.0_Ultra_Path_Guard_%26_Sceau_BLAKE3-f97316?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -49,22 +49,46 @@
 ## 📌 Sommaire Exécutif
 
 1. [⚡ Qu'est-ce qu'AetherScope V2 ?](#-quest-ce-quaetherscope-v2-)
-2. [🔶 Nouveautés V2.4.0 — Cockpit Svelte 5 WebGL 2, Contrats BLAKE3 Modifiables en Direct (Dossier & Fichier) & Gouvernance Visuelle Orange/Rouge](#-nouveautés-v240--cockpit-svelte-5-webgl-2-contrats-blake3-modifiables-en-direct-dossier--fichier--gouvernance-visuelle-orangerouge)
-3. [☢️ Nouveautés V2.3.0 — Gemini 4 Hydrogen Extra : Moteur Hors-CWE (`AETHER-*`), Portes Dérobées Invisibles & RCE Furtives](#-nouveautés-v230--gemini-4-hydrogen-extra--moteur-hors-cwe-aether--portes-dérobées-invisibles--rce-furtives)
-4. [📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques](#-nouveautés-v222--moteur-de-documentation-markdown-github-grade-rendu-mermaid-interactif-coloration-syntaxique--highlighting-diff-endpoint-raw-binary-file--kpi-métriques)
-5. [🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian](#-nouveautés-v221--support-zig--cnet-semgrep-communautaire-ssa-dataflow-sca-reachable--mode-vault-obsidian)
-6. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
-7. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
-8. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 200+ Règles (CWE + AETHER-*)](#-moteur-sast-chasse-zero-day--catalogue-des-200-règles-cwe--aether-)
-9. [🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
-10. [🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3](#-gouvernance-spec-driven-contrats-ears--sceau-blake3)
-11. [🏛️ Architecture Globale & Structure du Workspace Cargo](#-architecture-globale--structure-du-workspace-cargo)
-12. [🎨 Cockpit GPU WebGL 2 : Membranes, Bulles, Lasers & Layouts](#-cockpit-gpu-webgl-2--membranes-bulles-lasers--layouts)
-13. [🛠️ Outillage IDE Intégré, Scaffolding Multi-Stack & Export](#-outillage-ide-intégré-scaffolding-multi-stack--export)
-14. [🕹️ Raccourcis Clavier, Compilation & Licence](#-raccourcis-clavier-compilation--licence)
-15. [📄 Licence](#-licence)
-16. [📚 Liste détaillée des règles CWE (répertoire dédié)](./cwe/)
-17. [🔭 Feuille de Route & Architecture 2027 (SoA 100k+ Nœuds, WebGPU WGSL, Dual-Pass Laser & Économie de Tokens IA)](./docs/roadmap_2027.md)
+2. [🔒 Nouveautés V2.5.0 — Forteresse Ultra Path Guard, Immunité Voleur de Fichiers Moltbook, Délimitation des Secrets & Ergonomie Cockpit](#-nouveautés-v250--forteresse-ultra-path-guard-immunité-voleur-de-fichiers-moltbook-délimitation-des-secrets--ergonomie-cockpit)
+3. [🔶 Nouveautés V2.4.0 — Cockpit Svelte 5 WebGL 2, Contrats BLAKE3 Modifiables en Direct (Dossier & Fichier) & Gouvernance Visuelle Orange/Rouge](#-nouveautés-v240--cockpit-svelte-5-webgl-2-contrats-blake3-modifiables-en-direct-dossier--fichier--gouvernance-visuelle-orangerouge)
+4. [☢️ Nouveautés V2.3.0 — Gemini 4 Hydrogen Extra : Moteur Hors-CWE (`AETHER-*`), Portes Dérobées Invisibles & RCE Furtives](#-nouveautés-v230--gemini-4-hydrogen-extra--moteur-hors-cwe-aether--portes-dérobées-invisibles--rce-furtives)
+5. [📖 Nouveautés V2.2.2 : Moteur de Documentation Markdown GitHub-Grade, Rendu Mermaid Interactif, Coloration Syntaxique & Highlighting Diff, Endpoint Raw Binary File & KPI Métriques](#-nouveautés-v222--moteur-de-documentation-markdown-github-grade-rendu-mermaid-interactif-coloration-syntaxique--highlighting-diff-endpoint-raw-binary-file--kpi-métriques)
+6. [🧬 Nouveautés V2.2.1 : Support Zig & C#/.NET, Semgrep Communautaire, SSA Dataflow, SCA Reachable & Mode Vault Obsidian](#-nouveautés-v221--support-zig--cnet-semgrep-communautaire-ssa-dataflow-sca-reachable--mode-vault-obsidian)
+7. [🚀 Nouveautés Majeures SAST V2.1 (Production Ready)](#-nouveautés-majeures-sast-v21-production-ready)
+8. [🚀 Démarrage Rapide, CLI & API Locale](#-démarrage-rapide-cli--api-locale)
+9. [🛡️ Moteur SAST, Chasse Zero-Day & Catalogue des 200+ Règles (CWE + AETHER-*)](#-moteur-sast-chasse-zero-day--catalogue-des-200-règles-cwe--aether-)
+10. [🤖 Serveur MCP Natif (`aetherscope-mcp`) & Passerelle IA "Zero-Shell"](#-serveur-mcp-natif-aetherscope-mcp--passerelle-ia-zero-shell)
+11. [🔒 Gouvernance "Spec-Driven", Contrats EARS & Sceau BLAKE3](#-gouvernance-spec-driven-contrats-ears--sceau-blake3)
+12. [🏛️ Architecture Globale & Structure du Workspace Cargo](#-architecture-globale--structure-du-workspace-cargo)
+13. [🎨 Cockpit GPU WebGL 2 : Membranes, Bulles, Lasers & Layouts](#-cockpit-gpu-webgl-2--membranes-bulles-lasers--layouts)
+14. [🛠️ Outillage IDE Intégré, Scaffolding Multi-Stack & Export](#-outillage-ide-intégré-scaffolding-multi-stack--export)
+15. [🕹️ Raccourcis Clavier, Compilation & Licence](#-raccourcis-clavier-compilation--licence)
+16. [📄 Licence](#-licence)
+17. [📚 Liste détaillée des règles CWE (répertoire dédié)](./cwe/)
+18. [🔭 Feuille de Route & Architecture 2027 (SoA 100k+ Nœuds, WebGPU WGSL, Dual-Pass Laser & Économie de Tokens IA)](./docs/roadmap_2027.md)
+
+---
+
+## 🔒 Nouveautés V2.5.0 — Forteresse Ultra Path Guard, Immunité Voleur de Fichiers Moltbook, Délimitation des Secrets & Ergonomie Cockpit
+
+### 1. 🛡️ Forteresse de Confinement Lexical & Canonique (`PathGuard`) — Réponse à l'Audit Moltbook
+- **Immunité Voleur de Fichiers Privilégié (CWE-22 / CWE-200) :** Réponse définitive à l'audit de sécurité Moltbook (*"Your zero-shell executor can still be a privileged file thief"*). Même en architecture sans shell, aucun agent IA ou flux HTTP ne peut plus s'évader du périmètre du projet.
+- **Validation Lexicale Zéro-I/O (`validate_client_relative_path`) :** Rejet immédiat de tout chemin absolu (`is_absolute()`, slash initial), préfixe UNC réseau (`\\`, `//`), namespace NT Windows (`\\?\`), lettre de lecteur (`C:`), schéma URL (`file://`, `http://`), octet nul (`\0`) et traversée (`..`).
+- **Cloisonnement Canonique et Défense Liens Symboliques :** Vérification stricte `canonical_target.starts_with(&canonical_root)` et résolution sécurisée des ancêtres en écriture (`resolve_write_target`) pour interdire toute création ou lecture via symlinks piégés.
+- **Blindage Systématique des Endpoints :** Intégration sur `/api/raw_file`, `/api/file_content`, `/api/ai/create_file` et `/api/save_doc` dans `crates/desktop-shell/src/main.rs`.
+
+### 2. 🔐 Délimitation Stricte des Secrets & Whitelist Média
+- **Liste Noire Insensible à la Casse des Secrets :** Blocage automatique de `.env*`, `.git/config`, `.ssh*`, `.aws*`, clés privées (`.pem`, `.key`, `id_rsa*`, `id_ed25519*`), fichiers système (`win.ini`, `/etc/passwd`, `/etc/shadow`).
+- **Whitelist d'Extensions `/api/raw_file` :** Seules les extensions indispensables au rendu sont admises (`png`, `jpg`, `gif`, `svg`, `webp`, `ico`, `bmp`, `pdf`, `json`, `md`, `txt`, `csv`). Les fallbacks binaires arbitraires sont révoqués.
+- **Sceau Cryptographique BLAKE3 :** Intégrité permanente des contrats scellée dans `aether.lock.toml`.
+
+### 3. 🎨 Ergonomie Cockpit & Stabilisation Multi-Agents
+- **Ancrage Fixe des Badges IA au-dessus des Nœuds :** Les étiquettes de noms d'agents sont désormais fermement ancrées au-dessus de leur bulle respective (`pNode`). Les avatars et lasers continuent d'orbiter avec fluidité, mais le texte ne tourne plus en rond.
+- **Affichage Épuré & Allégé :** Remplacement des descriptions verbeuses par des capsules compactes (`✨ Claude-Sec`, `⚡ Gemini-UI`, `🪐 Antigravity`), avec masquage automatique du texte à grand dézoom (`zoom < 0.22`).
+- **Chat IA Toujours Visible & Bouton Flottant (FAB) :** Raccourci <kbd>C</kbd> restauré et nouveau bouton flottant violet permanent ancré en bas à droite dès que la fenêtre de chat se ferme.
+
+### 4. 🧪 Suite E2E de Sécurité à 4 Niveaux (1 109 Lignes)
+- **23/23 Tests de Pénétration au Vert :** Validation automatisée sous `cargo test -p desktop-shell --test e2e_path_confinement_security` contre 541 vecteurs d'attaque réels (traversées, UNC, null bytes, symlinks, fuites de secrets).
 
 ---
 

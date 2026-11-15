@@ -21,6 +21,12 @@ pub const DEFAULT_MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
 /// Default maximum path depth to prevent deep nesting traversal issues.
 pub const MAX_PATH_DEPTH: usize = 32;
 
+/// Whitelisted file extensions permitted for raw binary/media streaming.
+pub const ALLOWED_RAW_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp", "tiff", "pdf", "json", "md",
+    "markdown", "txt", "csv",
+];
+
 /// Errors arising from path confinement, lexical validation, or file access violations.
 #[derive(Debug, Error)]
 pub enum SecurityError {
@@ -29,6 +35,9 @@ pub enum SecurityError {
 
     #[error("Path traversal attempt detected ('..'): {0}")]
     PathTraversal(String),
+
+    #[error("Absolute paths are prohibited: {0}")]
+    AbsolutePathsProhibited(String),
 
     #[error("UNC network path prohibited: {0}")]
     UncPathProhibited(String),
@@ -41,6 +50,15 @@ pub enum SecurityError {
 
     #[error("Invalid or unrecognized path prefix: {0}")]
     InvalidPrefix(String),
+
+    #[error("Access to sensitive or secret file prohibited: {0}")]
+    SensitiveFileProhibited(String),
+
+    #[error("File extension '{extension}' is not permitted (allowed: {allowed:?})")]
+    ExtensionNotAllowed {
+        extension: String,
+        allowed: Vec<String>,
+    },
 
     #[error("Root directory canonicalization failed for '{root}': {source}")]
     RootCanonicalizationFailed {
@@ -422,6 +440,374 @@ impl PathGuard {
         let rel_str = rel.to_string_lossy().replace('\\', "/");
         Ok(rel_str)
     }
+
+    /// Strictly validates untrusted client path strings without touching the filesystem.
+    ///
+    /// Rejects:
+    /// - Empty paths or paths consisting only of whitespace
+    /// - Null bytes (`\0`)
+    /// - Absolute paths (`Path::is_absolute()`, or starting with `/` or `\`)
+    /// - UNC network paths (`\\`, `//`) and Windows device paths (`\\?\`, `\\.\`)
+    /// - Windows drive letters (`C:`, `:/`, `:\`)
+    /// - URL schemes (`://`)
+    /// - Parent directory traversal (`..`)
+    /// - Path nesting depth exceeding `MAX_PATH_DEPTH` (32)
+    ///
+    /// Normalizes and returns a clean relative `PathBuf`.
+    pub fn validate_client_relative_path(input: &str) -> Result<PathBuf, SecurityError> {
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            return Err(SecurityError::PathTraversal("Empty path is prohibited".to_string()));
+        }
+
+        // 1. Null byte check
+        if trimmed.as_bytes().contains(&0) || trimmed.contains('\0') {
+            return Err(SecurityError::NullByteDetected(input.to_string()));
+        }
+
+        // 2. URL scheme check (e.g. http://, https://, file://, ftp://)
+        if let Some(pos) = trimmed.find("://") {
+            let scheme = &trimmed[..pos];
+            if !scheme.is_empty()
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+            {
+                return Err(SecurityError::UrlSchemeProhibited(input.to_string()));
+            }
+        }
+
+        // 3. UNC path check (forward slashes or backslashes)
+        if trimmed.starts_with(r"\\") || trimmed.starts_with("//") {
+            return Err(SecurityError::UncPathProhibited(input.to_string()));
+        }
+
+        // 4. Windows drive letter check (e.g. "C:foo", "D:\bar", or embedded "c:/")
+        let bytes = trimmed.as_bytes();
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            return Err(SecurityError::DriveLetterProhibited(input.to_string()));
+        }
+        if trimmed.contains(":/") || trimmed.contains(r":\") {
+            return Err(SecurityError::DriveLetterProhibited(input.to_string()));
+        }
+
+        // 5. Absolute path check (Unix root / or Windows root \)
+        if trimmed.starts_with('/') || trimmed.starts_with('\\') {
+            return Err(SecurityError::AbsolutePathsProhibited(input.to_string()));
+        }
+        if Path::new(trimmed).is_absolute() {
+            return Err(SecurityError::AbsolutePathsProhibited(input.to_string()));
+        }
+
+        // Strip safe leading ./ and .\ prefixes
+        let mut clean = trimmed;
+        while clean.starts_with("./") || clean.starts_with(r".\") {
+            clean = &clean[2..];
+            clean = clean.trim_start_matches('/').trim_start_matches('\\');
+        }
+
+        if clean.is_empty() || clean == "." {
+            return Err(SecurityError::NotAFile(PathBuf::from(input)));
+        }
+
+        // 6. Component-by-component traversal and depth check
+        let mut out = PathBuf::new();
+        let mut depth: usize = 0;
+
+        for segment in clean.split(['/', '\\']) {
+            let seg = segment.trim();
+            if seg.is_empty() || seg == "." {
+                continue;
+            }
+            if seg == ".." {
+                return Err(SecurityError::PathTraversal(input.to_string()));
+            }
+            if seg.contains(':') {
+                return Err(SecurityError::DriveLetterProhibited(input.to_string()));
+            }
+            depth += 1;
+            if depth > MAX_PATH_DEPTH {
+                return Err(SecurityError::DepthExceeded {
+                    depth,
+                    max: MAX_PATH_DEPTH,
+                });
+            }
+            out.push(seg);
+        }
+
+        if out.as_os_str().is_empty() {
+            return Err(SecurityError::NotAFile(PathBuf::from(input)));
+        }
+
+        Ok(out)
+    }
+
+    /// Checks whether a path targets sensitive files, secrets, or critical system resources.
+    ///
+    /// Blocks:
+    /// - `.env`, `.env.*`, `*.env`
+    /// - `.git`, `.git/config`, `.ssh`, `.aws`, `.azure`, `.gcloud`, `.kube`, `.docker`, `.gnupg`
+    /// - Private keys: `.pem`, `.key`, `.p12`, `.pfx`, `.pkcs12`, `id_rsa*`, `id_ed25519*`
+    /// - System files: `win.ini`, `system.ini`, `sam`, `system`, `/etc/passwd`, `/etc/shadow`, etc.
+    ///
+    /// Matches case-insensitively across path components and file names.
+    pub fn is_sensitive_path<P: AsRef<Path>>(path: P) -> bool {
+        let p = path.as_ref();
+        let full_str = p.to_string_lossy().to_lowercase().replace('\\', "/");
+        let trimmed_full = full_str.trim_start_matches("./");
+
+        // System directories and critical paths
+        if trimmed_full.contains("/etc/passwd")
+            || trimmed_full.contains("/etc/shadow")
+            || trimmed_full.contains("/etc/sudoers")
+            || trimmed_full.contains("windows/system32")
+            || trimmed_full.contains("system32/config")
+            || trimmed_full == "etc/passwd"
+            || trimmed_full == "etc/shadow"
+            || trimmed_full == "etc/sudoers"
+        {
+            return true;
+        }
+
+        for component in p.components() {
+            let comp_str = component.as_os_str().to_string_lossy().to_lowercase();
+            let comp_trimmed = comp_str.trim();
+
+            // 1. Environment files
+            if comp_trimmed == ".env"
+                || comp_trimmed.starts_with(".env.")
+                || comp_trimmed.ends_with(".env")
+            {
+                return true;
+            }
+
+            // 2. Sensitive directories
+            if comp_trimmed == ".git"
+                || comp_trimmed == ".ssh"
+                || comp_trimmed == ".aws"
+                || comp_trimmed == ".azure"
+                || comp_trimmed == ".gcloud"
+                || comp_trimmed == ".kube"
+                || comp_trimmed == ".docker"
+                || comp_trimmed == ".gnupg"
+            {
+                return true;
+            }
+
+            // 3. Sensitive file names
+            if comp_trimmed == "win.ini"
+                || comp_trimmed == "system.ini"
+                || comp_trimmed == "sam"
+                || comp_trimmed == "system"
+                || comp_trimmed == "passwd"
+                || comp_trimmed == "shadow"
+                || comp_trimmed == "sudoers"
+                || comp_trimmed == "credentials"
+                || comp_trimmed == "authorized_keys"
+                || comp_trimmed == "known_hosts"
+                || comp_trimmed == ".npmrc"
+                || comp_trimmed == ".pypirc"
+                || comp_trimmed == ".netrc"
+            {
+                return true;
+            }
+
+            // 4. Private keys and SSH identities
+            if comp_trimmed.starts_with("id_rsa")
+                || comp_trimmed.starts_with("id_ed25519")
+                || comp_trimmed.starts_with("id_ecdsa")
+                || comp_trimmed.starts_with("id_dsa")
+            {
+                return true;
+            }
+        }
+
+        // 5. Key / secret extensions
+        if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
+            let ext_lower = ext.to_lowercase();
+            if ext_lower == "pem"
+                || ext_lower == "key"
+                || ext_lower == "p12"
+                || ext_lower == "pfx"
+                || ext_lower == "pkcs12"
+                || ext_lower == "kdbx"
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Validates that a path does not target sensitive files; returns
+    /// `Err(SecurityError::SensitiveFileProhibited)` if it does.
+    pub fn validate_not_sensitive<P: AsRef<Path>>(path: P) -> Result<(), SecurityError> {
+        if Self::is_sensitive_path(&path) {
+            Err(SecurityError::SensitiveFileProhibited(
+                path.as_ref().to_string_lossy().to_string(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validates that the file has an allowed raw extension (case-insensitive).
+    ///
+    /// Allowed: png, jpg, jpeg, gif, svg, webp, ico, bmp, tiff, pdf, json, md, markdown, txt, csv.
+    ///
+    /// Returns the matched canonical extension `&'static str` on success,
+    /// or `Err(SecurityError::ExtensionNotAllowed)` on failure.
+    pub fn validate_raw_extension<P: AsRef<Path>>(path: P) -> Result<&'static str, SecurityError> {
+        let p = path.as_ref();
+        let ext = match p.extension().and_then(|s| s.to_str()) {
+            Some(e) if !e.is_empty() => e.to_lowercase(),
+            _ => {
+                return Err(SecurityError::ExtensionNotAllowed {
+                    extension: String::new(),
+                    allowed: ALLOWED_RAW_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
+                });
+            }
+        };
+
+        match ext.as_str() {
+            "png" => Ok("png"),
+            "jpg" => Ok("jpg"),
+            "jpeg" => Ok("jpeg"),
+            "gif" => Ok("gif"),
+            "svg" => Ok("svg"),
+            "webp" => Ok("webp"),
+            "ico" => Ok("ico"),
+            "bmp" => Ok("bmp"),
+            "tiff" => Ok("tiff"),
+            "pdf" => Ok("pdf"),
+            "json" => Ok("json"),
+            "md" => Ok("md"),
+            "markdown" => Ok("markdown"),
+            "txt" => Ok("txt"),
+            "csv" => Ok("csv"),
+            _ => Err(SecurityError::ExtensionNotAllowed {
+                extension: ext,
+                allowed: ALLOWED_RAW_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
+            }),
+        }
+    }
+
+    /// Resolves and strictly verifies a prospective write target within `canonical_root`.
+    ///
+    /// Validates the path lexically and ensures it does not target sensitive files.
+    /// For new files, ascends to the nearest existing ancestor directory, canonicalizes it,
+    /// and verifies that it resides strictly within `canonical_root`.
+    /// If the target file already exists, verifies that it is not an escaping symlink.
+    pub fn resolve_write_target<P: AsRef<Path>>(&self, candidate_rel: P) -> Result<PathBuf, SecurityError> {
+        let path_str = candidate_rel.as_ref().to_string_lossy();
+        let clean_rel = Self::validate_client_relative_path(&path_str)?;
+        Self::validate_not_sensitive(&clean_rel)?;
+
+        if clean_rel.as_os_str().is_empty() {
+            return Err(SecurityError::NotAFile(self.canonical_root.clone()));
+        }
+
+        let full_target = self.canonical_root.join(&clean_rel);
+
+        // 1. If target already exists, verify it directly
+        if full_target.exists() || fs::symlink_metadata(&full_target).is_ok() {
+            let is_symlink = match fs::symlink_metadata(&full_target) {
+                Ok(m) => m.file_type().is_symlink(),
+                Err(_) => false,
+            };
+
+            if is_symlink && !self.allow_internal_symlinks {
+                return Err(SecurityError::SymlinksDisabled(full_target));
+            }
+
+            let canonical_target = fs::canonicalize(&full_target).map_err(|e| SecurityError::IoError {
+                path: full_target.clone(),
+                source: e,
+            })?;
+
+            if !canonical_target.starts_with(&self.canonical_root) {
+                if is_symlink {
+                    return Err(SecurityError::SymlinkEscape {
+                        symlink_path: full_target,
+                        resolved_path: canonical_target,
+                        root: self.canonical_root.clone(),
+                    });
+                } else {
+                    return Err(SecurityError::PathEscapesRoot {
+                        path: full_target,
+                        canonical: canonical_target,
+                        root: self.canonical_root.clone(),
+                    });
+                }
+            }
+
+            return Ok(canonical_target);
+        }
+
+        // 2. Target does not exist yet. Locate nearest existing ancestor directory.
+        let mut ancestor = full_target.parent();
+        let mut existing_ancestor = None;
+        let mut non_existing_parts = Vec::new();
+
+        while let Some(dir) = ancestor {
+            if dir.exists() {
+                existing_ancestor = Some(dir);
+                break;
+            }
+            if let Some(name) = dir.file_name() {
+                non_existing_parts.push(name.to_os_string());
+            }
+            ancestor = dir.parent();
+        }
+
+        let existing_dir = existing_ancestor.unwrap_or(&self.canonical_root);
+
+        let is_ancestor_symlink = match fs::symlink_metadata(existing_dir) {
+            Ok(m) => m.file_type().is_symlink(),
+            Err(_) => false,
+        };
+
+        let canonical_ancestor = fs::canonicalize(existing_dir).map_err(|e| SecurityError::IoError {
+            path: existing_dir.to_path_buf(),
+            source: e,
+        })?;
+
+        if !canonical_ancestor.starts_with(&self.canonical_root) {
+            if is_ancestor_symlink {
+                return Err(SecurityError::SymlinkEscape {
+                    symlink_path: existing_dir.to_path_buf(),
+                    resolved_path: canonical_ancestor,
+                    root: self.canonical_root.clone(),
+                });
+            } else {
+                return Err(SecurityError::PathEscapesRoot {
+                    path: full_target.clone(),
+                    canonical: canonical_ancestor,
+                    root: self.canonical_root.clone(),
+                });
+            }
+        }
+
+        // Assemble resolved safe target path
+        let mut resolved = canonical_ancestor;
+        non_existing_parts.reverse();
+        for part in non_existing_parts {
+            resolved.push(part);
+        }
+        if let Some(file_name) = full_target.file_name() {
+            resolved.push(file_name);
+        }
+
+        if !resolved.starts_with(&self.canonical_root) {
+            return Err(SecurityError::PathEscapesRoot {
+                path: full_target,
+                canonical: resolved,
+                root: self.canonical_root.clone(),
+            });
+        }
+
+        Ok(resolved)
+    }
 }
 
 #[cfg(test)]
@@ -650,5 +1036,254 @@ pub mod tests {
             PathGuard::sanitize_relative_path("./notes/doc.md").unwrap(),
             PathBuf::from("notes").join("doc.md")
         );
+    }
+
+    #[test]
+    fn test_validate_client_relative_path_comprehensive() {
+        // Valid paths
+        assert_eq!(
+            PathGuard::validate_client_relative_path("README.md").unwrap(),
+            PathBuf::from("README.md")
+        );
+        assert_eq!(
+            PathGuard::validate_client_relative_path("./README.md").unwrap(),
+            PathBuf::from("README.md")
+        );
+        assert_eq!(
+            PathGuard::validate_client_relative_path(r".\README.md").unwrap(),
+            PathBuf::from("README.md")
+        );
+        assert_eq!(
+            PathGuard::validate_client_relative_path("src/lib.rs").unwrap(),
+            PathBuf::from("src").join("lib.rs")
+        );
+        assert_eq!(
+            PathGuard::validate_client_relative_path(r"src\lib.rs").unwrap(),
+            PathBuf::from("src").join("lib.rs")
+        );
+        assert_eq!(
+            PathGuard::validate_client_relative_path(r"src/sub\module.rs").unwrap(),
+            PathBuf::from("src").join("sub").join("module.rs")
+        );
+
+        // Lexical rejections
+        assert!(matches!(
+            PathGuard::validate_client_relative_path(""),
+            Err(SecurityError::PathTraversal(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("   "),
+            Err(SecurityError::PathTraversal(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("."),
+            Err(SecurityError::NotAFile(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("./"),
+            Err(SecurityError::NotAFile(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("note.md\0.txt"),
+            Err(SecurityError::NullByteDetected(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("http://evil.com/note.md"),
+            Err(SecurityError::UrlSchemeProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("file:///etc/passwd"),
+            Err(SecurityError::UrlSchemeProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path(r"\\evil.com\share"),
+            Err(SecurityError::UncPathProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("//server/share/file.txt"),
+            Err(SecurityError::UncPathProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path(r"\\?\C:\Windows\win.ini"),
+            Err(SecurityError::UncPathProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("/etc/passwd"),
+            Err(SecurityError::AbsolutePathsProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path(r"\Windows\win.ini"),
+            Err(SecurityError::AbsolutePathsProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("C:/Windows/win.ini"),
+            Err(SecurityError::DriveLetterProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("C:relative.txt"),
+            Err(SecurityError::DriveLetterProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("notes/c:/test.md"),
+            Err(SecurityError::DriveLetterProhibited(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("../../outside.md"),
+            Err(SecurityError::PathTraversal(_))
+        ));
+        assert!(matches!(
+            PathGuard::validate_client_relative_path("sub/../../outside.md"),
+            Err(SecurityError::PathTraversal(_))
+        ));
+
+        // Depth limits: 32 normal components allowed, 33 rejected
+        let depth_32 = (0..32).map(|i| format!("d{i}")).collect::<Vec<_>>().join("/");
+        assert!(PathGuard::validate_client_relative_path(&depth_32).is_ok());
+
+        let depth_33 = (0..33).map(|i| format!("d{i}")).collect::<Vec<_>>().join("/");
+        assert!(matches!(
+            PathGuard::validate_client_relative_path(&depth_33),
+            Err(SecurityError::DepthExceeded { .. })
+        ));
+    }
+
+    #[test]
+    fn test_sensitive_file_detection() {
+        // Sensitive targets
+        let sensitive = [
+            ".env",
+            ".env.local",
+            ".env.production",
+            "sub/.env",
+            "config/app.env",
+            ".ENV",
+            ".git/config",
+            ".git/HEAD",
+            ".git",
+            ".ssh/id_rsa",
+            ".ssh/authorized_keys",
+            "id_rsa",
+            "id_rsa.pub",
+            "id_ed25519",
+            ".aws/credentials",
+            "certs/server.key",
+            "certs/privkey.pem",
+            "auth/token.p12",
+            "auth/key.pfx",
+            "vault.kdbx",
+            "win.ini",
+            "system.ini",
+            "sam",
+            "passwd",
+            "shadow",
+            "sudoers",
+            "/etc/passwd",
+            "/etc/shadow",
+            "windows/system32/cmd.exe",
+        ];
+
+        for path in &sensitive {
+            assert!(
+                PathGuard::is_sensitive_path(path),
+                "Path '{path}' must be flagged as sensitive"
+            );
+            assert!(
+                matches!(
+                    PathGuard::validate_not_sensitive(path),
+                    Err(SecurityError::SensitiveFileProhibited(_))
+                ),
+                "Path '{path}' must return SensitiveFileProhibited"
+            );
+        }
+
+        // Non-sensitive targets
+        let non_sensitive = [
+            "README.md",
+            "src/lib.rs",
+            "assets/logo.png",
+            "docs/architecture.md",
+            "data/notes.json",
+        ];
+
+        for path in &non_sensitive {
+            assert!(
+                !PathGuard::is_sensitive_path(path),
+                "Path '{path}' should NOT be sensitive"
+            );
+            assert!(PathGuard::validate_not_sensitive(path).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_raw_extension_validation() {
+        assert_eq!(PathGuard::validate_raw_extension("photo.png").unwrap(), "png");
+        assert_eq!(PathGuard::validate_raw_extension("photo.PNG").unwrap(), "png");
+        assert_eq!(PathGuard::validate_raw_extension("image.jpg").unwrap(), "jpg");
+        assert_eq!(PathGuard::validate_raw_extension("image.jpeg").unwrap(), "jpeg");
+        assert_eq!(PathGuard::validate_raw_extension("icon.ico").unwrap(), "ico");
+        assert_eq!(PathGuard::validate_raw_extension("anim.gif").unwrap(), "gif");
+        assert_eq!(PathGuard::validate_raw_extension("vector.svg").unwrap(), "svg");
+        assert_eq!(PathGuard::validate_raw_extension("doc.pdf").unwrap(), "pdf");
+        assert_eq!(PathGuard::validate_raw_extension("data.json").unwrap(), "json");
+        assert_eq!(PathGuard::validate_raw_extension("note.md").unwrap(), "md");
+        assert_eq!(PathGuard::validate_raw_extension("note.markdown").unwrap(), "markdown");
+        assert_eq!(PathGuard::validate_raw_extension("text.txt").unwrap(), "txt");
+        assert_eq!(PathGuard::validate_raw_extension("data.csv").unwrap(), "csv");
+
+        // Disallowed extensions
+        assert!(matches!(
+            PathGuard::validate_raw_extension("program.exe"),
+            Err(SecurityError::ExtensionNotAllowed { .. })
+        ));
+        assert!(matches!(
+            PathGuard::validate_raw_extension("script.sh"),
+            Err(SecurityError::ExtensionNotAllowed { .. })
+        ));
+        assert!(matches!(
+            PathGuard::validate_raw_extension("source.rs"),
+            Err(SecurityError::ExtensionNotAllowed { .. })
+        ));
+        assert!(matches!(
+            PathGuard::validate_raw_extension("LICENSE"),
+            Err(SecurityError::ExtensionNotAllowed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_resolve_write_target() {
+        let vault = tempdir().unwrap();
+        let jail = PathGuard::new(vault.path()).unwrap();
+
+        // 1. New file directly in root
+        let target = jail.resolve_write_target("new_doc.md").unwrap();
+        assert!(target.starts_with(jail.canonical_root()));
+        assert_eq!(target.file_name().unwrap(), "new_doc.md");
+
+        // 2. New file in non-existent nested directory
+        let deep_target = jail.resolve_write_target("a/b/c/nested.md").unwrap();
+        assert!(deep_target.starts_with(jail.canonical_root()));
+        assert_eq!(deep_target.file_name().unwrap(), "nested.md");
+
+        // 3. Existing file write target
+        let existing = vault.path().join("existing.txt");
+        fs::write(&existing, "hello").unwrap();
+        let existing_target = jail.resolve_write_target("existing.txt").unwrap();
+        assert!(existing_target.starts_with(jail.canonical_root()));
+
+        // 4. Sensitive file blocked
+        assert!(matches!(
+            jail.resolve_write_target(".env"),
+            Err(SecurityError::SensitiveFileProhibited(_))
+        ));
+        assert!(matches!(
+            jail.resolve_write_target(".git/config"),
+            Err(SecurityError::SensitiveFileProhibited(_))
+        ));
+
+        // 5. Traversal blocked
+        assert!(matches!(
+            jail.resolve_write_target("../outside.txt"),
+            Err(SecurityError::PathTraversal(_))
+        ));
     }
 }

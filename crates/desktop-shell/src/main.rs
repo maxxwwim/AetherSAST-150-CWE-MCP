@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use obsidian_vault::{PathGuard, SecurityError};
 
 use tao::{
     dpi::LogicalSize,
@@ -92,6 +93,65 @@ fn main() {
     }));
     if let Err(e) = real_main() {
         let _ = std::fs::write("desktop-shell-error.log", format!("MAIN ERROR: {:?}", e));
+    }
+}
+
+/// Maps a `SecurityError` from `PathGuard` to the appropriate HTTP status code and JSON error payload.
+fn security_error_to_status_and_json(err: &SecurityError) -> (axum::http::StatusCode, serde_json::Value) {
+    use axum::http::StatusCode;
+    match err {
+        SecurityError::NullByteDetected(_)
+        | SecurityError::PathTraversal(_)
+        | SecurityError::UncPathProhibited(_)
+        | SecurityError::DriveLetterProhibited(_)
+        | SecurityError::AbsolutePathsProhibited(_)
+        | SecurityError::UrlSchemeProhibited(_)
+        | SecurityError::InvalidPrefix(_)
+        | SecurityError::DepthExceeded { .. }
+        | SecurityError::ExtensionNotAllowed { .. }
+        | SecurityError::NotAFile(_) => (
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({
+                "status": "error",
+                "error": "bad_request",
+                "message": err.to_string(),
+            }),
+        ),
+        SecurityError::SensitiveFileProhibited(_)
+        | SecurityError::PathEscapesRoot { .. }
+        | SecurityError::SymlinkEscape { .. }
+        | SecurityError::SymlinksDisabled(_) => (
+            StatusCode::FORBIDDEN,
+            serde_json::json!({
+                "status": "error",
+                "error": "forbidden",
+                "message": err.to_string(),
+            }),
+        ),
+        SecurityError::FileTooLarge { .. } => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            serde_json::json!({
+                "status": "error",
+                "error": "payload_too_large",
+                "message": err.to_string(),
+            }),
+        ),
+        SecurityError::IoError { source, .. } if source.kind() == std::io::ErrorKind::NotFound => (
+            StatusCode::NOT_FOUND,
+            serde_json::json!({
+                "status": "error",
+                "error": "not_found",
+                "message": err.to_string(),
+            }),
+        ),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({
+                "status": "error",
+                "error": "internal_error",
+                "message": err.to_string(),
+            }),
+        ),
     }
 }
 
@@ -1237,31 +1297,133 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<SaveDocRequest>| {
                 let state = state_savedoc.clone();
                 async move {
+                    use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
+
                     let p_root = state.project_root.read().await.clone();
-                    let target_root = if req.project_path.trim().is_empty() || req.project_path.trim() == "." {
-                        p_root
-                    } else {
-                        PathBuf::from(&req.project_path)
+                    let canonical_p_root = match fs::canonicalize(&p_root) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": format!("Root canonicalization failed: {}", e)
+                                })),
+                            )
+                                .into_response();
+                        }
                     };
-                    let path = if req.folder.is_empty() || req.folder == "root" || req.folder == "." {
-                        target_root.join(&req.file_name)
-                    } else {
-                        target_root.join(&req.folder).join(&req.file_name)
-                    };
-                    if let Some(parent) = path.parent() {
-                        let _ = fs::create_dir_all(parent);
+
+                    // Validate client project_path if non-empty / non-dot
+                    let proj_trimmed = req.project_path.trim();
+                    if !proj_trimmed.is_empty() && proj_trimmed != "." {
+                        let candidate_proj = PathBuf::from(proj_trimmed);
+                        if let Ok(canon_cand) = fs::canonicalize(&candidate_proj) {
+                            if !canon_cand.starts_with(&canonical_p_root) {
+                                return (
+                                    StatusCode::FORBIDDEN,
+                                    axum::Json(serde_json::json!({
+                                        "status": "error",
+                                        "message": "project_path escapes designated project_root"
+                                    })),
+                                )
+                                    .into_response();
+                            }
+                        } else if candidate_proj != p_root {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": "Invalid project_path"
+                                })),
+                            )
+                                .into_response();
+                        }
                     }
-                    let _ = fs::write(&path, &req.content);
+
+                    // Validate file_name lexically
+                    let clean_file_name = match PathGuard::validate_client_relative_path(&req.file_name) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let (code, json_val) = security_error_to_status_and_json(&e);
+                            return (code, axum::Json(json_val)).into_response();
+                        }
+                    };
+
+                    // Validate folder and construct clean relative candidate path
+                    let clean_rel = if req.folder.trim().is_empty()
+                        || req.folder.trim() == "root"
+                        || req.folder.trim() == "."
+                    {
+                        clean_file_name
+                    } else {
+                        let clean_folder = match PathGuard::validate_client_relative_path(&req.folder) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                let (code, json_val) = security_error_to_status_and_json(&e);
+                                return (code, axum::Json(json_val)).into_response();
+                            }
+                        };
+                        clean_folder.join(clean_file_name)
+                    };
+
+                    // Validate sensitive file / secret blocking
+                    if let Err(e) = PathGuard::validate_not_sensitive(&clean_rel) {
+                        let (code, json_val) = security_error_to_status_and_json(&e);
+                        return (code, axum::Json(json_val)).into_response();
+                    }
+
+                    // Resolve write target with ancestor canonicalization and jail containment
+                    let guard = match PathGuard::new(&canonical_p_root) {
+                        Ok(g) => g,
+                        Err(e) => {
+                            let (code, json_val) = security_error_to_status_and_json(&e);
+                            return (code, axum::Json(json_val)).into_response();
+                        }
+                    };
+
+                    let path = match guard.resolve_write_target(&clean_rel) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let (code, json_val) = security_error_to_status_and_json(&e);
+                            return (code, axum::Json(json_val)).into_response();
+                        }
+                    };
+
+                    if let Some(parent) = path.parent() {
+                        if let Err(e) = fs::create_dir_all(parent) {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": format!("Failed to create parent directory: {}", e)
+                                })),
+                            )
+                                .into_response();
+                        }
+                    }
+
+                    if let Err(e) = fs::write(&path, &req.content) {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            axum::Json(serde_json::json!({
+                                "status": "error",
+                                "message": format!("Failed to write file: {}", e)
+                            })),
+                        )
+                            .into_response();
+                    }
 
                     let mut blake3_hash = None;
                     let mut graph_opt = None;
                     if req.file_name.eq_ignore_ascii_case("README.md") {
-                        if let Ok((_, h)) = sign_project_contracts(&target_root, Some(&req.folder)) {
+                        if let Ok((_, h)) = sign_project_contracts(&canonical_p_root, Some(&req.folder)) {
                             blake3_hash = h;
                         }
                         let exclusions = state.custom_exclusions.read().await.clone();
                         let scanner = ProjectScanner::default();
-                        let updated_graph = scanner.scan_project_with_exclusions(&target_root, &exclusions);
+                        let updated_graph = scanner.scan_project_with_exclusions(&canonical_p_root, &exclusions);
                         {
                             let mut cg_guard = state.code_graph.write().await;
                             *cg_guard = Some(updated_graph.clone());
@@ -1272,12 +1434,16 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         graph_opt = Some(updated_graph);
                     }
 
-                    axum::Json(SaveDocResponse {
-                        status: "ok".to_string(),
-                        saved_path: path.to_string_lossy().to_string(),
-                        blake3_hash,
-                        graph: graph_opt,
-                    })
+                    (
+                        StatusCode::OK,
+                        axum::Json(SaveDocResponse {
+                            status: "ok".to_string(),
+                            saved_path: path.to_string_lossy().to_string(),
+                            blake3_hash,
+                            graph: graph_opt,
+                        }),
+                    )
+                        .into_response()
                 }
             }),
         )
@@ -1928,36 +2094,135 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // CrÃ©ation de fichier assistÃ©e par l'Inspecteur / IA
+        // Création de fichier assistée par l'Inspecteur / IA
         .route(
             "/api/ai/create_file",
             axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<CreateFileRequest>| {
                 let state = state_create_file.clone();
                 async move {
-                    let target_path = Path::new(&req.project_path).join(&req.file_path);
-                    if let Some(parent) = target_path.parent() {
-                        let _ = fs::create_dir_all(parent);
+                    use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
+
+                    let p_root = state.project_root.read().await.clone();
+                    let canonical_p_root = match fs::canonicalize(&p_root) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": format!("Root canonicalization failed: {}", e)
+                                })),
+                            )
+                                .into_response();
+                        }
+                    };
+
+                    // Validate client project_path if non-empty / non-dot
+                    let proj_trimmed = req.project_path.trim();
+                    if !proj_trimmed.is_empty() && proj_trimmed != "." {
+                        let candidate_proj = PathBuf::from(proj_trimmed);
+                        if let Ok(canon_cand) = fs::canonicalize(&candidate_proj) {
+                            if !canon_cand.starts_with(&canonical_p_root) {
+                                return (
+                                    StatusCode::FORBIDDEN,
+                                    axum::Json(serde_json::json!({
+                                        "status": "error",
+                                        "message": "project_path escapes designated project_root"
+                                    })),
+                                )
+                                    .into_response();
+                            }
+                        } else if candidate_proj != p_root {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": "Invalid project_path"
+                                })),
+                            )
+                                .into_response();
+                        }
                     }
-                    let _ = fs::write(&target_path, &req.content);
+
+                    // Validate file_path lexically
+                    let clean_rel = match PathGuard::validate_client_relative_path(&req.file_path) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let (code, json_val) = security_error_to_status_and_json(&e);
+                            return (code, axum::Json(json_val)).into_response();
+                        }
+                    };
+
+                    // Validate sensitive file / secret blocking
+                    if let Err(e) = PathGuard::validate_not_sensitive(&clean_rel) {
+                        let (code, json_val) = security_error_to_status_and_json(&e);
+                        return (code, axum::Json(json_val)).into_response();
+                    }
+
+                    // Resolve write target with ancestor canonicalization
+                    let guard = match PathGuard::new(&canonical_p_root) {
+                        Ok(g) => g,
+                        Err(e) => {
+                            let (code, json_val) = security_error_to_status_and_json(&e);
+                            return (code, axum::Json(json_val)).into_response();
+                        }
+                    };
+
+                    let target_path = match guard.resolve_write_target(&clean_rel) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let (code, json_val) = security_error_to_status_and_json(&e);
+                            return (code, axum::Json(json_val)).into_response();
+                        }
+                    };
+
+                    if let Some(parent) = target_path.parent() {
+                        if let Err(e) = fs::create_dir_all(parent) {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": format!("Failed to create parent directory: {}", e)
+                                })),
+                            )
+                                .into_response();
+                        }
+                    }
+
+                    if let Err(e) = fs::write(&target_path, &req.content) {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            axum::Json(serde_json::json!({
+                                "status": "error",
+                                "message": format!("Failed to write file: {}", e)
+                            })),
+                        )
+                            .into_response();
+                    }
 
                     let scanner = ProjectScanner::default();
-                    let new_graph = scanner.scan_project(&req.project_path);
+                    let new_graph = scanner.scan_project(&p_root);
                     let mut g_guard = state.graph.write().await;
                     *g_guard = new_graph.clone();
                     state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
                     let created_symbol = req.file_path.replace(['/', '\\'], "::");
-                    axum::Json(CreateFileResponse {
-                        status: "ok".to_string(),
-                        file_path: req.file_path,
-                        created_symbol,
-                        graph: new_graph.clone(),
-                        data: new_graph,
-                    })
+                    (
+                        StatusCode::OK,
+                        axum::Json(CreateFileResponse {
+                            status: "ok".to_string(),
+                            file_path: req.file_path,
+                            created_symbol,
+                            graph: new_graph.clone(),
+                            data: new_graph,
+                        }),
+                    )
+                        .into_response()
                 }
             }),
         )
-        // Chargement Ã  la demande de fichier / README (Lazy-loading pour booster les perfs)
+        // Chargement à la demande de fichier / README (Lazy-loading pour booster les perfs)
         .route(
             "/api/file_content",
             axum::routing::get({
@@ -1965,24 +2230,53 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 move |axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>| {
                     let state = state.clone();
                     async move {
+                        use axum::http::StatusCode;
+                        use axum::response::IntoResponse;
+
                         let rel_path = query.get("path").cloned().unwrap_or_default();
-                        let p_root = state.project_root.read().await;
-                        let full_path = if Path::new(&rel_path).is_absolute() {
-                            PathBuf::from(&rel_path)
-                        } else {
-                            p_root.join(&rel_path)
+
+                        // 1. Lexical client-relative validation
+                        let clean_rel = match PathGuard::validate_client_relative_path(&rel_path) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                let (code, json_val) = security_error_to_status_and_json(&e);
+                                return (code, axum::Json(json_val)).into_response();
+                            }
                         };
-                        match fs::read_to_string(&full_path) {
-                            Ok(content) => axum::Json(serde_json::json!({
-                                "status": "ok",
-                                "path": rel_path,
-                                "content": content
-                            })),
-                            Err(e) => axum::Json(serde_json::json!({
-                                "status": "error",
-                                "path": rel_path,
-                                "message": format!("Fichier introuvable: {}", e)
-                            }))
+
+                        // 2. Sensitive file check
+                        if let Err(e) = PathGuard::validate_not_sensitive(&clean_rel) {
+                            let (code, json_val) = security_error_to_status_and_json(&e);
+                            return (code, axum::Json(json_val)).into_response();
+                        }
+
+                        // 3. Confinement resolution and read via PathGuard
+                        let p_root = state.project_root.read().await.clone();
+                        let guard = match PathGuard::new(&p_root) {
+                            Ok(g) => g,
+                            Err(e) => {
+                                let (code, json_val) = security_error_to_status_and_json(&e);
+                                return (code, axum::Json(json_val)).into_response();
+                            }
+                        };
+
+                        match guard.read_to_string(&clean_rel) {
+                            Ok(content) => (
+                                StatusCode::OK,
+                                axum::Json(serde_json::json!({
+                                    "status": "ok",
+                                    "path": rel_path,
+                                    "content": content
+                                })),
+                            )
+                                .into_response(),
+                            Err(e) => {
+                                let (code, mut json_val) = security_error_to_status_and_json(&e);
+                                if let Some(obj) = json_val.as_object_mut() {
+                                    obj.insert("path".to_string(), serde_json::Value::String(rel_path.clone()));
+                                }
+                                (code, axum::Json(json_val)).into_response()
+                            }
                         }
                     }
                 }
@@ -2074,24 +2368,49 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     async move {
                         use axum::http::{header, StatusCode};
                         use axum::response::IntoResponse;
+
                         let rel_path = query.get("path").cloned().unwrap_or_default();
-                        if rel_path.is_empty() {
+                        if rel_path.trim().is_empty() {
                             return (StatusCode::BAD_REQUEST, "Chemin manquant").into_response();
                         }
-                        let p_root = state.project_root.read().await;
-                        let full_path = if Path::new(&rel_path).is_absolute() {
-                            PathBuf::from(&rel_path)
-                        } else {
-                            p_root.join(&rel_path)
+
+                        // 1. Lexical client-relative validation
+                        let clean_rel = match PathGuard::validate_client_relative_path(&rel_path) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                let (code, body) = security_error_to_status_and_json(&e);
+                                return (code, body.to_string()).into_response();
+                            }
                         };
-                        match fs::read(&full_path) {
+
+                        // 2. Allowed extension whitelisting
+                        let ext_str = match PathGuard::validate_raw_extension(&clean_rel) {
+                            Ok(ext) => ext,
+                            Err(e) => {
+                                let (code, body) = security_error_to_status_and_json(&e);
+                                return (code, body.to_string()).into_response();
+                            }
+                        };
+
+                        // 3. Sensitive file validation
+                        if let Err(e) = PathGuard::validate_not_sensitive(&clean_rel) {
+                            let (code, body) = security_error_to_status_and_json(&e);
+                            return (code, body.to_string()).into_response();
+                        }
+
+                        // 4. Confinement resolution and read via PathGuard
+                        let p_root = state.project_root.read().await.clone();
+                        let guard = match PathGuard::new(&p_root) {
+                            Ok(g) => g,
+                            Err(e) => {
+                                let (code, body) = security_error_to_status_and_json(&e);
+                                return (code, body.to_string()).into_response();
+                            }
+                        };
+
+                        match guard.read_bytes(&clean_rel) {
                             Ok(bytes) => {
-                                let ext = full_path
-                                    .extension()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or("")
-                                    .to_lowercase();
-                                let content_type = match ext.as_str() {
+                                let content_type = match ext_str {
                                     "png" => "image/png",
                                     "jpg" | "jpeg" => "image/jpeg",
                                     "gif" => "image/gif",
@@ -2099,10 +2418,12 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                     "webp" => "image/webp",
                                     "ico" => "image/x-icon",
                                     "bmp" => "image/bmp",
+                                    "tiff" => "image/tiff",
                                     "pdf" => "application/pdf",
                                     "json" => "application/json",
-                                    "md" | "txt" => "text/plain; charset=utf-8",
-                                    _ => "application/octet-stream",
+                                    "md" | "markdown" | "txt" => "text/plain; charset=utf-8",
+                                    "csv" => "text/csv; charset=utf-8",
+                                    _ => return (StatusCode::BAD_REQUEST, "Extension non autorisée").into_response(),
                                 };
                                 (
                                     StatusCode::OK,
@@ -2111,7 +2432,10 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 )
                                     .into_response()
                             }
-                            Err(_) => (StatusCode::NOT_FOUND, "Fichier introuvable").into_response(),
+                            Err(e) => {
+                                let (code, body) = security_error_to_status_and_json(&e);
+                                (code, body.to_string()).into_response()
+                            }
                         }
                     }
                 }

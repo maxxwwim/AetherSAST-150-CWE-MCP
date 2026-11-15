@@ -8,9 +8,9 @@ security_rules:
   no_raw_sql: true
   no_env_access: false
 ---
-# 📦 crates — 7-Crate Modular Rust Architecture (v2.4.0)
+# 📦 crates — 7-Crate Modular Rust Architecture (v2.5.0)
 
-The core engine of **AetherScope V2 (`aether-engine` v2.4.0)** is structured into 7 modular Rust 2021 workspace crates organized according to a strict hexagonal architecture:
+The core engine of **AetherScope V2 (`aether-engine` v2.5.0)** is structured into 7 modular Rust 2021 workspace crates organized according to a strict hexagonal architecture:
 
 ```
 crates/
