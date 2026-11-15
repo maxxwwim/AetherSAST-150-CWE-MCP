@@ -20,6 +20,7 @@
   import IgnoredCweModal from './components/IgnoredCweModal.svelte';
   import { cockpitState } from './state/graphState.svelte';
   import { api } from './lib/api';
+  import { DEMO_AETHER_GRAPH, DEMO_TASKS, DEMO_GIT_STATUS, DEMO_ACTIVE_AGENTS } from './data/demoGraph';
   import { onMount } from 'svelte';
 
   function handleGlobalKeydown(e: KeyboardEvent) {
@@ -153,11 +154,21 @@
         cockpitState.setGraph(injected);
       } else {
         try {
-          const g = await api.getGraph();
-          cockpitState.setGraph(g);
-          cockpitState.liveConnected = true;
+          const timeoutPromise = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000));
+          const g = await Promise.race([api.getGraph(), timeoutPromise]);
+          if (g && Array.isArray(g.nodes) && g.nodes.length > 0) {
+            cockpitState.setGraph(g);
+            cockpitState.liveConnected = true;
+          } else {
+            throw new Error('Empty graph');
+          }
         } catch (e) {
-          console.warn('Backend not responding yet:', e);
+          console.info('AetherScope: Live backend not detected. Booting interactive standalone demo mode (GitHub Pages).');
+          cockpitState.isDemoMode = true;
+          cockpitState.setGraph(DEMO_AETHER_GRAPH);
+          cockpitState.tasks = DEMO_TASKS;
+          cockpitState.gitStatus = DEMO_GIT_STATUS;
+          cockpitState.activeAgents = DEMO_ACTIVE_AGENTS;
         }
       }
 
@@ -209,9 +220,15 @@
     let tickCount = 0;
     versionTimer = setInterval(async () => {
       tickCount++;
+      if (cockpitState.isDemoMode && !cockpitState.liveConnected) {
+        if (tickCount % 10 !== 0) return;
+      }
       try {
         const res = await api.getGraphVersion();
         cockpitState.liveConnected = true;
+        if (cockpitState.isDemoMode) {
+          cockpitState.isDemoMode = false;
+        }
         if (typeof res?.version === 'number' && cockpitState.graphVersion > 0 && res.version !== cockpitState.graphVersion) {
           cockpitState.graphVersion = res.version;
           const updated = await api.getGraph();

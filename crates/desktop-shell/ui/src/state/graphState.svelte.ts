@@ -319,6 +319,7 @@ export class CockpitState {
   snapshotRequestTick = $state(0);
   graphVersion = $state(0);
   liveConnected = $state(false);
+  isDemoMode = $state(false);
   bountyOutOfScopePatterns = $state<string[]>([]);
   isScanningProject = $state(false);
   scanningTargetPath = $state('');

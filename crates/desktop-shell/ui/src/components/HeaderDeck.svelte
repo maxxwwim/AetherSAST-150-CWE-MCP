@@ -197,11 +197,18 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
         <FolderGit2 class="w-3.5 h-3.5 shrink-0 text-sky-400" />
         <span class="truncate font-semibold">{cockpitState.graph.project_name || 'Projet'}</span>
         <span
-          class="w-1.5 h-1.5 rounded-full shrink-0 {cockpitState.liveConnected ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-slate-500'}"
-          title={cockpitState.liveConnected ? `Watch Temps Réel Actif (v${cockpitState.graphVersion})` : 'Mode Hors-Ligne / Statique'}
+          class="w-1.5 h-1.5 rounded-full shrink-0 {cockpitState.liveConnected ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : cockpitState.isDemoMode ? 'bg-cyan-400 shadow-[0_0_6px_#06b6d4]' : 'bg-slate-500'}"
+          title={cockpitState.liveConnected ? `Watch Temps Réel Actif (v${cockpitState.graphVersion})` : cockpitState.isDemoMode ? 'Mode Démo Standalone WebGL (GitHub Pages)' : 'Mode Hors-Ligne / Statique'}
         ></span>
         <span class="text-sky-400 font-bold ml-0.5">+</span>
       </button>
+
+      {#if cockpitState.isDemoMode}
+        <span class="hidden md:inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold tracking-wider uppercase bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.25)]">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+          DÉMO LIVE GITHUB
+        </span>
+      {/if}
 
       <!-- Barre de saisie de Chemin Projet + Analyser + Parcourir -->
       <form
