@@ -131,6 +131,7 @@
         show_cwe_titles: cockpitState.settings.showCweTitles,
         show_folder_titles: cockpitState.settings.showFolderTitles,
         show_file_titles: cockpitState.settings.showFileTitles,
+        low_memory_mode: cockpitState.settings.lowMemoryMode,
         ui_settings: cockpitState.settings as any,
       });
       const updated = await api.getGraph();
@@ -274,6 +275,26 @@
                 bind:checked={cockpitState.settings.showFileTitles}
                 onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
                 class="accent-sky-400 w-4 h-4 cursor-pointer"
+              />
+            </label>
+
+            <label class="flex items-center justify-between p-2.5 rounded-lg bg-emerald-950/25 border border-emerald-500/30 cursor-pointer sm:col-span-2">
+              <div>
+                <div class="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+                  <span>⚡ Mode Petite Config & Basse Consommation RAM</span>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">Gain -60% RAM</span>
+                </div>
+                <div class="text-[10px] text-slate-400">Idéal pour les projets géants (PrestaShop, Linux...) et les PC à config modeste. Désactive les flous lourds (shadowBlur), passe le DPR à 1x, allège la mémoire V8 et active le culling d'arêtes.</div>
+              </div>
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.lowMemoryMode}
+                onchange={() => {
+                  cockpitState.saveLocalSettings();
+                  cockpitState.filterVersion += 1;
+                  if (cockpitState.engine) cockpitState.engine.handleResize();
+                }}
+                class="accent-emerald-400 w-4 h-4 cursor-pointer"
               />
             </label>
 

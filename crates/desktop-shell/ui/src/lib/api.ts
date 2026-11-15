@@ -241,6 +241,7 @@ export class AetherApiClient {
     show_cwe_titles?: boolean;
     show_folder_titles?: boolean;
     show_file_titles?: boolean;
+    low_memory_mode?: boolean;
     ui_settings?: any;
   }): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/settings`, {

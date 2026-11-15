@@ -2122,6 +2122,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let show_cwe_titles = state.show_cwe_titles.read().await.clone();
                     let show_folder_titles = state.show_folder_titles.read().await.clone();
                     let show_file_titles = state.show_file_titles.read().await.clone();
+                    let low_memory_mode = state.low_memory_mode.read().await.clone();
                     axum::Json(SettingsPayload {
                         exclusions,
                         active_cve_rules: Some(active_rules),
@@ -2133,6 +2134,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         show_cwe_titles,
                         show_folder_titles,
                         show_file_titles,
+                        low_memory_mode,
                         ui_settings,
                     })
                 }
@@ -2174,6 +2176,10 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     }
                     if let Some(v) = payload.show_file_titles {
                         let mut g = state.show_file_titles.write().await;
+                        *g = Some(v);
+                    }
+                    if let Some(v) = payload.low_memory_mode {
+                        let mut g = state.low_memory_mode.write().await;
                         *g = Some(v);
                     }
                     let p_root = state.project_root.read().await.clone();

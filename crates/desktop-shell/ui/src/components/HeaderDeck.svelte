@@ -31,6 +31,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
     BookOpen,
     Tag,
     Activity,
+    Zap,
     X,
     Volume2,
     VolumeX,
@@ -495,6 +496,20 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
             </div>
           {/if}
         </div>
+
+        <!-- 1-Clic Bascule Mode Éco / Petite Config -->
+        <button
+          type="button"
+          onclick={() => cockpitState.toggleLowMemoryMode()}
+          class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer {cockpitState.isLowMemoryMode ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-white/[0.02] border border-transparent text-slate-500 hover:text-slate-300'}"
+          title={cockpitState.isLowMemoryMode ? 'Mode Petite Config & Basse RAM ACTIF (cliquez pour désactiver)' : 'Mode Standard (cliquez pour activer le mode Petite Config & Basse RAM)'}
+        >
+          <Zap class="w-3 h-3 text-emerald-400" />
+          <span class="hidden 2xl:inline text-[10.5px]">Éco</span>
+          <span class="text-[9px] font-bold px-1 rounded {cockpitState.isLowMemoryMode ? 'bg-emerald-500/30 text-emerald-200' : 'bg-white/5 text-slate-500'}">
+            {cockpitState.isLowMemoryMode ? 'ON' : 'OFF'}
+          </span>
+        </button>
       </div>
 
       <!-- Modes de Vision Analytiques -->

@@ -92,7 +92,12 @@ export interface CockpitSettings {
   showCweTitles: boolean;
   showFolderTitles: boolean;
   showFileTitles: boolean;
+  lowMemoryMode: boolean;
 }
+
+const EMPTY_METHODS: any[] = Object.freeze([]);
+const EMPTY_ATTRIBUTES: any[] = Object.freeze([]);
+const EMPTY_ANOMALIES: any[] = Object.freeze([]);
 
 const DEFAULT_SETTINGS: CockpitSettings = {
   maxLabelLength: 18,
@@ -115,6 +120,7 @@ const DEFAULT_SETTINGS: CockpitSettings = {
   showCweTitles: true,
   showFolderTitles: true,
   showFileTitles: true,
+  lowMemoryMode: false,
 };
 
 function loadSavedSettings(): CockpitSettings {
@@ -749,6 +755,20 @@ export class CockpitState {
     return this.settings.showFileTitles;
   }
 
+  get isLowMemoryMode(): boolean {
+    return Boolean(this.settings.lowMemoryMode || (this.graph.nodes && this.graph.nodes.length > 2500));
+  }
+
+  toggleLowMemoryMode(): boolean {
+    this.settings.lowMemoryMode = !this.settings.lowMemoryMode;
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+    if (this.engine) {
+      this.engine.handleResize();
+    }
+    return this.settings.lowMemoryMode;
+  }
+
   toggleSound(): boolean {
     this.settings.soundEnabled = !this.settings.soundEnabled;
     this.saveLocalSettings();
@@ -1041,33 +1061,42 @@ export class CockpitState {
 
     const nowTs = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
+    const isHuge = rawNodes.length > 2500 || this.settings.lowMemoryMode;
+
     const normalizedNodes = rawNodes.map((rawNode) => {
       const meta = rawNode.metadata || {};
-      const methods = (rawNode.methods && rawNode.methods.length > 0 ? rawNode.methods : meta.methods || []).map((m) => ({
-        ...m,
-        signature:
-          m.signature ||
-          `${m.is_async ? 'async ' : ''}${m.name}(${m.args || ''})${m.returns ? ` -> ${m.returns}` : ''}`,
-        visibility: m.visibility || '+',
-        line: m.line ?? rawNode.line_number ?? 1,
-      }));
-      const attributes = (rawNode.attributes && rawNode.attributes.length > 0
-        ? rawNode.attributes
-        : meta.attributes || []
-      ).map((a) => ({
-        ...a,
-        attr_type: a.attr_type || a.type || 'any',
-        visibility: a.visibility || '+',
-      }));
+      const rawM = (rawNode.methods && rawNode.methods.length > 0) ? rawNode.methods : meta.methods;
+      const methods = (rawM && rawM.length > 0)
+        ? rawM.map((m) => ({
+            ...m,
+            signature:
+              m.signature ||
+              `${m.is_async ? 'async ' : ''}${m.name}(${m.args || ''})${m.returns ? ` -> ${m.returns}` : ''}`,
+            visibility: m.visibility || '+',
+            line: m.line ?? rawNode.line_number ?? 1,
+          }))
+        : EMPTY_METHODS;
+
+      const rawA = (rawNode.attributes && rawNode.attributes.length > 0) ? rawNode.attributes : meta.attributes;
+      const attributes = (rawA && rawA.length > 0)
+        ? rawA.map((a) => ({
+            ...a,
+            attr_type: a.attr_type || a.type || 'any',
+            visibility: a.visibility || '+',
+          }))
+        : EMPTY_ATTRIBUTES;
+
       const rawAnomalies =
-        rawNode.anomalies && rawNode.anomalies.length > 0 ? rawNode.anomalies : meta.cve_anomalies || [];
-      let anomalies = rawAnomalies.map((a) => ({
-        ...a,
-        cwe_class: a.cwe_class || a.cve_id || a.rule_id || 'CWE',
-        title: a.title || a.rule_id || a.cve_id || 'Security Alert',
-        description: a.description || a.message || '',
-      }));
-      if (anomalies.length === 0 && meta.violations && meta.violations.length > 0) {
+        rawNode.anomalies && rawNode.anomalies.length > 0 ? rawNode.anomalies : meta.cve_anomalies;
+      let anomalies = EMPTY_ANOMALIES;
+      if (rawAnomalies && rawAnomalies.length > 0) {
+        anomalies = rawAnomalies.map((a) => ({
+          ...a,
+          cwe_class: a.cwe_class || a.cve_id || a.rule_id || 'CWE',
+          title: a.title || a.rule_id || a.cve_id || 'Security Alert',
+          description: a.description || a.message || '',
+        }));
+      } else if (meta.violations && meta.violations.length > 0) {
         anomalies = meta.violations.map((msg) => {
           const isMaxLines =
             msg.includes('RULE_MAX_LINES') ||
@@ -1094,6 +1123,15 @@ export class CockpitState {
       const loc = rawNode.loc || rawNode.lines_count || meta.lines || 1;
       const cc = rawNode.cyclomatic_complexity || rawNode.complexity || 1;
       const isText = isTextOrDocFile(rawNode.file_path, rawNode.layer, String(rawNode.kind));
+
+      // Heap Optimization: Prune excessive metadata strings on massive graphs (>2500 nodes)
+      let docstring = rawNode.docstring || '';
+      if (isHuge && docstring.length > 240) {
+        docstring = docstring.slice(0, 240) + '...';
+      }
+      if (isHuge && meta.raw_content && !isText) {
+        delete meta.raw_content;
+      }
 
       let nodeGitStatus: SymbolBubble['git_status'] = rawNode.git_status;
       let editKind: EditActivityKind = rawNode.edit_kind || 'none';
@@ -1194,6 +1232,7 @@ export class CockpitState {
 
       return {
         ...rawNode,
+        docstring,
         x: posX,
         y: posY,
         birth_time: birthTime,
@@ -1214,6 +1253,10 @@ export class CockpitState {
     });
 
     this.recomputeFolderEdits(normalizedNodes);
+
+    if (g && Array.isArray(g.nodes)) {
+      g.nodes.length = 0; // Free raw JSON objects from memory
+    }
 
     this.graph = {
       ...g,

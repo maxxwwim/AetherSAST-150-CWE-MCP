@@ -486,7 +486,7 @@ export class AetherEngine {
   }
 
   public handleResize() {
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = this.state.isLowMemoryMode ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     const rect = this.canvas.getBoundingClientRect();
     this.logicalWidth = Math.max(1, rect.width || this.canvas.clientWidth || window.innerWidth);
     this.logicalHeight = Math.max(1, rect.height || this.canvas.clientHeight || (window.innerHeight - 78));
@@ -1876,7 +1876,7 @@ export class AetherEngine {
 
     ctx.save();
     const breathPhase = now * 0.00075;
-    const isDenseProject = this.clusters.size > 45;
+    const isDenseProject = this.clusters.size > 45 || this.state.isLowMemoryMode;
     const badges: {
       folder: string;
       label: string;
@@ -2040,7 +2040,7 @@ export class AetherEngine {
     ctx.font = '600 11px ui-sans-serif, system-ui, -apple-system, sans-serif';
     ctx.textBaseline = 'middle';
 
-    const maxDraw = Math.min(badges.length, 42);
+    const maxDraw = this.state.isLowMemoryMode ? Math.min(badges.length, 24) : Math.min(badges.length, 42);
     for (let i = 0; i < maxDraw; i++) {
       const b = badges[i];
       const text = b.editLabel ? `${b.label} · ${b.editLabel}` : `${b.label}`;
@@ -2129,8 +2129,10 @@ export class AetherEngine {
     ctx.lineTo(tipX - Math.cos(angle + spread) * size, tipY - Math.sin(angle + spread) * size);
     ctx.closePath();
     ctx.fillStyle = fillColor;
-    ctx.shadowColor = fillColor;
-    ctx.shadowBlur = 8;
+    if (!this.state.isLowMemoryMode) {
+      ctx.shadowColor = fillColor;
+      ctx.shadowBlur = 8;
+    }
     ctx.fill();
     ctx.restore();
   }
@@ -2139,6 +2141,7 @@ export class AetherEngine {
     const edges = this.state.graph.edges;
     if (!edges || edges.length === 0) return;
 
+    const isEco = this.state.isLowMemoryMode;
     const activeId = this.state.activeSymbol?.id || null;
     const focusId = this.hoveredNodeId || activeId;
     const isHoverFocus = Boolean(this.hoveredNodeId);
@@ -2172,8 +2175,8 @@ export class AetherEngine {
       isIncoming: boolean;
     }[] = [];
 
-    const isHuge = edges.length > 2500 || this.state.graph.nodes.length > 1800;
-    const edgeCap = isHuge ? (zoom < 0.25 ? 500 : 900) : 2200;
+    const isHuge = edges.length > 2500 || this.state.graph.nodes.length > 1800 || isEco;
+    const edgeCap = isHuge ? (zoom < 0.25 ? (isEco ? 250 : 500) : (isEco ? 450 : 900)) : 2200;
 
     for (let i = 0; i < edges.length; i++) {
       const e = edges[i];
@@ -2250,7 +2253,7 @@ export class AetherEngine {
       if (isCurved && cx !== null && cy !== null) {
         targetPath.quadraticCurveTo(cx, cy, p2.x, p2.y);
 
-        if (pulseParticles.length < 48 && (isXray || pipe || i % 7 === 0)) {
+        if (!isEco && pulseParticles.length < 48 && (isXray || pipe || i % 7 === 0)) {
           const u = ((now * 0.00032 + i * 0.17) % 1 + 1) % 1;
           const inv = 1 - u;
           pulseParticles.push({
@@ -2264,7 +2267,7 @@ export class AetherEngine {
       }
 
       // Subtle mid-edge directional chevrons on visible non-focus call/data edges when zoomed in
-      if (!focusId && zoom >= 1.15 && dist >= 44 && midChevrons.length < 180) {
+      if (!isEco && !focusId && zoom >= 1.15 && dist >= 44 && midChevrons.length < 180) {
         const mx = isCurved && cx !== null && cy !== null ? 0.25 * p1.x + 0.5 * cx + 0.25 * p2.x : (p1.x + p2.x) * 0.5;
         const my = isCurved && cx !== null && cy !== null ? 0.25 * p1.y + 0.5 * cy + 0.25 * p2.y : (p1.y + p2.y) * 0.5;
         midChevrons.push({
@@ -2362,8 +2365,10 @@ export class AetherEngine {
         ctx.save();
         ctx.strokeStyle = meta.color;
         ctx.lineWidth = isHoverFocus ? Math.max(1.8, w * 1.75) : Math.max(1.4, w * 1.35);
-        ctx.shadowColor = meta.color;
-        ctx.shadowBlur = isHoverFocus ? 10 : 5;
+        if (!isEco) {
+          ctx.shadowColor = meta.color;
+          ctx.shadowBlur = isHoverFocus ? 10 : 5;
+        }
         if (meta.dashed) ctx.setLineDash([6, 4]);
         ctx.beginPath();
         ctx.moveTo(fe.p1.x, fe.p1.y);

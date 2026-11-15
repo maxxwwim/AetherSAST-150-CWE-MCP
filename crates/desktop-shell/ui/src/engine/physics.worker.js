@@ -9,6 +9,7 @@
 let nodes = [];
 let edges = [];
 let nodeMap = new Map();
+let folderNodeMap = new Map();
 let depth = 1;
 let activeLayers = new Set(['ui', 'action', 'domain', 'database', 'network', 'external', 'test', 'config', 'utility', 'docs']);
 let hiddenModules = new Set();
@@ -33,13 +34,24 @@ function initGraph(payload) {
   physicsSleeping = false;
   physicsCooldown = 150;
   folderAnchors.clear();
+  cachedExportClusters = null;
+  cachedFolderStats = null;
 
   nodeMap = new Map();
+  folderNodeMap = new Map();
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     n.vx = n.vx || 0;
     n.vy = n.vy || 0;
     nodeMap.set(n.id, n);
+
+    const f = n.folder || 'root';
+    let fNodes = folderNodeMap.get(f);
+    if (!fNodes) {
+      fNodes = [];
+      folderNodeMap.set(f, fNodes);
+    }
+    fNodes.push(n);
   }
 
   // Pre-resolve edge pointers in worker
@@ -53,29 +65,27 @@ function initGraph(payload) {
 function computeFolderClusters(zoom = 1.0) {
   const folderStats = new Map();
   const comfortPadding = Math.max(48, Math.min(88, 54 / Math.sqrt(zoom || 1)));
-
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
-    if (!activeLayers.has(n.layer)) continue;
-    const f = n.folder || 'root';
-    if (hiddenModules.has(f)) continue;
-
-    let st = folderStats.get(f);
-    if (!st) {
-      st = { sumX: 0, sumY: 0, count: 0, minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, nodes: [] };
-      folderStats.set(f, st);
-    }
-    st.sumX += n.x;
-    st.sumY += n.y;
-    st.count++;
-    st.nodes.push(n);
-  }
-
   const exportClusters = {};
 
-  folderStats.forEach((st, folder) => {
-    const liveCx = st.sumX / st.count;
-    const liveCy = st.sumY / st.count;
+  folderNodeMap.forEach((fNodes, folder) => {
+    if (hiddenModules.has(folder)) return;
+
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+
+    for (let ni = 0; ni < fNodes.length; ni++) {
+      const nd = fNodes[ni];
+      if (!activeLayers.has(nd.layer)) continue;
+      sumX += nd.x;
+      sumY += nd.y;
+      count++;
+    }
+
+    if (count === 0) return;
+
+    const liveCx = sumX / count;
+    const liveCy = sumY / count;
     let anchor = folderAnchors.get(folder);
     if (!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) {
       anchor = { x: liveCx, y: liveCy };
@@ -87,18 +97,15 @@ function computeFolderClusters(zoom = 1.0) {
     }
     const cx = anchor.x;
     const cy = anchor.y;
-    st.cx = cx;
-    st.cy = cy;
-    st.sumX = liveCx * st.count;
-    st.sumY = liveCy * st.count;
 
     let maxDist = 0;
     let sumDist = 0;
-    const minBaseR = Math.max(120, Math.sqrt(st.count) * 62);
+    const minBaseR = Math.max(120, Math.sqrt(count) * 62);
     const rawSectors = new Float32Array(SECTORS);
 
-    for (let ni = 0; ni < st.nodes.length; ni++) {
-      const nd = st.nodes[ni];
+    for (let ni = 0; ni < fNodes.length; ni++) {
+      const nd = fNodes[ni];
+      if (!activeLayers.has(nd.layer)) continue;
       const dx = nd.x - cx;
       const dy = nd.y - cy;
       const nodePad = nd.is_file ? 34 : (nd.is_class ? 30 : 22);
@@ -116,16 +123,14 @@ function computeFolderClusters(zoom = 1.0) {
       if (d * 0.92 > rawSectors[nextIdx]) rawSectors[nextIdx] = d * 0.92;
     }
 
-    const meanDist = sumDist / Math.max(1, st.count);
+    const meanDist = sumDist / Math.max(1, count);
     const coreR = Math.max(meanDist * 1.48 + comfortPadding * 0.85, minBaseR);
     const baseR = Math.max(coreR, maxDist + comfortPadding * 0.92);
-    st.computedRadius = baseR;
-    st.naturalRadius = coreR;
 
     const lobes = new Float32Array(SECTORS);
     for (let s = 0; s < SECTORS; s++) {
       const neededR = rawSectors[s] > 0 ? (rawSectors[s] + comfortPadding * 0.75) : (baseR * 0.88);
-      const ratio = neededR / st.computedRadius;
+      const ratio = neededR / baseR;
       lobes[s] = Math.max(0.82, Math.min(1.48, ratio));
     }
 
@@ -139,7 +144,19 @@ function computeFolderClusters(zoom = 1.0) {
         dst[s] = prev * 0.25 + src[s] * 0.50 + next * 0.25;
       }
     }
-    st.lobeProfile = lobes;
+
+    const st = {
+      cx,
+      cy,
+      sumX: liveCx * count,
+      sumY: liveCy * count,
+      count,
+      computedRadius: baseR,
+      naturalRadius: coreR,
+      lobeProfile: lobes,
+      nodes: fNodes
+    };
+    folderStats.set(folder, st);
 
     exportClusters[folder] = {
       cx: st.cx,
@@ -430,14 +447,21 @@ function stepWorkerPhysics(zoom = 1.0) {
     positions[i * 2 + 1] = nodes[i].y;
   }
 
-  const clusterResult = computeFolderClusters(zoom);
-  exportClusters = clusterResult.exportClusters;
-  cachedExportClusters = exportClusters;
-  cachedFolderStats = clusterResult.folderStats;
+  // Throttled cluster transfer: only send on drag, every 12 frames, or when sleeping
+  const isClusterFrame = activeDragId || (stepCount % 12 === 0) || physicsSleeping || !cachedExportClusters;
+  let clustersToSend = null;
+  if (isClusterFrame) {
+    if (!cachedExportClusters) {
+      const clusterResult = computeFolderClusters(zoom);
+      cachedExportClusters = clusterResult.exportClusters;
+      cachedFolderStats = clusterResult.folderStats;
+    }
+    clustersToSend = cachedExportClusters;
+  }
 
   return {
     positions,
-    exportClusters,
+    exportClusters: clustersToSend,
     physicsSleeping
   };
 }

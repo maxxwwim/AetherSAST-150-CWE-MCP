@@ -81,24 +81,19 @@ export class PhysicsController {
       payload: {
         nodes: nodes.map((n) => ({
           id: String(n.id),
-          name: String(n.name || ''),
           x: Number(n.x) || 0,
           y: Number(n.y) || 0,
           vx: 0,
           vy: 0,
           folder: String(n.folder || n.cluster_id || 'root'),
           layer: String(n.layer || 'domain'),
-          loc: Number(n.loc) || 10,
           is_file: Boolean(n.is_file || n.kind === 'File'),
           is_class: Boolean(n.is_class || n.kind === 'ClassOrStruct' || n.kind === 'TraitOrInterface' || n.kind === 'Enum'),
-          is_func: Boolean(n.kind === 'FunctionOrMethod'),
-          kind: String(n.kind || ''),
           layouts: this.clonePlainLayouts(n.layouts)
         })),
         edges: edges.map((e) => ({
           source: String(e.source),
           target: String(e.target),
-          type: e.edge_type ? String(e.edge_type) : 'Call',
           relation: String(e.relation || e.edge_type || 'calls')
         })),
         depth: Number(depth) || 1

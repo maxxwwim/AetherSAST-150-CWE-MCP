@@ -54,6 +54,8 @@ pub struct SettingsPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_file_titles: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub low_memory_mode: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_settings: Option<serde_json::Value>,
 }
 
@@ -629,6 +631,7 @@ pub struct AppState {
     pub show_cwe_titles: RwLock<Option<bool>>,
     pub show_folder_titles: RwLock<Option<bool>>,
     pub show_file_titles: RwLock<Option<bool>>,
+    pub low_memory_mode: RwLock<Option<bool>>,
 
     // === Obsidian Vault & Dual-Vision Vision Mode Extensions (M2) ===
     pub project_type: RwLock<DetectedProjectType>,
@@ -659,6 +662,7 @@ impl AppState {
         let show_cwe_titles = saved_settings.as_ref().and_then(|s| s.show_cwe_titles);
         let show_folder_titles = saved_settings.as_ref().and_then(|s| s.show_folder_titles);
         let show_file_titles = saved_settings.as_ref().and_then(|s| s.show_file_titles);
+        let low_memory_mode = saved_settings.as_ref().and_then(|s| s.low_memory_mode);
 
         let mut initial_agents = std::collections::HashMap::new();
         for ag in cached.agents {
@@ -682,6 +686,7 @@ impl AppState {
             show_cwe_titles: RwLock::new(show_cwe_titles),
             show_folder_titles: RwLock::new(show_folder_titles),
             show_file_titles: RwLock::new(show_file_titles),
+            low_memory_mode: RwLock::new(low_memory_mode),
             project_type: RwLock::new(project_type),
             active_view_mode: RwLock::new(active_view_mode),
             code_graph: RwLock::new(code_graph),
