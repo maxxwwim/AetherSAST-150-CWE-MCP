@@ -13,6 +13,7 @@
 </p>
 
 [![Release](https://img.shields.io/badge/Release-v2.4.0_Svelte_5_%26_Live_BLAKE3-f97316?style=for-the-badge&logo=github)](./CHANGELOG.md)
+[![M8ven Score](https://m8ven.ai/badge/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7)](https://m8ven.ai/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?s=readme)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![SAST Linter](https://img.shields.io/badge/SAST-215_Active_Rules-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
@@ -98,7 +99,7 @@ security_rules:
 
 ## 🤖 3. Native Model Context Protocol (MCP) Server & AI Bridge
 
-AetherScope provides a dedicated, native **Model Context Protocol (MCP)** server binary (`aetherscope-mcp.exe`) operating over standard I/O (`stdio`) via JSON-RPC 2.0 (specification `2024-11-05`). It auto-detects if the backend is listening on port 3030 and automatically spawns a headless engine instance if needed.
+AetherScope provides a dedicated, native **Model Context Protocol (MCP)** server binary (`aetherscope-mcp.exe`) operating over standard I/O (`stdio`) via JSON-RPC 2.0 (specification `2024-11-05`), fully audited and scored 100/100 on M8ven Protocol criteria. It auto-detects if the backend is listening on port 3030 and automatically spawns a headless engine instance if needed.
 
 ### The 10 Consolidated MCP Tools
 
