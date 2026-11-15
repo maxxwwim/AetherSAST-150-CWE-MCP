@@ -181,7 +181,19 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
         .build(&event_loop)?;
 
     let app_url = format!("http://127.0.0.1:{}", port);
-    let _webview = WebViewBuilder::new(&window)
+    // Budget mémoire WebView2 : jusqu'à 4 Go de tas JS (défaut V8 ~1,4-2 Go => saccades/GC
+    // permanents puis crash sur les gros graphes) + conservation des flags wry par défaut.
+    #[cfg(windows)]
+    let webview_builder = {
+        use wry::WebViewBuilderExtWindows;
+        WebViewBuilder::new(&window).with_additional_browser_args(
+            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+             --js-flags=--max-old-space-size=4096",
+        )
+    };
+    #[cfg(not(windows))]
+    let webview_builder = WebViewBuilder::new(&window);
+    let _webview = webview_builder
         .with_url(&app_url)
         .with_devtools(true)
         .build()?;
@@ -1078,24 +1090,9 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 move || {
                     let state = state.clone();
                     async move {
-                        let p_root = state.project_root.read().await.clone();
-                        let graph = state.get_active_graph().await;
-                        let resp = tokio::task::spawn_blocking(move || {
-                            inspect_git_status(&p_root, &graph)
-                        })
-                        .await
-                        .unwrap_or_else(|_| GitStatusResponse {
-                            is_git_repo: false,
-                            branch: None,
-                            clean: true,
-                            files: Vec::new(),
-                            modified_count: 0,
-                            untracked_count: 0,
-                            staged_count: 0,
-                            deleted_count: 0,
-                            security_alert_count: 0,
-                        });
-                        axum::Json(resp)
+                        // Zéro clone du graphe : git tourne hors-graphe (cache 3 s), puis la
+                        // corrélation SAST se fait sous simple verrou de lecture.
+                        axum::Json(state.git_status_cached().await)
                     }
                 }
             }),
@@ -1177,11 +1174,22 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
         )
         .route(
             "/api/graph",
-            axum::routing::get(move || {
+            axum::routing::get(move |axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>| {
                 let state = state_graph.clone();
                 async move {
-                    let g = state.graph.read().await;
-                    axum::Json(g.clone())
+                    use axum::response::IntoResponse;
+                    if q.contains_key("full") {
+                        // Format historique complet (MCP, exports) : aretes en objets, aucun allegement.
+                        let g = state.graph.read().await;
+                        return axum::Json(g.clone()).into_response();
+                    }
+                    // UI : JSON compact et mis en cache par version (aretes en tableaux d'indices).
+                    let bytes = state.ui_graph_json().await;
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        bytes.as_ref().clone(),
+                    )
+                        .into_response()
                 }
             }),
         )

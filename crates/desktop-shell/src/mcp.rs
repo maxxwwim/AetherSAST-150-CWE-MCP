@@ -488,10 +488,10 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         }))).await;
                         match analyze_res {
                             Ok(val) => Ok(val),
-                            Err(_) => send_http_request(server_port, "GET", "/api/graph", None).await,
+                            Err(_) => send_http_request(server_port, "GET", "/api/graph?full=1", None).await,
                         }
                     } else {
-                        send_http_request(server_port, "GET", "/api/graph", None).await
+                        send_http_request(server_port, "GET", "/api/graph?full=1", None).await
                     };
 
                     let target_path = req_path_opt.unwrap_or(default_path);

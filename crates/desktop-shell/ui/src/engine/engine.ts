@@ -403,7 +403,9 @@ export class AetherEngine {
     this.activeNeighbors.clear();
     if (mode === 'xray' && activeId) {
       this.activeNeighbors.add(activeId);
-      for (const e of this.state.graph.edges) {
+      const inc = this.state.incidentEdges(activeId);
+      for (let i = 0; i < inc.length; i++) {
+        const e = inc[i];
         if (e.source === activeId) this.activeNeighbors.add(e.target);
         if (e.target === activeId) this.activeNeighbors.add(e.source);
       }
@@ -2178,14 +2180,61 @@ export class AetherEngine {
     const isHuge = edges.length > 2500 || this.state.graph.nodes.length > 1800 || isEco;
     const edgeCap = isHuge ? (zoom < 0.25 ? (isEco ? 250 : 500) : (isEco ? 450 : 900)) : 2200;
 
-    for (let i = 0; i < edges.length; i++) {
-      const e = edges[i];
-      const isIncident = Boolean(focusId && (e.source === focusId || e.target === focusId));
-      if (!isIncident) {
-        if (!focusId && i >= edgeCap) break;
-        if (i >= edgeCap) continue;
+    // 1. Process incident edges for the focused/hovered node directly (O(deg) via index)
+    if (focusId) {
+      const incident = this.state.incidentEdges(focusId);
+      for (let k = 0; k < incident.length && focusEdges.length < 64; k++) {
+        const e = incident[k];
+        const s = this.nodeMap.get(e.source);
+        const t = this.nodeMap.get(e.target);
+        if (!s || !t) continue;
+        if (!this.state.settings.showCweBubbles && (getNodeAlertKind(s) === 'security' || getNodeAlertKind(t) === 'security')) continue;
+        if (disabledLayers[s.layer || 'utility'] || disabledLayers[t.layer || 'utility']) continue;
+        if (disabledModules[s.folder || s.cluster_id || 'root'] || disabledModules[t.folder || t.cluster_id || 'root']) continue;
+
+        const rel = normalizeEdgeRelation(e.relation || e.edge_type);
+        if (disabledRelations[rel]) continue;
+
+        const p1 = this.worldToScreen(s.x, s.y);
+        const p2 = this.worldToScreen(t.x, t.y);
+        const sFolder = s.folder || s.cluster_id;
+        const tFolder = t.folder || t.cluster_id;
+        const isCross = Boolean(sFolder && tFolder && sFolder !== tFolder);
+        const isCurved = isCross && rel !== 'contains';
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const cx = isCurved ? (p1.x + p2.x) * 0.5 - dy * 0.14 : null;
+        const cy = isCurved ? (p1.y + p2.y) * 0.5 + dx * 0.14 : null;
+
+        const isWarnEdge =
+          rel === 'warns' ||
+          e.severity === 'WARNING' ||
+          Boolean(e.cve_id && e.cve_id.includes('ARCH-BUDGET-EXCEEDED'));
+        const isViolEdge = !isWarnEdge && (rel === 'violates' || Boolean(e.cve_id));
+
+        focusEdges.push({
+          sourceNode: s,
+          targetNode: t,
+          p1,
+          p2,
+          cx,
+          cy,
+          rel: isWarnEdge ? 'warns' : rel,
+          isViolation: isViolEdge,
+          isIncoming: e.target === focusId && e.source !== focusId,
+        });
       }
-      if (isXray && e.source !== activeId && e.target !== activeId && !isIncident) continue;
+    }
+
+    // 2. Sample background edges up to edgeCap
+    const maxBackground = edgeCap;
+    let drawnCount = 0;
+    const stride = isHuge ? Math.max(1, Math.floor(edges.length / (edgeCap * 3))) : 1;
+
+    for (let i = 0; i < edges.length && drawnCount < maxBackground; i += stride) {
+      const e = edges[i];
+      if (focusId && (e.source === focusId || e.target === focusId)) continue;
+      if (isXray && e.source !== activeId && e.target !== activeId) continue;
 
       const s = this.nodeMap.get(e.source);
       const t = this.nodeMap.get(e.target);
@@ -2200,14 +2249,14 @@ export class AetherEngine {
       const p1 = this.worldToScreen(s.x, s.y);
       const p2 = this.worldToScreen(t.x, t.y);
       if (
-        !isIncident &&
-        (Math.max(p1.x, p2.x) < -60 ||
-          Math.min(p1.x, p2.x) > this.logicalWidth + 60 ||
-          Math.max(p1.y, p2.y) < -60 ||
-          Math.min(p1.y, p2.y) > this.logicalHeight + 60)
+        Math.max(p1.x, p2.x) < -60 ||
+        Math.min(p1.x, p2.x) > this.logicalWidth + 60 ||
+        Math.max(p1.y, p2.y) < -60 ||
+        Math.min(p1.y, p2.y) > this.logicalHeight + 60
       ) {
         continue;
       }
+      drawnCount++;
 
       const sFolder = s.folder || s.cluster_id;
       const tFolder = t.folder || t.cluster_id;
@@ -2224,20 +2273,6 @@ export class AetherEngine {
         e.severity === 'WARNING' ||
         Boolean(e.cve_id && e.cve_id.includes('ARCH-BUDGET-EXCEEDED'));
       const isViolEdge = !isWarnEdge && (rel === 'violates' || Boolean(e.cve_id));
-
-      if (isIncident && focusEdges.length < 64) {
-        focusEdges.push({
-          sourceNode: s,
-          targetNode: t,
-          p1,
-          p2,
-          cx,
-          cy,
-          rel: isWarnEdge ? 'warns' : rel,
-          isViolation: isViolEdge,
-          isIncoming: e.target === focusId && e.source !== focusId,
-        });
-      }
 
       let targetPath = pCalls;
       if (isWarnEdge) { targetPath = pWarns; hasWarns = true; }

@@ -3957,6 +3957,36 @@ pub fn analyze_csharp_symbols(file_path: &Path, content: &str) -> Vec<SymbolBubb
     analyze_csharp(&file_path.to_string_lossy().replace('\\', "/"), content).nodes
 }
 
+/// Mots-clés de langage capturés à tort comme appels (`if (`, `foreach (`, `isset(`...).
+/// Sans ce filtre, un faux symbole `if` (ex. jquery-ui.js) recevait ~18k arêtes `calls`
+/// sur PrestaShop et noyait le graphe.
+fn is_language_keyword_call(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "elseif"
+            | "else"
+            | "for"
+            | "foreach"
+            | "while"
+            | "switch"
+            | "catch"
+            | "function"
+            | "return"
+            | "do"
+            | "try"
+            | "isset"
+            | "empty"
+            | "unset"
+            | "echo"
+            | "exit"
+            | "die"
+            | "require"
+            | "include"
+            | "require_once"
+            | "include_once"
+    )
+}
+
 pub fn resolve_graph_edges(
     nodes: &mut Vec<SymbolBubble>,
     raw_calls: &[RawCall],
@@ -4015,6 +4045,9 @@ pub fn resolve_graph_edges(
     for call in raw_calls {
         let src = &call.caller;
         let callee = &call.callee;
+        if is_language_keyword_call(callee) {
+            continue;
+        }
 
         let mut tgt = node_by_id
             .get(callee)

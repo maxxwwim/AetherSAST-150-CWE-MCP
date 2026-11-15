@@ -16,14 +16,6 @@
   });
   const anomaliesCount = $derived(node?.anomalies?.length || 0);
 
-  const nodeById = $derived.by(() => {
-    const map = new Map<string, string>();
-    for (const n of cockpitState.graph.nodes) {
-      map.set(n.id, n.name);
-    }
-    return map;
-  });
-
   const hoverLinks = $derived.by(() => {
     if (!node) {
       return { incoming: [] as { name: string; rel: string }[], outgoing: [] as { name: string; rel: string }[], callsIn: 0, callsOut: 0, imports: 0, data: 0 };
@@ -37,7 +29,9 @@
     const seenIn = new Set<string>();
     const seenOut = new Set<string>();
 
-    for (const e of cockpitState.graph.edges) {
+    const incident = cockpitState.incidentEdges(node.id);
+    for (let i = 0; i < incident.length; i++) {
+      const e = incident[i];
       if (e.source !== node.id && e.target !== node.id) continue;
       const rel = normalizeEdgeRelation(e.relation || e.edge_type);
       if (rel === 'imports' || rel === 'inherits' || rel === 'contains') imports++;
@@ -45,7 +39,8 @@
 
       if (e.target === node.id && e.source !== node.id) {
         if (rel === 'calls') callsIn++;
-        const srcName = nodeById.get(e.source) || e.source.split('::').pop() || e.source;
+        const srcNode = cockpitState.getNodeById(e.source);
+        const srcName = srcNode?.name || e.source.split('::').pop() || e.source;
         const key = `${srcName}:${rel}`;
         if (!seenIn.has(key) && incoming.length < 4) {
           seenIn.add(key);
@@ -53,7 +48,8 @@
         }
       } else if (e.source === node.id && e.target !== node.id) {
         if (rel === 'calls') callsOut++;
-        const dstName = nodeById.get(e.target) || e.target.split('::').pop() || e.target;
+        const dstNode = cockpitState.getNodeById(e.target);
+        const dstName = dstNode?.name || e.target.split('::').pop() || e.target;
         const key = `${dstName}:${rel}`;
         if (!seenOut.has(key) && outgoing.length < 4) {
           seenOut.add(key);

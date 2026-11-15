@@ -55,7 +55,7 @@ pub(crate) async fn handle_catalog_request(
 
             match uri {
                 "aether://graph/summary" => {
-                    let res = send_http_request(server_port, "GET", "/api/graph", None).await;
+                    let res = send_http_request(server_port, "GET", "/api/graph?full=1", None).await;
                     let text = match res {
                         Ok(val) => serde_json::to_string_pretty(&val).unwrap_or_default(),
                         Err(_) => {

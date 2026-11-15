@@ -59,6 +59,219 @@ pub struct SettingsPayload {
     pub ui_settings: Option<serde_json::Value>,
 }
 
+/// Transport compact du graphe vers l'UI (gros projets type PrestaShop : 40k noeuds / 250k aretes).
+///
+/// - Les aretes passent en tableaux d'entiers (indices de noeuds) + tables de relations :
+///   ~78 Mo de JSON d'aretes -> ~4 Mo, et l'UI ne duplique plus 500k chaines d'identifiants.
+/// - Les champs lourds des noeuds sont allégés (docstrings, hash, appels de méthodes) ;
+///   le code complet reste chargé à la demande (`/api/file_content`).
+/// - Les petits graphes gardent le format JSON historique (démo statique, tests, MCP `?full=1`).
+pub mod ui_payload {
+    use core_graph::graph::AetherGraph;
+    use serde::{Serialize, Serializer};
+    use std::collections::HashMap;
+
+    pub const COMPACT_NODE_THRESHOLD: usize = 3_000;
+    pub const COMPACT_EDGE_THRESHOLD: usize = 20_000;
+
+    pub fn needs_compaction(g: &AetherGraph) -> bool {
+        g.nodes.len() > COMPACT_NODE_THRESHOLD || g.edges.len() > COMPACT_EDGE_THRESHOLD
+    }
+
+    #[derive(Serialize, Default)]
+    pub struct CompactEdgeExtra {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub cve_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub severity: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub transmitted_data: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub transmitted_type: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub violation_details: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub weight: Option<f32>,
+    }
+
+    #[derive(Serialize)]
+    pub struct CompactEdges {
+        /// Extrémités d'arêtes qui ne sont pas des noeuds (index >= nodes.len()).
+        pub ids: Vec<String>,
+        pub rels: Vec<String>,
+        pub types: Vec<String>,
+        pub src: Vec<u32>,
+        pub dst: Vec<u32>,
+        pub rel: Vec<u16>,
+        pub typ: Vec<u16>,
+        /// Données rares (violations, taint) indexées par position d'arête.
+        pub extra: HashMap<u32, CompactEdgeExtra>,
+    }
+
+    #[derive(Serialize)]
+    pub struct UiGraphPayload {
+        #[serde(flatten)]
+        pub graph: AetherGraph,
+        pub edges_compact: CompactEdges,
+    }
+
+    fn trunc(s: &mut String, max: usize) {
+        if s.len() > max {
+            let mut cut = max;
+            while cut > 0 && !s.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            s.truncate(cut);
+            s.push('…');
+        }
+    }
+
+    pub fn build_payload(g: &AetherGraph) -> UiGraphPayload {
+        let mut nodes = g.nodes.clone();
+        for n in nodes.iter_mut() {
+            trunc(&mut n.docstring, 240);
+            if !(n.is_file && n.layer == "docs") {
+                n.metadata.raw_content = None;
+            }
+            if let Some(h) = n.metadata.blake3_hash.as_mut() {
+                h.truncate(16);
+            }
+            if let Some(h) = n.metadata.file_blake3_hash.as_mut() {
+                h.truncate(16);
+            }
+            for m in n.metadata.methods.iter_mut() {
+                m.calls.truncate(8);
+                if let Some(d) = m.docstring.as_mut() {
+                    trunc(d, 160);
+                }
+            }
+        }
+
+        let base = g.nodes.len() as u32;
+        let mut id_index: HashMap<&str, u32> = HashMap::with_capacity(g.nodes.len());
+        for (i, n) in g.nodes.iter().enumerate() {
+            id_index.insert(n.id.as_str(), i as u32);
+        }
+        let mut extra_ids: Vec<String> = Vec::new();
+        let mut extra_index: HashMap<String, u32> = HashMap::new();
+        let mut rels: Vec<String> = Vec::new();
+        let mut rel_map: HashMap<&str, u16> = HashMap::new();
+        let mut types: Vec<String> = Vec::new();
+        let mut types_seen: Vec<core_graph::edge::EdgeType> = Vec::new();
+
+        let cap = g.edges.len();
+        let mut src: Vec<u32> = Vec::with_capacity(cap);
+        let mut dst: Vec<u32> = Vec::with_capacity(cap);
+        let mut rel: Vec<u16> = Vec::with_capacity(cap);
+        let mut typ: Vec<u16> = Vec::with_capacity(cap);
+        let mut extra: HashMap<u32, CompactEdgeExtra> = HashMap::new();
+
+        let mut resolve = |id: &str| -> u32 {
+            if let Some(&i) = id_index.get(id) {
+                return i;
+            }
+            if let Some(&i) = extra_index.get(id) {
+                return i;
+            }
+            let i = base + extra_ids.len() as u32;
+            extra_ids.push(id.to_string());
+            extra_index.insert(id.to_string(), i);
+            i
+        };
+
+        for (i, e) in g.edges.iter().enumerate() {
+            src.push(resolve(&e.source));
+            dst.push(resolve(&e.target));
+
+            let ri = match rel_map.get(e.relation.as_str()) {
+                Some(&r) => r,
+                None => {
+                    let r = rels.len() as u16;
+                    rels.push(e.relation.clone());
+                    rel_map.insert(e.relation.as_str(), r);
+                    r
+                }
+            };
+            rel.push(ri);
+
+            let ti = match types_seen.iter().position(|t| *t == e.edge_type) {
+                Some(p) => p as u16,
+                None => {
+                    types_seen.push(e.edge_type.clone());
+                    types.push(format!("{:?}", e.edge_type));
+                    (types.len() - 1) as u16
+                }
+            };
+            typ.push(ti);
+
+            let weight_set = (e.weight - 1.0).abs() > f32::EPSILON;
+            let has_extra = e.cve_id.is_some()
+                || e.severity.is_some()
+                || e.transmitted_data.is_some()
+                || e.transmitted_type.is_some()
+                || e.violation_details.is_some()
+                || e.label.is_some()
+                || weight_set;
+            if has_extra {
+                extra.insert(
+                    i as u32,
+                    CompactEdgeExtra {
+                        cve_id: e.cve_id.clone(),
+                        severity: e.severity.clone(),
+                        transmitted_data: e.transmitted_data.clone(),
+                        transmitted_type: e.transmitted_type.clone(),
+                        violation_details: e.violation_details.clone(),
+                        label: e.label.clone(),
+                        weight: if weight_set { Some(e.weight) } else { None },
+                    },
+                );
+            }
+        }
+
+        let graph = AetherGraph {
+            project_name: g.project_name.clone(),
+            project_path: g.project_path.clone(),
+            generated_at: g.generated_at.clone(),
+            system_prompt: g.system_prompt.clone(),
+            nodes,
+            edges: Vec::new(),
+            stats: g.stats.clone(),
+            dataflow_graph: g.dataflow_graph.clone(),
+        };
+
+        UiGraphPayload {
+            graph,
+            edges_compact: CompactEdges { ids: extra_ids, rels, types, src, dst, rel, typ, extra },
+        }
+    }
+
+    /// `#[serde(serialize_with)]` : graphe compact si volumineux, JSON historique sinon.
+    pub fn ser_graph<S: Serializer>(g: &AetherGraph, s: S) -> Result<S::Ok, S::Error> {
+        if needs_compaction(g) {
+            build_payload(g).serialize(s)
+        } else {
+            g.serialize(s)
+        }
+    }
+
+    pub fn ser_graph_opt<S: Serializer>(g: &Option<AetherGraph>, s: S) -> Result<S::Ok, S::Error> {
+        match g {
+            Some(g) => ser_graph(g, s),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn to_json_bytes(g: &AetherGraph) -> Vec<u8> {
+        if needs_compaction(g) {
+            serde_json::to_vec(&build_payload(g)).unwrap_or_default()
+        } else {
+            serde_json::to_vec(g).unwrap_or_default()
+        }
+    }
+}
+
 pub fn settings_file_path(project_root: &Path) -> PathBuf {
     project_root.join(".aether").join("settings.json")
 }
@@ -119,7 +332,7 @@ pub struct SaveDocResponse {
     pub saved_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blake3_hash: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "ui_payload::ser_graph_opt")]
     pub graph: Option<AetherGraph>,
 }
 
@@ -138,6 +351,7 @@ pub struct SignContractsResponse {
     pub signed_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blake3_hash: Option<String>,
+    #[serde(serialize_with = "ui_payload::ser_graph")]
     pub graph: AetherGraph,
 }
 
@@ -170,6 +384,7 @@ pub struct UpdateContractResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_blake3_hash: Option<String>,
     pub effective_max_lines: usize,
+    #[serde(serialize_with = "ui_payload::ser_graph")]
     pub graph: AetherGraph,
 }
 
@@ -550,7 +765,9 @@ pub struct CreateFileResponse {
     pub status: String,
     pub file_path: String,
     pub created_symbol: String,
+    #[serde(serialize_with = "ui_payload::ser_graph")]
     pub graph: AetherGraph,
+    #[serde(serialize_with = "ui_payload::ser_graph")]
     pub data: AetherGraph,
 }
 
@@ -565,6 +782,7 @@ pub struct PickWorkspaceResponse {
 pub struct PickProjectResponse {
     pub status: String,
     pub project_path: Option<String>,
+    #[serde(serialize_with = "ui_payload::ser_graph_opt")]
     pub graph: Option<AetherGraph>,
 }
 
@@ -632,6 +850,10 @@ pub struct AppState {
     pub show_folder_titles: RwLock<Option<bool>>,
     pub show_file_titles: RwLock<Option<bool>>,
     pub low_memory_mode: RwLock<Option<bool>>,
+    /// Cache des octets JSON du graphe pour l'UI (clé : version, nb noeuds, nb arêtes).
+    pub ui_graph_cache: RwLock<Option<(u64, usize, usize, std::sync::Arc<Vec<u8>>)>>,
+    /// Cache court de `git status` (évite de relancer git toutes les 2 s sur 16k fichiers).
+    pub git_raw_cache: std::sync::Mutex<Option<(std::time::Instant, Option<(String, Option<String>)>)>>,
 
     // === Obsidian Vault & Dual-Vision Vision Mode Extensions (M2) ===
     pub project_type: RwLock<DetectedProjectType>,
@@ -687,6 +909,8 @@ impl AppState {
             show_folder_titles: RwLock::new(show_folder_titles),
             show_file_titles: RwLock::new(show_file_titles),
             low_memory_mode: RwLock::new(low_memory_mode),
+            ui_graph_cache: RwLock::new(None),
+            git_raw_cache: std::sync::Mutex::new(None),
             project_type: RwLock::new(project_type),
             active_view_mode: RwLock::new(active_view_mode),
             code_graph: RwLock::new(code_graph),
@@ -797,6 +1021,54 @@ impl AppState {
 
     pub async fn get_active_graph(&self) -> AetherGraph {
         self.graph.read().await.clone()
+    }
+
+    /// JSON du graphe pour l'UI, calculé une seule fois par version (compact si volumineux).
+    pub async fn ui_graph_json(&self) -> std::sync::Arc<Vec<u8>> {
+        let ver = self.graph_version.load(std::sync::atomic::Ordering::SeqCst);
+        let g = self.graph.read().await;
+        let key = (ver, g.nodes.len(), g.edges.len());
+        if let Some((v, n, e, bytes)) = self.ui_graph_cache.read().await.as_ref() {
+            if (*v, *n, *e) == key {
+                return bytes.clone();
+            }
+        }
+        let bytes = std::sync::Arc::new(ui_payload::to_json_bytes(&g));
+        *self.ui_graph_cache.write().await = Some((key.0, key.1, key.2, bytes.clone()));
+        bytes
+    }
+
+    /// `git status` brut mis en cache 3 s ; ne touche jamais au graphe (zéro clone).
+    pub async fn git_status_cached(&self) -> GitStatusResponse {
+        let p_root = self.project_root.read().await.clone();
+        let cached = {
+            let guard = self.git_raw_cache.lock().ok();
+            guard.and_then(|g| {
+                g.as_ref()
+                    .filter(|(t, _)| t.elapsed() < std::time::Duration::from_secs(3))
+                    .map(|(_, raw)| raw.clone())
+            })
+        };
+        let raw = match cached {
+            Some(raw) => raw,
+            None => {
+                let fresh = tokio::task::spawn_blocking(move || run_git_porcelain(&p_root))
+                    .await
+                    .ok()
+                    .flatten();
+                if let Ok(mut guard) = self.git_raw_cache.lock() {
+                    *guard = Some((std::time::Instant::now(), fresh.clone()));
+                }
+                fresh
+            }
+        };
+        match raw {
+            Some((stdout, branch)) => {
+                let g = self.graph.read().await;
+                parse_git_status_porcelain(&stdout, branch, true, &g)
+            }
+            None => empty_git_status(),
+        }
     }
 
     pub async fn get_code_graph(&self) -> Option<AetherGraph> {
@@ -1933,7 +2205,22 @@ pub fn pick_folder_dialog(title: &str) -> Option<PathBuf> {
 /// Inspecte le statut Git du projet en exécutant `git status --porcelain=v1 -uall --ignored=no`
 /// et croise les fichiers modifiés / non suivis avec les bulles du graphe AetherGraph pour
 /// détecter les violations de sécurité SAST CWE et les ruptures de contrats EARS.
-pub fn inspect_git_status(project_root: &Path, graph: &AetherGraph) -> GitStatusResponse {
+pub fn empty_git_status() -> GitStatusResponse {
+    GitStatusResponse {
+        is_git_repo: false,
+        branch: None,
+        clean: true,
+        files: Vec::new(),
+        modified_count: 0,
+        untracked_count: 0,
+        staged_count: 0,
+        deleted_count: 0,
+        security_alert_count: 0,
+    }
+}
+
+/// Exécute `git status --porcelain` + branche courante. Ne dépend pas du graphe.
+pub fn run_git_porcelain(project_root: &Path) -> Option<(String, Option<String>)> {
     let mut cmd = std::process::Command::new("git");
     cmd.args(["status", "--porcelain=v1", "-uall", "--ignored=no"])
         .current_dir(project_root);
@@ -1946,19 +2233,7 @@ pub fn inspect_git_status(project_root: &Path, graph: &AetherGraph) -> GitStatus
 
     let output = match cmd.output() {
         Ok(out) if out.status.success() => out,
-        _ => {
-            return GitStatusResponse {
-                is_git_repo: false,
-                branch: None,
-                clean: true,
-                files: Vec::new(),
-                modified_count: 0,
-                untracked_count: 0,
-                staged_count: 0,
-                deleted_count: 0,
-                security_alert_count: 0,
-            };
-        }
+        _ => return None,
     };
 
     let mut branch_cmd = std::process::Command::new("git");
@@ -1972,20 +2247,24 @@ pub fn inspect_git_status(project_root: &Path, graph: &AetherGraph) -> GitStatus
         branch_cmd.creation_flags(0x08000000);
     }
 
-    let branch = branch_cmd
-        .output()
-        .ok()
-        .and_then(|out| {
-            if out.status.success() {
-                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if s.is_empty() { None } else { Some(s) }
-            } else {
-                None
-            }
-        });
+    let branch = branch_cmd.output().ok().and_then(|out| {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if s.is_empty() { None } else { Some(s) }
+        } else {
+            None
+        }
+    });
 
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    parse_git_status_porcelain(&stdout_str, branch, true, graph)
+    Some((String::from_utf8_lossy(&output.stdout).to_string(), branch))
+}
+
+#[allow(dead_code)]
+pub fn inspect_git_status(project_root: &Path, graph: &AetherGraph) -> GitStatusResponse {
+    match run_git_porcelain(project_root) {
+        Some((stdout, branch)) => parse_git_status_porcelain(&stdout, branch, true, graph),
+        None => empty_git_status(),
+    }
 }
 
 /// Analyse la sortie porcelain v1 de Git et effectue la corrélation avec l'AetherGraph.
@@ -2002,6 +2281,14 @@ pub fn parse_git_status_porcelain(
     let mut deleted_count = 0;
     let mut security_alert_count = 0;
 
+    // Index chemin -> noeuds construit UNE fois (avant : O(fichiers x noeuds) avec une allocation
+    // de chaine par noeud et par fichier => gel total sur les gros projets).
+    let mut nodes_by_path: std::collections::HashMap<String, Vec<&core_graph::bubble::SymbolBubble>> =
+        std::collections::HashMap::new();
+    for node in &graph.nodes {
+        let key = node.file_path.trim_start_matches("./").replace('\\', "/");
+        nodes_by_path.entry(key).or_default().push(node);
+    }
     for line in stdout_str.lines() {
         let trimmed_line = line.trim();
         if trimmed_line.is_empty() || trimmed_line.starts_with('#') {
@@ -2072,9 +2359,8 @@ pub fn parse_git_status_porcelain(
         let mut ears_violation = false;
         let mut max_severity: Option<String> = None;
 
-        for node in &graph.nodes {
-            let node_path = node.file_path.trim_start_matches("./").replace('\\', "/");
-            if node_path == file_path {
+        for node in nodes_by_path.get(file_path.as_str()).map(|v| v.as_slice()).unwrap_or(&[]) {
+            {
                 if node.has_security_violation {
                     has_sec = true;
                 }

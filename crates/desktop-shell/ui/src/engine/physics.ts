@@ -76,6 +76,22 @@ export class PhysicsController {
   public sendGraph(nodes: SymbolBubble[], edges: AffiliationEdge[], depth = 1) {
     if (!this.worker || nodes.length === 0) return;
     this.isSleeping = false;
+
+    // The physics worker caps at 2500 edges in large graphs anyway.
+    // Avoid mapping and transferring hundreds of thousands of objects over structured clone.
+    const sampleLimit = 3000;
+    const stride = edges.length > sampleLimit ? Math.ceil(edges.length / sampleLimit) : 1;
+    const mappedEdges: { source: string; target: string; relation: string }[] = [];
+    for (let i = 0; i < edges.length && mappedEdges.length < sampleLimit; i += stride) {
+      const e = edges[i];
+      if (!e) continue;
+      mappedEdges.push({
+        source: String(e.source),
+        target: String(e.target),
+        relation: String(e.relation || e.edge_type || 'calls'),
+      });
+    }
+
     this.worker.postMessage({
       type: 'INIT',
       payload: {
@@ -91,11 +107,7 @@ export class PhysicsController {
           is_class: Boolean(n.is_class || n.kind === 'ClassOrStruct' || n.kind === 'TraitOrInterface' || n.kind === 'Enum'),
           layouts: this.clonePlainLayouts(n.layouts)
         })),
-        edges: edges.map((e) => ({
-          source: String(e.source),
-          target: String(e.target),
-          relation: String(e.relation || e.edge_type || 'calls')
-        })),
+        edges: mappedEdges,
         depth: Number(depth) || 1
       }
     });

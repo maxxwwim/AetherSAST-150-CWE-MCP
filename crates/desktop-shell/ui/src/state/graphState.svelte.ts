@@ -1,6 +1,7 @@
-import type { AetherGraph, SymbolBubble, TaskItem, CveAnomalyRecord, GitStatusResponse, GitFileChange, EditActivityKind } from '../types/graph';
+import type { AetherGraph, AffiliationEdge, SymbolBubble, TaskItem, CveAnomalyRecord, GitStatusResponse, GitFileChange, EditActivityKind } from '../types/graph';
 import { playSpatialTone } from '../lib/sound';
 import { api } from '../lib/api';
+import { decodeCompactGraph } from '../lib/graphCodec';
 
 export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): boolean {
   if (!a) return false;
@@ -277,7 +278,13 @@ export class CockpitState {
   private lastGitSignature = '';
   private prevGitFileStates = new Map<string, string>();
   private knownTrackedFolders = new Set<string>();
+  nodeById = new Map<string, SymbolBubble>();
   engine: any = null;
+
+  getNodeById(id: string | null | undefined): SymbolBubble | undefined {
+    if (!id) return undefined;
+    return this.nodeById.get(id);
+  }
 
   // Live Multi-Agent AI Swarm, MCP & Copilot Telemetry
   activeAgents = $state<{
@@ -392,6 +399,10 @@ export class CockpitState {
     clean = clean.replace(/:\d+(?::\d+)?$/, '');
     clean = clean.replace(/\\/g, '/').trim();
     if (!clean) return undefined;
+
+    // Fast O(1) direct ID hit
+    const fastHit = this.nodeById.get(clean);
+    if (fastHit) return fastHit;
 
     const tLower = clean.toLowerCase();
     const baseNameLower = tLower.split('/').pop() || tLower;
@@ -759,6 +770,46 @@ export class CockpitState {
     return Boolean(this.settings.lowMemoryMode || (this.graph.nodes && this.graph.nodes.length > 2500));
   }
 
+  /**
+   * Index d'adjacence nœud -> positions d'arêtes, construit une seule fois par graphe.
+   * Remplace les balayages O(E) (250k arêtes) faits à chaque frame / survol.
+   * Champ volontairement non réactif (pas de proxy Svelte sur 500k entrées).
+   */
+  edgeIndex: Map<string, number[]> = new Map();
+
+  private buildEdgeIndex(edges: AffiliationEdge[]) {
+    const idx = new Map<string, number[]>();
+    for (let i = 0; i < edges.length; i++) {
+      const e = edges[i];
+      let a = idx.get(e.source);
+      if (!a) {
+        a = [];
+        idx.set(e.source, a);
+      }
+      a.push(i);
+      if (e.target !== e.source) {
+        let b = idx.get(e.target);
+        if (!b) {
+          b = [];
+          idx.set(e.target, b);
+        }
+        b.push(i);
+      }
+    }
+    this.edgeIndex = idx;
+  }
+
+  /** Arêtes incidentes à un nœud en O(degré) au lieu de O(E). */
+  incidentEdges(id: string | null | undefined): AffiliationEdge[] {
+    if (!id) return [];
+    const positions = this.edgeIndex.get(id);
+    if (!positions || positions.length === 0) return [];
+    const edges = this.graph.edges;
+    const out: AffiliationEdge[] = new Array(positions.length);
+    for (let i = 0; i < positions.length; i++) out[i] = edges[positions[i]];
+    return out;
+  }
+
   toggleLowMemoryMode(): boolean {
     this.settings.lowMemoryMode = !this.settings.lowMemoryMode;
     this.saveLocalSettings();
@@ -1034,7 +1085,8 @@ export class CockpitState {
   }
 
   // Actions
-  setGraph(g: AetherGraph, isIncremental = false) {
+  setGraph(gIn: AetherGraph, isIncremental = false) {
+    const g = decodeCompactGraph(gIn);
     const rawNodes = Array.isArray(g?.nodes) ? g.nodes : [];
     const prevNodes = this.graph.nodes || [];
     const isSameProject = prevNodes.length > 0 && (!g?.project_name || g.project_name === this.graph.project_name);
@@ -1258,10 +1310,19 @@ export class CockpitState {
       g.nodes.length = 0; // Free raw JSON objects from memory
     }
 
+    this.nodeById.clear();
+    for (let i = 0; i < normalizedNodes.length; i++) {
+      const n = normalizedNodes[i];
+      this.nodeById.set(n.id, n);
+    }
+
+    const normalizedEdges = Array.isArray(g?.edges) ? g.edges : [];
+    this.buildEdgeIndex(normalizedEdges);
+
     this.graph = {
       ...g,
       nodes: normalizedNodes,
-      edges: Array.isArray(g?.edges) ? g.edges : [],
+      edges: normalizedEdges,
       clusters: g?.clusters || {},
     };
     this.syncTelemetryCoordinates();
