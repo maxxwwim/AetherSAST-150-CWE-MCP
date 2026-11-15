@@ -176,9 +176,28 @@
           cockpitState.tasks = tasksList.value;
         }
         if (settingsRes.status === 'fulfilled' && settingsRes.value) {
-          if (Array.isArray(settingsRes.value.ignored_cwes)) {
-            cockpitState.settings.ignoredCwes = settingsRes.value.ignored_cwes;
+          const s = settingsRes.value;
+          if (Array.isArray(s.ignored_cwes) && s.ignored_cwes.length > 0) {
+            cockpitState.settings.ignoredCwes = s.ignored_cwes;
           }
+          if (Array.isArray(s.exclusions) && s.exclusions.length > 0) {
+            cockpitState.settings.exclusions = s.exclusions;
+          }
+          if (Array.isArray(s.active_cve_rules) && s.active_cve_rules.length > 0) {
+            cockpitState.settings.activeCveRules = s.active_cve_rules;
+          }
+          if (typeof s.show_alerts === 'boolean') cockpitState.settings.showAlerts = s.show_alerts;
+          if (typeof s.show_cwe_bubbles === 'boolean') cockpitState.settings.showCweBubbles = s.show_cwe_bubbles;
+          if (typeof s.show_cwe_titles === 'boolean') cockpitState.settings.showCweTitles = s.show_cwe_titles;
+          if (typeof s.show_folder_titles === 'boolean') {
+            cockpitState.settings.showFolderTitles = s.show_folder_titles;
+            cockpitState.settings.showFolderBadges = s.show_folder_titles;
+          }
+          if (typeof s.show_file_titles === 'boolean') cockpitState.settings.showFileTitles = s.show_file_titles;
+          if (s.ui_settings && typeof s.ui_settings === 'object') {
+            Object.assign(cockpitState.settings, s.ui_settings);
+          }
+          cockpitState.saveLocalSettings(false);
         }
         await cockpitState.fetchGitStatus().catch(() => {});
       } catch {

@@ -87,6 +87,11 @@ export interface CockpitSettings {
   activeCveRules: string[];
   ignoredCwes: string[];
   mcpBinaryPath: string;
+  showAlerts: boolean;
+  showCweBubbles: boolean;
+  showCweTitles: boolean;
+  showFolderTitles: boolean;
+  showFileTitles: boolean;
 }
 
 const DEFAULT_SETTINGS: CockpitSettings = {
@@ -105,6 +110,11 @@ const DEFAULT_SETTINGS: CockpitSettings = {
   activeCveRules: [],
   ignoredCwes: [],
   mcpBinaryPath: 'aetherscope-mcp.exe',
+  showAlerts: true,
+  showCweBubbles: true,
+  showCweTitles: true,
+  showFolderTitles: true,
+  showFileTitles: true,
 };
 
 function loadSavedSettings(): CockpitSettings {
@@ -433,7 +443,7 @@ export class CockpitState {
           ag.prevY = ag.targetY ?? hit.y;
           ag.targetX = hit.x;
           ag.targetY = hit.y;
-          ag.moveStartTs = Date.now();
+          ag.moveStartTs = typeof performance !== 'undefined' ? performance.now() : Date.now();
           changed = true;
         }
       }
@@ -567,7 +577,9 @@ export class CockpitState {
       let prevY = existingActive?.targetY;
       let targetX = hit?.x;
       let targetY = hit?.y;
-      let moveStartTs = (prevX !== undefined && targetX !== undefined && (prevX !== targetX || prevY !== targetY)) ? Date.now() : existingActive?.moveStartTs;
+      let moveStartTs = (prevX !== undefined && targetX !== undefined && (prevX !== targetX || prevY !== targetY))
+        ? (typeof performance !== 'undefined' ? performance.now() : Date.now())
+        : existingActive?.moveStartTs;
 
       activeMap.set(agentId, {
         agentId,
@@ -666,7 +678,7 @@ export class CockpitState {
     this.saveLocalAiCache();
   }
 
-  saveLocalSettings() {
+  saveLocalSettings(syncBackend = true) {
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('aetherscope_settings', JSON.stringify(this.settings));
@@ -674,6 +686,67 @@ export class CockpitState {
     } catch {
       // ignore storage quota errors
     }
+    if (syncBackend && typeof window !== 'undefined') {
+      this.syncSettingsToBackend();
+    }
+  }
+
+  private _syncTimer: any = null;
+  syncSettingsToBackend() {
+    if (this._syncTimer) clearTimeout(this._syncTimer);
+    this._syncTimer = setTimeout(async () => {
+      try {
+        await api.saveSettings({
+          exclusions: this.settings.exclusions,
+          active_cve_rules: this.settings.activeCveRules.length > 0 ? this.settings.activeCveRules : undefined,
+          ignored_cwes: this.settings.ignoredCwes,
+          show_alerts: this.settings.showAlerts,
+          show_cwe_bubbles: this.settings.showCweBubbles,
+          show_cwe_titles: this.settings.showCweTitles,
+          show_folder_titles: this.settings.showFolderTitles,
+          show_file_titles: this.settings.showFileTitles,
+          ui_settings: this.settings as any,
+        });
+      } catch {
+        // standalone offline mode
+      }
+    }, 250);
+  }
+
+  toggleAlerts(): boolean {
+    this.settings.showAlerts = !this.settings.showAlerts;
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+    return this.settings.showAlerts;
+  }
+
+  toggleCweBubbles(): boolean {
+    this.settings.showCweBubbles = !this.settings.showCweBubbles;
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+    return this.settings.showCweBubbles;
+  }
+
+  toggleCweTitles(): boolean {
+    this.settings.showCweTitles = !this.settings.showCweTitles;
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+    return this.settings.showCweTitles;
+  }
+
+  toggleFolderTitles(): boolean {
+    this.settings.showFolderTitles = !this.settings.showFolderTitles;
+    this.settings.showFolderBadges = this.settings.showFolderTitles;
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+    return this.settings.showFolderTitles;
+  }
+
+  toggleFileTitles(): boolean {
+    this.settings.showFileTitles = !this.settings.showFileTitles;
+    this.saveLocalSettings();
+    this.filterVersion += 1;
+    return this.settings.showFileTitles;
   }
 
   toggleSound(): boolean {

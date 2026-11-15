@@ -233,9 +233,15 @@ export class AetherApiClient {
   }
 
   async saveSettings(payload: {
-    exclusions: string[];
+    exclusions?: string[];
     active_cve_rules?: string[];
     ignored_cwes?: string[];
+    show_alerts?: boolean;
+    show_cwe_bubbles?: boolean;
+    show_cwe_titles?: boolean;
+    show_folder_titles?: boolean;
+    show_file_titles?: boolean;
+    ui_settings?: any;
   }): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/settings`, {
       method: 'POST',

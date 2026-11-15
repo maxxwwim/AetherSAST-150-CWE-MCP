@@ -8,23 +8,30 @@ security_rules:
   no_raw_sql: true
   no_env_access: false
 ---
-#  🖥️ desktop-shell — Cockpit Desktop WebGL 2, Serveur Axum & Serveur MCP (v2.4.0)
+# 🖥️ desktop-shell — Native Desktop Cockpit, Axum Backend & MCP Server (v2.4.0)
 
-Exécutable principal d'AetherScope V2 (`aether-engine`) et serveur MCP dédié (`aetherscope-mcp`). Héberge la fenêtre native WebView2 (`tao`/`wry`), le serveur REST local (`Axum`), l'éditeur live de contrats BLAKE3 et le moteur graphique hybride Svelte 5 + WebGL 2.
+Top-level presentation and orchestrator crate. Builds two primary binaries: `aether-engine` (native Tao/Wry window + Axum REST server on port 3030) and `aetherscope-mcp` (stdio JSON-RPC 2.0 MCP server with 10 tools, 5 resources, 5 prompts). Hosts `LocalGuard` anti-DNS-rebinding/CSRF security middleware, attack surface probers, benchmark harness, and embeds the single-file Svelte 5 + WebGL 2 Cockpit.
 
-## 📦 Contenu
+## 📦 Component Inventory
 
-| Fichier / Dossier | Rôle |
+| File / Subsystem | Description & Architectural Responsibility |
 | :--- | :--- |
-| `src/main.rs` | Entrée principale, CLI `clap`, serveur HTTP Axum (`127.0.0.1:3030`) et fenêtre native `tao`/`wry` |
-| `src/api_routes.rs` | Routes REST (`/api/contracts/update`, `/api/contracts/sign`, `/api/git/status`, `/api/save_doc`, `/api/ai/*`, `/api/tasks/*`) |
-| `src/mcp_main.rs` | Binaire dédié `aetherscope-mcp` pour la boucle JSON-RPC 2.0 sur `stdio` |
-| `src/mcp.rs` | Implémentation des outils MCP (`aetherscope_*`) et synchronisation cockpit |
-| `src/viewer.rs` | Chargement et assemblage du bundle single-file (`dist/index.html`) et export standalone |
-| `ui/` | Cockpit Frontend Svelte 5 Runes + TypeScript + Vite 8 (`vite-plugin-singlefile`) |
+| `src/main.rs` | Main CLI entrypoint (`clap`), headless audit runner, Axum HTTP server on `127.0.0.1:3030`, and native Tao/Wry desktop window. |
+| `src/mcp_main.rs` | Dedicated binary `aetherscope-mcp` executing the JSON-RPC 2.0 stdio server loop, auto-spawning Axum backend if offline. |
+| `src/mcp.rs` | Model Context Protocol engine: multi-agent swarm telemetry, 12-color badge assignment, and stdio JSON-RPC request handling. |
+| `src/mcp_catalog.rs` | Catalog exposing 10 consolidated MCP tools, 5 resources (`aether://*`), and 5 engineering prompts. |
+| `src/api_routes.rs` | 24+ REST endpoints (`/api/contracts/update`, `/api/contracts/sign`, `/api/git/status`, `/api/save_doc`, `/api/ai/*`, `/api/tasks/*`). |
+| `src/local_guard.rs` | `LocalGuard` security middleware protecting against DNS rebinding, CSRF, and untrusted cross-origin requests. |
+| `src/viewer.rs` | Single-file bundle loader (`dist/index.html`) injecting dynamic initial graph state into the webview. |
+| `src/benchmark.rs` | Performance benchmark harness measuring lexing, AST parsing, and SAST throughput under the `--benchmark` flag. |
+| `src/surface_probes.rs` | Network and TCP port probe engine auditing local and remote attack surfaces. |
+| `src/surface_scanner.rs` | Surface vulnerability analyzer evaluating SSL/TLS posture, security headers, and open ports via `/api/surface_scan`. |
+| `src/lib.rs` | Public crate root exporting desktop-shell interfaces. |
+| `ui/` | Modern reactive frontend built with Svelte 5 Runes (`$state`), Tailwind CSS v4, and Vite 8 (`vite-plugin-singlefile`). |
 
-## 🛡️ Règles EARS
+## 🛡️ EARS Architectural Requirements
 
-- WHEN `aether-engine` starts THE SYSTEM SHALL bind the local REST API to `127.0.0.1` and initialize the FileWatcher.
-- WHEN `aetherscope-mcp` receives a JSON-RPC 2.0 tool call THE SYSTEM SHALL return a structured MCP response and synchronize telemetry with the cockpit if active.
-- WHEN a file of this folder exceeds `max_lines_per_file` (or its `file_max_lines` override) THE SYSTEM SHALL report a `RULE_MAX_LINES` warning in orange.
+- WHEN `aether-engine` starts THE SYSTEM SHALL bind the local REST API to `127.0.0.1` on port 3030 and initialize the FileWatcher.
+- WHEN `aetherscope-mcp` receives a JSON-RPC 2.0 tool call THE SYSTEM SHALL return a structured MCP response and synchronize telemetry with the cockpit.
+- WHEN an HTTP request arrives with an untrusted `Host` or `Origin` header THE SYSTEM SHALL reject the request with HTTP 403 Forbidden.
+- WHEN a file in this folder exceeds `max_lines_per_file` (or its `file_max_lines` override) THE SYSTEM SHALL report a `RULE_MAX_LINES` warning in orange.

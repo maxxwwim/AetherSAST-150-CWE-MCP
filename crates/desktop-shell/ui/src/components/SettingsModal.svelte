@@ -16,19 +16,30 @@
       api
         .getSettings()
         .then((res) => {
-          if (Array.isArray(res.exclusions)) {
+          if (Array.isArray(res.exclusions) && res.exclusions.length > 0) {
             cockpitState.settings.exclusions = res.exclusions;
             exclusionsText = res.exclusions.join('\n');
           }
           if (Array.isArray(res.cve_catalogue)) {
             cockpitState.cveCatalogue = res.cve_catalogue;
           }
-          if (Array.isArray(res.active_cve_rules)) {
+          if (Array.isArray(res.active_cve_rules) && res.active_cve_rules.length > 0) {
             cockpitState.settings.activeCveRules = res.active_cve_rules;
           }
-          if (Array.isArray(res.ignored_cwes)) {
+          if (Array.isArray(res.ignored_cwes) && res.ignored_cwes.length > 0) {
             cockpitState.settings.ignoredCwes = res.ignored_cwes;
             ignoredInput = res.ignored_cwes.join(', ');
+          }
+          if (typeof res.show_alerts === 'boolean') cockpitState.settings.showAlerts = res.show_alerts;
+          if (typeof res.show_cwe_bubbles === 'boolean') cockpitState.settings.showCweBubbles = res.show_cwe_bubbles;
+          if (typeof res.show_cwe_titles === 'boolean') cockpitState.settings.showCweTitles = res.show_cwe_titles;
+          if (typeof res.show_folder_titles === 'boolean') {
+            cockpitState.settings.showFolderTitles = res.show_folder_titles;
+            cockpitState.settings.showFolderBadges = res.show_folder_titles;
+          }
+          if (typeof res.show_file_titles === 'boolean') cockpitState.settings.showFileTitles = res.show_file_titles;
+          if (res.ui_settings && typeof res.ui_settings === 'object') {
+            Object.assign(cockpitState.settings, res.ui_settings);
           }
           if (res.mcp_binary_path) {
             cockpitState.settings.mcpBinaryPath = res.mcp_binary_path;
@@ -115,6 +126,12 @@
         active_cve_rules:
           cockpitState.settings.activeCveRules.length > 0 ? cockpitState.settings.activeCveRules : undefined,
         ignored_cwes: ignoredCwes,
+        show_alerts: cockpitState.settings.showAlerts,
+        show_cwe_bubbles: cockpitState.settings.showCweBubbles,
+        show_cwe_titles: cockpitState.settings.showCweTitles,
+        show_folder_titles: cockpitState.settings.showFolderTitles,
+        show_file_titles: cockpitState.settings.showFileTitles,
+        ui_settings: cockpitState.settings as any,
       });
       const updated = await api.getGraph();
       cockpitState.setGraph(updated);
@@ -127,6 +144,7 @@
   }
 
   function closeModal() {
+    cockpitState.saveLocalSettings();
     cockpitState.isSettingsModalOpen = false;
   }
 </script>
@@ -181,6 +199,7 @@
               max="40"
               step="2"
               bind:value={cockpitState.settings.maxLabelLength}
+              onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
               class="w-full accent-sky-400 cursor-pointer"
             />
             <div class="text-[11px] font-mono text-slate-400 bg-black/30 px-2.5 py-1.5 rounded border border-white/5">
@@ -191,18 +210,84 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
               <div>
-                <div class="text-xs font-semibold text-white">Membranes cellulaires</div>
-                <div class="text-[10px] text-slate-400">Contours bicouches des dossiers</div>
+                <div class="text-xs font-semibold text-rose-300">🚨 Alertes de sécurité</div>
+                <div class="text-[10px] text-slate-400">Beacons, halos et auras d'alerte</div>
               </div>
-              <input type="checkbox" bind:checked={cockpitState.settings.showFolderMembranes} class="accent-sky-400 w-4 h-4" />
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.showAlerts}
+                onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
+                class="accent-rose-500 w-4 h-4 cursor-pointer"
+              />
             </label>
 
             <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
               <div>
-                <div class="text-xs font-semibold text-white">Badges dossiers auto</div>
-                <div class="text-[10px] text-slate-400">Afficher les pillules au repos</div>
+                <div class="text-xs font-semibold text-rose-300">🛡️ Bulles CWE</div>
+                <div class="text-[10px] text-slate-400">Afficher nœuds avec violations SAST</div>
               </div>
-              <input type="checkbox" bind:checked={cockpitState.settings.showFolderBadges} class="accent-sky-400 w-4 h-4" />
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.showCweBubbles}
+                onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
+                class="accent-rose-500 w-4 h-4 cursor-pointer"
+              />
+            </label>
+
+            <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
+              <div>
+                <div class="text-xs font-semibold text-amber-300">🏷️ Titres / Tags CWE</div>
+                <div class="text-[10px] text-slate-400">Pastilles de texte 🚨 CWE / ⚠️ Lignes</div>
+              </div>
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.showCweTitles}
+                onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
+                class="accent-amber-400 w-4 h-4 cursor-pointer"
+              />
+            </label>
+
+            <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
+              <div>
+                <div class="text-xs font-semibold text-sky-300">📁 Titres des dossiers</div>
+                <div class="text-[10px] text-slate-400">Étiquettes & badges de modules</div>
+              </div>
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.showFolderTitles}
+                onchange={() => {
+                  cockpitState.settings.showFolderBadges = cockpitState.settings.showFolderTitles;
+                  cockpitState.saveLocalSettings();
+                  cockpitState.filterVersion += 1;
+                }}
+                class="accent-sky-400 w-4 h-4 cursor-pointer"
+              />
+            </label>
+
+            <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
+              <div>
+                <div class="text-xs font-semibold text-sky-300">📄 Titres fichiers & symboles</div>
+                <div class="text-[10px] text-slate-400">Labels texte des bulles du graphe</div>
+              </div>
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.showFileTitles}
+                onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
+                class="accent-sky-400 w-4 h-4 cursor-pointer"
+              />
+            </label>
+
+            <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
+              <div>
+                <div class="text-xs font-semibold text-white">Membranes cellulaires</div>
+                <div class="text-[10px] text-slate-400">Contours bicouches des dossiers</div>
+              </div>
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.showFolderMembranes}
+                onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
+                class="accent-sky-400 w-4 h-4 cursor-pointer"
+              />
             </label>
 
             <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
@@ -210,7 +295,12 @@
                 <div class="text-xs font-semibold text-white">Épurer bulles denses</div>
                 <div class="text-[10px] text-slate-400">Masquer labels si &gt; {cockpitState.settings.clusterLabelThreshold} nœuds</div>
               </div>
-              <input type="checkbox" bind:checked={cockpitState.settings.hideBubbleLabelsOver20} class="accent-sky-400 w-4 h-4" />
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.hideBubbleLabelsOver20}
+                onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
+                class="accent-sky-400 w-4 h-4 cursor-pointer"
+              />
             </label>
 
             <div class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5">
@@ -221,6 +311,7 @@
                 max="100"
                 step="5"
                 bind:value={cockpitState.settings.clusterLabelThreshold}
+                onchange={() => { cockpitState.saveLocalSettings(); cockpitState.filterVersion += 1; }}
                 class="w-16 px-2 py-1 rounded bg-slate-900 border border-white/15 text-xs font-mono text-sky-300 text-center"
               />
             </div>
@@ -237,19 +328,30 @@
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
               <span class="text-xs text-slate-200">Lazy-load READMEs</span>
-              <input type="checkbox" bind:checked={cockpitState.settings.lazyReadmes} class="accent-emerald-400 w-4 h-4" />
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.lazyReadmes}
+                onchange={() => cockpitState.saveLocalSettings()}
+                class="accent-emerald-400 w-4 h-4 cursor-pointer"
+              />
             </label>
 
             <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/25 border border-white/5 cursor-pointer">
               <span class="text-xs text-slate-200">Audio Spatialisé</span>
-              <input type="checkbox" bind:checked={cockpitState.settings.soundEnabled} class="accent-emerald-400 w-4 h-4" />
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.soundEnabled}
+                onchange={() => cockpitState.saveLocalSettings()}
+                class="accent-emerald-400 w-4 h-4 cursor-pointer"
+              />
             </label>
 
             <div class="flex items-center justify-between p-2 rounded-lg bg-black/25 border border-white/5">
               <span class="text-xs text-slate-200">FPS WebGL</span>
               <select
                 bind:value={cockpitState.settings.fpsLimit}
-                class="bg-slate-900 border border-white/15 rounded px-2 py-1 text-xs text-sky-300 font-mono"
+                onchange={() => cockpitState.saveLocalSettings()}
+                class="bg-slate-900 border border-white/15 rounded px-2 py-1 text-xs text-sky-300 font-mono cursor-pointer"
               >
                 <option value="60">60 FPS</option>
                 <option value="120">120 FPS</option>
@@ -312,11 +414,21 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/30 border border-purple-500/20 cursor-pointer">
               <span class="text-xs text-slate-200">Auto-Caméra IA (Focus Live)</span>
-              <input type="checkbox" bind:checked={cockpitState.settings.aiAutoCam} class="accent-purple-400 w-4 h-4" />
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.aiAutoCam}
+                onchange={() => cockpitState.saveLocalSettings()}
+                class="accent-purple-400 w-4 h-4 cursor-pointer"
+              />
             </label>
             <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/30 border border-purple-500/20 cursor-pointer">
               <span class="text-xs text-slate-200">Tracé Stellaire & Chemin d'Ariane</span>
-              <input type="checkbox" bind:checked={cockpitState.settings.aiTrail} class="accent-purple-400 w-4 h-4" />
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.aiTrail}
+                onchange={() => cockpitState.saveLocalSettings()}
+                class="accent-purple-400 w-4 h-4 cursor-pointer"
+              />
             </label>
           </div>
 

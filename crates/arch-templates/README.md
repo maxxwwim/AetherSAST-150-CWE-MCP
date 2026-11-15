@@ -8,18 +8,19 @@ security_rules:
   no_raw_sql: true
   no_env_access: true
 ---
-# 🏗️ arch-templates — Hub de topologies & scaffolding multi-stack
+# 🏗️ arch-templates — Multi-Stack Scaffolding & Architecture Topology Hub (v2.4.0)
 
-Génère des squelettes de projet normés (11 dossiers) avec contrats `README.md` EARS pré-signés en BLAKE3 et `AETHER_AI_RULES.md`.
+Automated scaffolding engine for standardized 11-folder project structures. Generates pre-signed BLAKE3 EARS contract `README.md` files and `AETHER_AI_RULES.md` governance specifications for Pure Rust, Python (`uv`), Node/TypeScript (`pnpm`), and Hybrid Web3/MMO development stacks.
 
-## 📦 Contenu
+## 📦 Component Inventory
 
-| Fichier | Rôle |
+| File / Subsystem | Description & Architectural Responsibility |
 | :--- | :--- |
-| `src/templates.rs` | Générateurs Pure Rust, Python (`uv`), Node (`pnpm`), Hybride Web3/MMO |
+| `src/templates.rs` | Scaffolding generators producing normalized directory trees for Pure Rust, Python (`uv`), Node/TS (`pnpm`), and Hybrid Web3/MMO stacks. |
+| `src/lib.rs` | Public crate root exporting project initialization and contract signing functions. |
 
-## 🛡️ Règles EARS
+## 🛡️ EARS Architectural Requirements
 
-- WHEN a stack is selected THE SYSTEM SHALL generate the normalized folder tree for that stack.
-- WHEN a folder is generated THE SYSTEM SHALL include its contract `README.md` with a BLAKE3 hash.
-- IF the target folder already contains files THEN THE SYSTEM SHALL NOT overwrite them silently.
+- WHEN a project stack is selected THE SYSTEM SHALL generate the normalized 11-folder directory structure for that stack.
+- WHEN a directory is scaffolded THE SYSTEM SHALL include its contract `README.md` pre-signed with a valid BLAKE3 hash.
+- IF the target project directory already contains existing files THEN THE SYSTEM SHALL NOT overwrite them silently.

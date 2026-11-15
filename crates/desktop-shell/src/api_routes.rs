@@ -43,6 +43,43 @@ pub struct SettingsPayload {
     /// Chemin réel de `aetherscope-mcp` (à côté de l'exécutable en cours) pour générer la config MCP.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_binary_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_alerts: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_cwe_bubbles: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_cwe_titles: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_folder_titles: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_file_titles: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_settings: Option<serde_json::Value>,
+}
+
+pub fn settings_file_path(project_root: &Path) -> PathBuf {
+    project_root.join(".aether").join("settings.json")
+}
+
+pub fn load_project_settings(project_root: &Path) -> Option<SettingsPayload> {
+    let p = settings_file_path(project_root);
+    if p.exists() {
+        if let Ok(content) = std::fs::read_to_string(&p) {
+            if let Ok(settings) = serde_json::from_str::<SettingsPayload>(&content) {
+                return Some(settings);
+            }
+        }
+    }
+    None
+}
+
+pub fn save_project_settings(project_root: &Path, payload: &SettingsPayload) {
+    let aether_dir = project_root.join(".aether");
+    let _ = std::fs::create_dir_all(&aether_dir);
+    let p = aether_dir.join("settings.json");
+    if let Ok(json) = serde_json::to_string_pretty(payload) {
+        let _ = std::fs::write(&p, json);
+    }
 }
 
 /// Chemin absolu du binaire `aetherscope-mcp`, résolu relativement à l'exécutable courant.
@@ -586,6 +623,12 @@ pub struct AppState {
     pub custom_exclusions: RwLock<Vec<String>>,
     pub active_cve_rules: RwLock<Option<Vec<String>>>,
     pub ignored_cwes: RwLock<Vec<String>>,
+    pub saved_ui_settings: RwLock<Option<serde_json::Value>>,
+    pub show_alerts: RwLock<Option<bool>>,
+    pub show_cwe_bubbles: RwLock<Option<bool>>,
+    pub show_cwe_titles: RwLock<Option<bool>>,
+    pub show_folder_titles: RwLock<Option<bool>>,
+    pub show_file_titles: RwLock<Option<bool>>,
 
     // === Obsidian Vault & Dual-Vision Vision Mode Extensions (M2) ===
     pub project_type: RwLock<DetectedProjectType>,
@@ -606,6 +649,17 @@ impl AppState {
         detection_report: Option<ProjectDetectionReport>,
     ) -> Self {
         let cached = load_ai_telemetry_cache(&project_root);
+        let saved_settings = load_project_settings(&project_root);
+        let custom_exclusions = saved_settings.as_ref().map(|s| s.exclusions.clone()).unwrap_or_default();
+        let active_cve_rules = saved_settings.as_ref().and_then(|s| s.active_cve_rules.clone());
+        let ignored_cwes = saved_settings.as_ref().and_then(|s| s.ignored_cwes.clone()).unwrap_or_default();
+        let saved_ui_settings = saved_settings.as_ref().and_then(|s| s.ui_settings.clone());
+        let show_alerts = saved_settings.as_ref().and_then(|s| s.show_alerts);
+        let show_cwe_bubbles = saved_settings.as_ref().and_then(|s| s.show_cwe_bubbles);
+        let show_cwe_titles = saved_settings.as_ref().and_then(|s| s.show_cwe_titles);
+        let show_folder_titles = saved_settings.as_ref().and_then(|s| s.show_folder_titles);
+        let show_file_titles = saved_settings.as_ref().and_then(|s| s.show_file_titles);
+
         let mut initial_agents = std::collections::HashMap::new();
         for ag in cached.agents {
             let key = ag.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
@@ -619,9 +673,15 @@ impl AppState {
             telemetry_history: RwLock::new(cached.history),
             chat_messages: RwLock::new(Vec::new()),
             graph_version: std::sync::atomic::AtomicU64::new(1),
-            custom_exclusions: RwLock::new(Vec::new()),
-            active_cve_rules: RwLock::new(None),
-            ignored_cwes: RwLock::new(Vec::new()),
+            custom_exclusions: RwLock::new(custom_exclusions),
+            active_cve_rules: RwLock::new(active_cve_rules),
+            ignored_cwes: RwLock::new(ignored_cwes),
+            saved_ui_settings: RwLock::new(saved_ui_settings),
+            show_alerts: RwLock::new(show_alerts),
+            show_cwe_bubbles: RwLock::new(show_cwe_bubbles),
+            show_cwe_titles: RwLock::new(show_cwe_titles),
+            show_folder_titles: RwLock::new(show_folder_titles),
+            show_file_titles: RwLock::new(show_file_titles),
             project_type: RwLock::new(project_type),
             active_view_mode: RwLock::new(active_view_mode),
             code_graph: RwLock::new(code_graph),

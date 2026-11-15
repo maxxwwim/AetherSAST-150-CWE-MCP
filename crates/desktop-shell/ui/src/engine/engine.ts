@@ -88,6 +88,7 @@ export class AetherEngine {
   private selectedFolder: string | null = null;
   private hasInitialCameraFit = false;
   private folderPillBounds: { folder: string; x: number; y: number; w: number; h: number }[] = [];
+  private agentSmoothPositions = new Map<string, { x: number; y: number }>();
 
   // Mouse interaction state
   private isDragging = false;
@@ -437,12 +438,20 @@ export class AetherEngine {
       }
 
       const alertKind = getNodeAlertKind(n);
-      if (alertKind === 'security' && mode === 'standard') {
-        col = SEVERITY_COLORS.CRITICAL;
-        r *= 1.3;
-      } else if (alertKind === 'lines_exceeded' && mode === 'standard') {
-        col = SEVERITY_COLORS.HIGH;
-        r *= 1.18;
+      const isSecurityAlert = alertKind === 'security';
+      const isLinesAlert = alertKind === 'lines_exceeded';
+
+      if (!this.state.settings.showCweBubbles && isSecurityAlert) {
+        alpha = 0.0;
+        r = 0.0;
+      } else if (this.state.settings.showAlerts) {
+        if (isSecurityAlert && mode === 'standard') {
+          col = SEVERITY_COLORS.CRITICAL;
+          r *= 1.3;
+        } else if (isLinesAlert && mode === 'standard') {
+          col = SEVERITY_COLORS.HIGH;
+          r *= 1.18;
+        }
       }
 
       if (disabledLayers[n.layer || 'utility'] || this.state.disabledModules[folder]) {
@@ -903,7 +912,7 @@ export class AetherEngine {
       if (!this.state.physicsPaused) {
         this.physics.step(this.camera.zoom);
       }
-      this.render(now);
+      this.render(now, dt);
 
       if (this.lastSnapshotTick !== this.state.snapshotRequestTick) {
         this.lastSnapshotTick = this.state.snapshotRequestTick;
@@ -922,7 +931,7 @@ export class AetherEngine {
     this.camera.zoom += (this.camera.targetZoom - this.camera.zoom) * factor;
   }
 
-  private render(now: number) {
+  private render(now: number, dt = 16.6) {
     const { gl, pipeline, backdropPipeline } = this;
 
     // 0. Cosmic Space, Ethereal Nebula & Parallax Stellar Starfield Backdrop
@@ -964,7 +973,7 @@ export class AetherEngine {
     this.renderEdges(ctx, now);
     this.renderGitDiffBadges(ctx, now);
     this.renderSecurityBeacons(ctx, now);
-    this.renderAiAgentOverlay(ctx, now);
+    this.renderAiAgentOverlay(ctx, now, dt);
     this.renderLabels(ctx);
   }
 
@@ -1183,6 +1192,7 @@ export class AetherEngine {
   }
 
   private renderSecurityBeacons(ctx: CanvasRenderingContext2D, now: number) {
+    if (!this.state.settings.showAlerts) return;
     const nodes = this.state.graph.nodes;
     if (!nodes || nodes.length === 0) return;
 
@@ -1200,6 +1210,7 @@ export class AetherEngine {
       if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
       const alertKind = getNodeAlertKind(n);
       if (alertKind === 'none') continue;
+      if (!this.state.settings.showCweBubbles && alertKind === 'security') continue;
       const isLinesWarn = alertKind === 'lines_exceeded';
       const anom = n.anomalies || [];
 
@@ -1230,7 +1241,7 @@ export class AetherEngine {
 
       // Alert pill on files, focused/hovered nodes, or when zoomed in (steady position, legible)
       const isFocus = n.id === this.hoveredNodeId || n.id === this.state.activeSymbol?.id;
-      if (isFocus || n.is_file || zoom >= 0.42) {
+      if (this.state.settings.showCweTitles && (isFocus || n.is_file || zoom >= 0.42)) {
         let shortTag: string;
         if (isLinesWarn) {
           const maxLim = n.metadata?.max_lines_limit || 300;
@@ -1263,7 +1274,7 @@ export class AetherEngine {
     ctx.restore();
   }
 
-  private renderAiAgentOverlay(ctx: CanvasRenderingContext2D, now: number) {
+  private renderAiAgentOverlay(ctx: CanvasRenderingContext2D, now: number, dt = 16.6) {
     const agents = this.state.activeAgents;
     const trails = this.state.agentTrails;
     if (!agents || agents.length === 0) return;
@@ -1312,6 +1323,7 @@ export class AetherEngine {
       }
       if (!targetNode && ag.target) {
         targetNode = this.state.resolveTargetNode(ag.target);
+        if (targetNode) ag.nodeId = targetNode.id;
       }
       if (!targetNode && this.state.activeSymbol) {
         targetNode = this.state.activeSymbol;
@@ -1349,7 +1361,10 @@ export class AetherEngine {
 
         for (const pt of agTrail) {
           let node = pt.nodeId ? this.nodeMap.get(pt.nodeId) : null;
-          if (!node && pt.target) node = this.state.resolveTargetNode(pt.target);
+          if (!node && pt.target) {
+            node = this.state.resolveTargetNode(pt.target);
+            if (node) pt.nodeId = node.id;
+          }
           const wx = node ? node.x : pt.x;
           const wy = node ? node.y : pt.y;
           if (wx == null || wy == null) continue;
@@ -1369,17 +1384,15 @@ export class AetherEngine {
         }
 
         if (validPoints.length > 1) {
-          // Pass 1: Diffused colored glow path
+          // Pass 1: Diffused colored glow path (optimized hardware alpha stroke)
           ctx.beginPath();
           ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
           for (let i = 1; i < validPoints.length; i++) {
             ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
           }
           ctx.strokeStyle = agColor;
-          ctx.lineWidth = Math.max(2.5, 4.5 * Math.sqrt(zoom));
-          ctx.shadowColor = agColor;
-          ctx.shadowBlur = 10;
-          ctx.globalAlpha = 0.30;
+          ctx.lineWidth = Math.max(3.0, 5.0 * Math.sqrt(zoom));
+          ctx.globalAlpha = 0.22;
           ctx.stroke();
 
           // Pass 2: Animated marching dashed core
@@ -1391,30 +1404,25 @@ export class AetherEngine {
           ctx.setLineDash([8, 6]);
           ctx.lineDashOffset = -(now * 0.026 + idx * 4);
           ctx.strokeStyle = agColor;
-          ctx.shadowColor = agColor;
-          ctx.shadowBlur = 5;
           ctx.globalAlpha = 0.90;
-          ctx.lineWidth = Math.max(1.5, 2.4 * Math.sqrt(zoom));
+          ctx.lineWidth = Math.max(1.5, 2.2 * Math.sqrt(zoom));
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Pass 3: Traveling photon energy pulses along the trajectory toward the current bubble
-          ctx.shadowColor = agColor;
-          ctx.shadowBlur = 8;
+          // Pass 3: Traveling photon energy pulses along the trajectory toward current bubble
           for (let seg = 0; seg < validPoints.length - 1; seg++) {
             const p0 = validPoints[seg].s;
             const p1 = validPoints[seg + 1].s;
             const segDist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
             if (segDist < 10) continue;
 
-            // 1-2 pulses per segment
             for (let b = 0; b < 2; b++) {
               const u = ((now * 0.0018 + b * 0.5 + idx * 0.33) % 1.0 + 1.0) % 1.0;
               const bx = p0.x + (p1.x - p0.x) * u;
               const by = p0.y + (p1.y - p0.y) * u;
 
               ctx.beginPath();
-              ctx.arc(bx, by, Math.max(1.8, 3.0 * Math.sqrt(zoom)), 0, Math.PI * 2);
+              ctx.arc(bx, by, Math.max(2.0, 3.2 * Math.sqrt(zoom)), 0, Math.PI * 2);
               ctx.fillStyle = '#ffffff';
               ctx.globalAlpha = 0.95;
               ctx.fill();
@@ -1430,7 +1438,7 @@ export class AetherEngine {
               ctx.lineTo(-4, 3);
               ctx.strokeStyle = agColor;
               ctx.lineWidth = 1.2;
-              ctx.globalAlpha = 0.75;
+              ctx.globalAlpha = 0.80;
               ctx.stroke();
               ctx.restore();
             }
@@ -1445,8 +1453,6 @@ export class AetherEngine {
             ctx.beginPath();
             ctx.arc(wp.s.x, wp.s.y, wpRadius, 0, Math.PI * 2);
             ctx.fillStyle = isLatest ? '#ffffff' : agColor;
-            ctx.shadowColor = agColor;
-            ctx.shadowBlur = isLatest ? 9 : 4;
             ctx.globalAlpha = isLatest ? 0.95 : 0.70;
             ctx.fill();
 
@@ -1500,26 +1506,25 @@ export class AetherEngine {
       const agentOmega = omega + (subIdx * 0.0002);
       const theta = (now * agentOmega * dir) + phiAgent;
 
-      // Smooth camera anchor position with easing when switching targets
-      let anchorX = targetNode.x;
-      let anchorY = targetNode.y;
-      if (ag.prevX !== undefined && ag.prevY !== undefined && ag.moveStartTs) {
-        const elapsed = now - ag.moveStartTs;
-        const duration = 650;
-        if (elapsed < duration) {
-          const progress = Math.min(1, Math.max(0, elapsed / duration));
-          const ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-          anchorX = ag.prevX * (1 - ease) + targetNode.x * ease;
-          anchorY = ag.prevY * (1 - ease) + targetNode.y * ease;
-        }
+      // Smooth camera anchor position with continuous LERP (buttery-smooth 60/120fps glide)
+      let smooth = this.agentSmoothPositions.get(ag.agentId);
+      if (!smooth) {
+        smooth = { x: targetNode.x, y: targetNode.y };
+        this.agentSmoothPositions.set(ag.agentId, smooth);
+      } else {
+        const lerpFactor = 1.0 - Math.exp(-14.0 * (dt / 1000));
+        smooth.x += (targetNode.x - smooth.x) * lerpFactor;
+        smooth.y += (targetNode.y - smooth.y) * lerpFactor;
       }
+      const anchorX = smooth.x;
+      const anchorY = smooth.y;
 
       // ───────────────────────────────────────────────────────────────────────
       // A. DRAW ORBITAL TRAJECTORY RING ON THE BUBBLE IN THIS IA'S COLOR
       // ───────────────────────────────────────────────────────────────────────
       ctx.save();
       ctx.beginPath();
-      const ORBIT_SAMPLES = 36;
+      const ORBIT_SAMPLES = 28;
       for (let s = 0; s <= ORBIT_SAMPLES; s++) {
         const a = (s / ORBIT_SAMPLES) * Math.PI * 2;
         const xP = orbitR * Math.cos(a);
@@ -1531,10 +1536,8 @@ export class AetherEngine {
         else ctx.lineTo(p.x, p.y);
       }
       ctx.strokeStyle = agColor;
-      ctx.lineWidth = Math.max(1.0, 1.6 * Math.sqrt(zoom));
-      ctx.globalAlpha = 0.38;
-      ctx.shadowColor = agColor;
-      ctx.shadowBlur = 6;
+      ctx.lineWidth = Math.max(1.0, 1.8 * Math.sqrt(zoom));
+      ctx.globalAlpha = 0.40;
       ctx.setLineDash([6, 6]);
       ctx.lineDashOffset = -(now * 0.018 * dir);
       ctx.stroke();
@@ -1580,9 +1583,7 @@ export class AetherEngine {
       ctx.moveTo(pOrb.x, pOrb.y);
       ctx.lineTo(pImpact.x, pImpact.y);
       ctx.strokeStyle = agColor;
-      ctx.lineWidth = Math.max(1.8, 3.5 * Math.sqrt(zoom));
-      ctx.shadowColor = agColor;
-      ctx.shadowBlur = 10;
+      ctx.lineWidth = Math.max(1.8, 3.2 * Math.sqrt(zoom));
       ctx.globalAlpha = 0.35;
       ctx.stroke();
 
@@ -1592,14 +1593,10 @@ export class AetherEngine {
       ctx.lineTo(pImpact.x, pImpact.y);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.2;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 4;
-      ctx.globalAlpha = 0.95;
+      ctx.globalAlpha = 0.90;
       ctx.stroke();
 
       // Pass 3: 3 traveling photon beads animated along the laser beam
-      ctx.shadowColor = agColor;
-      ctx.shadowBlur = 6;
       for (let b = 0; b < 3; b++) {
         const u = ((now * 0.0024 + b * 0.333) % 1.0 + 1.0) % 1.0;
         const bx = pOrb.x + (pImpact.x - pOrb.x) * u;
@@ -1623,8 +1620,6 @@ export class AetherEngine {
       ctx.strokeStyle = agColor;
       ctx.lineWidth = 1.2;
       ctx.globalAlpha = 0.85;
-      ctx.shadowColor = agColor;
-      ctx.shadowBlur = 5;
       ctx.stroke();
 
       ctx.beginPath();
@@ -1642,18 +1637,19 @@ export class AetherEngine {
       ctx.restore();
 
       // ───────────────────────────────────────────────────────────────────────
-      // C. STELLAR AVATAR ORB AT (pOrb.x, pOrb.y)
+      // C. STELLAR AVATAR ORB AT (pOrb.x, pOrb.y) (FAST PURE-VECTOR PIPELINE)
       // ───────────────────────────────────────────────────────────────────────
       // Layer 2: Colored luminous corona
-      const coronaGrad = ctx.createRadialGradient(pOrb.x, pOrb.y, 1, pOrb.x, pOrb.y, 16);
-      coronaGrad.addColorStop(0, '#ffffff');
-      coronaGrad.addColorStop(0.35, agColor);
-      coronaGrad.addColorStop(0.70, `${agColor}55`);
-      coronaGrad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = coronaGrad;
-      ctx.globalAlpha = 0.90;
       ctx.beginPath();
-      ctx.arc(pOrb.x, pOrb.y, 16, 0, Math.PI * 2);
+      ctx.arc(pOrb.x, pOrb.y, 14, 0, Math.PI * 2);
+      ctx.fillStyle = agColor;
+      ctx.globalAlpha = 0.16;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(pOrb.x, pOrb.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = agColor;
+      ctx.globalAlpha = 0.40;
       ctx.fill();
 
       // Layer 3: Spinning accretion ring / halo with animated rotation angle
@@ -1665,8 +1661,6 @@ export class AetherEngine {
       ctx.ellipse(0, 0, haloR, haloR * 0.45, 0, 0, Math.PI * 2);
       ctx.strokeStyle = agColor;
       ctx.lineWidth = 1.4;
-      ctx.shadowColor = agColor;
-      ctx.shadowBlur = 8;
       ctx.globalAlpha = 0.90;
       ctx.stroke();
       ctx.restore();
@@ -1675,8 +1669,6 @@ export class AetherEngine {
       ctx.beginPath();
       ctx.arc(pOrb.x, pOrb.y, 4.5, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 8;
       ctx.globalAlpha = 1.0;
       ctx.fill();
 
@@ -1698,11 +1690,9 @@ export class AetherEngine {
       const badgeY = pOrb.y - 18 - ((subIdx % 2) * 18);
 
       // Glassmorphic pill badge
-      ctx.fillStyle = 'rgba(10, 14, 26, 0.90)';
+      ctx.fillStyle = 'rgba(10, 14, 26, 0.92)';
       ctx.strokeStyle = agColor;
       ctx.lineWidth = 1.2;
-      ctx.shadowColor = agColor;
-      ctx.shadowBlur = 6;
       ctx.globalAlpha = 0.95;
       ctx.beginPath();
       ctx.roundRect(pOrb.x - tw * 0.5, badgeY - badgeH * 0.5, tw, badgeH, 6);
@@ -1710,7 +1700,6 @@ export class AetherEngine {
       ctx.stroke();
 
       ctx.fillStyle = '#f8fafc';
-      ctx.shadowBlur = 0;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(tagText, pOrb.x, badgeY + 0.5);
@@ -1982,7 +1971,7 @@ export class AetherEngine {
         ctx.stroke();
       }
 
-      if (isSel || isEditedCell || (this.state.settings.showFolderBadges && cl.count >= 3 && rawR >= 9)) {
+      if (isSel || isEditedCell || (this.state.settings.showFolderBadges && this.state.settings.showFolderTitles && cl.count >= 3 && rawR >= 9)) {
         badges.push({
           folder,
           label: formatFolderLabel(folder),
@@ -2165,6 +2154,7 @@ export class AetherEngine {
       const s = this.nodeMap.get(e.source);
       const t = this.nodeMap.get(e.target);
       if (!s || !t) continue;
+      if (!this.state.settings.showCweBubbles && (getNodeAlertKind(s) === 'security' || getNodeAlertKind(t) === 'security')) continue;
       if (disabledLayers[s.layer || 'utility'] || disabledLayers[t.layer || 'utility']) continue;
       if (disabledModules[s.folder || s.cluster_id || 'root'] || disabledModules[t.folder || t.cluster_id || 'root']) continue;
 
@@ -2442,6 +2432,8 @@ export class AetherEngine {
       const n = nodes[i];
       if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
       const isFocus = n.id === activeId || n.id === this.hoveredNodeId;
+      if (!this.state.settings.showFileTitles && !isFocus) continue;
+      if (!this.state.settings.showCweBubbles && getNodeAlertKind(n) === 'security') continue;
       if (isXray && !this.activeNeighbors.has(n.id)) continue;
       if (!isFocus && zoom < 0.30) continue;
       if (!isFocus && zoom < 0.55 && !n.is_file && !n.is_class) continue;

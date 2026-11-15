@@ -48,6 +48,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
 
   // Global Security Audit Export Dropdown State
   let isAuditMenuOpen = $state(false);
+  let isVisibilityMenuOpen = $state(false);
 
   function exportAuditMarkdown() {
     const md = generateAuditMarkdown(cockpitState);
@@ -135,8 +136,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
   }
 
   function toggleFolderBadges() {
-    cockpitState.settings.showFolderBadges = !cockpitState.settings.showFolderBadges;
-    cockpitState.saveLocalSettings();
+    cockpitState.toggleFolderTitles();
   }
 
   function openSearch() {
@@ -384,12 +384,118 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
       <!-- Toggle Badges Noms de Dossiers -->
       <button
         onclick={toggleFolderBadges}
-        class="hidden xl:flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer {cockpitState.settings.showFolderBadges ? 'bg-sky-500/15 border-sky-500/30 text-sky-300' : 'bg-white/[0.02] border-white/5 text-slate-500 hover:text-slate-300'}"
+        class="hidden xl:flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer {cockpitState.settings.showFolderTitles ? 'bg-sky-500/15 border-sky-500/30 text-sky-300' : 'bg-white/[0.02] border-white/5 text-slate-500 hover:text-slate-300'}"
         title="Afficher/Masquer automatiquement les étiquettes de dossiers sur le graphe"
       >
-        <Tag class="w-3 h-3" />
-        <span>Dossiers: <strong>{cockpitState.settings.showFolderBadges ? 'ON' : 'OFF'}</strong></span>
+        <FolderTree class="w-3 h-3" />
+        <span>Dossiers: <strong>{cockpitState.settings.showFolderTitles ? 'ON' : 'OFF'}</strong></span>
       </button>
+
+      <!-- Masquage Facile : Alertes, Bulles CWE & Titres -->
+      <div class="flex items-center bg-white/[0.03] border border-white/10 rounded-md p-0.5 gap-0.5" title="Masquer / Afficher facilement les alertes, bulles CWE et titres">
+        <!-- 1-Clic Bascule Alertes -->
+        <button
+          type="button"
+          onclick={() => cockpitState.toggleAlerts()}
+          class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer {cockpitState.settings.showAlerts ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-white/[0.02] border border-transparent text-slate-500 hover:text-slate-300'}"
+          title={cockpitState.settings.showAlerts ? 'Alertes de sécurité visibles (cliquez pour masquer)' : 'Alertes de sécurité masquées (cliquez pour afficher)'}
+        >
+          <ShieldAlert class="w-3 h-3 text-rose-400" />
+          <span class="hidden 2xl:inline text-[10.5px]">Alertes</span>
+          <span class="text-[9px] font-bold px-1 rounded {cockpitState.settings.showAlerts ? 'bg-rose-500/30 text-rose-200' : 'bg-white/5 text-slate-500'}">
+            {cockpitState.settings.showAlerts ? 'ON' : 'OFF'}
+          </span>
+        </button>
+
+        <!-- 1-Clic Bascule Bulles CWE -->
+        <button
+          type="button"
+          onclick={() => cockpitState.toggleCweBubbles()}
+          class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer {cockpitState.settings.showCweBubbles ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-white/[0.02] border border-transparent text-slate-500 hover:text-slate-300'}"
+          title={cockpitState.settings.showCweBubbles ? 'Bulles de vulnérabilité CWE visibles (cliquez pour masquer)' : 'Bulles CWE masquées (cliquez pour afficher)'}
+        >
+          <Target class="w-3 h-3 text-amber-400" />
+          <span class="hidden 2xl:inline text-[10.5px]">Bulles CWE</span>
+          <span class="text-[9px] font-bold px-1 rounded {cockpitState.settings.showCweBubbles ? 'bg-amber-500/30 text-amber-200' : 'bg-white/5 text-slate-500'}">
+            {cockpitState.settings.showCweBubbles ? 'ON' : 'OFF'}
+          </span>
+        </button>
+
+        <!-- Menu Déroulant Visibilité Titres -->
+        <div class="relative">
+          <button
+            type="button"
+            onclick={() => (isVisibilityMenuOpen = !isVisibilityMenuOpen)}
+            class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer bg-white/[0.02] hover:bg-white/10 text-slate-300 border border-white/5"
+            title="Options d'affichage des titres (fichiers, dossiers, CWE)"
+          >
+            <Tag class="w-3 h-3 text-sky-400" />
+            <span class="text-[10.5px]">Titres</span>
+            <span class="text-[9px] text-sky-400">▾</span>
+          </button>
+
+          {#if isVisibilityMenuOpen}
+            <div
+              class="fixed inset-0 z-50"
+              onclick={() => (isVisibilityMenuOpen = false)}
+              role="presentation"
+            ></div>
+
+            <div
+              class="absolute top-full left-0 mt-1 w-56 bg-[#0b0f19]/98 border border-white/15 rounded-lg shadow-2xl p-1.5 z-50 flex flex-col gap-1 text-xs font-mono animate-in fade-in zoom-in-95 duration-100"
+            >
+              <div class="px-2 py-1 text-[10px] text-slate-400 font-semibold uppercase tracking-wider border-b border-white/10">
+                Masquage Facile des Titres
+              </div>
+
+              <!-- Bascule Titres Fichiers -->
+              <button
+                type="button"
+                onclick={() => cockpitState.toggleFileTitles()}
+                class="flex items-center justify-between px-2 py-1.5 rounded hover:bg-white/10 text-slate-200 transition-colors cursor-pointer text-left"
+              >
+                <div class="flex items-center gap-2">
+                  <FileText class="w-3.5 h-3.5 text-sky-400" />
+                  <span class="text-[11px]">Titres Fichiers</span>
+                </div>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {cockpitState.settings.showFileTitles ? 'bg-sky-500/25 text-sky-300' : 'bg-white/5 text-slate-500'}">
+                  {cockpitState.settings.showFileTitles ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <!-- Bascule Titres Dossiers -->
+              <button
+                type="button"
+                onclick={() => cockpitState.toggleFolderTitles()}
+                class="flex items-center justify-between px-2 py-1.5 rounded hover:bg-white/10 text-slate-200 transition-colors cursor-pointer text-left"
+              >
+                <div class="flex items-center gap-2">
+                  <FolderTree class="w-3.5 h-3.5 text-indigo-400" />
+                  <span class="text-[11px]">Titres Dossiers</span>
+                </div>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {cockpitState.settings.showFolderTitles ? 'bg-indigo-500/25 text-indigo-300' : 'bg-white/5 text-slate-500'}">
+                  {cockpitState.settings.showFolderTitles ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <!-- Bascule Titres / Tags CWE -->
+              <button
+                type="button"
+                onclick={() => cockpitState.toggleCweTitles()}
+                class="flex items-center justify-between px-2 py-1.5 rounded hover:bg-white/10 text-slate-200 transition-colors cursor-pointer text-left"
+              >
+                <div class="flex items-center gap-2">
+                  <Tag class="w-3.5 h-3.5 text-purple-400" />
+                  <span class="text-[11px]">Titres / Tags CWE</span>
+                </div>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {cockpitState.settings.showCweTitles ? 'bg-purple-500/25 text-purple-300' : 'bg-white/5 text-slate-500'}">
+                  {cockpitState.settings.showCweTitles ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            </div>
+          {/if}
+        </div>
+      </div>
 
       <!-- Modes de Vision Analytiques -->
       <div class="flex items-center bg-white/[0.03] border border-white/10 rounded-md p-0.5 gap-0.5" title="Filtres de Vision Analytique">

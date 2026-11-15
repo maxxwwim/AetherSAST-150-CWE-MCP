@@ -8,21 +8,35 @@ security_rules:
   no_raw_sql: true
   no_env_access: false
 ---
-# 📦 crates — Workspace des 7 Crates Rust d'AetherScope V2 (v2.4.0)
+# 📦 crates — 7-Crate Modular Rust Architecture (v2.4.0)
 
-Ce dossier regroupe les 7 crates modulaires qui composent le moteur **AetherScope V2 (`aether-engine` v2.4.0)** selon une architecture hexagonale stricte :
+The core engine of **AetherScope V2 (`aether-engine` v2.4.0)** is structured into 7 modular Rust 2021 workspace crates organized according to a strict hexagonal architecture:
 
-| Crate | Couche | Responsabilité Principale |
-| :--- | :--- | :--- |
-| **`core-graph`** | `domain` | Modèle de données du graphe (`SymbolBubble`, `AffiliationEdge`), métadonnées BLAKE3 par fichier et 4 algorithmes de layout (`Z-1` à `Z-4`) |
-| **`security-linter`** | `domain` | Moteur SAST temps réel (215 règles CWE & hors-CWE `AETHER-*`), lexer anti-faux-positifs et contrats EARS/BLAKE3 (`max_lines_per_file` & `file_max_lines`) |
-| **`arch-templates`** | `utility` | Générateur de topologies multi-stacks (Rust, Python, Node/TS, Hybride Web3/MMO) |
-| **`ast-scanner`** | `action` | Scanner AST polyglotte multithread (`rayon`), calcul `file_blake3_hash` et extraction des liaisons inter-symboles |
-| **`obsidian-vault`** | `application` | Moteur de coffre Obsidian (`.obsidian`, wikilinks, transclusions, tags) et confinement `PathGuard` |
-| **`ai-file-bridge`** | `action` | Passerelle IA Zero-Shell (`.aether/`), `FileWatcher`, `TaskManager`, `PatchVerifier` et paquets `<aether_handshake>` |
-| **`desktop-shell`** | `ui` | Fenêtre native WebView2 GPU (`tao`/`wry`), serveur REST `Axum`, cockpit Svelte 5 (`ui/`) et serveur MCP (`aetherscope-mcp`) |
+```
+crates/
+├── core-graph/       [domain]      Pure graph models, spatial layouts (Z-1 to Z-4), BFS reachability, SSA dataflow
+├── security-linter/  [domain]      215 active SAST rules, lexical masking, EARS contracts, BLAKE3, SARIF 2.1.0, SCA
+├── arch-templates/   [utility]     Multi-stack project scaffolder (Rust, Python uv, Node pnpm, Web3/MMO)
+├── ast-scanner/      [action]      Rayon-parallel polyglot AST extractor for 11 languages, BLAKE3 file hashing
+├── obsidian-vault/   [application] Obsidian vault engine, PathGuard jail (CWE-22), 4-stage classifier, dual-vision
+├── ai-file-bridge/   [action]      Zero-shell file bridge, FileWatcher (<50ms), PatchVerifier firewall, task manager
+└── desktop-shell/    [ui]          Tao/Wry window, Axum port 3030 (LocalGuard), aetherscope-mcp, Svelte 5 cockpit
+```
 
-## 🛡️ Règles EARS
+## 🏛️ Crate Overview & Responsibilities
+
+| Crate | Layer | Primary Responsibility | Documentation |
+| :--- | :--- | :--- | :--- |
+| **`core-graph`** | `domain` | Graph domain models (`AetherGraph`, `SymbolBubble`, `AffiliationEdge`), spatial positioning algorithms (`Z-1` to `Z-4`), reverse BFS reachability, and SSA dataflow models. | [core-graph README](./core-graph/README.md) |
+| **`security-linter`** | `domain` | Real-time SAST engine with 215 active rules (220 native + 24 Semgrep OWASP/CWE community rules = 244 total), lexical masking, EARS contracts, BLAKE3 seals, SARIF 2.1.0 exporter, Reachable SCA, and `aether-plugin-tool`. | [security-linter README](./security-linter/README.md) |
+| **`arch-templates`** | `utility` | Scaffolds standardized 11-folder project structures with pre-signed BLAKE3 EARS contracts for Rust, Python (`uv`), Node/TS (`pnpm`), and Hybrid Web3/MMO. | [arch-templates README](./arch-templates/README.md) |
+| **`ast-scanner`** | `action` | Multithreaded polyglot AST extractor for 11 languages, per-file BLAKE3 digest calculation (`file_blake3_hash`), contract resolution, and taint extraction. | [ast-scanner README](./ast-scanner/README.md) |
+| **`obsidian-vault`** | `application` | Obsidian vault ingestion, `PathGuard` confinement jail against CWE-22, 4-stage project classifier (`PureObsidianVault`, `PureCode`, `Mixed`), and knowledge graph projection. | [obsidian-vault README](./obsidian-vault/README.md) |
+| **`ai-file-bridge`** | `action` | Zero-shell filesystem bridge (`.aether/`), real-time `notify` FileWatcher (<50ms), AI patch verification firewall (`PatchVerifier`), and task manager. | [ai-file-bridge README](./ai-file-bridge/README.md) |
+| **`desktop-shell`** | `ui` | Native desktop window (`tao`/`wry`), Axum REST server on port 3030 (`LocalGuard` anti-DNS-rebinding/CSRF), `aetherscope-mcp` stdio JSON-RPC 2.0 server (10 tools), and Svelte 5 WebGL 2 Cockpit. | [desktop-shell README](./desktop-shell/README.md) |
+
+## 🛡️ EARS Architectural Requirements
 
 - WHEN a crate is compiled THE SYSTEM SHALL enforce its own `README.md` architectural contract.
 - WHEN a file in any sub-crate is modified THE SYSTEM SHALL re-evaluate SAST rules and update `.aether/LIVE_AUDIT.md` in less than 50 ms.
+- IF an import violates the architectural boundary between layers THEN THE SYSTEM SHALL flag a `RULE_FORBIDDEN_IMPORT` violation.

@@ -2116,12 +2116,24 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let active_rules: Vec<String> = saved_active
                         .unwrap_or_else(|| catalogue.iter().map(|r| r.rule_id.clone()).collect());
                     let ignored_cwes = state.ignored_cwes.read().await.clone();
+                    let ui_settings = state.saved_ui_settings.read().await.clone();
+                    let show_alerts = state.show_alerts.read().await.clone();
+                    let show_cwe_bubbles = state.show_cwe_bubbles.read().await.clone();
+                    let show_cwe_titles = state.show_cwe_titles.read().await.clone();
+                    let show_folder_titles = state.show_folder_titles.read().await.clone();
+                    let show_file_titles = state.show_file_titles.read().await.clone();
                     axum::Json(SettingsPayload {
                         exclusions,
                         active_cve_rules: Some(active_rules),
                         ignored_cwes: Some(ignored_cwes),
                         cve_catalogue: Some(catalogue),
                         mcp_binary_path: resolve_mcp_binary_path(),
+                        show_alerts,
+                        show_cwe_bubbles,
+                        show_cwe_titles,
+                        show_folder_titles,
+                        show_file_titles,
+                        ui_settings,
                     })
                 }
             })
@@ -2140,7 +2152,33 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         let mut ign_guard = state.ignored_cwes.write().await;
                         *ign_guard = ignored.clone();
                     }
+                    if payload.ui_settings.is_some() {
+                        let mut ui_guard = state.saved_ui_settings.write().await;
+                        *ui_guard = payload.ui_settings.clone();
+                    }
+                    if let Some(v) = payload.show_alerts {
+                        let mut g = state.show_alerts.write().await;
+                        *g = Some(v);
+                    }
+                    if let Some(v) = payload.show_cwe_bubbles {
+                        let mut g = state.show_cwe_bubbles.write().await;
+                        *g = Some(v);
+                    }
+                    if let Some(v) = payload.show_cwe_titles {
+                        let mut g = state.show_cwe_titles.write().await;
+                        *g = Some(v);
+                    }
+                    if let Some(v) = payload.show_folder_titles {
+                        let mut g = state.show_folder_titles.write().await;
+                        *g = Some(v);
+                    }
+                    if let Some(v) = payload.show_file_titles {
+                        let mut g = state.show_file_titles.write().await;
+                        *g = Some(v);
+                    }
                     let p_root = state.project_root.read().await.clone();
+                    save_project_settings(&p_root, &payload);
+
                     let scanner = ProjectScanner::default();
                     let mut new_graph = scanner.scan_project_with_exclusions(&p_root, &payload.exclusions);
                     let active_opt = state.active_cve_rules.read().await.clone();

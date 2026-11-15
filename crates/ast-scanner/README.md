@@ -8,19 +8,21 @@ security_rules:
   no_raw_sql: true
   no_env_access: true
 ---
-# 🔍 ast-scanner — Scanner AST polyglotte multithread & Empreintes BLAKE3 (v2.4.0)
+# 🔍 ast-scanner — Parallel Polyglot AST Extractor & BLAKE3 Fingerprinting (v2.4.0)
 
-Parcourt l'arborescence d'un projet en parallèle (`rayon`), extrait les symboles AST multi-langages (Rust, PHP, Zig, C#, Java, TypeScript/JS, Python, C/C++, Solidity/Move/Cairo, Markdown), calcule l'empreinte BLAKE3 de chaque fichier (`file_blake3_hash`), résout le contrat de dossier/fichier applicable et invoque `security-linter`.
+High-speed Rayon-parallel polyglot AST extractor supporting 11 programming languages (Rust, PHP, Zig, C#, Java, TypeScript/JavaScript, Python, C/C++, Solidity/Move/Cairo, Luau, and Markdown). Extracts AST symbols, computes per-file cryptographic BLAKE3 hashes (`file_blake3_hash`), resolves hierarchical directory contracts, extracts inter-procedural taint flows, and projects affiliation edges into `core-graph`.
 
-## 📦 Contenu
+## 📦 Component Inventory
 
-| Fichier | Rôle |
+| File / Subsystem | Description & Architectural Responsibility |
 | :--- | :--- |
-| `src/scanner.rs` | `ProjectScanner`, regex compilées `OnceLock`, calcul BLAKE3 par fichier (`file_blake3_hash`), résolution des contrats (`find_contract_for_file`) et constructeurs d'arêtes d'affiliation |
-| `src/lib.rs` | Point d'entrée public du crate |
+| `src/scanner.rs` | `ProjectScanner`: parallel AST parsing via Rayon, compiled regex caching (`OnceLock`), file BLAKE3 digest calculation (`file_blake3_hash`), contract resolution (`find_contract_for_file`), and `AffiliationEdge` projection. |
+| `src/taint_extractor.rs` | Inter-procedural taint extractor discovering untrusted sources, propagators, and dangerous sinks for SAST dataflow analysis. |
+| `src/lib.rs` | Public crate root exposing AST scanning and contract resolution interfaces. |
 
-## 🛡️ Règles EARS
+## 🛡️ EARS Architectural Requirements
 
 - WHEN a project directory is scanned THE SYSTEM SHALL parse source files in parallel using `rayon` and skip excluded directories (`target`, `node_modules`, `.git`, `.aether`).
 - WHEN a symbol is extracted THE SYSTEM SHALL attach its source file path, `file_blake3_hash`, `contract_folder`, `max_lines_limit`, `file_max_lines_override`, line number, complexity, and SAST anomalies.
-- IF a file of this folder exceeds `max_lines_per_file` THEN THE SYSTEM SHALL report a `RULE_MAX_LINES` warning.
+- WHEN an imported dependency violates contract boundaries THE SYSTEM SHALL create a red forbidden import edge in the graph.
+- IF a file in this folder exceeds `max_lines_per_file` THEN THE SYSTEM SHALL report a `RULE_MAX_LINES` warning.
