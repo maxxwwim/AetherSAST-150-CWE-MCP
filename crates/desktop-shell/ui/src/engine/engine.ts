@@ -88,6 +88,7 @@ export class AetherEngine {
   private selectedFolder: string | null = null;
   private hasInitialCameraFit = false;
   private folderPillBounds: { folder: string; x: number; y: number; w: number; h: number }[] = [];
+  private anomalyNodeIndices: number[] = [];
   private agentSmoothPositions = new Map<string, { x: number; y: number }>();
 
   // Mouse interaction state
@@ -321,6 +322,13 @@ export class AetherEngine {
       this.instanceData[offset + 7] = shaderType;
       this.instanceData[offset + 8] = n.birth_time;
       this.instanceData[offset + 9] = this.getNodeGitShaderVal(n);
+    }
+
+    this.anomalyNodeIndices = [];
+    for (let i = 0; i < nodes.length; i++) {
+      if (getNodeAlertKind(nodes[i]) !== 'none') {
+        this.anomalyNodeIndices.push(i);
+      }
     }
 
     this.seedInitialClusters(nodes);
@@ -1076,6 +1084,9 @@ export class AetherEngine {
   private renderGitDiffBadges(ctx: CanvasRenderingContext2D, now: number) {
     const nodes = this.state.graph.nodes;
     if (!nodes || nodes.length === 0) return;
+    const gitFiles = this.state.gitStatus?.files;
+    const hasEdits = Boolean((gitFiles && gitFiles.length > 0) || (this.state.folderEdits && Object.keys(this.state.folderEdits).length > 0));
+    if (!hasEdits) return;
 
     const disabledLayers = this.state.disabledLayers;
     const disabledModules = this.state.disabledModules;
@@ -1195,6 +1206,9 @@ export class AetherEngine {
     if (!this.state.settings.showAlerts) return;
     const nodes = this.state.graph.nodes;
     if (!nodes || nodes.length === 0) return;
+    const anomalyIndices = this.anomalyNodeIndices.length > 0 ? this.anomalyNodeIndices : null;
+    const targetCount = anomalyIndices ? anomalyIndices.length : nodes.length;
+    if (targetCount === 0) return;
 
     const disabledLayers = this.state.disabledLayers;
     const disabledModules = this.state.disabledModules;
@@ -1205,8 +1219,10 @@ export class AetherEngine {
     ctx.textBaseline = 'middle';
 
     let drawn = 0;
-    for (let i = 0; i < nodes.length && drawn < 48; i++) {
+    for (let k = 0; k < targetCount && drawn < 48; k++) {
+      const i = anomalyIndices ? anomalyIndices[k] : k;
       const n = nodes[i];
+      if (!n) continue;
       if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
       const alertKind = getNodeAlertKind(n);
       if (alertKind === 'none') continue;
@@ -1853,11 +1869,14 @@ export class AetherEngine {
 
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
     this.folderPillBounds = [];
-    this.syncLiveClusterEnvelopes();
+    if (this.clusters.size === 0 || this.isDragging) {
+      this.syncLiveClusterEnvelopes();
+    }
     if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();
     const breathPhase = now * 0.00075;
+    const isDenseProject = this.clusters.size > 45;
     const badges: {
       folder: string;
       label: string;
@@ -1924,20 +1943,28 @@ export class AetherEngine {
       const isEditedCell = Boolean(folderEdit && folderEdit.count > 0);
       const cellPulse = isEditedCell ? 0.5 + 0.5 * Math.sin(now * 0.00075 + folderPhase) : 0;
 
-      // 1. Living Outer Cytoplasmic Membrane with soft radial gradient (illuminated when edited)
+      // 1. Living Outer Cytoplasmic Membrane (high-perf flat fill for dense clusters)
       const topCrestY = this.traceMembraneSpline(ctx, center.x, center.y, baseR, cl.lobeProfile, breathPhase, folderPhase);
-      const grad = ctx.createRadialGradient(center.x, center.y, Math.max(4, baseR * 0.15), center.x, center.y, Math.max(12, baseR * 1.15));
-      const bioPulse = 0.5 + 0.5 * Math.sin(now * 0.0012 + folderPhase);
-      const innerAlpha = isEditedCell ? (0.16 + cellPulse * 0.04) : isSel ? 0.16 : (0.075 + 0.022 * bioPulse);
-      const midAlpha = isEditedCell ? (0.10 + cellPulse * 0.025) : isSel ? 0.10 : 0.04;
-      grad.addColorStop(0, `rgba(${rR}, ${rG}, ${rB}, ${innerAlpha.toFixed(3)})`);
-      grad.addColorStop(0.7, `rgba(${rR}, ${rG}, ${rB}, ${midAlpha.toFixed(3)})`);
-      grad.addColorStop(1, `rgba(${rR}, ${rG}, ${rB}, 0.015)`);
-      ctx.fillStyle = grad;
-      ctx.fill();
+      const isTiny = baseR < 20;
+
+      if (isDenseProject || isTiny) {
+        const innerAlpha = isEditedCell ? 0.18 : isSel ? 0.16 : 0.065;
+        ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${innerAlpha})`;
+        ctx.fill();
+      } else {
+        const grad = ctx.createRadialGradient(center.x, center.y, Math.max(4, baseR * 0.15), center.x, center.y, Math.max(12, baseR * 1.15));
+        const bioPulse = 0.5 + 0.5 * Math.sin(now * 0.0012 + folderPhase);
+        const innerAlpha = isEditedCell ? (0.16 + cellPulse * 0.04) : isSel ? 0.16 : (0.075 + 0.022 * bioPulse);
+        const midAlpha = isEditedCell ? (0.10 + cellPulse * 0.025) : isSel ? 0.10 : 0.04;
+        grad.addColorStop(0, `rgba(${rR}, ${rG}, ${rB}, ${innerAlpha.toFixed(3)})`);
+        grad.addColorStop(0.7, `rgba(${rR}, ${rG}, ${rB}, ${midAlpha.toFixed(3)})`);
+        grad.addColorStop(1, `rgba(${rR}, ${rG}, ${rB}, 0.015)`);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
 
       ctx.save();
-      if (isEditedCell && editHex) {
+      if (isEditedCell && editHex && !isDenseProject) {
         ctx.shadowColor = editHex;
         ctx.shadowBlur = 10 + cellPulse * 3;
       }
@@ -1950,8 +1977,8 @@ export class AetherEngine {
       ctx.stroke();
       ctx.restore();
 
-      // 2. Living Inner Phospholipid Bilayer Cortex (breathing out-of-phase)
-      if (baseR >= 26) {
+      // 2. Living Inner Phospholipid Bilayer Cortex (skipped on dense clusters to save draw passes)
+      if (baseR >= 26 && (!isDenseProject || isSel || isEditedCell)) {
         this.traceMembraneSpline(ctx, center.x, center.y, baseR * 0.88, cl.lobeProfile, breathPhase * 0.88, folderPhase + 2.1);
         ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isEditedCell ? 0.065 : isSel ? 0.05 : 0.022})`;
         ctx.fill();
@@ -1960,8 +1987,8 @@ export class AetherEngine {
         ctx.stroke();
       }
 
-      // 3. LoD 2 Nucleus Core
-      if ((this.state.lodLevel === 2 || isSel || isEditedCell) && baseR >= 45) {
+      // 3. LoD 2 Nucleus Core (skipped on dense clusters to save draw passes)
+      if ((this.state.lodLevel === 2 || isSel || isEditedCell) && baseR >= 45 && (!isDenseProject || isSel || isEditedCell)) {
         const nucR = Math.max(12, baseR * 0.20);
         this.traceMembraneSpline(ctx, center.x, center.y, nucR, undefined, breathPhase * 1.25, 1.1);
         ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isEditedCell ? 0.22 : isSel ? 0.20 : 0.10})`;
@@ -2145,10 +2172,16 @@ export class AetherEngine {
       isIncoming: boolean;
     }[] = [];
 
+    const isHuge = edges.length > 2500 || this.state.graph.nodes.length > 1800;
+    const edgeCap = isHuge ? (zoom < 0.25 ? 500 : 900) : 2200;
+
     for (let i = 0; i < edges.length; i++) {
       const e = edges[i];
       const isIncident = Boolean(focusId && (e.source === focusId || e.target === focusId));
-      if (!isIncident && i >= 2200) continue;
+      if (!isIncident) {
+        if (!focusId && i >= edgeCap) break;
+        if (i >= edgeCap) continue;
+      }
       if (isXray && e.source !== activeId && e.target !== activeId && !isIncident) continue;
 
       const s = this.nodeMap.get(e.source);
@@ -2414,9 +2447,15 @@ export class AetherEngine {
 
   private renderLabels(ctx: CanvasRenderingContext2D) {
     const nodes = this.state.graph.nodes;
+    if (!nodes || nodes.length === 0) return;
     const zoom = this.camera.zoom;
     const isXray = this.state.visionMode === 'xray' && this.activeNeighbors.size > 0;
     const activeId = this.state.activeSymbol?.id;
+    const focusId = activeId || this.hoveredNodeId;
+
+    // Fast exit if zoomed out and no node is hovered or active
+    if (!focusId && zoom < 0.30) return;
+
     const maxLen = this.state.settings.maxLabelLength || 18;
     const hideDense = this.state.settings.hideBubbleLabelsOver20;
     const denseLimit = this.state.settings.clusterLabelThreshold || 20;
@@ -2426,9 +2465,11 @@ export class AetherEngine {
     ctx.textAlign = 'center';
 
     let drawn = 0;
+    const isHuge = nodes.length > 2000;
+    const maxDraw = isHuge ? 85 : 220;
     const disabledLayers = this.state.disabledLayers;
     const disabledModules = this.state.disabledModules;
-    for (let i = 0; i < nodes.length && drawn < 220; i++) {
+    for (let i = 0; i < nodes.length && drawn < maxDraw; i++) {
       const n = nodes[i];
       if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
       const isFocus = n.id === activeId || n.id === this.hoveredNodeId;

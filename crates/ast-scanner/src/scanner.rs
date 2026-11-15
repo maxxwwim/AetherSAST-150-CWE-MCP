@@ -433,6 +433,8 @@ impl ProjectScanner {
             "cosmoscope_output",
             "coverage",
             ".cache",
+            "cache",
+            "var",
             "tmp",
             "temp",
             "vendor",

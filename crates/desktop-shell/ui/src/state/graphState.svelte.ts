@@ -106,7 +106,7 @@ const DEFAULT_SETTINGS: CockpitSettings = {
   aiAutoCam: true,
   aiTrail: true,
   aiCustomPrompt: '',
-  exclusions: ['tests', '*.spec.*', '*.test.*'],
+  exclusions: ['vendor', 'var', 'cache', 'tests', '*.spec.*', '*.test.*'],
   activeCveRules: [],
   ignoredCwes: [],
   mcpBinaryPath: 'aetherscope-mcp.exe',

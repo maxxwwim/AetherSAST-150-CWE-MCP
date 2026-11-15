@@ -231,6 +231,7 @@ function stepWorkerPhysics(zoom = 1.0) {
       if (!st.nodes || st.nodes.length <= 1) return;
       const count = st.nodes.length;
       const innerStep = count > 180 ? 2 : 1;
+      const maxNeighborhood = count > 300 ? 32 : (count > 120 ? 44 : count);
 
       for (let i = 0; i < count; i++) {
         const na = st.nodes[i];
@@ -238,7 +239,8 @@ function stepWorkerPhysics(zoom = 1.0) {
         const isFuncA = na.is_func || na.kind === 'FunctionOrMethod';
         const isFileA = na.is_file || na.kind === 'File';
 
-        for (let j = i + 1; j < count; j += innerStep) {
+        const limitJ = Math.min(count, i + maxNeighborhood);
+        for (let j = i + 1; j < limitJ; j += innerStep) {
           const nb = st.nodes[j];
           const isClassB = nb.is_class || nb.kind === 'ClassOrStruct' || nb.kind === 'TraitOrInterface' || nb.kind === 'Enum';
           const isFuncB = nb.is_func || nb.kind === 'FunctionOrMethod';
@@ -295,7 +297,9 @@ function stepWorkerPhysics(zoom = 1.0) {
       const cyA = cA.cy !== undefined ? cA.cy : (cA.sumY / cA.count);
       const rA = cA.computedRadius || 120;
 
-      for (let j = i + 1; j < clusterList.length; j++) {
+      const maxClusterNeighbors = clusterList.length > 120 ? 36 : clusterList.length;
+      const limitClusterJ = Math.min(clusterList.length, i + maxClusterNeighbors);
+      for (let j = i + 1; j < limitClusterJ; j++) {
         const cB = clusterList[j];
         if (!cB.nodes || cB.count === 0) continue;
         const cxB = cB.cx !== undefined ? cB.cx : (cB.sumX / cB.count);
@@ -408,12 +412,12 @@ function stepWorkerPhysics(zoom = 1.0) {
     totalSpeed += sp;
   }
 
-  // Auto-sleep check
+  // Auto-sleep check (scaled for massive graphs to avoid micro-jitter CPU burn)
   physicsCooldown--;
   const avgDist = targetCount > 0 ? (distToTargetSum / targetCount) : 0;
   const isRelaxed = (d === 1)
-    ? (isHuge ? totalSpeed < 0.80 : totalSpeed < 0.20)
-    : (avgDist < 1.8 && totalSpeed < 0.6);
+    ? (isHuge ? (totalSpeed < 3.5 || (totalSpeed / nodes.length < 0.003)) : totalSpeed < 0.20)
+    : (avgDist < 2.2 && (isHuge ? totalSpeed < 2.5 : totalSpeed < 0.6));
 
   if (!activeDragId && (physicsCooldown <= 0 || isRelaxed)) {
     physicsSleeping = true;
