@@ -315,15 +315,26 @@ impl PhpSecurityRules {
             let is_sql_call = trimmed.contains("mysqli_query(")
                 || trimmed.contains("mysql_query(")
                 || trimmed.contains("->query(")
-                || trimmed.contains("->exec(")
+                || (trimmed.contains("->exec(") && !trimmed.contains("Hook::exec(") && !trimmed.contains("Event::exec("))
                 || (trimmed.contains("->prepare(") && (trimmed.contains(" . $") || trimmed.contains(".$") || trimmed.contains("{$")));
 
-            let has_tainted_sql_concat = trimmed.contains("$_GET")
+            let is_sanitized_sql = trimmed.contains("(int)")
+                || trimmed.contains("(int) $")
+                || trimmed.contains("(int)$")
+                || trimmed.contains("intval(")
+                || trimmed.contains("(float)")
+                || trimmed.contains("pSQL(")
+                || trimmed.contains("bqSQL(")
+                || trimmed.contains("->quote(")
+                || trimmed.contains("::quote(");
+
+            let has_tainted_sql_concat = (trimmed.contains("$_GET")
                 || trimmed.contains("$_POST")
                 || trimmed.contains("$_REQUEST")
                 || trimmed.contains("$_COOKIE")
                 || ((trimmed.contains("SELECT ") || trimmed.contains("INSERT INTO ") || trimmed.contains("UPDATE ") || trimmed.contains("DELETE FROM ") || trimmed.contains("WHERE "))
-                    && (trimmed.contains(" . $") || trimmed.contains(".$") || trimmed.contains(" = '\" .") || trimmed.contains(" = '\".")));
+                    && (trimmed.contains(" . $") || trimmed.contains(".$") || trimmed.contains(" = '\" .") || trimmed.contains(" = '\"."))))
+                && !is_sanitized_sql;
 
             if is_sql_call && has_tainted_sql_concat && !trimmed.contains("bind_param") && !trimmed.contains("bindParam") && !trimmed.contains("bindValue") {
                 violations.push(LinterViolation {
@@ -342,15 +353,15 @@ impl PhpSecurityRules {
             // -------------------------------------------------------------
             // 2. CVE-PHP-COMMAND-INJECTION (CWE-78)
             // -------------------------------------------------------------
-            let is_shell_exec = trimmed.contains("system(")
-                || trimmed.contains("exec(")
-                || trimmed.contains("passthru(")
-                || trimmed.contains("shell_exec(")
-                || trimmed.contains("proc_open(")
-                || trimmed.contains("popen(")
+            let is_shell_exec = (trimmed.contains("system(") && !trimmed.contains("->system(") && !trimmed.contains("::system("))
+                || (trimmed.contains("exec(") && !trimmed.contains("->exec(") && !trimmed.contains("::exec("))
+                || (trimmed.contains("passthru(") && !trimmed.contains("->passthru(") && !trimmed.contains("::passthru("))
+                || (trimmed.contains("shell_exec(") && !trimmed.contains("->shell_exec(") && !trimmed.contains("::shell_exec("))
+                || (trimmed.contains("proc_open(") && !trimmed.contains("->proc_open(") && !trimmed.contains("::proc_open("))
+                || (trimmed.contains("popen(") && !trimmed.contains("->popen(") && !trimmed.contains("::popen("))
                 || (trimmed.starts_with('`') && trimmed.ends_with('`') && trimmed.contains('$'));
 
-            if is_shell_exec {
+            if is_shell_exec && !trimmed.starts_with("function ") && !trimmed.contains("function exec(") {
                 let has_var_or_input = trimmed.contains("$_GET")
                     || trimmed.contains("$_POST")
                     || trimmed.contains("$_REQUEST")
@@ -378,12 +389,12 @@ impl PhpSecurityRules {
             // -------------------------------------------------------------
             // 3. CVE-PHP-EVAL-CODE-INJECTION (CWE-94)
             // -------------------------------------------------------------
-            let is_eval = trimmed.contains("eval(")
-                || trimmed.contains("create_function(")
-                || (trimmed.contains("assert(") && (trimmed.contains("$_GET") || trimmed.contains("$_POST") || trimmed.contains(" . $")))
+            let is_eval = (trimmed.contains("eval(") && !trimmed.contains("->eval(") && !trimmed.contains("::eval("))
+                || (trimmed.contains("create_function(") && !trimmed.contains("->create_function("))
+                || (trimmed.contains("assert(") && !trimmed.contains("->assert(") && !trimmed.contains("::assert(") && (trimmed.contains("$_GET") || trimmed.contains("$_POST") || trimmed.contains(" . $")))
                 || (trimmed.contains("preg_replace(") && (trimmed.contains("/e'") || trimmed.contains("/e\"") || trimmed.contains("'/e'") || trimmed.contains("\"/e\"")));
 
-            if is_eval {
+            if is_eval && !trimmed.starts_with("function ") {
                 violations.push(LinterViolation {
                     file_path: file_path.to_string(),
                     line_number: line_no,
@@ -400,7 +411,7 @@ impl PhpSecurityRules {
             // -------------------------------------------------------------
             // 4. CVE-PHP-UNSERIALIZE-RCE (CWE-502)
             // -------------------------------------------------------------
-            if trimmed.contains("unserialize(") {
+            if trimmed.contains("unserialize(") && !trimmed.contains("->unserialize(") && !trimmed.contains("::unserialize(") && !trimmed.starts_with("function ") {
                 let has_allowed_false = trimmed.contains("'allowed_classes' => false")
                     || trimmed.contains("\"allowed_classes\" => false")
                     || trimmed.contains("'allowed_classes'=>false")
@@ -513,8 +524,15 @@ impl PhpSecurityRules {
                 let has_xss_protection = trimmed.contains("htmlspecialchars(")
                     || trimmed.contains("htmlentities(")
                     || trimmed.contains("urlencode(")
+                    || trimmed.contains("rawurlencode(")
                     || trimmed.contains("intval(")
-                    || trimmed.contains("(int)");
+                    || trimmed.contains("(int)")
+                    || trimmed.contains("(float)")
+                    || trimmed.contains("(bool)")
+                    || trimmed.contains("json_encode(")
+                    || trimmed.contains("safeOutput(")
+                    || trimmed.contains("htmlentitiesUTF8(")
+                    || trimmed.contains("number_format(");
 
                 if has_raw_user_input && !has_xss_protection {
                     violations.push(LinterViolation {
@@ -688,8 +706,16 @@ impl PhpSecurityRules {
                 || trimmed.contains("secret")
                 || trimmed.contains("token")
                 || trimmed.contains("pwd");
+            let is_benign_cache_or_etag = trimmed.contains("cache")
+                || trimmed.contains("etag")
+                || trimmed.contains("asset")
+                || trimmed.contains("gravatar")
+                || trimmed.contains("checksum")
+                || trimmed.contains("hash_file")
+                || trimmed.contains("filename")
+                || trimmed.contains("upload");
 
-            if is_weak_hash && is_password_or_secret && !content.contains("password_hash") {
+            if is_weak_hash && is_password_or_secret && !is_benign_cache_or_etag && !content.contains("password_hash") {
                 violations.push(LinterViolation {
                     file_path: file_path.to_string(),
                     line_number: line_no,
@@ -962,7 +988,11 @@ impl PhpSecurityRules {
                     || trimmed.contains("$_GET[")
                     || trimmed.contains("$_REQUEST[");
 
-                let has_type_cast = trimmed.contains("(string)") || trimmed.contains("strval(");
+                let has_type_cast = trimmed.contains("(string)")
+                    || trimmed.contains("strval(")
+                    || trimmed.contains("(int)")
+                    || trimmed.contains("intval(")
+                    || trimmed.contains("(float)");
 
                 if has_raw_post_input && !has_type_cast {
                     violations.push(LinterViolation {

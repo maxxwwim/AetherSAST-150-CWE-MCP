@@ -485,10 +485,10 @@ impl TaintExtractor {
 
         // 2. CWE-78 Command Injection Sinks
         let is_cmd_sink = trimmed.contains("system(")
-            || trimmed.contains("exec(")
-            || trimmed.contains("shell_exec(")
-            || trimmed.contains("passthru(")
-            || trimmed.contains("popen(")
+            || (trimmed.contains("exec(") && !trimmed.contains("->exec(") && !trimmed.contains("::exec("))
+            || (trimmed.contains("passthru(") && !trimmed.contains("->passthru(") && !trimmed.contains("::passthru("))
+            || (trimmed.contains("shell_exec(") && !trimmed.contains("->shell_exec(") && !trimmed.contains("::shell_exec("))
+            || (trimmed.contains("popen(") && !trimmed.contains("->popen(") && !trimmed.contains("::popen("))
             || trimmed.contains("child_process.exec(")
             || trimmed.contains("Command::new(")
             || trimmed.contains("Process.Start(")

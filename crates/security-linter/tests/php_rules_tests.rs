@@ -437,3 +437,51 @@ pub fn test_mock() {
         "PHP rules must NEVER trigger on Rust files"
     );
 }
+
+#[test]
+fn test_prestashop_and_framework_false_positive_elimination() {
+    // 1. Hook::exec or $obj->exec must NEVER be flagged as OS Command Injection (CWE-78)
+    let hook_exec = r#"<?php
+$id_zone = Hook::exec('actionGetIDZoneByAddressID', ['id_address' => $id_address]);
+$res = $dispatcher->exec("event_name", $_POST);
+"#;
+    let v_hook = SecurityLinter::audit_file("classes/Address.php", hook_exec, None);
+    assert!(
+        !v_hook.iter().any(|v| v.rule_id == "CVE-PHP-COMMAND-INJECTION"),
+        "Hook::exec and ->exec must NOT trigger CVE-PHP-COMMAND-INJECTION"
+    );
+
+    // 2. Integer casting and pSQL/quote in queries must NEVER trigger SQL Injection (CWE-89)
+    let safe_sql = r#"<?php
+$result = Db::getInstance()->getRow('SELECT * FROM ' . _DB_PREFIX_ . 'address WHERE id_address = ' . (int) $id_address);
+$stmt = $db->query('SELECT * FROM users WHERE name = ' . pSQL($_GET['name']));
+"#;
+    let v_sql = SecurityLinter::audit_file("classes/Address.php", safe_sql, None);
+    assert!(
+        !v_sql.iter().any(|v| v.rule_id == "CVE-PHP-SQL-INJECTION"),
+        "Integer-cast or pSQL sanitized queries must NOT trigger CVE-PHP-SQL-INJECTION"
+    );
+
+    // 3. Safe output escaping (Tools::safeOutput, json_encode) must NOT trigger XSS (CWE-79)
+    let safe_xss = r#"<?php
+echo Tools::safeOutput($_GET['name']);
+echo json_encode($_GET);
+echo (int) $_GET['id'];
+"#;
+    let v_xss = SecurityLinter::audit_file("classes/Address.php", safe_xss, None);
+    assert!(
+        !v_xss.iter().any(|v| v.rule_id == "CVE-PHP-XSS-UNESCAPED-OUTPUT"),
+        "Tools::safeOutput, json_encode, and (int) must NOT trigger CVE-PHP-XSS-UNESCAPED-OUTPUT"
+    );
+
+    // 4. MD5/SHA1 for cache IDs, ETags, and assets must NOT trigger Broken Crypto (CWE-327)
+    let safe_crypto = r#"<?php
+$cache_id = md5($this->name . '_' . $id_lang . '_' . $password_token);
+$etag = md5_file($asset_filename);
+"#;
+    let v_crypto = SecurityLinter::audit_file("classes/Address.php", safe_crypto, None);
+    assert!(
+        !v_crypto.iter().any(|v| v.rule_id == "CVE-PHP-BROKEN-CRYPTO-MD5-SHA1"),
+        "MD5 for cache keys and ETags must NOT trigger CVE-PHP-BROKEN-CRYPTO-MD5-SHA1"
+    );
+}
