@@ -268,6 +268,5 @@ The embedded HTTP server binds exclusively to `127.0.0.1:3030` and is protected 
 - **Changelog**: Comprehensive milestone history from v2.0.0 through v2.4.0 in [CHANGELOG.md](./CHANGELOG.md).
 - **Vulnerability Catalog**: Complete breakdown of the 215 active security rules in [CWE_CATALOG.md](./CWE_CATALOG.md).
 - **Test Infrastructure**: Multi-tier testing specifications in [TEST_INFRA.md](./TEST_INFRA.md) and [TEST_READY.md](./TEST_READY.md).
-- **Real-World Audit Reference**: Complete audit synthesis of WordPress 6.x in [SECURITY_VULNERABILITY_REPORT.md](./SECURITY_VULNERABILITY_REPORT.md).
 - **AI Directives**: System prompts and copilot protocol in [AETHER_AI_RULES.md](./AETHER_AI_RULES.md).
 - **French Edition**: Original French reference documentation in [README.fr.md](./README.fr.md).
