@@ -731,10 +731,14 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
         .map(|r| r.default_view.clone())
         .unwrap_or_else(|| "code".to_string());
 
-    // 2. Scan code graph if project has code
+    // 2. Scan code graph if project has code (respecting saved exclusions from .aether/settings.json)
+    let saved_settings = load_project_settings(&project_root);
     let code_graph = if project_type.is_code() || project_type.is_mixed() {
         let scanner = ProjectScanner::default();
-        let g = scanner.scan_project(&project_root);
+        let g = match saved_settings.as_ref() {
+            Some(s) if !s.exclusions.is_empty() => scanner.scan_project_with_exclusions(&project_root, &s.exclusions),
+            _ => scanner.scan_project(&project_root),
+        };
         let (all_violations, audited_files_count) = extract_live_audit_from_graph(&g);
         let _ = AuditWriter::write_live_audit(&project_root, &all_violations, audited_files_count);
         Some(g)
