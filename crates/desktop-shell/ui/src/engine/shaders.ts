@@ -64,7 +64,7 @@ export const vsSource = `#version 300 es
     vec2 dynamic_pos = a_node_pos + vec2(buoy_x, buoy_y);
 
     // Guaranteed minimum screen-space radius (1.8px to 2.6px) for infinite dezoom without vanishing
-    float min_px = (a_is_file > 0.5) ? 2.6 : 1.8;
+    float min_px = (a_is_file > 3.5 && a_is_file < 4.5) ? 2.2 : ((a_is_file > 0.5) ? 2.6 : 1.8);
     float screen_r = max(min_px, actual_r * u_zoom);
     vec2 screen_center = (dynamic_pos - u_camera_pos) * u_zoom + u_resolution * 0.5;
     vec2 screen_pos = screen_center + a_quad_pos * screen_r;
@@ -138,7 +138,7 @@ export const fsSource = `#version 300 es
 
       final_rgb = mix(col, vec3(1.0), core * 0.76) + vec3(0.95, 0.98, 1.0) * rim * 0.75 + col * (body * 0.65 + inner_ring * 0.85 + outer_glow * 0.88);
       alpha = clamp(body + rim * 0.92 + inner_ring * 0.70 + outer_glow * 0.52, 0.0, 1.0);
-    } else {
+    } else if (v_is_file < 3.5) {
       // FORM / ENDPOINT : Vésicule émettrice à pulsation vivante
       float pulse_r = mix(0.50, 0.85, 0.5 + 0.5 * sin(v_time * 0.0020 + v_phase));
       float radar_wave = (1.0 - smoothstep(0.0, 0.08, abs(r_org - pulse_r))) * 0.55;
@@ -149,6 +149,21 @@ export const fsSource = `#version 300 es
 
       final_rgb = mix(col, vec3(1.0, 0.97, 0.88), core * 0.72) + vec3(1.0) * (rim * 0.72 + radar_wave * 0.45) + col * (body * 0.6 + outer_glow * 0.88 + radar_wave * 0.75);
       alpha = clamp(body + rim * 0.90 + outer_glow * 0.68 + radar_wave * 0.72, 0.0, 1.0);
+    } else {
+      // PETITE FONCTION : Étoile scintillante lumineuse & micro-bulle céleste (shaderType = 4.0)
+      // Éclat central puissant, branches de diffraction stellaires en croix et halo de bulle
+      float twinkle = 0.82 + 0.28 * sin(v_time * 0.0034 + v_phase * 2.0);
+      float star_core = exp(-r * 7.5);
+      float inner_spark = 1.0 - smoothstep(0.0, 0.26, r_org);
+      // Éclat de diffraction stellaire en croix à 4 branches
+      float rays = (exp(-abs(v_uv.x) * 15.0) * exp(-abs(v_uv.y) * 2.6) + exp(-abs(v_uv.y) * 15.0) * exp(-abs(v_uv.x) * 2.6)) * 0.78 * twinkle;
+      // Membrane de micro-bulle et halo stellaire bioluminescent
+      float micro_rim = (1.0 - smoothstep(0.0, 0.085, abs(r_org - 0.52))) * 0.65 * twinkle;
+      float star_halo = (1.0 - smoothstep(0.12, 0.96, r)) * 0.72 * twinkle;
+
+      final_rgb = mix(col * 1.35, vec3(1.0, 0.99, 0.95), clamp(star_core * 1.25 + inner_spark * 0.95 + rays * 0.70, 0.0, 1.0))
+                + col * (star_halo * 0.90 + micro_rim * 0.70);
+      alpha = clamp(star_core * 1.1 + inner_spark + rays * 0.85 + star_halo * 0.75 + micro_rim * 0.60, 0.0, 1.0);
     }
 
     // Outer & Inner Bioluminescent Edit / Git Diff Illumination (calm steady glow)
