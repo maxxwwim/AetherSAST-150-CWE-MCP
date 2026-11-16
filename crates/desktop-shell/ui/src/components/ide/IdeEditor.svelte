@@ -16,7 +16,10 @@
     Edit3,
     FileCode,
     XCircle,
-    BookOpen
+    BookOpen,
+    SlidersHorizontal,
+    Maximize2,
+    Minimize2
   } from '@lucide/svelte';
 
   interface FileBuffer {
@@ -43,6 +46,9 @@
 
   // Editor View Mode: 'edit' (interactive textarea) or 'preview' (syntax highlighted lines)
   let editorViewMode = $state<'edit' | 'preview'>('edit');
+
+  // Tab Sizing Mode: 'compact' | 'auto' | 'expanded'
+  let tabSizeMode = $state<'auto' | 'compact' | 'expanded'>('auto');
 
   // Search overlay state
   let isSearchOpen = $state(false);
@@ -491,7 +497,8 @@
             tabindex="0"
             onclick={() => cockpitState.openFileInIde(tabPath)}
             onkeydown={(e) => { if (e.key === 'Enter') cockpitState.openFileInIde(tabPath); }}
-            class="group relative flex items-center gap-1.5 px-3 text-xs font-mono border-r border-white/10 transition-all cursor-pointer min-w-0 max-w-[210px] shrink-0 select-none
+            class="group relative flex items-center gap-1.5 border-r border-white/10 transition-all cursor-pointer min-w-0 shrink-0 select-none
+              {tabSizeMode === 'compact' ? 'px-2 text-[11px] max-w-[130px]' : tabSizeMode === 'expanded' ? 'px-3.5 text-xs max-w-[320px]' : 'px-3 text-xs max-w-[210px]'}
               {isActive
                 ? 'bg-[#060810] text-sky-200 border-t-2 border-t-sky-400 font-semibold shadow-xs'
                 : 'bg-[#080b15]/70 hover:bg-[#0c111e] text-slate-400 hover:text-slate-200 border-t-2 border-t-transparent'}"
@@ -533,6 +540,36 @@
           <span class="hidden xl:inline">Tout fermer</span>
         </button>
       {/if}
+
+      <!-- Tab Sizing Mode Button (Compact / Auto / Large) -->
+      <button
+        type="button"
+        onclick={() => {
+          tabSizeMode = tabSizeMode === 'auto' ? 'compact' : tabSizeMode === 'compact' ? 'expanded' : 'auto';
+        }}
+        class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-mono text-slate-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors cursor-pointer"
+        title="Ajuster la taille des onglets : {tabSizeMode === 'compact' ? 'Compact' : tabSizeMode === 'expanded' ? 'Large' : 'Auto'}"
+      >
+        <SlidersHorizontal class="w-3 h-3 text-sky-400" />
+        <span class="hidden 2xl:inline">{tabSizeMode === 'compact' ? 'Fin' : tabSizeMode === 'expanded' ? 'Large' : 'Auto'}</span>
+      </button>
+
+      <!-- Zen Mode / Maximize Editor (Minimiser tous les volets latéraux) -->
+      <button
+        type="button"
+        onclick={() => cockpitState.toggleZenMode()}
+        class="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer
+          {cockpitState.ideZenMode ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 font-semibold shadow-xs' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}"
+        title={cockpitState.ideZenMode ? "Quitter le mode Plein Écran (restaurer les volets)" : "Plein Écran Éditeur / Minimiser tous les volets (Mode Zen)"}
+      >
+        {#if cockpitState.ideZenMode}
+          <Minimize2 class="w-3.5 h-3.5 text-indigo-400" />
+          <span class="hidden md:inline">Restaurer</span>
+        {:else}
+          <Maximize2 class="w-3.5 h-3.5 text-slate-400" />
+          <span class="hidden md:inline">Plein Écran</span>
+        {/if}
+      </button>
 
       <!-- Search Overlay Trigger Button -->
       <button

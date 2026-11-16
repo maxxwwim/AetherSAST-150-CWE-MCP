@@ -24,8 +24,35 @@
     Copy,
     Check,
     Radio,
-    Code2
+    Code2,
+    Minimize2,
+    Maximize2
   } from '@lucide/svelte';
+
+  // Adjustable width state
+  let drawerWidth = $state(396);
+  let isResizing = $state(false);
+
+  function startInspectorResize(e: PointerEvent) {
+    e.preventDefault();
+    isResizing = true;
+    const startX = e.clientX;
+    const startW = drawerWidth;
+
+    function onPointerMove(ev: PointerEvent) {
+      const delta = startX - ev.clientX;
+      drawerWidth = Math.max(280, Math.min(Math.floor(window.innerWidth * 0.7), startW + delta));
+    }
+
+    function onPointerUp() {
+      isResizing = false;
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }
 
   const symbol = $derived(cockpitState.activeSymbol);
   const selectedFolder = $derived(cockpitState.selectedFolder);
@@ -491,8 +518,20 @@
 
 {#if cockpitState.isInspectorOpen}
   <aside
-    class="absolute top-0 right-0 bottom-7 w-full sm:w-[396px] max-w-full sm:max-w-[92vw] bg-[#0b0e17]/95 backdrop-blur-xl border-l border-white/10 flex flex-col z-40 select-none shadow-[-16px_0_48px_rgba(0,0,0,0.6)]"
+    style="width: {drawerWidth}px;"
+    class="absolute top-0 right-0 bottom-7 w-full sm:w-[396px] max-w-full sm:max-w-[92vw] bg-[#0b0e17]/95 backdrop-blur-xl border-l border-white/10 flex flex-col z-40 select-none shadow-[-16px_0_48px_rgba(0,0,0,0.6)] transition-[width] duration-75"
   >
+    <!-- Left Border Drag Resizer Handle -->
+    <div
+      role="separator"
+      tabindex="-1"
+      aria-orientation="vertical"
+      aria-valuenow={drawerWidth}
+      onpointerdown={startInspectorResize}
+      ondblclick={() => (drawerWidth = 396)}
+      class="absolute left-0 top-0 bottom-0 w-1.5 hover:w-2 -ml-1 z-50 cursor-col-resize hover:bg-sky-500/60 active:bg-sky-400 transition-colors select-none shrink-0 {isResizing ? 'bg-sky-500 w-2' : ''}"
+      title="Glisser pour ajuster la largeur de l'inspecteur (double-clic pour 396px)"
+    ></div>
     <!-- Drawer Header -->
     <div class="px-3.5 py-2.5 border-b border-white/10 bg-[#0f172a]/70 flex items-start justify-between gap-2">
       <div class="min-w-0 flex-1">
@@ -560,6 +599,14 @@
             <Crosshair class="w-3.5 h-3.5" />
           </button>
         {/if}
+        <button
+          type="button"
+          onclick={() => (drawerWidth = drawerWidth >= 550 ? 396 : 600)}
+          title={drawerWidth >= 550 ? "Réduire la largeur de l'inspecteur" : "Agrandir la largeur de l'inspecteur"}
+          class="p-1.5 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 cursor-pointer"
+        >
+          {#if drawerWidth >= 550}<Minimize2 class="w-3.5 h-3.5" />{:else}<Maximize2 class="w-3.5 h-3.5" />{/if}
+        </button>
         <button
           type="button"
           onclick={() => (cockpitState.isInspectorOpen = false)}

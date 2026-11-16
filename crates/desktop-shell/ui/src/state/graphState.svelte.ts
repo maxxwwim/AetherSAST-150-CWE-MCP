@@ -293,6 +293,7 @@ export class CockpitState {
   ideCursorPosition = $state<{ line: number; ch: number } | null>(null);
   ideOpenFiles = $state<string[]>([]);
   ideTargetTick = $state<number>(0);
+  ideZenMode = $state<boolean>(false);
   docMode = $state<'library' | 'folder' | 'symbol' | 'system'>('library');
   docSelectedPath = $state<string | null>(null);
   searchQuery = $state('');
@@ -1598,6 +1599,10 @@ export class CockpitState {
     this.ideOpenFiles = [];
     this.ideActiveFile = null;
     this.ideTargetLine = null;
+  }
+
+  toggleZenMode() {
+    this.ideZenMode = !this.ideZenMode;
   }
 
   openInIde(filePath: string, targetLine?: number | null) {
