@@ -3,22 +3,28 @@ project_id = "aether-engine"
 stack_type = "HybridMmoWeb3"
 topology_mode = "MonorepoLocal"
 
-[galaxies."crates/ai-file-bridge"]
-path = "./crates/ai-file-bridge"
-role = "Signed contract for crates/ai-file-bridge"
-remote_sync = false
-readme_blake3 = "4115383507fde37697ff526484cffcf45e187c369de3af67bbcdbe32633fab93"
-
-[galaxies.contracts]
-path = "./contracts"
-role = "Smart contracts ABI, WebSocket packet definitions, shared types"
-remote_sync = false
-
 [galaxies."crates/desktop-shell/tests/fixtures/fixture_pure_code_project"]
 path = "./crates/desktop-shell/tests/fixtures/fixture_pure_code_project"
 role = "Signed contract for crates/desktop-shell/tests/fixtures/fixture_pure_code_project"
 remote_sync = false
 readme_blake3 = "97e04675dd5ff806f2fa8ebfaf572a3e7d28f3b72f0109ed77c4b6476c9eb6da"
+
+[galaxies."crates/obsidian-vault"]
+path = "./crates/obsidian-vault"
+role = "Signed contract for crates/obsidian-vault"
+remote_sync = false
+readme_blake3 = "6b9f2f3b2115733c0ea3dba17d2cde000f41ce6c9f34292dc82ae6682e8ec3c1"
+
+[galaxies."crates/desktop-shell/ui"]
+path = "./crates/desktop-shell/ui"
+role = "Signed contract for crates/desktop-shell/ui"
+remote_sync = false
+readme_blake3 = "5d56391e24770acbea3fc2c0a616e029d21f8ec928299dba64367c52801e5732"
+
+[galaxies.client]
+path = "./client"
+role = "PixiJS / Svelte WebGL presentation, UI forms and local states"
+remote_sync = false
 
 [galaxies."crates/ast-scanner"]
 path = "./crates/ast-scanner"
@@ -26,16 +32,17 @@ role = "Signed contract for crates/ast-scanner"
 remote_sync = false
 readme_blake3 = "ac3ebad6342be0c6cec8593228e936e64552805a87d324bde80e77f62a124412"
 
+[galaxies."crates/core-graph"]
+path = "./crates/core-graph"
+role = "Signed contract for crates/core-graph"
+remote_sync = false
+readme_blake3 = "495aa7e9e1a92ca5deffbd7b5f04a7d348a18addcdbc70efb324b2e5ea14cba7"
+
 [galaxies."crates/security-linter"]
 path = "./crates/security-linter"
 role = "Signed contract for crates/security-linter"
 remote_sync = false
 readme_blake3 = "248b1aed7dccf3a607cbfc8d0193fd4a026498b96f695b6cc0493c599aad6b54"
-
-[galaxies.client]
-path = "./client"
-role = "PixiJS / Svelte WebGL presentation, UI forms and local states"
-remote_sync = false
 
 [galaxies.server]
 path = "./server"
@@ -53,23 +60,23 @@ role = "Signed contract for crates/arch-templates"
 remote_sync = false
 readme_blake3 = "d73beb98db79fa52ae76b8e7d0159a0125040bdb798c4750c526b372d2b7da71"
 
-[galaxies.crates]
-path = "./crates"
-role = "Signed contract for crates"
-remote_sync = false
-readme_blake3 = "787ed8eab26b65e9f2dd352ce4164ed72dfa23f7b70f339fa4d3c01d89978b36"
-
 [galaxies."crates/desktop-shell"]
 path = "./crates/desktop-shell"
 role = "Signed contract for crates/desktop-shell"
 remote_sync = false
 readme_blake3 = "473c5f4082a578d9e5c1532627c44b8ca2d70f7fdd19aa84a08f212cf6ef7615"
 
-[galaxies."crates/obsidian-vault"]
-path = "./crates/obsidian-vault"
-role = "Signed contract for crates/obsidian-vault"
+[galaxies.root]
+path = "."
+role = "Signed contract for root"
 remote_sync = false
-readme_blake3 = "6b9f2f3b2115733c0ea3dba17d2cde000f41ce6c9f34292dc82ae6682e8ec3c1"
+readme_blake3 = "c935454a31705ea3af2823e637ab00d534706a8263f649b555349e124eb38698"
+
+[galaxies.crates]
+path = "./crates"
+role = "Signed contract for crates"
+remote_sync = false
+readme_blake3 = "787ed8eab26b65e9f2dd352ce4164ed72dfa23f7b70f339fa4d3c01d89978b36"
 
 [galaxies.cwe]
 path = "./cwe"
@@ -77,29 +84,22 @@ role = "Signed contract for cwe"
 remote_sync = false
 readme_blake3 = "6759ea2214a75c14ea01905da2df8218f6c89edf6e918517bae59d44fd80e09c"
 
-[galaxies."crates/desktop-shell/ui"]
-path = "./crates/desktop-shell/ui"
-role = "Signed contract for crates/desktop-shell/ui"
+[galaxies.contracts]
+path = "./contracts"
+role = "Smart contracts ABI, WebSocket packet definitions, shared types"
 remote_sync = false
-readme_blake3 = "5d56391e24770acbea3fc2c0a616e029d21f8ec928299dba64367c52801e5732"
-
-[galaxies.root]
-path = "."
-role = "Signed contract for root"
-remote_sync = false
-readme_blake3 = "ef2c2440d3d9d2f0f0b77cf64ce1635f7c12a54806b56977feff77b30aa9e763"
-
-[galaxies."crates/core-graph"]
-path = "./crates/core-graph"
-role = "Signed contract for crates/core-graph"
-remote_sync = false
-readme_blake3 = "495aa7e9e1a92ca5deffbd7b5f04a7d348a18addcdbc70efb324b2e5ea14cba7"
 
 [galaxies."crates/security-linter/tests"]
 path = "./crates/security-linter/tests"
 role = "Signed contract for crates/security-linter/tests"
 remote_sync = false
 readme_blake3 = "a10bfc733a8beb7a263fe4aa38a607b5469adedd25e59d77511fbb9dc54d65e8"
+
+[galaxies."crates/ai-file-bridge"]
+path = "./crates/ai-file-bridge"
+role = "Signed contract for crates/ai-file-bridge"
+remote_sync = false
+readme_blake3 = "4115383507fde37697ff526484cffcf45e187c369de3af67bbcdbe32633fab93"
 
 [guardrails]
 block_forbidden_imports = true

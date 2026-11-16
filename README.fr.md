@@ -9,12 +9,12 @@
   <img src="./assets/aetherscope-banner-logo.png" alt="AetherScope V2 Logo Bannière" width="100%" style="border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);" />
 </p>
 
-# 🪐 AetherScope V2 (`aether-engine` v2.5.0)
+# 🪐 AetherScope V2 (`aether-engine` v2.5.1)
 
 ### **Cockpit Spatial d'Architecture WebGL 2 • Linter SAST Zero-Day & Hors-CWE (200+ Patterns, Stealth Backdoors & Règles CWE) • Forteresse Confinement Ultra Path Guard • Gouvernance Cryptographique BLAKE3 • Serveur MCP & Passerelle IA "Zero-Shell"**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.5.0_Ultra_Path_Guard_%26_Sceau_BLAKE3-f97316?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.5.1_Ultra_Path_Guard_%26_Secret_Guard-f97316?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)

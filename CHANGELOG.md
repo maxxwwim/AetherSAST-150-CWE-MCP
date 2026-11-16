@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.1] - 2026-11-16
+
+### Security (Secret Isolation Against AI Agents)
+- **`SecretGuard` / `SecretMasker`** (`crates/security-linter`): path detector (`.env*`, `.envrc*`, `secrets`, `.credentials`, private keys, certificates, `service-account.json`, `.htpasswd`, ...) and in-memory redactor (OpenAI/Anthropic/Gemini, GitHub, AWS, Stripe, Slack, JWT, DB URIs, PEM private key blocks).
+- **MCP hardening**: `aetherscope_get_active_target`, `aetherscope_search_symbols`, `aetherscope_verify_patch` and `aetherscope_scan_with_plugins` refuse sensitive targets and redact their output. `scan_with_plugins` is now confined to the project root (`PATH GUARD`) and no longer reads absolute or `..` paths.
+- **HTTP hardening**: `/api/ai/target`, `/api/file_content` and `/api/ai/create_file` return `403 Forbidden` on sensitive resources or secret-bearing content.
+- **Patch verifier**: any AI patch touching a secret file is rejected with `PROHIBITED_SECRET_FILE_MODIFICATION` (CWE-538).
+- **Scanner**: `ast-scanner` skips secret paths so they never enter the graph.
+- **`AETHER_AI_RULES.md`**: new section 6 forbidding AI access to production secrets and environment files.
+
+### Added
+- **AI HUD toggles**: one-click `Lignes / Lasers IA` and `Noms des Agents IA` in the header menu and in Settings (`showAiLines`, `showAiNames`).
+- **Auto-hide of AI names** after 5 minutes of agent inactivity.
+
+### Fixed
+- **Canvas freezes / crashes with multiple AI agents**: removed per-frame allocations and heavy matrix stacks (`save/translate/rotate/ellipse/restore`), reduced orbit sampling (28 → 12), clamped `dt` to `[1, 50]` ms and pruned `agentSmoothPositions` above 40 agents.
+- **Stripe redaction** replacement string (`$1_` → `${1}_`).
+
+---
+
 ## [2.5.0] - 2026-11-15
 
 ### Security & Hardening (Moltbook Audit Zero-Shell Immunity)

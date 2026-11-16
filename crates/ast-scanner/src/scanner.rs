@@ -546,6 +546,10 @@ impl ProjectScanner {
             if is_excluded_custom(entry.path(), &rel) {
                 continue;
             }
+            // [SÉCURITÉ V2 / SECRET GUARD] Jamais de secrets/.env/clés dans le graphe ni dans l'analyse
+            if security_linter::SecretGuard::is_secret_path(&*rel) {
+                continue;
+            }
             if let Ok(meta) = entry.metadata() {
                 if meta.len() > 1_500_000 {
                     continue;

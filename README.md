@@ -4,7 +4,7 @@
   <img src="./Capture.PNG" alt="AetherScope V2 — WebGL 2 Spatial Architectural Cockpit & SAST Linter" width="100%" style="border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.3); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);" />
 </p>
 
-# 🪐 AetherScope / AetherSAST (v2.5.0)
+# 🪐 AetherScope / AetherSAST (v2.5.1)
 
 ### **Real-Time Static Application Security Testing (215+ Rules & Zero-Day Detectors) • SSA Taint Dataflow • Reachable SCA • BLAKE3 Cryptographic Governance • Ultra Path Guard Confinement Jail • WebGL 2 Spatial Cockpit • Native Model Context Protocol (MCP) Server**
 
@@ -12,7 +12,7 @@
   <b>English 🇬🇧</b> | <a href="./README.fr.md">Français 🇫🇷 (Version originale)</a>
 </p>
 
-[![Release](https://img.shields.io/badge/Release-v2.5.0_Ultra_Path_Guard_%26_Live_BLAKE3-f97316?style=for-the-badge&logo=github)](./CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-v2.5.1_Ultra_Path_Guard_%26_Secret_Guard-f97316?style=for-the-badge&logo=github)](./CHANGELOG.md)
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
 [![M8ven Score](https://m8ven.ai/badge/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7)](https://m8ven.ai/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?s=readme)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
@@ -31,7 +31,7 @@
 
 ```
 +---------------------------------------------------------------------------------------------------+
-|                                 🪐 AETHERSCOPE / AETHERSAST v2.5.0                                |
+|                                 🪐 AETHERSCOPE / AETHERSAST v2.5.1                                |
 +---------------------------------+---------------------------------+-------------------------------+
 |    🛡️ ADVANCED SAST & SCA       |    🏛️ ARCHITECTURAL CONTRACTS   |    🤖 AI AGENT ORCHESTRATION  |
 |  - 215 Active Security Rules    |  - EARS Syntax Requirements     |  - Native stdio MCP Server    |

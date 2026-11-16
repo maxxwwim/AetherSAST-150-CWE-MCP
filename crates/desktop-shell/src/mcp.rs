@@ -1391,6 +1391,37 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             p_buf.join(target_str)
                         };
 
+                        // [SÉCURITÉ V2 / SECRET GUARD] Confinement strict au projet + refus des secrets
+                        let canon_root = std::fs::canonicalize(&p_buf).unwrap_or_else(|_| p_buf.clone());
+                        // Chemin existant : canonicalisation (résout symlinks). Sinon : normalisation lexicale
+                        // (résout `..`/`.`) ancrée sur la racine canonique, pour ne jamais sortir du projet.
+                        let canon_target = std::fs::canonicalize(&target).unwrap_or_else(|_| {
+                            let mut out = PathBuf::new();
+                            let joined = if Path::new(target_str).is_absolute() {
+                                PathBuf::from(target_str)
+                            } else {
+                                canon_root.join(target_str)
+                            };
+                            for comp in joined.components() {
+                                match comp {
+                                    std::path::Component::ParentDir => { out.pop(); }
+                                    std::path::Component::CurDir => {}
+                                    other => out.push(other.as_os_str()),
+                                }
+                            }
+                            out
+                        });
+                        let guard_error: Option<&str> = if SecretGuard::is_secret_path(&canon_target) || SecretGuard::is_secret_path(target_str) {
+                            Some("[SÉCURITÉ V2 / SECRET GUARD] Accès refusé : fichier ou dossier sensible (.env, clés, credentials).")
+                        } else if !canon_target.starts_with(&canon_root) {
+                            Some("[SÉCURITÉ V2 / PATH GUARD] Accès refusé : 'target_path' doit rester à l'intérieur du projet.")
+                        } else {
+                            None
+                        };
+
+                        if let Some(msg) = guard_error {
+                            (json!([{ "type": "text", "text": msg }]), true)
+                        } else {
                         let mut all_violations = Vec::new();
                         if target.is_file() {
                             if let Ok(content) = std::fs::read_to_string(&target) {
@@ -1403,6 +1434,9 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                 if p.is_file() {
                                     let p_str = p.to_string_lossy();
                                     if p_str.contains("target") || p_str.contains(".git") || p_str.contains("node_modules") {
+                                        continue;
+                                    }
+                                    if SecretGuard::is_secret_path(p) {
                                         continue;
                                     }
                                     if let Ok(content) = std::fs::read_to_string(p) {
@@ -1428,7 +1462,9 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                 "remediation": v.remediation
                             })).collect::<Vec<_>>()
                         })).unwrap_or_default();
+                        let text = SecretMasker::mask_text(&text);
                         (json!([{ "type": "text", "text": text }]), false)
+                        }
                     }
                 }
 
@@ -2446,5 +2482,30 @@ mod tests {
         assert_eq!(patch_res["isError"], true);
         let patch_text = patch_res["content"][0]["text"].as_str().unwrap();
         assert!(patch_text.contains("PATCH_REJECTED") && patch_text.contains("SECRET GUARD"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_scan_with_plugins_blocks_secrets_and_path_escape() {
+        let call = |id: i64, target: &str| JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(id)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_scan_with_plugins",
+                "arguments": { "target_path": target }
+            })),
+        };
+
+        // 1. Fichier .env interdit
+        let r = handle_mcp_request(call(911, ".env"), 3030, ".").await.expect("resp");
+        let res = r.result.expect("result");
+        assert_eq!(res["isError"], true);
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("SECRET GUARD"));
+
+        // 2. Sortie du projet (traversal) interdite
+        let r = handle_mcp_request(call(912, "../../../../etc/hosts"), 3030, ".").await.expect("resp");
+        let res = r.result.expect("result");
+        assert_eq!(res["isError"], true);
+        assert!(res["content"][0]["text"].as_str().unwrap().contains("PATH GUARD"));
     }
 }
