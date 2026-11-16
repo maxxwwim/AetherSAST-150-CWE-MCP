@@ -1,10 +1,14 @@
 <script lang="ts">
   import IdeFileTree from './IdeFileTree.svelte';
   import IdeSymbolHierarchy from './IdeSymbolHierarchy.svelte';
+  import IdeDocSidebar from './IdeDocSidebar.svelte';
   import IdeEditor from './IdeEditor.svelte';
-  import { FolderTree, Code2, Columns2 } from '@lucide/svelte';
+  import DocReaderDrawer from '../DocReaderDrawer.svelte';
+  import { cockpitState } from '../../state/graphState.svelte';
+  import { FolderTree, Code2, BookOpen, Columns2 } from '@lucide/svelte';
 
-  let sidebarMode = $state<'files' | 'symbols' | 'split'>('split');
+  let sidebarMode = $state<'files' | 'symbols' | 'docs' | 'split'>('split');
+  let ideDocWide = $state(false);
 </script>
 
 <div class="w-full h-full flex bg-[#060810] text-slate-100 overflow-hidden relative">
@@ -12,7 +16,7 @@
   <aside class="w-80 shrink-0 h-full border-r border-white/10 flex flex-col bg-[#070a14] z-10">
     <!-- Sidebar Navigation Mode Tabs -->
     <div class="h-9 px-2 bg-[#090d16] border-b border-white/10 flex items-center justify-between gap-1 shrink-0 select-none">
-      <div class="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded border border-white/10 text-[11px]">
+      <div class="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded border border-white/10 text-[11px] overflow-x-auto scrollbar-none">
         <button
           type="button"
           onclick={() => (sidebarMode = 'files')}
@@ -37,12 +41,23 @@
 
         <button
           type="button"
+          onclick={() => (sidebarMode = 'docs')}
+          class="flex items-center gap-1 px-2 py-0.5 rounded transition-colors cursor-pointer
+            {sidebarMode === 'docs' ? 'bg-emerald-500/25 text-emerald-200 font-semibold' : 'text-slate-400 hover:text-white'}"
+          title="Afficher la bibliothèque Docs & Contrats EARS"
+        >
+          <BookOpen class="w-3 h-3 text-emerald-400" />
+          <span>Docs & EARS</span>
+        </button>
+
+        <button
+          type="button"
           onclick={() => (sidebarMode = 'split')}
           class="flex items-center gap-1 px-2 py-0.5 rounded transition-colors cursor-pointer
-            {sidebarMode === 'split' ? 'bg-emerald-500/25 text-emerald-200 font-semibold' : 'text-slate-400 hover:text-white'}"
+            {sidebarMode === 'split' ? 'bg-sky-500/25 text-sky-200 font-semibold' : 'text-slate-400 hover:text-white'}"
           title="Vue scindée (Fichiers + Symboles AST)"
         >
-          <Columns2 class="w-3 h-3 text-emerald-400" />
+          <Columns2 class="w-3 h-3 text-slate-300" />
           <span>Double</span>
         </button>
       </div>
@@ -57,6 +72,10 @@
       {:else if sidebarMode === 'symbols'}
         <div class="flex-1 min-h-0 overflow-hidden">
           <IdeSymbolHierarchy />
+        </div>
+      {:else if sidebarMode === 'docs'}
+        <div class="flex-1 min-h-0 overflow-hidden">
+          <IdeDocSidebar />
         </div>
       {:else}
         <!-- Split View: Top File Tree, Bottom Symbol Hierarchy -->
@@ -74,4 +93,11 @@
   <main class="flex-1 h-full min-w-0 flex flex-col overflow-hidden bg-[#060810]">
     <IdeEditor />
   </main>
+
+  <!-- Integrated Docked Doc, EARS & Source Panel -->
+  {#if cockpitState.isDocPanelOpen}
+    <div class="{ideDocWide ? 'w-[720px] max-w-[55vw]' : 'w-[520px] max-w-[45vw]'} shrink-0 h-full border-l border-white/10 flex flex-col bg-[#070b14] z-10 overflow-hidden transition-all duration-150">
+      <DocReaderDrawer embedded={true} bind:wideMode={ideDocWide} />
+    </div>
+  {/if}
 </div>

@@ -314,7 +314,7 @@
   <aside
     aria-label="Copilot IA, Agents & MCP"
     style="transform: translate3d({dragOffset.x}px, {dragOffset.y}px, 0);"
-    class="fixed bottom-4 right-4 z-50 w-[400px] max-w-[95vw] {minimized ? 'h-11' : 'h-[500px] max-h-[80vh]'} bg-[#0b0e18]/96 backdrop-blur-2xl border border-purple-500/35 rounded-2xl shadow-[0_20px_60px_rgba(88,28,135,0.45)] flex flex-col overflow-hidden {isDraggingWindow ? '' : 'transition-all'}"
+    class="fixed bottom-4 right-4 z-40 w-[400px] max-w-[95vw] {minimized ? 'h-11' : 'h-[500px] max-h-[80vh]'} bg-[#0b0e18]/96 backdrop-blur-2xl border border-purple-500/35 rounded-2xl shadow-[0_20px_60px_rgba(88,28,135,0.45)] flex flex-col overflow-hidden {isDraggingWindow ? '' : 'transition-all'}"
   >
     <!-- Header (Draggable Handle) -->
     <div

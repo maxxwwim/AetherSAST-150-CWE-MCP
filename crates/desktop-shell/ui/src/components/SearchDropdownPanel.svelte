@@ -391,7 +391,7 @@
 <div
   use:portal
   bind:this={panelContainerEl}
-  style="top: {coords.top}px; left: {coords.left}px; width: {coords.width}px; z-index: 60;"
+  style="top: {coords.top}px; left: {coords.left}px; width: {coords.width}px; z-index: 70;"
   class="fixed max-h-[500px] bg-[#0c101d]/98 backdrop-blur-2xl border border-sky-500/35 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden text-slate-100 select-none animate-in fade-in zoom-in-95 duration-100"
   onclick={(e) => e.stopPropagation()}
   onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}

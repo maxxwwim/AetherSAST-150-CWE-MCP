@@ -163,7 +163,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
 <!-- Backdrop overlay and detached portal search dropdown -->
 {#if isSearchDropdownOpen}
   <div
-    class="fixed inset-0 z-40 bg-black/20"
+    class="fixed inset-0 z-[65] bg-black/20"
     onclick={closeSearch}
     role="presentation"
   ></div>
@@ -463,13 +463,13 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
 
           {#if isVisibilityMenuOpen}
             <div
-              class="fixed inset-0 z-50"
+              class="fixed inset-0 z-[60]"
               onclick={() => (isVisibilityMenuOpen = false)}
               role="presentation"
             ></div>
 
             <div
-              class="absolute top-full left-0 mt-1 w-56 bg-[#0b0f19]/98 border border-white/15 rounded-lg shadow-2xl p-1.5 z-50 flex flex-col gap-1 text-xs font-mono animate-in fade-in zoom-in-95 duration-100"
+              class="absolute top-full left-0 mt-1 w-56 bg-[#0b0f19]/98 border border-white/15 rounded-lg shadow-2xl p-1.5 z-[65] flex flex-col gap-1 text-xs font-mono animate-in fade-in zoom-in-95 duration-100"
             >
               <div class="px-2 py-1 text-[10px] text-slate-400 font-semibold uppercase tracking-wider border-b border-white/10">
                 Masquage Facile des Titres
@@ -670,13 +670,13 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
 
         {#if isAuditMenuOpen}
           <div
-            class="fixed inset-0 z-50"
+            class="fixed inset-0 z-[60]"
             onclick={() => (isAuditMenuOpen = false)}
             role="presentation"
           ></div>
 
           <div
-            class="absolute top-full left-0 mt-1 w-48 bg-[#0b0f19]/98 border border-emerald-500/35 rounded-lg shadow-2xl p-1 z-50 flex flex-col gap-0.5 text-xs font-mono animate-in fade-in zoom-in-95 duration-100"
+            class="absolute top-full left-0 mt-1 w-48 bg-[#0b0f19]/98 border border-emerald-500/35 rounded-lg shadow-2xl p-1 z-[65] flex flex-col gap-0.5 text-xs font-mono animate-in fade-in zoom-in-95 duration-100"
           >
             <button
               type="button"

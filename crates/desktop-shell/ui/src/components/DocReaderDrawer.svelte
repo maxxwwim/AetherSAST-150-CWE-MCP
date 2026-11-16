@@ -39,8 +39,13 @@
   let loadingCode = $state(false);
   let systemPromptText = $state('');
 
+  interface Props {
+    embedded?: boolean;
+    wideMode?: boolean;
+  }
+  let { embedded = false, wideMode = $bindable(false) }: Props = $props();
+
   // UI toggles
-  let wideMode = $state(false);
   let showToc = $state(false);
   let showDocPicker = $state(false);
   let editMode = $state(false);
@@ -705,8 +710,8 @@
   }
 </script>
 
-<!-- Left Edge Docked Pill when collapsed -->
-{#if !cockpitState.isDocPanelOpen}
+<!-- Left Edge Docked Pill when collapsed (Only in 3D canvas modes) -->
+{#if !embedded && !cockpitState.isDocPanelOpen && cockpitState.viewMode !== 'ide'}
   <button
     type="button"
     onclick={() => cockpitState.openDoc('library')}
@@ -722,9 +727,11 @@
   </button>
 {/if}
 
-{#if cockpitState.isDocPanelOpen}
+{#if embedded || (cockpitState.viewMode !== 'ide' && cockpitState.isDocPanelOpen)}
   <aside
-    class="fixed left-0 sm:left-3 top-[76px] bottom-0 sm:bottom-6 w-full {wideMode ? 'sm:w-[740px]' : 'sm:w-[520px]'} max-w-full sm:max-w-[95vw] bg-[#070b14]/96 backdrop-blur-2xl border border-emerald-500/35 rounded-none sm:rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.92)] z-40 flex flex-col overflow-hidden transition-all duration-200"
+    class={embedded
+      ? "w-full h-full bg-[#070b14] flex flex-col overflow-hidden select-text"
+      : `fixed left-0 sm:left-3 top-[76px] bottom-7 w-full ${wideMode ? 'sm:w-[740px]' : 'sm:w-[520px]'} max-w-full sm:max-w-[95vw] bg-[#070b14]/96 backdrop-blur-2xl border border-emerald-500/35 rounded-none sm:rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.92)] z-40 flex flex-col overflow-hidden transition-all duration-200 select-text`}
   >
     <!-- Top Header Bar -->
     <div class="px-3.5 py-2.5 bg-gradient-to-r from-[#0c1426] via-[#09101d] to-[#0b1322] border-b border-white/10 flex items-center justify-between gap-2 shrink-0">

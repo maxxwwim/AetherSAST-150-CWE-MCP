@@ -15,7 +15,8 @@
     Eye,
     Edit3,
     FileCode,
-    XCircle
+    XCircle,
+    BookOpen
   } from '@lucide/svelte';
 
   interface FileBuffer {
@@ -546,6 +547,18 @@
       >
         <Search class="w-3 h-3" />
         <span class="hidden md:inline">Ctrl+F</span>
+      </button>
+
+      <!-- Docs, EARS & Source Integrated Toggle Button -->
+      <button
+        type="button"
+        onclick={() => cockpitState.toggleDocPanel()}
+        class="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono transition-colors cursor-pointer
+          {cockpitState.isDocPanelOpen ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 font-semibold shadow-xs' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}"
+        title="Afficher / Masquer le volet Doc, EARS & Source dans l'IDE (M)"
+      >
+        <BookOpen class="w-3.5 h-3.5 text-emerald-400" />
+        <span class="hidden md:inline">Docs & EARS</span>
       </button>
 
       <!-- View Mode Switch: Edit / Preview -->
