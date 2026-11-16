@@ -353,7 +353,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
   <!-- ========================================================================= -->
   <!-- LIGNE 2 : CONTINUUM SPATIAL, MODES DE VISION & DÉCLENCHEURS DE MODALES (h-9 / 36px) -->
   <!-- ========================================================================= -->
-  <div class="h-9 px-3 flex items-center justify-between gap-2 bg-[#06080e]/95 overflow-x-auto flex-nowrap scrollbar-none text-xs">
+  <div class="h-9 px-3 flex items-center justify-between gap-2 bg-[#06080e]/95 overflow-x-auto overflow-y-visible flex-nowrap scrollbar-none text-xs">
     <!-- Zone 2-A : Dual-Vision, LoD & Filtres Visuels -->
     <div class="flex items-center gap-1.5 shrink-0">
       <!-- Bascule Tri-Vision (Code AST vs Obsidian Vault vs IDE) -->
