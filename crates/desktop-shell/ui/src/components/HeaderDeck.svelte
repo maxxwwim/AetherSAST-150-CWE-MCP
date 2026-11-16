@@ -27,6 +27,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
     Camera,
     Pause,
     Play,
+    Code,
     Code2,
     BookOpen,
     Tag,
@@ -127,7 +128,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
     }
   }
 
-  async function switchViewMode(mode: 'code' | 'vault') {
+  async function switchViewMode(mode: 'code' | 'vault' | 'ide') {
     cockpitState.viewMode = mode;
     try {
       await api.switchViewMode(mode);
@@ -355,7 +356,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
   <div class="h-9 px-3 flex items-center justify-between gap-2 bg-[#06080e]/95 overflow-x-auto flex-nowrap scrollbar-none text-xs">
     <!-- Zone 2-A : Dual-Vision, LoD & Filtres Visuels -->
     <div class="flex items-center gap-1.5 shrink-0">
-      <!-- Bascule Dual-Vision (Code AST vs Obsidian Vault) -->
+      <!-- Bascule Tri-Vision (Code AST vs Obsidian Vault vs IDE) -->
       <div class="flex items-center bg-white/[0.04] border border-white/10 rounded-md p-0.5 gap-0.5">
         <button
           onclick={() => switchViewMode('code')}
@@ -372,6 +373,14 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
         >
           <BookOpen class="w-3 h-3 text-emerald-400" />
           <span class="hidden md:inline">Vault Notes</span>
+        </button>
+        <button
+          onclick={() => switchViewMode('ide')}
+          class="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer {cockpitState.viewMode === 'ide' ? 'bg-indigo-500/25 border border-indigo-400/40 text-indigo-200' : 'text-slate-400 hover:text-white'}"
+          title="Vision 3 : Environnement IDE & Éditeur de Code (Alt+3)"
+        >
+          <Code class="w-3 h-3 text-indigo-400" />
+          <span class="hidden md:inline">IDE</span>
         </button>
       </div>
 

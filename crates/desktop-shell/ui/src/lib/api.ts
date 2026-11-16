@@ -261,7 +261,7 @@ export class AetherApiClient {
     return res.json();
   }
 
-  async switchViewMode(mode: 'code' | 'vault'): Promise<any> {
+  async switchViewMode(mode: 'code' | 'vault' | 'ide'): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/view_mode`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -275,8 +275,26 @@ export class AetherApiClient {
     return res.json();
   }
 
-  async getFileContent(path: string): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/file_content?path=${encodeURIComponent(path)}`);
+  async getFileContent(path: string, raw: boolean = true): Promise<any> {
+    const rawParam = raw ? '&raw=true' : '';
+    const res = await fetch(`${this.baseUrl}/api/file_content?path=${encodeURIComponent(path)}${rawParam}`);
+    return res.json();
+  }
+
+  async saveFile(filePath: string, content: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/save_file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_path: filePath, content }),
+    });
+    return res.json();
+  }
+
+  async getFiles(): Promise<{
+    status: string;
+    files: Array<{ name: string; path: string; is_dir: boolean; size: number; extension: string }>;
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/files`);
     return res.json();
   }
 

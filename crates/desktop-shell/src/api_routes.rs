@@ -8,8 +8,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::sync::RwLock;
 use obsidian_vault::{
-    DetectedProjectType, ProjectDetectionReport,
+    DetectedProjectType, PathGuard, ProjectDetectionReport, SecurityError,
 };
+use security_linter::SecretGuard;
+use walkdir::WalkDir;
+
+static ATOMIC_WRITE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[derive(Serialize, Clone)]
 pub struct ProjectItem {
@@ -334,6 +338,42 @@ pub struct SaveDocResponse {
     pub blake3_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "ui_payload::ser_graph_opt")]
     pub graph: Option<AetherGraph>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SaveFileRequest {
+    pub file_path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SaveFileResponse {
+    pub status: String,
+    pub file_path: String,
+    pub bytes_written: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct FileContentQuery {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub raw: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FileTreeItem {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub extension: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectFilesResponse {
+    pub status: String,
+    pub files: Vec<FileTreeItem>,
 }
 
 #[derive(Deserialize)]
@@ -861,6 +901,7 @@ pub struct AppState {
     pub code_graph: RwLock<Option<AetherGraph>>,
     pub vault_graph: RwLock<Option<AetherGraph>>,
     pub detection_report: RwLock<Option<ProjectDetectionReport>>,
+    pub file_save_lock: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -916,6 +957,7 @@ impl AppState {
             code_graph: RwLock::new(code_graph),
             vault_graph: RwLock::new(vault_graph),
             detection_report: RwLock::new(detection_report),
+            file_save_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -1132,9 +1174,10 @@ impl AppState {
         let norm_mode = match requested_mode.trim().to_lowercase().as_str() {
             "vault" | "notes" => "vault",
             "code" => "code",
+            "ide" | "editor" => "ide",
             other => {
                 return Err(ViewModeError::InvalidMode(format!(
-                    "Mode de vue inconnu '{}'. Modes acceptés: 'code', 'vault'.",
+                    "Mode de vue inconnu '{}'. Modes acceptés: 'code', 'vault', 'ide'.",
                     other
                 )));
             }
@@ -1165,7 +1208,7 @@ impl AppState {
                     }
                 }
             }
-            "code" => {
+            "code" | "ide" => {
                 let cached = self.code_graph.read().await.clone();
                 if let Some(g) = cached {
                     g
@@ -1183,6 +1226,8 @@ impl AppState {
 
                         *self.code_graph.write().await = Some(scanned.clone());
                         scanned
+                    } else if norm_mode == "ide" {
+                        self.graph.read().await.clone()
                     } else {
                         return Err(ViewModeError::GraphNotAvailable(
                             "Aucun graphe AST Code n'est disponible pour ce projet.".to_string(),
@@ -1213,6 +1258,11 @@ impl AppState {
                 "Bascule Vision Vault",
                 format!("Vue Notes & Relations Obsidian activée ({} nœuds)", target_graph.nodes.len()),
             )
+        } else if norm_mode == "ide" {
+            (
+                "Bascule Mode IDE",
+                format!("Vue Éditeur IDE & Arborescence activée ({} symboles)", target_graph.nodes.len()),
+            )
         } else {
             (
                 "Bascule Vision Code",
@@ -1230,6 +1280,101 @@ impl AppState {
 
         Ok(target_graph)
     }
+
+    pub async fn save_file(&self, file_path: &str, content: &str) -> Result<SaveFileResponse, SecurityError> {
+        let _lock = self.file_save_lock.lock().await;
+        let clean_path_str = file_path.trim().to_string();
+        let clean_rel = PathGuard::validate_client_relative_path(&clean_path_str)?;
+
+        if SecretGuard::is_secret_path(&clean_rel) {
+            return Err(SecurityError::SensitiveFileProhibited(clean_path_str));
+        }
+        PathGuard::validate_not_sensitive(&clean_rel)?;
+
+        let p_root = self.project_root.read().await.clone();
+        let guard = PathGuard::new(&p_root)?;
+        let resolved_target = guard.resolve_write_target(&clean_rel)?;
+
+        if let Some(parent) = resolved_target.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent).map_err(|e| SecurityError::IoError {
+                    path: parent.to_path_buf(),
+                    source: e,
+                })?;
+            }
+        }
+
+        // Atomic write: write to sibling temporary file in the same directory, then atomic rename
+        let seq = ATOMIC_WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let temp_filename = format!(
+            ".{}.tmp.{}_{}_{}",
+            resolved_target
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "atomic_write".to_string()),
+            pid,
+            seq,
+            nanos
+        );
+        let temp_target = resolved_target.parent().unwrap_or(Path::new("")).join(&temp_filename);
+
+        fs::write(&temp_target, content.as_bytes()).map_err(|e| SecurityError::IoError {
+            path: temp_target.clone(),
+            source: e,
+        })?;
+
+        // Atomic replace (MoveFileExW / POSIX rename)
+        let mut rename_res = fs::rename(&temp_target, &resolved_target);
+        if rename_res.is_err() {
+            // Transient retry for Windows file handle contention
+            for attempt in 1..=20 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(attempt * 2)).await;
+                rename_res = fs::rename(&temp_target, &resolved_target);
+                if rename_res.is_ok() {
+                    break;
+                }
+            }
+        }
+
+        if let Err(_e) = rename_res {
+            let _ = fs::remove_file(&temp_target);
+            // Fallback to direct write if rename fails
+            let mut write_res = fs::write(&resolved_target, content.as_bytes());
+            if write_res.is_err() {
+                for attempt in 1..=10 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(attempt * 5)).await;
+                    write_res = fs::write(&resolved_target, content.as_bytes());
+                    if write_res.is_ok() {
+                        break;
+                    }
+                }
+            }
+            write_res.map_err(|e| SecurityError::IoError {
+                path: resolved_target.clone(),
+                source: e,
+            })?;
+        }
+
+        Ok(SaveFileResponse {
+            status: "ok".to_string(),
+            file_path: clean_path_str,
+            bytes_written: content.len(),
+        })
+    }
+
+    pub async fn list_files(&self) -> Vec<FileTreeItem> {
+        let p_root = self.project_root.read().await.clone();
+        tokio::task::spawn_blocking(move || {
+            list_project_files(&p_root)
+        })
+        .await
+        .unwrap_or_default()
+    }
 }
 
 
@@ -1240,6 +1385,90 @@ pub fn clean_path_string(p: &Path) -> String {
     } else {
         s
     }
+}
+
+/// Traverses `project_root` recursively using `walkdir::WalkDir`, excluding hidden/ignored
+/// directories (.git, node_modules, target, dist, .aether, .gemini) and secret/sensitive files.
+pub fn list_project_files(project_root: &Path) -> Vec<FileTreeItem> {
+    let mut items = Vec::new();
+
+    if !project_root.exists() || !project_root.is_dir() {
+        return items;
+    }
+
+    let walker = WalkDir::new(project_root)
+        .into_iter()
+        .filter_entry(|entry| {
+            if entry.depth() == 0 {
+                return true;
+            }
+            let name = entry.file_name().to_string_lossy();
+            if name == ".git"
+                || name == "node_modules"
+                || name == "target"
+                || name == "dist"
+                || name == ".aether"
+                || name == ".gemini"
+            {
+                return false;
+            }
+            if let Ok(rel) = entry.path().strip_prefix(project_root) {
+                if SecretGuard::is_secret_path(rel) || PathGuard::is_sensitive_path(rel) {
+                    return false;
+                }
+            }
+            true
+        });
+
+    for entry_res in walker {
+        let entry = match entry_res {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        if entry.depth() == 0 {
+            continue;
+        }
+
+        let rel_path = match entry.path().strip_prefix(project_root) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        if SecretGuard::is_secret_path(rel_path) || PathGuard::is_sensitive_path(rel_path) {
+            continue;
+        }
+
+        let rel_str = rel_path.to_string_lossy().replace('\\', "/");
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_dir = entry.file_type().is_dir();
+        let size = if is_dir {
+            0
+        } else {
+            entry.metadata().map(|m| m.len()).unwrap_or(0)
+        };
+        let extension = if is_dir {
+            String::new()
+        } else {
+            entry
+                .path()
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_lowercase()
+        };
+
+        items.push(FileTreeItem {
+            name,
+            path: rel_str,
+            is_dir,
+            size,
+            extension,
+        });
+    }
+
+    items.sort_by(|a, b| a.path.cmp(&b.path));
+    items
 }
 
 pub fn discover_candidate_projects(workspace_root: &Path) -> Vec<ProjectItem> {
@@ -2763,9 +2992,198 @@ mod app_state_tests {
         let err = state.switch_view_mode("vault").await.expect_err("Should fail");
         assert!(matches!(err, ViewModeError::GraphNotAvailable(_)));
 
+        // "ide" and "editor" alias are supported modes and return the code graph
+        let ide_res = state.switch_view_mode("ide").await.expect("Switching to 'ide' should succeed");
+        assert_eq!(ide_res.project_name, "CodeGraph");
+        assert_eq!(state.get_active_view_mode().await, "ide");
+
+        let ed_res = state.switch_view_mode("editor").await.expect("Switching to 'editor' alias should succeed");
+        assert_eq!(ed_res.project_name, "CodeGraph");
+        assert_eq!(state.get_active_view_mode().await, "ide");
+
         // Invalid mode
         let err_inv = state.switch_view_mode("galaxy").await.expect_err("Should fail");
         assert!(matches!(err_inv, ViewModeError::InvalidMode(_)));
+        let err_unknown = state.switch_view_mode("unknown").await.expect_err("Should fail");
+        assert!(matches!(err_unknown, ViewModeError::InvalidMode(_)));
+    }
+
+    #[tokio::test]
+    async fn test_app_state_save_file_confinement_and_persistence() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let project_root = temp_dir.path().to_path_buf();
+
+        let dummy_graph = AetherGraph::new("TestProject");
+        let state = AppState::new(
+            dummy_graph.clone(),
+            project_root.clone(),
+            DetectedProjectType::PureCode,
+            "ide".to_string(),
+            Some(dummy_graph),
+            None,
+            None,
+        );
+
+        // 1. Valid write to source file
+        let write_res = state
+            .save_file("src/nested/service.rs", "fn run() -> bool { true }")
+            .await
+            .expect("Valid file write should succeed");
+        assert_eq!(write_res.status, "ok");
+        assert_eq!(write_res.file_path, "src/nested/service.rs");
+        assert_eq!(write_res.bytes_written, 25);
+
+        // Verify content on disk
+        let written_disk = std::fs::read_to_string(project_root.join("src/nested/service.rs"))
+            .expect("File must exist on disk");
+        assert_eq!(written_disk, "fn run() -> bool { true }");
+
+        // 2. Traversal attempt rejected
+        let trav_err = state
+            .save_file("../../outside.txt", "evil")
+            .await
+            .expect_err("Traversal must be rejected");
+        assert!(matches!(trav_err, SecurityError::PathTraversal(_)));
+
+        // 3. Absolute path rejected
+        #[cfg(windows)]
+        let abs_path = r"C:\Windows\System32\evil.txt";
+        #[cfg(not(windows))]
+        let abs_path = "/etc/passwd";
+        let abs_err = state
+            .save_file(abs_path, "evil")
+            .await
+            .expect_err("Absolute path must be rejected");
+        assert!(matches!(
+            abs_err,
+            SecurityError::AbsolutePathsProhibited(_) | SecurityError::DriveLetterProhibited(_)
+        ));
+
+        // 4. Secret path rejected
+        let sec_err = state
+            .save_file(".env", "SECRET=123")
+            .await
+            .expect_err("Secret file write must be rejected");
+        assert!(matches!(
+            sec_err,
+            SecurityError::SensitiveFileProhibited(_)
+        ));
+
+        let sec_err2 = state
+            .save_file(".git/config", "evil")
+            .await
+            .expect_err("Git config write must be rejected");
+        assert!(matches!(
+            sec_err2,
+            SecurityError::SensitiveFileProhibited(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_list_project_files_exclusions() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let root = temp_dir.path();
+
+        // Create allowed files and directories
+        std::fs::create_dir_all(root.join("src/sub")).unwrap();
+        std::fs::write(root.join("src/main.rs"), "fn main() {}").unwrap();
+        std::fs::write(root.join("src/sub/mod.rs"), "pub mod helper;").unwrap();
+        std::fs::write(root.join("README.md"), "# Hello").unwrap();
+
+        // Create ignored directories
+        std::fs::create_dir_all(root.join(".git/objects")).unwrap();
+        std::fs::write(root.join(".git/config"), "secret").unwrap();
+
+        std::fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        std::fs::write(root.join("node_modules/pkg/index.js"), "module.exports = {}").unwrap();
+
+        std::fs::create_dir_all(root.join("target/debug")).unwrap();
+        std::fs::write(root.join("target/debug/app.exe"), "bin").unwrap();
+
+        std::fs::create_dir_all(root.join("dist/assets")).unwrap();
+        std::fs::write(root.join("dist/assets/bundle.js"), "bundle").unwrap();
+
+        std::fs::create_dir_all(root.join(".aether")).unwrap();
+        std::fs::write(root.join(".aether/state.json"), "{}").unwrap();
+
+        std::fs::create_dir_all(root.join(".gemini")).unwrap();
+        std::fs::write(root.join(".gemini/cache.bin"), "cache").unwrap();
+
+        // Create sensitive files
+        std::fs::write(root.join(".env"), "API_KEY=xyz").unwrap();
+        std::fs::write(root.join(".env.local"), "SECRET=xyz").unwrap();
+        std::fs::write(root.join("id_rsa"), "private key").unwrap();
+        std::fs::write(root.join("server.key"), "tls key").unwrap();
+
+        // List files
+        let files = list_project_files(root);
+
+        let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+
+        // Assert allowed files are present
+        assert!(paths.contains(&"README.md".to_string()), "README.md should be included");
+        assert!(paths.contains(&"src".to_string()), "src dir should be included");
+        assert!(paths.contains(&"src/main.rs".to_string()), "src/main.rs should be included");
+        assert!(paths.contains(&"src/sub".to_string()), "src/sub dir should be included");
+        assert!(paths.contains(&"src/sub/mod.rs".to_string()), "src/sub/mod.rs should be included");
+
+        // Assert ignored directories are completely excluded
+        for p in &paths {
+            assert!(!p.starts_with(".git"), "Should not contain .git files: {}", p);
+            assert!(!p.starts_with("node_modules"), "Should not contain node_modules files: {}", p);
+            assert!(!p.starts_with("target"), "Should not contain target files: {}", p);
+            assert!(!p.starts_with("dist"), "Should not contain dist files: {}", p);
+            assert!(!p.starts_with(".aether"), "Should not contain .aether files: {}", p);
+            assert!(!p.starts_with(".gemini"), "Should not contain .gemini files: {}", p);
+            assert!(!p.contains(".env"), "Should not contain .env: {}", p);
+            assert!(!p.contains("id_rsa"), "Should not contain id_rsa: {}", p);
+            assert!(!p.ends_with(".key"), "Should not contain .key: {}", p);
+        }
+
+        // Check attributes on a file
+        let main_rs = files.iter().find(|f| f.path == "src/main.rs").expect("src/main.rs must exist");
+        assert_eq!(main_rs.name, "main.rs");
+        assert!(!main_rs.is_dir);
+        assert_eq!(main_rs.extension, "rs");
+        assert!(main_rs.size > 0);
+
+        // Check attributes on a directory
+        let src_dir = files.iter().find(|f| f.path == "src").expect("src must exist");
+        assert_eq!(src_dir.name, "src");
+        assert!(src_dir.is_dir);
+        assert_eq!(src_dir.extension, "");
+        assert_eq!(src_dir.size, 0);
+    }
+
+    #[tokio::test]
+    async fn test_file_content_raw_vs_masked_and_security() {
+        let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let project_root = temp_dir.path().to_path_buf();
+
+        // Create a code file with an API key token
+        std::fs::create_dir_all(project_root.join("src")).unwrap();
+        let code_with_secret = "const API_KEY = \"sk-1234567890abcdef1234567890abcdef\";";
+        std::fs::write(project_root.join("src/config.js"), code_with_secret).unwrap();
+
+        let guard = PathGuard::new(&project_root).unwrap();
+        let clean_rel = PathGuard::validate_client_relative_path("src/config.js").unwrap();
+        let raw_content = guard.read_to_string(&clean_rel).unwrap();
+
+        // Masked (default / raw=false)
+        let masked = security_linter::SecretMasker::mask_text(&raw_content);
+        assert!(!masked.contains("sk-1234567890abcdef1234567890abcdef"));
+        assert!(masked.contains("[REDACTED]"));
+
+        // Raw (raw=true for IDE editing)
+        let is_raw = true;
+        let final_content = if is_raw { raw_content.clone() } else { masked };
+        assert_eq!(final_content, code_with_secret);
+
+        // Security check on sensitive paths regardless of raw
+        std::fs::write(project_root.join(".env"), "DATABASE_URL=postgres://...").unwrap();
+        let env_rel = PathGuard::validate_client_relative_path(".env").unwrap();
+        assert!(SecretGuard::is_secret_path(&env_rel));
+        assert!(PathGuard::validate_not_sensitive(&env_rel).is_err());
     }
 
     #[tokio::test]

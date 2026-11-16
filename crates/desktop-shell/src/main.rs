@@ -902,8 +902,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             }
                         }
 
-                        // Refresh code graph if code changed or in code mode
-                        if has_code_changes || current_mode == "code" {
+                        // Refresh code graph if code changed or in code/ide mode
+                        if has_code_changes || current_mode == "code" || current_mode == "ide" {
                             let custom_excl = watcher_state.custom_exclusions.read().await.clone();
                             let scan_root = current_root.clone();
                             if let Ok(updated_graph) = tokio::task::spawn_blocking(move || {
@@ -913,7 +913,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
                                 let _ = AuditWriter::write_live_audit(&current_root, &violations, file_count);
                                 *watcher_state.code_graph.write().await = Some(updated_graph.clone());
-                                if current_mode == "code" {
+                                if current_mode == "code" || current_mode == "ide" {
                                     *watcher_state.graph.write().await = updated_graph;
                                     watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                                 }
@@ -954,6 +954,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     let state_tasks = shared_state.clone();
     let state_project_status = shared_state.clone();
     let state_view_mode = shared_state.clone();
+    let state_save_file = shared_state.clone();
+    let state_files = shared_state.clone();
     let server_port = args.port;
 
     let app = axum::Router::new()
@@ -2294,13 +2296,13 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             "/api/file_content",
             axum::routing::get({
                 let state = state_file_content.clone();
-                move |axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>| {
+                move |axum::extract::Query(query): axum::extract::Query<api_routes::FileContentQuery>| {
                     let state = state.clone();
                     async move {
                         use axum::http::StatusCode;
                         use axum::response::IntoResponse;
 
-                        let rel_path = query.get("path").cloned().unwrap_or_default();
+                        let rel_path = query.path.unwrap_or_default().trim().to_string();
 
                         // 1. Lexical client-relative validation
                         let clean_rel = match PathGuard::validate_client_relative_path(&rel_path) {
@@ -2337,18 +2339,34 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             }
                         };
 
-                        match guard.read_to_string(&clean_rel) {
+                        let mut read_res = guard.read_to_string(&clean_rel);
+                        if read_res.is_err() {
+                            for attempt in 1..=20 {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(attempt * 2)).await;
+                                read_res = guard.read_to_string(&clean_rel);
+                                if read_res.is_ok() {
+                                    break;
+                                }
+                            }
+                        }
+
+                        match read_res {
                             Ok(content) => {
-                                let content = SecretMasker::mask_text(&content);
+                                let is_raw = query.raw.unwrap_or(false);
+                                let final_content = if is_raw {
+                                    content
+                                } else {
+                                    SecretMasker::mask_text(&content)
+                                };
                                 (
-                                StatusCode::OK,
-                                axum::Json(serde_json::json!({
-                                    "status": "ok",
-                                    "path": rel_path,
-                                    "content": content
-                                })),
-                            )
-                                .into_response()
+                                    StatusCode::OK,
+                                    axum::Json(serde_json::json!({
+                                        "status": "ok",
+                                        "path": rel_path,
+                                        "content": final_content
+                                    })),
+                                )
+                                    .into_response()
                             }
                             Err(e) => {
                                 let (code, mut json_val) = security_error_to_status_and_json(&e);
@@ -2358,6 +2376,56 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                 (code, axum::Json(json_val)).into_response()
                             }
                         }
+                    }
+                }
+            }),
+        )
+        // ─────────────────────────────────────────────────────────────────────────────
+        // M1: SAUVEGARDE DE FICHIER SOURCE (IDE CTRL+S)
+        // ─────────────────────────────────────────────────────────────────────────────
+        .route(
+            "/api/save_file",
+            axum::routing::post({
+                let state = state_save_file.clone();
+                move |axum::extract::Json(req): axum::extract::Json<api_routes::SaveFileRequest>| {
+                    let state = state.clone();
+                    async move {
+                        use axum::http::StatusCode;
+                        use axum::response::IntoResponse;
+
+                        match state.save_file(&req.file_path, &req.content).await {
+                            Ok(resp) => (StatusCode::OK, axum::Json(resp)).into_response(),
+                            Err(e) => {
+                                let (code, json_val) = security_error_to_status_and_json(&e);
+                                (code, axum::Json(json_val)).into_response()
+                            }
+                        }
+                    }
+                }
+            }),
+        )
+        // ─────────────────────────────────────────────────────────────────────────────
+        // M1: ARBORESCENCE DU PROJET (IDE FILE TREE)
+        // ─────────────────────────────────────────────────────────────────────────────
+        .route(
+            "/api/files",
+            axum::routing::get({
+                let state = state_files.clone();
+                move || {
+                    let state = state.clone();
+                    async move {
+                        use axum::http::StatusCode;
+                        use axum::response::IntoResponse;
+
+                        let files = state.list_files().await;
+                        (
+                            StatusCode::OK,
+                            axum::Json(api_routes::ProjectFilesResponse {
+                                status: "ok".to_string(),
+                                files,
+                            }),
+                        )
+                            .into_response()
                     }
                 }
             }),

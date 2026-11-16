@@ -287,7 +287,10 @@ export class CockpitState {
   lodLevel = $state<1 | 2 | 3>(1);
   activeLayout = $state<'Z-1' | 'Z-2' | 'Z-3' | 'Z-4'>('Z-2');
   visionMode = $state<'standard' | 'xray' | 'heatmap' | 'deadcode'>('standard');
-  viewMode = $state<'code' | 'vault'>('code');
+  viewMode = $state<'code' | 'vault' | 'ide'>('code');
+  ideActiveFile = $state<string | null>(null);
+  ideTargetLine = $state<number | null>(null);
+  ideCursorPosition = $state<{ line: number; ch: number } | null>(null);
   docMode = $state<'library' | 'folder' | 'symbol' | 'system'>('library');
   docSelectedPath = $state<string | null>(null);
   searchQuery = $state('');
@@ -1566,6 +1569,12 @@ export class CockpitState {
     if (found) {
       this.activeSymbol = found;
       this.selectedFolder = found.folder || found.cluster_id || null;
+      if (found.file_path) {
+        this.ideActiveFile = found.file_path;
+        if (typeof found.line_number === 'number' && found.line_number > 0) {
+          this.ideTargetLine = found.line_number;
+        }
+      }
       this.isInspectorOpen = true;
       if (typeof window !== 'undefined' && window.innerWidth < 940) {
         this.isDocPanelOpen = false;

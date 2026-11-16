@@ -18,6 +18,7 @@
   import TasksModal from './components/TasksModal.svelte';
   import CreateFileModal from './components/CreateFileModal.svelte';
   import IgnoredCweModal from './components/IgnoredCweModal.svelte';
+  import IdeView from './components/ide/IdeView.svelte';
   import { cockpitState } from './state/graphState.svelte';
   import { api } from './lib/api';
   import { DEMO_AETHER_GRAPH, DEMO_TASKS, DEMO_GIT_STATUS, DEMO_ACTIVE_AGENTS } from './data/demoGraph';
@@ -30,7 +31,7 @@
       return;
     }
 
-    // Alt+1 and Alt+2 view modes (Code AST vs Obsidian Vault Notes)
+    // Alt+1, Alt+2, and Alt+3 view modes (Code AST vs Obsidian Vault Notes vs IDE)
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       if (e.key === '1' || e.code === 'Digit1') {
         e.preventDefault();
@@ -42,6 +43,12 @@
         e.preventDefault();
         cockpitState.viewMode = 'vault';
         api.switchViewMode('vault').catch(() => {});
+        return;
+      }
+      if (e.key === '3' || e.code === 'Digit3') {
+        e.preventDefault();
+        cockpitState.viewMode = 'ide';
+        api.switchViewMode('ide').catch(() => {});
         return;
       }
     }
@@ -279,11 +286,20 @@
 <div class="w-full h-screen flex flex-col bg-[#07090e] text-slate-100 overflow-hidden font-sans">
   <HeaderDeck />
   <div class="relative flex-1 w-full min-h-0 overflow-hidden">
-    <AetherCanvas />
-    <CanvasTooltip />
-    <VisionModesDeck />
-    <VisionModeHuds />
-    <SynthesisHud />
+    <!-- WebGL Canvas & HUD Overlays (Resident in DOM, hidden via CSS in IDE mode) -->
+    <div class="w-full h-full relative" class:hidden={cockpitState.viewMode === 'ide'}>
+      <AetherCanvas />
+      <CanvasTooltip />
+      <VisionModesDeck />
+      <VisionModeHuds />
+      <SynthesisHud />
+    </div>
+
+    <!-- Dedicated Full-Screen IDE View (Retains dirty editor state across view switches) -->
+    <div class="w-full h-full absolute inset-0 z-10" class:hidden={cockpitState.viewMode !== 'ide'}>
+      <IdeView />
+    </div>
+
     <InspectorDrawer />
     <CommandPalette />
     <BountyModal />

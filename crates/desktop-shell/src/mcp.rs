@@ -1961,7 +1961,7 @@ mod tests {
                 "arguments": { "path": "." }
             })),
         };
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("get_graph_summary response");
+        let resp = handle_mcp_request(req, 0, ".").await.expect("get_graph_summary response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
         let content = res["content"].as_array().expect("content array");
@@ -2301,7 +2301,7 @@ mod tests {
             })),
         };
 
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("get_graph_summary response");
+        let resp = handle_mcp_request(req, 0, ".").await.expect("get_graph_summary response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
         let text = res["content"][0]["text"].as_str().unwrap();
