@@ -67,6 +67,26 @@ impl PatchVerifier {
 
         for rel_file in files_modified {
             let clean_rel = rel_file.trim().replace('\\', "/");
+            if clean_rel.is_empty() {
+                continue;
+            }
+
+            // Contrôle strict SecretGuard : interdiction pour l'IA d'altérer des secrets ou .env
+            if security_linter::SecretGuard::is_secret_path(&clean_rel) {
+                violations.push(make_violation(
+                    &clean_rel,
+                    1,
+                    "PROHIBITED_SECRET_FILE_MODIFICATION",
+                    "CWE-538 / SENSITIVE-SECRETS-PROHIBITED",
+                    "CRITICAL",
+                    format!("Interdiction stricte : l'IA ne peut pas modifier ni altérer de fichier sensible ou secret ({})", clean_rel),
+                    Some("secret_file"),
+                    Some("Protected Secret Path"),
+                    "Remove sensitive/environment secrets (.env, keys, credentials) from AI patch scope.",
+                ));
+                continue;
+            }
+
             let file_path = if Path::new(&clean_rel).is_absolute() {
                 PathBuf::from(&clean_rel)
             } else {

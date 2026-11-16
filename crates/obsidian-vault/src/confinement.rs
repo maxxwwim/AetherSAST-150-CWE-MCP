@@ -577,6 +577,8 @@ impl PathGuard {
             if comp_trimmed == ".env"
                 || comp_trimmed.starts_with(".env.")
                 || comp_trimmed.ends_with(".env")
+                || comp_trimmed == ".envrc"
+                || comp_trimmed.starts_with(".envrc.")
             {
                 return true;
             }
@@ -590,6 +592,10 @@ impl PathGuard {
                 || comp_trimmed == ".kube"
                 || comp_trimmed == ".docker"
                 || comp_trimmed == ".gnupg"
+                || comp_trimmed == "secrets"
+                || comp_trimmed == ".secrets"
+                || comp_trimmed == "credentials"
+                || comp_trimmed == ".credentials"
             {
                 return true;
             }
@@ -603,11 +609,27 @@ impl PathGuard {
                 || comp_trimmed == "shadow"
                 || comp_trimmed == "sudoers"
                 || comp_trimmed == "credentials"
+                || comp_trimmed == "secrets"
+                || comp_trimmed == "secret"
+                || comp_trimmed == "service-account.json"
+                || comp_trimmed == "service_account.json"
+                || comp_trimmed == "master.key"
                 || comp_trimmed == "authorized_keys"
                 || comp_trimmed == "known_hosts"
                 || comp_trimmed == ".npmrc"
                 || comp_trimmed == ".pypirc"
                 || comp_trimmed == ".netrc"
+                || comp_trimmed == ".htpasswd"
+            {
+                return true;
+            }
+
+            // 3b. Secret prefixes
+            if comp_trimmed.starts_with("credentials.")
+                || comp_trimmed.starts_with("secrets.")
+                || comp_trimmed.starts_with("secret.")
+                || comp_trimmed.starts_with("service-account.")
+                || comp_trimmed.starts_with("service_account.")
             {
                 return true;
             }
@@ -631,6 +653,11 @@ impl PathGuard {
                 || ext_lower == "pfx"
                 || ext_lower == "pkcs12"
                 || ext_lower == "kdbx"
+                || ext_lower == "der"
+                || ext_lower == "crt"
+                || ext_lower == "cer"
+                || ext_lower == "jks"
+                || ext_lower == "keystore"
             {
                 return true;
             }

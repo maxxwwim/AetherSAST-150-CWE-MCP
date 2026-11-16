@@ -451,6 +451,24 @@
                 class="accent-purple-400 w-4 h-4 cursor-pointer"
               />
             </label>
+            <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/30 border border-purple-500/20 cursor-pointer">
+              <span class="text-xs text-slate-200">Lignes & Lasers IA (Trajectoires & Orbites)</span>
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.showAiLines}
+                onchange={() => cockpitState.saveLocalSettings()}
+                class="accent-purple-400 w-4 h-4 cursor-pointer"
+              />
+            </label>
+            <label class="flex items-center justify-between p-2.5 rounded-lg bg-black/30 border border-purple-500/20 cursor-pointer">
+              <span class="text-xs text-slate-200">Noms des IA (Masquage auto après 5 min)</span>
+              <input
+                type="checkbox"
+                bind:checked={cockpitState.settings.showAiNames}
+                onchange={() => cockpitState.saveLocalSettings()}
+                class="accent-purple-400 w-4 h-4 cursor-pointer"
+              />
+            </label>
           </div>
 
           <div>

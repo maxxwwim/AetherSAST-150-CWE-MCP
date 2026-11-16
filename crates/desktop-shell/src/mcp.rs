@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+use security_linter::{SecretGuard, SecretMasker};
 
 #[derive(Deserialize)]
 #[allow(dead_code)]
@@ -761,7 +762,12 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let max_depth = arguments.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
 
                     if symbol_id.trim().is_empty() {
-                        (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'symbol_id' est requis." }]), true)
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'symbol_id' est requis." }]), true)
+                    } else if SecretGuard::is_secret_path(&symbol_id) || SecretGuard::is_secret_path(target_path) {
+                        (json!([{
+                            "type": "text",
+                            "text": format!("🛡️ [SÉCURITÉ V2 / SECRET GUARD] Accès interdit : Le fichier ou symbole '{}' est un fichier de secrets ou de configuration sensible (.env, clés privées, credentials). L'accès direct par l'IA est strictement bloqué pour protéger vos secrets.", symbol_id)
+                        }]), true)
                     } else {
                         // 1. Téléportation automatique de la caméra 3D + télémétrie multi-agents HUD
                         let _ = emit_mcp_telemetry(server_port, target_path, &symbol_id, action, details, &arguments).await;
@@ -795,7 +801,8 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             }
                         }
 
-                        (json!([{ "type": "text", "text": text }]), is_err)
+                        let sanitized_text = SecretMasker::mask_text(&text);
+                        (json!([{ "type": "text", "text": sanitized_text }]), is_err)
                     }
                 }
 
@@ -1091,6 +1098,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     } else {
                         ast_scanner::ProjectScanner::default().scan_project(&p_buf)
                     };
+                    g.nodes.retain(|n| !SecretGuard::is_secret_path(&n.file_path));
 
                     if scope_mode == "recommend_scope" {
                         let (cfg, recs) = load_or_recommend_bounty_scope(&p_buf, &g);
@@ -1223,7 +1231,8 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             text.push_str(&format_swarm_roster(&active_others, Some(&self_id)));
                         }
 
-                        (json!([{ "type": "text", "text": text }]), false)
+                        let sanitized_text = SecretMasker::mask_text(&text);
+                        (json!([{ "type": "text", "text": sanitized_text }]), false)
                     }
                 }
 
@@ -1594,7 +1603,16 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             }]),
                             true,
                         )
+                    } else if let Some(secret_file) = files.iter().find(|f| SecretGuard::is_secret_path(f)) {
+                        (
+                            json!([{
+                                "type": "text",
+                                "text": format!("🚨 [PATCH_REJECTED / SÉCURITÉ CRITIQUE SECRET GUARD]\nModification interdite du fichier sensible ou secret '{}' (.env, clés privées, credentials). L'IA a interdiction absolue d'altérer les secrets de production.", secret_file)
+                            }]),
+                            true,
+                        )
                     } else {
+
                         let req_path = opt_str_arg(&arguments, "path").unwrap_or(default_path);
                         let p_buf = resolve_project_root(req_path);
                         let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
@@ -2389,5 +2407,44 @@ mod tests {
         assert_eq!(scope_res["isError"], false);
         let scope_text = scope_res["content"][0]["text"].as_str().unwrap();
         assert!(scope_text.contains("Périmètre Bug Bounty & PoC"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_secret_guard_prohibits_env_and_secrets() {
+        // 1. aetherscope_get_active_target with .env must be rejected
+        let target_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(901)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_get_active_target",
+                "arguments": {
+                    "symbol_id": ".env"
+                }
+            })),
+        };
+        let target_resp = handle_mcp_request(target_req, 3030, ".").await.expect("target resp");
+        let target_res = target_resp.result.expect("result present");
+        assert_eq!(target_res["isError"], true);
+        let text = target_res["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("SECRET GUARD") && text.contains("Accès interdit"));
+
+        // 2. aetherscope_verify_patch with .env.production must be rejected
+        let patch_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(902)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_verify_patch",
+                "arguments": {
+                    "files_modified": [".env.production"]
+                }
+            })),
+        };
+        let patch_resp = handle_mcp_request(patch_req, 3030, ".").await.expect("patch resp");
+        let patch_res = patch_resp.result.expect("result present");
+        assert_eq!(patch_res["isError"], true);
+        let patch_text = patch_res["content"][0]["text"].as_str().unwrap();
+        assert!(patch_text.contains("PATCH_REJECTED") && patch_text.contains("SECRET GUARD"));
     }
 }

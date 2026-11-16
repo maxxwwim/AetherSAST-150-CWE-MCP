@@ -525,6 +525,42 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
                   {cockpitState.settings.showCweTitles ? 'ON' : 'OFF'}
                 </span>
               </button>
+
+              <div class="px-2 py-1 text-[10px] text-slate-400 font-semibold uppercase tracking-wider border-t border-b border-white/10 mt-1">
+                Affichage Copilote & IA
+              </div>
+
+              <!-- Bascule Lignes & Lasers IA -->
+              <button
+                type="button"
+                onclick={() => cockpitState.toggleAiLines()}
+                class="flex items-center justify-between px-2 py-1.5 rounded hover:bg-white/10 text-slate-200 transition-colors cursor-pointer text-left"
+                title="Afficher ou masquer les trajectoires, faisceaux laser et orbites d'IA"
+              >
+                <div class="flex items-center gap-2">
+                  <Activity class="w-3.5 h-3.5 text-cyan-400" />
+                  <span class="text-[11px]">Lignes / Lasers IA</span>
+                </div>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {cockpitState.settings.showAiLines ? 'bg-cyan-500/25 text-cyan-300' : 'bg-white/5 text-slate-500'}">
+                  {cockpitState.settings.showAiLines ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <!-- Bascule Noms des Agents IA -->
+              <button
+                type="button"
+                onclick={() => cockpitState.toggleAiNames()}
+                class="flex items-center justify-between px-2 py-1.5 rounded hover:bg-white/10 text-slate-200 transition-colors cursor-pointer text-left"
+                title="Afficher ou masquer les badges des noms d'IA (masquage auto après 5 min d'inactivité)"
+              >
+                <div class="flex items-center gap-2">
+                  <Bot class="w-3.5 h-3.5 text-purple-400" />
+                  <span class="text-[11px]">Noms des Agents IA</span>
+                </div>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {cockpitState.settings.showAiNames ? 'bg-purple-500/25 text-purple-300' : 'bg-white/5 text-slate-500'}">
+                  {cockpitState.settings.showAiNames ? 'ON' : 'OFF'}
+                </span>
+              </button>
             </div>
           {/if}
         </div>

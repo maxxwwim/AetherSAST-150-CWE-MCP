@@ -109,3 +109,15 @@ fn test_patch_rejected_file_not_found() {
     assert!(result.formatted_output.contains("[PATCH_REJECTED]"));
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn test_patch_rejected_secret_file_attempt() {
+    let tmp = make_test_dir("t6");
+    fs::write(tmp.join(".env"), "DATABASE_URL=postgres://root:secret@localhost/db\n").unwrap();
+    let result = PatchVerifier::verify_patch(&tmp, &[".env".to_string()], None);
+    assert_eq!(result.verdict, PatchVerdict::Rejected);
+    assert!(result.violations.iter().any(|v| v.rule_id == "PROHIBITED_SECRET_FILE_MODIFICATION"));
+    assert!(result.formatted_output.contains("[PATCH_REJECTED]"));
+    assert!(result.formatted_output.contains("CWE-538"));
+    let _ = fs::remove_dir_all(&tmp);
+}

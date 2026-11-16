@@ -13,6 +13,7 @@ use ai_file_bridge::{AuditWriter, FileWatcherBridge, HandshakePacker};
 use ast_scanner::ProjectScanner;
 use clap::Parser;
 use security_linter::contract::ReadmeContract;
+use security_linter::{SecretGuard, SecretMasker};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1369,6 +1370,26 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     };
 
                     // Validate sensitive file / secret blocking
+                    if SecretGuard::is_secret_path(&clean_rel) {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            axum::Json(serde_json::json!({
+                                "status": "error",
+                                "message": format!("Access denied: Cannot create secret or sensitive file '{}'", clean_rel.display())
+                            })),
+                        )
+                            .into_response();
+                    }
+                    if SecretMasker::contains_secret(&req.content) {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            axum::Json(serde_json::json!({
+                                "status": "error",
+                                "message": "Access denied: File content contains sensitive credentials or secrets prohibited by SecretMasker"
+                            })),
+                        )
+                            .into_response();
+                    }
                     if let Err(e) = PathGuard::validate_not_sensitive(&clean_rel) {
                         let (code, json_val) = security_error_to_status_and_json(&e);
                         return (code, axum::Json(json_val)).into_response();
@@ -1547,7 +1568,20 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<AiTargetRequest>| {
                 let state = state_ai_target.clone();
                 async move {
+                    use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
+
                     let p_root = state.project_root.read().await.clone();
+                    if SecretGuard::is_secret_path(&req.symbol_id) {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            axum::Json(serde_json::json!({
+                                "status": "error",
+                                "message": format!("Access denied: Symbol/path '{}' is a protected secret file (.env, secrets, credentials)", req.symbol_id)
+                            })),
+                        )
+                            .into_response();
+                    }
                     let g = state.graph.read().await;
 
                     let sym_opt = g
@@ -1562,6 +1596,16 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         .cloned();
 
                     if let Some(sym) = sym_opt {
+                        if SecretGuard::is_secret_path(&sym.file_path) {
+                            return (
+                                StatusCode::FORBIDDEN,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": format!("Access denied: Target file '{}' is a protected secret file (.env, secrets, credentials)", sym.file_path)
+                                })),
+                            )
+                                .into_response();
+                        }
                         let incoming_edges: Vec<&core_graph::edge::AffiliationEdge> = g
                             .edges
                             .iter()
@@ -1625,6 +1669,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             &categorized_out,
                             contract.as_ref(),
                         );
+                        let handshake_xml = SecretMasker::mask_text(&handshake_xml);
 
                         let active_target_path = p_root.join(".aether").join("ACTIVE_TARGET.md").to_string_lossy().to_string();
 
@@ -1719,6 +1764,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             categorized_outgoing: Some(categorized_out),
                             formatted_doc_and_liaisons: Some(formatted_doc_and_liaisons),
                         })
+                        .into_response()
                     } else {
                         axum::Json(AiTargetResponse {
                             status: "not_found".to_string(),
@@ -1738,6 +1784,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             categorized_outgoing: None,
                             formatted_doc_and_liaisons: None,
                         })
+                        .into_response()
                     }
                 }
             }),
@@ -2155,6 +2202,26 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     };
 
                     // Validate sensitive file / secret blocking
+                    if SecretGuard::is_secret_path(&clean_rel) {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            axum::Json(serde_json::json!({
+                                "status": "error",
+                                "message": format!("Access denied: Cannot create secret or sensitive file '{}'", clean_rel.display())
+                            })),
+                        )
+                            .into_response();
+                    }
+                    if SecretMasker::contains_secret(&req.content) {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            axum::Json(serde_json::json!({
+                                "status": "error",
+                                "message": "Access denied: File content contains sensitive credentials or secrets prohibited by SecretMasker"
+                            })),
+                        )
+                            .into_response();
+                    }
                     if let Err(e) = PathGuard::validate_not_sensitive(&clean_rel) {
                         let (code, json_val) = security_error_to_status_and_json(&e);
                         return (code, axum::Json(json_val)).into_response();
@@ -2245,6 +2312,16 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         };
 
                         // 2. Sensitive file check
+                        if SecretGuard::is_secret_path(&clean_rel) {
+                            return (
+                                StatusCode::FORBIDDEN,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": format!("Access denied: Sensitive file '{}' is protected against exposure (.env, secrets, credentials)", clean_rel.display())
+                                })),
+                            )
+                                .into_response();
+                        }
                         if let Err(e) = PathGuard::validate_not_sensitive(&clean_rel) {
                             let (code, json_val) = security_error_to_status_and_json(&e);
                             return (code, axum::Json(json_val)).into_response();
@@ -2261,7 +2338,9 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         };
 
                         match guard.read_to_string(&clean_rel) {
-                            Ok(content) => (
+                            Ok(content) => {
+                                let content = SecretMasker::mask_text(&content);
+                                (
                                 StatusCode::OK,
                                 axum::Json(serde_json::json!({
                                     "status": "ok",
@@ -2269,7 +2348,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                     "content": content
                                 })),
                             )
-                                .into_response(),
+                                .into_response()
+                            }
                             Err(e) => {
                                 let (code, mut json_val) = security_error_to_status_and_json(&e);
                                 if let Some(obj) = json_val.as_object_mut() {

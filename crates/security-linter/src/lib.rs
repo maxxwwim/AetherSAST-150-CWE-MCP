@@ -11,6 +11,8 @@ pub mod rules;
 pub mod sanitizer_catalog;
 pub mod sarif;
 pub mod sca;
+pub mod secret_guard;
+pub mod secret_masker;
 pub mod semgrep_importer;
 pub mod zig_rules;
 
@@ -29,6 +31,8 @@ pub use rules::AdvancedDefiRules;
 pub use sanitizer_catalog::SanitizerCatalog;
 pub use sarif::SarifReport;
 pub use sca::{ScaDependency, ScaEngine, ScaReport, ScaVulnerability};
+pub use secret_guard::SecretGuard;
+pub use secret_masker::SecretMasker;
 pub use semgrep_importer::{convert_semgrep_yaml, SemgrepImporter};
 pub use zig_rules::ZigSecurityRules;
 

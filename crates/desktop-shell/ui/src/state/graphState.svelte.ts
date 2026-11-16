@@ -132,6 +132,8 @@ export interface CockpitSettings {
   showFolderMembranes: boolean;
   aiAutoCam: boolean;
   aiTrail: boolean;
+  showAiLines: boolean;
+  showAiNames: boolean;
   aiCustomPrompt: string;
   exclusions: string[];
   activeCveRules: string[];
@@ -145,9 +147,11 @@ export interface CockpitSettings {
   lowMemoryMode: boolean;
 }
 
-const EMPTY_METHODS: any[] = Object.freeze([]);
-const EMPTY_ATTRIBUTES: any[] = Object.freeze([]);
-const EMPTY_ANOMALIES: any[] = Object.freeze([]);
+export const AI_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 300,000 ms (5 minutes)
+
+const EMPTY_METHODS: any[] = Object.freeze([]) as any[];
+const EMPTY_ATTRIBUTES: any[] = Object.freeze([]) as any[];
+const EMPTY_ANOMALIES: any[] = Object.freeze([]) as any[];
 
 const DEFAULT_SETTINGS: CockpitSettings = {
   maxLabelLength: 18,
@@ -160,6 +164,8 @@ const DEFAULT_SETTINGS: CockpitSettings = {
   showFolderMembranes: true,
   aiAutoCam: true,
   aiTrail: true,
+  showAiLines: true,
+  showAiNames: true,
   aiCustomPrompt: '',
   exclusions: ['vendor', 'var', 'cache', 'tests', '*.spec.*', '*.test.*'],
   activeCveRules: [],
@@ -700,6 +706,10 @@ export class CockpitState {
     }
 
     const sortedActive = Array.from(activeMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+    // Cap active agents to prevent unbounded accumulation
+    if (sortedActive.length > 20) {
+      sortedActive.length = 20;
+    }
     // Guarantee 100% unique, distinct color per active agent ("une couleur par IA")
     const usedColors = new Set<string>();
     for (let i = 0; i < sortedActive.length; i++) {
@@ -824,6 +834,24 @@ export class CockpitState {
     this.saveLocalSettings();
     this.filterVersion += 1;
     return this.settings.showFileTitles;
+  }
+
+  toggleAiLines(): boolean {
+    this.settings.showAiLines = !this.settings.showAiLines;
+    this.saveLocalSettings();
+    return this.settings.showAiLines;
+  }
+
+  toggleAiNames(): boolean {
+    this.settings.showAiNames = !this.settings.showAiNames;
+    this.saveLocalSettings();
+    return this.settings.showAiNames;
+  }
+
+  isAgentInactive(ag: { timestamp: number }, timeoutMs = AI_INACTIVITY_TIMEOUT_MS): boolean {
+    if (!ag || typeof ag.timestamp !== 'number' || ag.timestamp <= 0) return true;
+    const ts = ag.timestamp < 1e11 ? ag.timestamp * 1000 : ag.timestamp;
+    return (Date.now() - ts) >= timeoutMs;
   }
 
   get isLowMemoryMode(): boolean {

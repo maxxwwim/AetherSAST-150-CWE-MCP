@@ -83,3 +83,14 @@ Spécifie toujours les paramètres exacts lors de tes appels MCP :
 - **Règle d'Atomicité (< 35 lignes) :** Découpe le code en fonctions atomiques pures de moins de 35 lignes maximum (particulièrement dans `domain/`).
 - **Preuve de Lecture [AETHER_ACK] :** Démarre tes propositions techniques par :
   `[AETHER_ACK: cible=<symbole>, couche=<layer>, mcp=aetherscope_get_active_target->aetherscope_verify_patch]`
+
+---
+
+## 🛡️ 6. SÉCURISATION ABSOLUE DES SECRETS & VARIABLES D'ENVIRONNEMENT (`.env`)
+1. **Interdiction Formelle d'Accès aux Secrets :**
+   - L'IA ne doit JAMAIS tenter de lire, modifier, indexer, créer ou exposer un fichier contenant des secrets (`.env`, `.env.*`, `*.env`, `.envrc`, `.secrets`, `credentials`, `id_rsa`, `.pem`, `.key`, `service-account.json`, etc.).
+   - Le pare-feu `SecretGuard` d'AetherScope bloque tout accès MCP (`aetherscope_get_active_target`, `aetherscope_verify_patch`, API endpoints) ciblant un fichier sensible avec une violation critique immédiate.
+2. **Masquage Automatique Résiduel (`SecretMasker`) :**
+   - Toutes les clés API (`sk-...`, `ghp_...`, `AKIA...`, `stripe`, `JWT`, tokens et mots de passe) sont automatiquement caviardées `[REDACTED]` dans les réponses MCP, les flux AST et le chat.
+3. **Gouvernance :**
+   - Aucun secret ne doit être committé ni injecté dans les contrats `README.md`. L'accès aux configurations de production est strictement cloisonné.

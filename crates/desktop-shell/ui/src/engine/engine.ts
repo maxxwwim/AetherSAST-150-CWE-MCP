@@ -895,10 +895,19 @@ export class AetherEngine {
 
   public start() {
     let lastTime = performance.now();
+    let lastRenderTime = 0;
     const loop = (now: number) => {
       if (this.isDestroyed) return;
-      const dt = now - lastTime;
+      this.animationFrameId = requestAnimationFrame(loop);
+
+      const fpsLimit = this.state.settings.fpsLimit;
+      const targetInterval = fpsLimit === '60' ? (1000 / 60) : (fpsLimit === '120' ? (1000 / 120) : 0);
+      if (targetInterval > 0 && lastRenderTime > 0 && (now - lastRenderTime) < (targetInterval - 1.0)) {
+        return;
+      }
+      const dt = lastRenderTime > 0 ? (now - lastRenderTime) : (now - lastTime);
       lastTime = now;
+      lastRenderTime = now;
       this.time += dt;
 
       // Track FPS every 500ms
@@ -945,8 +954,6 @@ export class AetherEngine {
         this.lastSnapshotTick = this.state.snapshotRequestTick;
         this.captureSnapshot();
       }
-
-      this.animationFrameId = requestAnimationFrame(loop);
     };
     this.animationFrameId = requestAnimationFrame(loop);
   }
@@ -1314,8 +1321,19 @@ export class AetherEngine {
     const trails = this.state.agentTrails;
     if (!agents || agents.length === 0) return;
 
+    // Prune stale agent positions to prevent memory leaks over time
+    if (this.agentSmoothPositions.size > 40) {
+      const activeIds = new Set(agents.map((a) => a.agentId));
+      for (const k of this.agentSmoothPositions.keys()) {
+        if (!activeIds.has(k)) {
+          this.agentSmoothPositions.delete(k);
+        }
+      }
+    }
+
     ctx.save();
     const zoom = this.camera.zoom;
+    const safeDt = Math.min(Math.max(dt || 16.6, 1.0), 50.0);
 
     // Palette of vibrant neon colors guaranteed to be visually distinct
     const DISTINCT_PALETTE = [
@@ -1384,15 +1402,14 @@ export class AetherEngine {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 1. RENDER INTER-BUBBLE NAVIGATION TRAJECTORIES (UNE COULEUR PAR IA)
+    // 1. RENDER INTER-BUBBLE NAVIGATION TRAJECTORIES (LIGNES D'IA)
     // ─────────────────────────────────────────────────────────────────────────
-    if (this.state.settings.aiTrail) {
+    if (this.state.settings.showAiLines && this.state.settings.aiTrail) {
       for (let idx = 0; idx < resolvedList.length; idx++) {
         const { ag, targetNode, agColor } = resolvedList[idx];
         const agTrail = trails[ag.agentId] || [];
 
-        const validPoints: { s: { x: number; y: number }; wx: number; wy: number; step: number }[] = [];
-        let stepCount = 0;
+        const validPoints: { s: { x: number; y: number }; wx: number; wy: number }[] = [];
 
         for (const pt of agTrail) {
           let node = pt.nodeId ? this.nodeMap.get(pt.nodeId) : null;
@@ -1403,8 +1420,7 @@ export class AetherEngine {
           const wx = node ? node.x : pt.x;
           const wy = node ? node.y : pt.y;
           if (wx == null || wy == null) continue;
-          stepCount++;
-          validPoints.push({ s: this.worldToScreen(wx, wy), wx, wy, step: stepCount });
+          validPoints.push({ s: this.worldToScreen(wx, wy), wx, wy });
         }
 
         // Connect the trail directly to the current target bubble if not already the final point
@@ -1414,91 +1430,46 @@ export class AetherEngine {
             s: this.worldToScreen(targetNode.x, targetNode.y),
             wx: targetNode.x,
             wy: targetNode.y,
-            step: validPoints.length + 1,
           });
         }
 
         if (validPoints.length > 1) {
-          // Pass 1: Diffused colored glow path (optimized hardware alpha stroke)
+          // Pass 1: Diffused colored glow path
           ctx.beginPath();
           ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
           for (let i = 1; i < validPoints.length; i++) {
             ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
           }
           ctx.strokeStyle = agColor;
-          ctx.lineWidth = Math.max(3.0, 5.0 * Math.sqrt(zoom));
-          ctx.globalAlpha = 0.22;
+          ctx.lineWidth = Math.max(2.5, 4.0 * Math.sqrt(zoom));
+          ctx.globalAlpha = 0.20;
           ctx.stroke();
 
-          // Pass 2: Animated marching dashed core
+          // Pass 2: Clean dashed core line (lightweight, zero heavy photon bead loops)
           ctx.beginPath();
           ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
           for (let i = 1; i < validPoints.length; i++) {
             ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
           }
           ctx.setLineDash([8, 6]);
-          ctx.lineDashOffset = -(now * 0.026 + idx * 4);
+          ctx.lineDashOffset = -(now * 0.02 + idx * 3);
           ctx.strokeStyle = agColor;
-          ctx.globalAlpha = 0.90;
-          ctx.lineWidth = Math.max(1.5, 2.2 * Math.sqrt(zoom));
+          ctx.globalAlpha = 0.85;
+          ctx.lineWidth = Math.max(1.5, 2.0 * Math.sqrt(zoom));
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Pass 3: Traveling photon energy pulses along the trajectory toward current bubble
-          for (let seg = 0; seg < validPoints.length - 1; seg++) {
-            const p0 = validPoints[seg].s;
-            const p1 = validPoints[seg + 1].s;
-            const segDist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-            if (segDist < 10) continue;
-
-            for (let b = 0; b < 2; b++) {
-              const u = ((now * 0.0018 + b * 0.5 + idx * 0.33) % 1.0 + 1.0) % 1.0;
-              const bx = p0.x + (p1.x - p0.x) * u;
-              const by = p0.y + (p1.y - p0.y) * u;
-
-              ctx.beginPath();
-              ctx.arc(bx, by, Math.max(2.0, 3.2 * Math.sqrt(zoom)), 0, Math.PI * 2);
-              ctx.fillStyle = '#ffffff';
-              ctx.globalAlpha = 0.95;
-              ctx.fill();
-
-              // Subtle arrow / chevrons in the travel direction
-              const angle = Math.atan2(p1.y - p0.y, p1.x - p0.x);
-              ctx.save();
-              ctx.translate(bx, by);
-              ctx.rotate(angle);
-              ctx.beginPath();
-              ctx.moveTo(-4, -3);
-              ctx.lineTo(2, 0);
-              ctx.lineTo(-4, 3);
-              ctx.strokeStyle = agColor;
-              ctx.lineWidth = 1.2;
-              ctx.globalAlpha = 0.80;
-              ctx.stroke();
-              ctx.restore();
-            }
-          }
-
-          // Pass 4: Waypoint markers on visited bubbles
+          // Pass 3: Static, clean waypoint markers on visited bubbles
           for (let i = 0; i < validPoints.length; i++) {
             const wp = validPoints[i];
             const isLatest = i === validPoints.length - 1;
-            const wpRadius = isLatest ? 4.5 : 3.2;
+            const wpRadius = isLatest ? 4.0 : 2.5;
 
             ctx.beginPath();
             ctx.arc(wp.s.x, wp.s.y, wpRadius, 0, Math.PI * 2);
             ctx.fillStyle = isLatest ? '#ffffff' : agColor;
-            ctx.globalAlpha = isLatest ? 0.95 : 0.70;
+            ctx.globalAlpha = isLatest ? 0.90 : 0.60;
             ctx.fill();
-
-            if (isLatest) {
-              ctx.beginPath();
-              ctx.arc(wp.s.x, wp.s.y, wpRadius + 3.0 + Math.sin(now * 0.005) * 1.5, 0, Math.PI * 2);
-              ctx.strokeStyle = agColor;
-              ctx.lineWidth = 1.2;
-              ctx.globalAlpha = 0.85;
-              ctx.stroke();
-            }
           }
           ctx.globalAlpha = 1.0;
         }
@@ -1541,13 +1512,13 @@ export class AetherEngine {
       const agentOmega = omega + (subIdx * 0.0002);
       const theta = (now * agentOmega * dir) + phiAgent;
 
-      // Smooth camera anchor position with continuous LERP (buttery-smooth 60/120fps glide)
+      // Smooth camera anchor position with continuous LERP (safeguarded against frame drops)
       let smooth = this.agentSmoothPositions.get(ag.agentId);
       if (!smooth) {
         smooth = { x: targetNode.x, y: targetNode.y };
         this.agentSmoothPositions.set(ag.agentId, smooth);
       } else {
-        const lerpFactor = 1.0 - Math.exp(-14.0 * (dt / 1000));
+        const lerpFactor = 1.0 - Math.exp(-14.0 * (safeDt / 1000));
         smooth.x += (targetNode.x - smooth.x) * lerpFactor;
         smooth.y += (targetNode.y - smooth.y) * lerpFactor;
       }
@@ -1555,29 +1526,26 @@ export class AetherEngine {
       const anchorY = smooth.y;
 
       // ───────────────────────────────────────────────────────────────────────
-      // A. DRAW ORBITAL TRAJECTORY RING ON THE BUBBLE IN THIS IA'S COLOR
+      // A. DRAW ORBITAL TRAJECTORY RING ON THE BUBBLE (LIGNES D'IA)
       // ───────────────────────────────────────────────────────────────────────
-      ctx.save();
-      ctx.beginPath();
-      const ORBIT_SAMPLES = 28;
-      for (let s = 0; s <= ORBIT_SAMPLES; s++) {
-        const a = (s / ORBIT_SAMPLES) * Math.PI * 2;
-        const xP = orbitR * Math.cos(a);
-        const yP = orbitR * Math.sin(a) * cosAlpha;
-        const xR = xP * cosPsi - yP * sinPsi;
-        const yR = xP * sinPsi + yP * cosPsi;
-        const p = this.worldToScreen(anchorX + xR, anchorY + yR);
-        if (s === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
+      if (this.state.settings.showAiLines) {
+        ctx.beginPath();
+        const ORBIT_SAMPLES = 12; // Lightweight sampling (eliminated heavy 28-sample matrix loop)
+        for (let s = 0; s <= ORBIT_SAMPLES; s++) {
+          const a = (s / ORBIT_SAMPLES) * Math.PI * 2;
+          const xP = orbitR * Math.cos(a);
+          const yP = orbitR * Math.sin(a) * cosAlpha;
+          const xR = xP * cosPsi - yP * sinPsi;
+          const yR = xP * sinPsi + yP * cosPsi;
+          const p = this.worldToScreen(anchorX + xR, anchorY + yR);
+          if (s === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.strokeStyle = agColor;
+        ctx.lineWidth = Math.max(1.0, 1.4 * Math.sqrt(zoom));
+        ctx.globalAlpha = 0.35;
+        ctx.stroke();
       }
-      ctx.strokeStyle = agColor;
-      ctx.lineWidth = Math.max(1.0, 1.8 * Math.sqrt(zoom));
-      ctx.globalAlpha = 0.40;
-      ctx.setLineDash([6, 6]);
-      ctx.lineDashOffset = -(now * 0.018 * dir);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
 
       // Current avatar 3D position in orbit
       const xPlane = orbitR * Math.cos(theta);
@@ -1611,113 +1579,63 @@ export class AetherEngine {
       };
 
       // ───────────────────────────────────────────────────────────────────────
-      // B. CONNECTING LASER BEAM FROM AVATAR TO BUBBLE SURFACE
+      // B. CONNECTING LASER BEAM FROM AVATAR TO BUBBLE SURFACE (LIGNES D'IA)
       // ───────────────────────────────────────────────────────────────────────
-      // Pass 1: Diffused colored glow aura
-      ctx.beginPath();
-      ctx.moveTo(pOrb.x, pOrb.y);
-      ctx.lineTo(pImpact.x, pImpact.y);
-      ctx.strokeStyle = agColor;
-      ctx.lineWidth = Math.max(1.8, 3.2 * Math.sqrt(zoom));
-      ctx.globalAlpha = 0.35;
-      ctx.stroke();
-
-      // Pass 2: High-intensity inner white laser core
-      ctx.beginPath();
-      ctx.moveTo(pOrb.x, pOrb.y);
-      ctx.lineTo(pImpact.x, pImpact.y);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.2;
-      ctx.globalAlpha = 0.90;
-      ctx.stroke();
-
-      // Pass 3: 3 traveling photon beads animated along the laser beam
-      for (let b = 0; b < 3; b++) {
-        const u = ((now * 0.0024 + b * 0.333) % 1.0 + 1.0) % 1.0;
-        const bx = pOrb.x + (pImpact.x - pOrb.x) * u;
-        const by = pOrb.y + (pImpact.y - pOrb.y) * u;
+      if (this.state.settings.showAiLines) {
+        // Pass 1: Diffused colored glow aura
         ctx.beginPath();
-        ctx.arc(bx, by, 2.2, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.globalAlpha = 0.95;
-        ctx.fill();
+        ctx.moveTo(pOrb.x, pOrb.y);
+        ctx.lineTo(pImpact.x, pImpact.y);
+        ctx.strokeStyle = agColor;
+        ctx.lineWidth = Math.max(1.5, 2.5 * Math.sqrt(zoom));
+        ctx.globalAlpha = 0.30;
+        ctx.stroke();
+
+        // Pass 2: Inner white laser core
+        ctx.beginPath();
+        ctx.moveTo(pOrb.x, pOrb.y);
+        ctx.lineTo(pImpact.x, pImpact.y);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.0;
+        ctx.globalAlpha = 0.85;
+        ctx.stroke();
+
+        // Pass 3: Concentric circular scanning reticle on bubble surface (fast, zero matrix rotate churn)
+        const reticleRadius = Math.max(4, Math.min(10, 5 * Math.sqrt(Math.max(0.3, zoom))));
+        ctx.beginPath();
+        ctx.arc(pImpact.x, pImpact.y, reticleRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = agColor;
+        ctx.lineWidth = 1.0;
+        ctx.globalAlpha = 0.80;
+        ctx.stroke();
       }
 
-      // Pass 4: Concentric circular scanning reticle on bubble surface with animated rotation
-      const reticleAngle = now * 0.0035 + (subIdx * 1.5);
-      const reticleRadius = Math.max(5, Math.min(14, 6 * Math.sqrt(Math.max(0.3, zoom))));
-      ctx.save();
-      ctx.translate(pImpact.x, pImpact.y);
-      ctx.rotate(reticleAngle);
-
-      ctx.beginPath();
-      ctx.arc(0, 0, reticleRadius, 0, Math.PI * 2);
-      ctx.strokeStyle = agColor;
-      ctx.lineWidth = 1.2;
-      ctx.globalAlpha = 0.85;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(0, 0, reticleRadius + 3.5, 0, Math.PI * 1.3);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.0;
-      ctx.globalAlpha = 0.75;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(0, 0, reticleRadius + 3.5, Math.PI * 1.5, Math.PI * 1.8);
-      ctx.strokeStyle = agColor;
-      ctx.lineWidth = 1.0;
-      ctx.stroke();
-      ctx.restore();
-
       // ───────────────────────────────────────────────────────────────────────
-      // C. STELLAR AVATAR ORB AT (pOrb.x, pOrb.y) (FAST PURE-VECTOR PIPELINE)
+      // C. STELLAR AVATAR ORB AT (pOrb.x, pOrb.y) (LIGHTWEIGHT, ZERO MATRIX STACK CHURN)
       // ───────────────────────────────────────────────────────────────────────
-      // Layer 2: Colored luminous corona
-      ctx.beginPath();
-      ctx.arc(pOrb.x, pOrb.y, 14, 0, Math.PI * 2);
-      ctx.fillStyle = agColor;
-      ctx.globalAlpha = 0.16;
-      ctx.fill();
-
+      // Fast lightweight vector circles (eliminated rotating accretion ellipse matrix transforms)
       ctx.beginPath();
       ctx.arc(pOrb.x, pOrb.y, 8, 0, Math.PI * 2);
       ctx.fillStyle = agColor;
-      ctx.globalAlpha = 0.40;
+      ctx.globalAlpha = 0.35;
       ctx.fill();
 
-      // Layer 3: Spinning accretion ring / halo with animated rotation angle
-      const haloR = 9.0 + Math.sin(now * 0.0032 + subIdx) * 1.5;
-      ctx.save();
-      ctx.translate(pOrb.x, pOrb.y);
-      ctx.rotate(now * 0.003 + subIdx * 1.2);
       ctx.beginPath();
-      ctx.ellipse(0, 0, haloR, haloR * 0.45, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = agColor;
-      ctx.lineWidth = 1.4;
-      ctx.globalAlpha = 0.90;
-      ctx.stroke();
-      ctx.restore();
-
-      // Layer 1: White-hot core nucleus
-      ctx.beginPath();
-      ctx.arc(pOrb.x, pOrb.y, 4.5, 0, Math.PI * 2);
+      ctx.arc(pOrb.x, pOrb.y, 3.5, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = 1.0;
+      ctx.globalAlpha = 0.95;
       ctx.fill();
 
       // ───────────────────────────────────────────────────────────────────────
-      // D. STATIC & SLEEK BILLBOARD BADGE (ANCHORED TO NODE, NOT REVOLVING WITH ORBIT)
+      // D. STATIC & SLEEK BILLBOARD BADGE (MASQUABLE & DISPARAÎT APRÈS 5 MIN D'INACTIVITÉ)
       // ───────────────────────────────────────────────────────────────────────
-      // Hide full text badges when zoomed out far to prevent cluttering the cosmos
-      if (zoom >= 0.22) {
+      const isInactive = this.state.isAgentInactive(ag);
+      if (this.state.settings.showAiNames && !isInactive && zoom >= 0.22) {
         const agentIcon = agNameLower.includes('claude') ? '✨'
           : agNameLower.includes('gemini') ? '⚡'
           : agNameLower.includes('cursor') ? '🎯'
           : agNameLower.includes('antigravity') ? '🪐'
           : '🤖';
-        // Lighten display: Only show icon + clean name (no long noisy action sentence)
         const shortName = agentCleanName.length > 14 ? agentCleanName.slice(0, 12) + '…' : agentCleanName;
         const tagText = `${agentIcon} ${shortName}`;
 

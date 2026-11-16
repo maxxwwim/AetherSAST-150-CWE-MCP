@@ -1564,6 +1564,10 @@ pub(crate) fn format_attachment_details(
 }
 
 pub(crate) fn offline_active_target_fallback(project_path: &str, symbol_id: &str) -> String {
+    if security_linter::SecretGuard::is_secret_path(symbol_id) {
+        return format!("🛡️ [SÉCURITÉ V2 / SECRET GUARD] Accès interdit : Le fichier ou symbole '{}' est un fichier de secrets ou de configuration sensible (.env, clés privées, credentials). L'accès direct par l'IA est strictement bloqué.", symbol_id);
+    }
+
     let p_buf = resolve_project_root(project_path);
 
     // Detect if target is an Obsidian Vault or Mixed Project
