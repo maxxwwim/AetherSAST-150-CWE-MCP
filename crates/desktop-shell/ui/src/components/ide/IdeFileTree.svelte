@@ -250,8 +250,7 @@
     }
 
     cockpitState.ideActiveFile = node.path;
-    // Clear line target when switching file from tree
-    cockpitState.ideTargetLine = null;
+    cockpitState.openFileInIde(node.path);
 
     // Check if there is an exact or related node in cockpitState.graph.nodes
     const matchedNode = cockpitState.graph.nodes.find(

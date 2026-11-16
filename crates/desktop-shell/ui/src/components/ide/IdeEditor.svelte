@@ -13,8 +13,20 @@
     AlertCircle,
     Code2,
     Eye,
-    Edit3
+    Edit3,
+    FileCode,
+    XCircle
   } from '@lucide/svelte';
+
+  interface FileBuffer {
+    content: string;
+    savedContent: string;
+    cursorLine: number;
+    cursorCol: number;
+  }
+
+  // Multi-tab in-memory buffers preserving uncommitted edits across tab switches
+  let buffers = $state<Record<string, FileBuffer>>({});
 
   let content = $state('');
   let savedContent = $state('');
@@ -23,6 +35,10 @@
   let isSaving = $state(false);
   let errorMessage = $state<string | null>(null);
   let successNotice = $state<string | null>(null);
+
+  // Target line highlight flash (active for ~2.5s on jump)
+  let highlightedLine = $state<number | null>(null);
+  let highlightTimer: any = null;
 
   // Editor View Mode: 'edit' (interactive textarea) or 'preview' (syntax highlighted lines)
   let editorViewMode = $state<'edit' | 'preview'>('edit');
@@ -40,6 +56,13 @@
 
   // Is buffer dirty (unsaved changes)
   let isDirty = $derived(content !== savedContent);
+
+  // Check if a specific tab buffer is dirty
+  function isTabDirty(filePath: string): boolean {
+    if (filePath === loadedFile) return isDirty;
+    const b = buffers[filePath];
+    return Boolean(b && b.content !== b.savedContent);
+  }
 
   // Split lines
   let lines = $derived(content.split('\n'));
@@ -115,23 +138,78 @@
     }
   });
 
-  // Watch for active file changes in graphState and reload content
+  // Watch for active file changes in graphState and switch / load tab
   $effect(() => {
     const activeFile = cockpitState.ideActiveFile;
     if (activeFile && activeFile !== loadedFile) {
       loadFile(activeFile);
+    } else if (!activeFile && loadedFile) {
+      loadedFile = null;
+      content = '';
+      savedContent = '';
     }
   });
 
-  // Watch for target line changes and jump to it
+  async function loadFile(activeFile: string) {
+    await switchToFile(activeFile);
+  }
+
+  // Watch for target line and jump tick changes and jump to it
   $effect(() => {
+    const _tick = cockpitState.ideTargetTick;
     const line = cockpitState.ideTargetLine;
     if (line && line > 0) {
-      scrollToLine(line);
+      tick().then(() => {
+        scrollToLine(line);
+      });
     }
   });
 
-  async function loadFile(filePath: string) {
+  // Keep active buffer content in sync with textarea
+  function handleContentInput() {
+    if (loadedFile) {
+      buffers[loadedFile] = {
+        content,
+        savedContent,
+        cursorLine,
+        cursorCol
+      };
+    }
+  }
+
+  async function switchToFile(filePath: string) {
+    // 1. Stash current buffer if modified or open
+    if (loadedFile) {
+      buffers[loadedFile] = {
+        content,
+        savedContent,
+        cursorLine,
+        cursorCol
+      };
+    }
+
+    // 2. Check if new file buffer already cached in memory
+    if (buffers[filePath]) {
+      const b = buffers[filePath];
+      loadedFile = filePath;
+      content = b.content;
+      savedContent = b.savedContent;
+      cursorLine = b.cursorLine || 1;
+      cursorCol = b.cursorCol || 1;
+      cockpitState.ideCursorPosition = { line: cursorLine, ch: cursorCol };
+
+      await tick();
+      if (cockpitState.ideTargetLine && cockpitState.ideTargetLine > 0) {
+        scrollToLine(cockpitState.ideTargetLine);
+      }
+      return;
+    }
+
+    // 3. Otherwise fetch from backend API
+    await loadFileFromDisk(filePath);
+  }
+
+  async function loadFileFromDisk(filePath: string) {
     isLoading = true;
     errorMessage = null;
     successNotice = null;
@@ -145,9 +223,17 @@
         cursorCol = 1;
         cockpitState.ideCursorPosition = { line: 1, ch: 1 };
 
+        // Cache in buffers
+        buffers[filePath] = {
+          content,
+          savedContent,
+          cursorLine: 1,
+          cursorCol: 1
+        };
+
         await tick();
-        if (targetLine && targetLine > 0) {
-          scrollToLine(targetLine);
+        if (cockpitState.ideTargetLine && cockpitState.ideTargetLine > 0) {
+          scrollToLine(cockpitState.ideTargetLine);
         }
       } else {
         errorMessage = res?.error || 'Erreur lors du chargement du fichier';
@@ -168,6 +254,9 @@
       const res = await api.saveFile(cockpitState.ideActiveFile, content);
       if (res && res.status === 'ok') {
         savedContent = content;
+        if (loadedFile && buffers[loadedFile]) {
+          buffers[loadedFile].savedContent = content;
+        }
         successNotice = 'Enregistré sur disque';
         setTimeout(() => {
           if (successNotice === 'Enregistré sur disque') {
@@ -189,6 +278,13 @@
     cursorLine = safeLine;
     cursorCol = 1;
     cockpitState.ideCursorPosition = { line: safeLine, ch: 1 };
+
+    // Trigger glowing visual flash on the function line
+    highlightedLine = safeLine;
+    if (highlightTimer) clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => {
+      highlightedLine = null;
+    }, 2500);
 
     // 1. Textarea scrolling
     if (textareaEl) {
@@ -221,6 +317,10 @@
     cursorLine = lineSplits.length;
     cursorCol = lineSplits[lineSplits.length - 1].length + 1;
     cockpitState.ideCursorPosition = { line: cursorLine, ch: cursorCol };
+    if (loadedFile && buffers[loadedFile]) {
+      buffers[loadedFile].cursorLine = cursorLine;
+      buffers[loadedFile].cursorCol = cursorCol;
+    }
   }
 
   function handleTextareaKeydown(e: KeyboardEvent) {
@@ -246,6 +346,7 @@
       const end = textareaEl?.selectionEnd ?? 0;
       const spaces = '    ';
       content = content.substring(0, start) + spaces + content.substring(end);
+      handleContentInput();
       tick().then(() => {
         if (textareaEl) {
           textareaEl.selectionStart = textareaEl.selectionEnd = start + spaces.length;
@@ -284,6 +385,11 @@
     }
   }
 
+  function closeTab(filePath: string) {
+    delete buffers[filePath];
+    cockpitState.closeIdeTab(filePath);
+  }
+
   // Multi-language keyword sets for tokenization
   const KEYWORD_MAP: Record<string, Set<string>> = {
     rust: new Set([
@@ -305,7 +411,6 @@
     ])
   };
 
-  // General fallback keywords
   const GENERAL_KEYWORDS = new Set([
     ...Array.from(KEYWORD_MAP.rust),
     ...Array.from(KEYWORD_MAP.typescript),
@@ -358,33 +463,76 @@
 
   onMount(() => {
     if (cockpitState.ideActiveFile) {
-      loadFile(cockpitState.ideActiveFile);
+      if (!cockpitState.ideOpenFiles.includes(cockpitState.ideActiveFile)) {
+        cockpitState.ideOpenFiles.push(cockpitState.ideActiveFile);
+      }
+      switchToFile(cockpitState.ideActiveFile);
     }
   });
 </script>
 
 <div class="w-full h-full flex flex-col bg-[#060810] text-slate-100 overflow-hidden relative">
-  <!-- Top Editor Toolbar & Tab Strip -->
-  <div class="h-9 px-3 bg-[#090d16] border-b border-white/10 flex items-center justify-between gap-2 shrink-0 select-none">
-    <!-- Active File Tab -->
-    <div class="flex items-center gap-2 min-w-0">
-      <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-t-md bg-[#060810] border-t border-x border-white/10 text-xs font-mono font-medium text-slate-200 min-w-0 max-w-[260px] truncate shadow-sm">
-        <Code2 class="w-3.5 h-3.5 text-sky-400 shrink-0" />
-        <span class="truncate">{cockpitState.ideActiveFile ? cockpitState.ideActiveFile.split('/').pop() : 'Aucun fichier'}</span>
-        {#if isDirty}
-          <span class="w-2 h-2 rounded-full bg-amber-400 ml-1 shrink-0" title="Modifications non enregistrées"></span>
-        {/if}
-      </div>
+  <!-- Multi-Tab Strip & Actions Bar -->
+  <div class="h-9 bg-[#090d16] border-b border-white/10 flex items-stretch justify-between gap-1 shrink-0 select-none overflow-x-auto scrollbar-none">
+    <!-- Open File Tabs -->
+    <div class="flex items-stretch min-w-0 flex-1 overflow-x-auto scrollbar-none">
+      {#if cockpitState.ideOpenFiles.length === 0}
+        <div class="flex items-center px-3 text-xs font-mono text-slate-500 italic">
+          Aucun fichier ouvert
+        </div>
+      {:else}
+        {#each cockpitState.ideOpenFiles as tabPath (tabPath)}
+          {@const isActive = tabPath === cockpitState.ideActiveFile}
+          {@const isDirtyTab = isTabDirty(tabPath)}
+          {@const tabName = tabPath.split('/').pop() || tabPath}
+          <div
+            role="tab"
+            tabindex="0"
+            onclick={() => cockpitState.openFileInIde(tabPath)}
+            onkeydown={(e) => { if (e.key === 'Enter') cockpitState.openFileInIde(tabPath); }}
+            class="group relative flex items-center gap-1.5 px-3 text-xs font-mono border-r border-white/10 transition-all cursor-pointer min-w-0 max-w-[210px] shrink-0 select-none
+              {isActive
+                ? 'bg-[#060810] text-sky-200 border-t-2 border-t-sky-400 font-semibold shadow-xs'
+                : 'bg-[#080b15]/70 hover:bg-[#0c111e] text-slate-400 hover:text-slate-200 border-t-2 border-t-transparent'}"
+            title="{tabPath}{isDirtyTab ? ' (modifications non enregistrées)' : ''}"
+          >
+            <Code2 class="w-3.5 h-3.5 shrink-0 {isActive ? 'text-sky-400' : 'text-slate-500 group-hover:text-slate-400'}" />
+            <span class="truncate flex-1">{tabName}</span>
 
-      {#if cockpitState.ideActiveFile}
-        <span class="text-[10px] font-mono text-slate-500 hidden sm:inline truncate max-w-[220px]" title={cockpitState.ideActiveFile}>
-          {cockpitState.ideActiveFile}
-        </span>
+            {#if isDirtyTab}
+              <span class="w-2 h-2 rounded-full bg-amber-400 shrink-0 shadow-[0_0_6px_#f59e0b]" title="Non enregistré"></span>
+            {/if}
+
+            <button
+              type="button"
+              onclick={(e) => {
+                e.stopPropagation();
+                closeTab(tabPath);
+              }}
+              class="p-0.5 rounded text-slate-500 hover:text-rose-300 hover:bg-rose-500/20 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer"
+              title="Fermer l'onglet ({tabName})"
+            >
+              <X class="w-3 h-3" />
+            </button>
+          </div>
+        {/each}
       {/if}
     </div>
 
     <!-- Actions Bar -->
-    <div class="flex items-center gap-1.5 shrink-0">
+    <div class="flex items-center gap-1.5 px-2 shrink-0">
+      {#if cockpitState.ideOpenFiles.length > 1}
+        <button
+          type="button"
+          onclick={() => cockpitState.closeAllIdeTabs()}
+          class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-500 hover:text-rose-300 hover:bg-rose-500/15 transition-colors cursor-pointer"
+          title="Fermer tous les onglets"
+        >
+          <XCircle class="w-3 h-3" />
+          <span class="hidden xl:inline">Tout fermer</span>
+        </button>
+      {/if}
+
       <!-- Search Overlay Trigger Button -->
       <button
         type="button"
@@ -430,7 +578,7 @@
         onclick={saveCurrentFile}
         disabled={isSaving || !cockpitState.ideActiveFile}
         class="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer shadow-sm
-          {isDirty ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 animate-pulse' : 'bg-white/10 hover:bg-white/15 text-slate-200'}"
+          {isDirty ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.4)] animate-pulse' : 'bg-white/10 hover:bg-white/15 text-slate-200'}"
         title="Enregistrer les modifications sur disque (Ctrl+S)"
       >
         {#if isSaving}
@@ -530,11 +678,17 @@
       </div>
     {/if}
 
-    {#if !cockpitState.ideActiveFile}
-      <div class="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs font-mono gap-2 p-6">
-        <Code2 class="w-10 h-10 text-slate-600" />
-        <span class="text-slate-400 font-semibold">Aucun fichier sélectionné</span>
-        <span class="text-slate-600 text-[11px]">Choisissez un fichier dans l'arborescence à gauche pour démarrer l'édition.</span>
+    {#if !cockpitState.ideActiveFile || cockpitState.ideOpenFiles.length === 0}
+      <div class="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs font-mono gap-3 p-6 text-center">
+        <div class="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center text-sky-400 shadow-inner">
+          <Code2 class="w-7 h-7 text-sky-400/80" />
+        </div>
+        <div class="space-y-1">
+          <span class="text-slate-200 text-sm font-semibold block">Aucun fichier ouvert dans l'IDE</span>
+          <span class="text-slate-500 text-xs block max-w-sm">
+            Cliquez sur un fichier dans l'arborescence à gauche ou sélectionnez une bulle dans le graphe 3D (<kbd class="px-1.5 py-0.5 bg-white/5 rounded border border-white/10 text-slate-300">Alt+1</kbd>).
+          </span>
+        </div>
       </div>
     {:else if editorViewMode === 'edit'}
       <!-- Line Numbers Gutter -->
@@ -544,12 +698,13 @@
       >
         {#each lines as _, idx}
           {@const lineNum = idx + 1}
+          {@const isHighlighted = highlightedLine === lineNum}
           {@const isTarget = targetLine === lineNum}
           {@const isCurrent = cursorLine === lineNum}
           <div
             class="h-[21px] transition-colors
-              {isTarget ? 'text-sky-300 font-bold bg-sky-500/20 rounded-l' : ''}
-              {isCurrent && !isTarget ? 'text-slate-400 font-semibold' : ''}"
+              {isHighlighted ? 'text-sky-200 font-bold bg-sky-500/40 rounded-l animate-pulse' : isTarget ? 'text-sky-300 font-bold bg-sky-500/20 rounded-l' : ''}
+              {isCurrent && !isTarget && !isHighlighted ? 'text-slate-400 font-semibold' : ''}"
           >
             {lineNum}
           </div>
@@ -560,6 +715,7 @@
       <textarea
         bind:this={textareaEl}
         bind:value={content}
+        oninput={handleContentInput}
         onscroll={handleEditorScroll}
         onkeydown={handleTextareaKeydown}
         onkeyup={updateCursorPosition}
@@ -579,13 +735,14 @@
       >
         {#each lines as lineText, idx}
           {@const lineNum = idx + 1}
+          {@const isHighlighted = highlightedLine === lineNum}
           {@const isTarget = targetLine === lineNum}
           <div
             data-line={lineNum}
             class="flex items-baseline hover:bg-white/[0.03] px-1 rounded transition-colors h-[21px]
-              {isTarget ? 'bg-sky-500/25 border-l-2 border-sky-400 font-semibold shadow-sm' : ''}"
+              {isHighlighted ? 'bg-sky-500/35 border-l-4 border-sky-400 font-semibold shadow-md ring-1 ring-sky-400/40' : isTarget ? 'bg-sky-500/25 border-l-2 border-sky-400 font-semibold shadow-sm' : ''}"
           >
-            <span class="w-10 shrink-0 select-none text-right pr-3 text-[10px] {isTarget ? 'text-sky-300 font-bold' : 'text-slate-600'}">
+            <span class="w-10 shrink-0 select-none text-right pr-3 text-[10px] {isHighlighted ? 'text-sky-200 font-bold' : isTarget ? 'text-sky-300 font-bold' : 'text-slate-600'}">
               {lineNum}
             </span>
             <span class="whitespace-pre flex-1 truncate">
@@ -604,8 +761,8 @@
     <div class="flex items-center gap-3">
       <span class="flex items-center gap-1">
         {#if isDirty}
-          <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-          <span class="text-amber-300 font-semibold">● Modifié</span>
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_#f59e0b]"></span>
+          <span class="text-amber-300 font-semibold">● Modifications non enregistrées</span>
         {:else if isSaving}
           <RefreshCw class="w-2.5 h-2.5 text-sky-400 animate-spin" />
           <span class="text-sky-300">Enregistrement...</span>

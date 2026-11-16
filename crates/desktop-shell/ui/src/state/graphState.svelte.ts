@@ -291,6 +291,8 @@ export class CockpitState {
   ideActiveFile = $state<string | null>(null);
   ideTargetLine = $state<number | null>(null);
   ideCursorPosition = $state<{ line: number; ch: number } | null>(null);
+  ideOpenFiles = $state<string[]>([]);
+  ideTargetTick = $state<number>(0);
   docMode = $state<'library' | 'folder' | 'symbol' | 'system'>('library');
   docSelectedPath = $state<string | null>(null);
   searchQuery = $state('');
@@ -1564,6 +1566,50 @@ export class CockpitState {
     }
   }
 
+  openFileInIde(filePath: string, targetLine?: number | null) {
+    if (!filePath) return;
+    if (!this.ideOpenFiles.includes(filePath)) {
+      this.ideOpenFiles = [...this.ideOpenFiles, filePath];
+    }
+    this.ideActiveFile = filePath;
+    if (typeof targetLine === 'number' && targetLine > 0) {
+      this.ideTargetLine = targetLine;
+    }
+    this.ideTargetTick++;
+  }
+
+  closeIdeTab(filePath: string) {
+    const idx = this.ideOpenFiles.indexOf(filePath);
+    if (idx !== -1) {
+      this.ideOpenFiles = this.ideOpenFiles.filter((p) => p !== filePath);
+      if (this.ideActiveFile === filePath) {
+        if (this.ideOpenFiles.length > 0) {
+          const nextIdx = Math.min(idx, this.ideOpenFiles.length - 1);
+          this.ideActiveFile = this.ideOpenFiles[nextIdx];
+        } else {
+          this.ideActiveFile = null;
+          this.ideTargetLine = null;
+        }
+      }
+    }
+  }
+
+  closeAllIdeTabs() {
+    this.ideOpenFiles = [];
+    this.ideActiveFile = null;
+    this.ideTargetLine = null;
+  }
+
+  openInIde(filePath: string, targetLine?: number | null) {
+    this.openFileInIde(filePath, targetLine);
+    this.viewMode = 'ide';
+    if (typeof window !== 'undefined') {
+      import('../lib/api')
+        .then(({ api }) => api.switchViewMode('ide'))
+        .catch(() => {});
+    }
+  }
+
   selectSymbol(symbolId: string, focusCamera = false) {
     const found = this.graph.nodes.find((n) => n.id === symbolId);
     if (found) {
@@ -1574,6 +1620,7 @@ export class CockpitState {
         if (typeof found.line_number === 'number' && found.line_number > 0) {
           this.ideTargetLine = found.line_number;
         }
+        this.openFileInIde(found.file_path, found.line_number);
       }
       this.isInspectorOpen = true;
       if (typeof window !== 'undefined' && window.innerWidth < 940) {

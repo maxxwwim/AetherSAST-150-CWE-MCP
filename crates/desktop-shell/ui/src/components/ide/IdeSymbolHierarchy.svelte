@@ -68,7 +68,12 @@
   function handleSelectSymbol(sym: SymbolBubble, lineOverride?: number) {
     cockpitState.activeSymbol = sym;
     const line = lineOverride || sym.line_number || 1;
-    cockpitState.ideTargetLine = line;
+    if (sym.file_path) {
+      cockpitState.openFileInIde(sym.file_path, line);
+    } else {
+      cockpitState.ideTargetLine = line;
+      cockpitState.ideTargetTick++;
+    }
 
     // Trigger AI active target update and WebGL camera focus
     api.setAiTarget(sym.id, 'IDE Navigation').catch((err) => {
