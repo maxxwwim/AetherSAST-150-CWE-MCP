@@ -2085,6 +2085,23 @@ export class AetherEngine {
     ctx.restore();
   }
 
+  private isSmallFunctionCulled(n: SymbolBubble, activeId: string | null): boolean {
+    if (n.id === activeId || n.id === this.hoveredNodeId) return false;
+    const alertKind = getNodeAlertKind(n);
+    if (alertKind === 'security' || alertKind === 'lines_exceeded') return false;
+    const { isFunction } = this.classifyNode(n);
+    if (!isFunction) return false;
+
+    const lod = this.state.lodLevel;
+    if (lod === 1) return true;
+    if (lod === 2) {
+      const cc = n.cyclomatic_complexity || 1;
+      const isHugeProject = this.state.graph.nodes.length > 1500;
+      if (isHugeProject && cc < 5) return true;
+    }
+    return false;
+  }
+
   private renderEdges(ctx: CanvasRenderingContext2D, now: number) {
     const edges = this.state.graph.edges;
     if (!edges || edges.length === 0) return;
@@ -2111,6 +2128,7 @@ export class AetherEngine {
     let hasCalls = false, hasImports = false, hasQueries = false, hasViolates = false, hasWarns = false, hasRealtime = false, hasNetwork = false, hasSubmits = false;
     const pulseParticles: { x: number; y: number; color: string }[] = [];
     const midChevrons: { x: number; y: number; angle: number; color: string }[] = [];
+    const functionStars = new Map<string, { x: number; y: number; colorRgb: { r: number; g: number; b: number } }>();
     const focusEdges: {
       sourceNode: SymbolBubble;
       targetNode: SymbolBubble;
@@ -2169,6 +2187,23 @@ export class AetherEngine {
           isViolation: isViolEdge,
           isIncoming: e.target === focusId && e.source !== focusId,
         });
+
+        if (this.isSmallFunctionCulled(s, activeId) && !functionStars.has(s.id)) {
+          const col = getFolderColor(sFolder || 'root');
+          functionStars.set(s.id, {
+            x: p1.x,
+            y: p1.y,
+            colorRgb: { r: Math.round(col.r * 255), g: Math.round(col.g * 255), b: Math.round(col.b * 255) },
+          });
+        }
+        if (this.isSmallFunctionCulled(t, activeId) && !functionStars.has(t.id)) {
+          const col = getFolderColor(tFolder || 'root');
+          functionStars.set(t.id, {
+            x: p2.x,
+            y: p2.y,
+            colorRgb: { r: Math.round(col.r * 255), g: Math.round(col.g * 255), b: Math.round(col.b * 255) },
+          });
+        }
       }
     }
 
@@ -2206,6 +2241,24 @@ export class AetherEngine {
 
       const sFolder = s.folder || s.cluster_id;
       const tFolder = t.folder || t.cluster_id;
+
+      if (this.isSmallFunctionCulled(s, activeId) && !functionStars.has(s.id)) {
+        const col = getFolderColor(sFolder || 'root');
+        functionStars.set(s.id, {
+          x: p1.x,
+          y: p1.y,
+          colorRgb: { r: Math.round(col.r * 255), g: Math.round(col.g * 255), b: Math.round(col.b * 255) },
+        });
+      }
+      if (this.isSmallFunctionCulled(t, activeId) && !functionStars.has(t.id)) {
+        const col = getFolderColor(tFolder || 'root');
+        functionStars.set(t.id, {
+          x: p2.x,
+          y: p2.y,
+          colorRgb: { r: Math.round(col.r * 255), g: Math.round(col.g * 255), b: Math.round(col.b * 255) },
+        });
+      }
+
       const isCross = Boolean(sFolder && tFolder && sFolder !== tFolder);
       const isCurved = isCross && rel !== 'contains';
       const dx = p2.x - p1.x;
@@ -2424,6 +2477,46 @@ export class AetherEngine {
             ctx.fillStyle = item.color;
             ctx.fillText(item.node.name, item.p.x, item.p.y - 12);
           }
+        }
+      }
+    }
+
+    // 3. Luminous micro-stars / glowing bubbles for small functions at edge endpoints (no lines in void)
+    if (functionStars.size > 0) {
+      const starR = Math.max(1.8, Math.min(2.8, 1.8 * Math.sqrt(zoom)));
+
+      for (const star of functionStars.values()) {
+        const { x, y, colorRgb } = star;
+
+        // Outer soft glowing halo (diffuse nebula around the micro-bubble)
+        ctx.beginPath();
+        ctx.arc(x, y, starR * 2.3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, 0.28)`;
+        ctx.fill();
+
+        // Inner glowing core
+        ctx.beginPath();
+        ctx.arc(x, y, starR, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${Math.min(255, colorRgb.r + 90)}, ${Math.min(255, colorRgb.g + 90)}, ${Math.min(255, colorRgb.b + 90)}, 0.95)`;
+        ctx.fill();
+
+        // Brilliant central stellar spark
+        ctx.beginPath();
+        ctx.arc(x, y, starR * 0.45, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        // Subtle diamond cross spark glint when zoomed in
+        if (!isEco && zoom >= 0.75) {
+          const sparkLen = starR * 2.0;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+          ctx.lineWidth = 0.75;
+          ctx.beginPath();
+          ctx.moveTo(x - sparkLen, y);
+          ctx.lineTo(x + sparkLen, y);
+          ctx.moveTo(x, y - sparkLen);
+          ctx.lineTo(x, y + sparkLen);
+          ctx.stroke();
         }
       }
     }

@@ -9,12 +9,16 @@ Push-Location "$rootDir\crates\desktop-shell\ui"
 npm run build
 Pop-Location
 
+Write-Host "📦 Génération de docs/index.html avec le graphe AST embarqué..." -ForegroundColor Cyan
+cargo test -p desktop-shell --bin aether_engine viewer::tests::test_export_docs_index_html
+
 Write-Host "🚀 Déploiement sur la branche gh-pages..." -ForegroundColor Cyan
 $tempRepo = Join-Path ([System.IO.Path]::GetTempPath()) "aether-gh-pages"
 if (Test-Path $tempRepo) { Remove-Item -Recurse -Force $tempRepo }
 New-Item -ItemType Directory -Path $tempRepo | Out-Null
 
 Copy-Item -Recurse "$rootDir\crates\desktop-shell\dist\*" $tempRepo
+Copy-Item "$rootDir\docs\index.html" "$tempRepo\index.html"
 Set-Content (Join-Path $tempRepo ".nojekyll") ""
 
 Push-Location $tempRepo
