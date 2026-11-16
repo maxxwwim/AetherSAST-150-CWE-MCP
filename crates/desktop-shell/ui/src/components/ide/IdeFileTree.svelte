@@ -323,6 +323,7 @@
 
   onMount(() => {
     fetchFileList();
+    console.log('ColorsByFile Map:', colorsByFile);
   });
 </script>
 
@@ -419,7 +420,7 @@
 
             <IconComp
               class="w-3.5 h-3.5 shrink-0 {bubbleColor ? '' : iconColor}"
-              style={bubbleColor ? `color: ${bubbleColor}` : ''}
+              color={bubbleColor || undefined}
             />
             <span class="truncate">{node.name}</span>
           </div>
