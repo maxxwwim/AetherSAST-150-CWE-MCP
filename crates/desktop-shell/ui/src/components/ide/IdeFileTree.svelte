@@ -40,7 +40,7 @@
   let searchFilter = $state('');
   let expandedPaths = $state<Set<string>>(new Set(['crates', 'src', 'crates/desktop-shell', 'crates/desktop-shell/ui']));
 
-  // Pre-calculate file security anomalies from cockpitState.graph.nodes
+  // Pre-calculate file security anomalies and bubble colors from cockpitState.graph.nodes
   let anomaliesByFile = $derived.by(() => {
     const map = new Map<string, number>();
     for (const node of cockpitState.graph.nodes) {
@@ -51,6 +51,20 @@
         (node.metadata?.cve_anomalies && node.metadata.cve_anomalies.length > 0);
       if (hasAnomaly) {
         map.set(norm, (map.get(norm) || 0) + 1);
+      }
+    }
+    return map;
+  });
+
+  let colorsByFile = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const node of cockpitState.graph.nodes) {
+      if (node.file_path && node.color) {
+        const norm = node.file_path.replace(/\\/g, '/');
+        // Only map if not already set or prioritize specific file nodes
+        if (!map.has(norm)) {
+          map.set(norm, node.color);
+        }
       }
     }
     return map;
@@ -374,6 +388,7 @@
         {@const isSelected = cockpitState.ideActiveFile === node.path}
         {@const IconComp = node.is_dir ? (isExpanded ? FolderOpen : Folder) : getFileIcon(node.extension)}
         {@const iconColor = node.is_dir ? 'text-amber-300' : getFileColor(node.extension)}
+        {@const bubbleColor = node.is_dir ? null : colorsByFile.get(node.path)}
 
         <div
           role="button"
@@ -402,7 +417,10 @@
               <span class="w-4 h-4 shrink-0"></span>
             {/if}
 
-            <IconComp class="w-3.5 h-3.5 shrink-0 {iconColor}" />
+            <IconComp
+              class="w-3.5 h-3.5 shrink-0 {bubbleColor ? '' : iconColor}"
+              style={bubbleColor ? `color: ${bubbleColor}` : ''}
+            />
             <span class="truncate">{node.name}</span>
           </div>
 
