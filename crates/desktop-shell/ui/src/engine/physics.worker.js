@@ -183,10 +183,7 @@ function stepWorkerPhysics(zoom = 1.0) {
   let targetCount = 0;
 
   // 1. Pull towards active layout
-  const inTransition = physicsCooldown > 35 || (targetCount > 0 && (distToTargetSum / targetCount) > 18);
-  const pull = (d === 1)
-    ? (inTransition ? 0.16 : (isHuge ? 0.055 : 0.045))
-    : (inTransition ? 0.24 : 0.18);
+  const pull = (d === 1) ? (isHuge ? 0.045 : 0.035) : 0.18;
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     if (activeDragId && n.id === activeDragId) continue;
@@ -208,9 +205,7 @@ function stepWorkerPhysics(zoom = 1.0) {
   }
 
   // 2. Hooke Spring Attraction
-  const springFactor = (d === 1)
-    ? (inTransition ? 0.35 : 1.0)
-    : 0.12;
+  const springFactor = (d === 1) ? 1.0 : 0.12;
   const maxEdges = isHuge ? Math.min(edges.length, 2500) : edges.length;
   for (let i = 0; i < maxEdges; i++) {
     const e = edges[i];
@@ -233,21 +228,21 @@ function stepWorkerPhysics(zoom = 1.0) {
     t.vy = (t.vy || 0) - fy;
   }
 
-  // 2b. Cellular Membrane Confinement & Dynamic Cluster Geometry
+  // 2b. Cellular Membrane Confinement in Obsidian Galaxy View
   let exportClusters = null;
-  stepCount = (stepCount + 1) & 0xfff;
-  const shouldUpdateClusters = (stepCount % 2 === 0) || physicsCooldown < 10 || !cachedExportClusters;
-  if (shouldUpdateClusters) {
-    const clusterRes = computeFolderClusters(zoom);
-    exportClusters = clusterRes.exportClusters;
-    cachedExportClusters = exportClusters;
-    cachedFolderStats = clusterRes.folderStats;
-  } else {
-    exportClusters = cachedExportClusters;
-  }
-  const folderStats = cachedFolderStats || computeFolderClusters(zoom).folderStats;
-
   if (d === 1) {
+    stepCount = (stepCount + 1) & 0xfff;
+    const shouldUpdateClusters = (stepCount % 2 === 0) || physicsCooldown < 10 || !cachedExportClusters;
+    if (shouldUpdateClusters) {
+      const clusterRes = computeFolderClusters(zoom);
+      exportClusters = clusterRes.exportClusters;
+      cachedExportClusters = exportClusters;
+      cachedFolderStats = clusterRes.folderStats;
+    } else {
+      exportClusters = cachedExportClusters;
+    }
+    const folderStats = cachedFolderStats || computeFolderClusters(zoom).folderStats;
+
     // Intra-cellular node anti-stick & comfort spacing (classes, functions, files)
     folderStats.forEach((st) => {
       if (!st.nodes || st.nodes.length <= 1) return;
@@ -408,12 +403,8 @@ function stepWorkerPhysics(zoom = 1.0) {
   }
 
   // 3. Integration & Friction Damping (with velocity deadzone to prevent micro-jitter)
-  const maxSpeed = (d === 1)
-    ? (inTransition ? 20.0 : 4.5)
-    : (inTransition ? 24.0 : 16.0);
-  const friction = (d === 1)
-    ? (inTransition ? 0.72 : 0.76)
-    : 0.70;
+  const maxSpeed = (d === 1) ? 3.2 : 16.0;
+  const friction = (d === 1) ? 0.76 : 0.70;
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     if (activeDragId && n.id === activeDragId) {
@@ -456,8 +447,8 @@ function stepWorkerPhysics(zoom = 1.0) {
     positions[i * 2 + 1] = nodes[i].y;
   }
 
-  // Throttled cluster transfer: only send on drag, every 6 frames, or when sleeping
-  const isClusterFrame = activeDragId || (stepCount % 6 === 0) || physicsSleeping || !cachedExportClusters;
+  // Throttled cluster transfer: only send on drag, every 12 frames, or when sleeping
+  const isClusterFrame = activeDragId || (stepCount % 12 === 0) || physicsSleeping || !cachedExportClusters;
   let clustersToSend = null;
   if (isClusterFrame) {
     if (!cachedExportClusters) {
@@ -483,10 +474,7 @@ self.onmessage = function(e) {
   } else if (type === 'SET_DEPTH') {
     depth = payload.depth || 1;
     physicsSleeping = false;
-    physicsCooldown = 180;
-    cachedExportClusters = null;
-    cachedFolderStats = null;
-    folderAnchors.clear();
+    physicsCooldown = 150;
   } else if (type === 'SET_LAYERS') {
     if (payload.activeLayers) activeLayers = new Set(payload.activeLayers);
     if (payload.hiddenModules) hiddenModules = new Set(payload.hiddenModules);

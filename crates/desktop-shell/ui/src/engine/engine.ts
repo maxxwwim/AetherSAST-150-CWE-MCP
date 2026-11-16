@@ -79,7 +79,6 @@ export class AetherEngine {
   private lastVisionMode = 'standard';
   private lastActiveSymbolId: string | null = null;
   private lastLodLevel = 1;
-  private lastActiveLayout: string = 'Z-2';
   private lastFitTick = 0;
   private lastFocusTick = 0;
   private lastSnapshotTick = 0;
@@ -168,8 +167,7 @@ export class AetherEngine {
               lobeProfile: new Float32Array(cl.lobeProfile || 12)
             };
             this.clusters.set(k, entry);
-          } else if (this.physics.isSleeping && !this.isDragging) {
-            // When completely motionless at rest, sync fine worker anchor metrics
+          } else {
             entry.cx = cl.cx;
             entry.cy = cl.cy;
             entry.sumX = cl.sumX;
@@ -200,14 +198,7 @@ export class AetherEngine {
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
-  private classifyNode(n: SymbolBubble): {
-    shaderType: number;
-    baseRadius: number;
-    isFunction: boolean;
-    isSmallFunction: boolean;
-    isClass: boolean;
-    isFile: boolean;
-  } {
+  private classifyNode(n: SymbolBubble): { shaderType: number; baseRadius: number; isFunction: boolean; isClass: boolean; isFile: boolean } {
     const kind = String(n.kind || n.symbol_type || '').toLowerCase();
     const isFunc =
       kind === 'function' ||
@@ -218,26 +209,11 @@ export class AetherEngine {
     const isClass = Boolean(n.is_class || kind === 'class' || kind === 'struct' || kind === 'interface' || kind === 'trait' || n.stereotype === '«Class»');
     const isForm = Boolean(n.is_form || kind === 'endpoint' || n.stereotype === '«Endpoint»' || n.stereotype === '«Form»');
 
-    // Détection des petites fonctions / micro-fonctions (loc <= 30 ou cc <= 2)
-    const loc = typeof n.loc === 'number' ? n.loc : typeof n.lines_count === 'number' ? n.lines_count : 0;
-    const cc = n.cyclomatic_complexity || n.complexity || 1;
-    const isSmallFunc = isFunc && (
-      (loc > 0 && loc <= 30) ||
-      (loc === 0 && cc <= 2) ||
-      (cc <= 2 && loc <= 50) ||
-      (!n.methods || n.methods.length === 0)
-    );
-
-    if (isFunc) {
-      if (isSmallFunc) {
-        return { shaderType: 4.0, baseRadius: 2.8, isFunction: true, isSmallFunction: true, isClass: false, isFile: false };
-      }
-      return { shaderType: 0.0, baseRadius: 4.8, isFunction: true, isSmallFunction: false, isClass: false, isFile: false };
-    }
-    if (isFile) return { shaderType: 1.0, baseRadius: 13.0, isFunction: false, isSmallFunction: false, isClass: false, isFile: true };
-    if (isClass) return { shaderType: 2.0, baseRadius: 14.5, isFunction: false, isSmallFunction: false, isClass: true, isFile: false };
-    if (isForm) return { shaderType: 3.0, baseRadius: 12.0, isFunction: false, isSmallFunction: false, isClass: false, isFile: false };
-    return { shaderType: 1.0, baseRadius: 9.5, isFunction: false, isSmallFunction: false, isClass: false, isFile: false };
+    if (isFunc) return { shaderType: 0.0, baseRadius: 4.6, isFunction: true, isClass: false, isFile: false };
+    if (isFile) return { shaderType: 1.0, baseRadius: 13.0, isFunction: false, isClass: false, isFile: true };
+    if (isClass) return { shaderType: 2.0, baseRadius: 14.5, isFunction: false, isClass: true, isFile: false };
+    if (isForm) return { shaderType: 3.0, baseRadius: 12.0, isFunction: false, isClass: false, isFile: false };
+    return { shaderType: 1.0, baseRadius: 9.5, isFunction: false, isClass: false, isFile: false };
   }
 
   private seedInitialClusters(nodes: SymbolBubble[]) {
@@ -439,7 +415,7 @@ export class AetherEngine {
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       const offset = i * 10;
-      const { baseRadius, shaderType, isFunction, isSmallFunction } = this.classifyNode(n);
+      const { baseRadius, isFunction } = this.classifyNode(n);
       const folder = n.cluster_id || n.folder || 'root';
       let col: RgbaColor = lod <= 2 ? getFolderColor(folder) : getLayerRgba(n.layer);
       let alpha = 1.0;
@@ -454,20 +430,17 @@ export class AetherEngine {
       const isLinesAlert = alertKind === 'lines_exceeded';
 
       // --- LoD BUBBLE FILTERING & SMART COLLAPSE ---
-      // LoD 1 (Architecture Macro): Affiche les fonctions sous forme de micro-étoiles scintillantes lumineuses (zéro trait dans le vide !)
-      // LoD 2 (Méso): Affiche fichiers, classes et micro-bulles pour les fonctions légères
-      // LoD 3 (Micro): Affiche l'intégralité des symboles AST avec leur taille complète
-      let st = shaderType;
+      // LoD 1 (Architecture Macro): Masque les 25 000+ fonctions/méthodes secondaires pour une vue claire des fichiers/classes/alertes
+      // LoD 2 (Méso): Affiche fichiers, classes, et fonctions à forte complexité (cc >= 5) ou alertées
+      // LoD 3 (Micro): Affiche l'intégralité des symboles AST
       if (lod === 1 && isFunction && !isSecurityAlert && !isFocus) {
-        r = 2.4;
-        alpha = 0.88;
-        st = 4.0; // Toute petite bulle / étoile lumineuse
+        r = 0.0;
+        alpha = 0.0;
       } else if (lod === 2 && isFunction && !isSecurityAlert && !isFocus) {
-        const cc = n.cyclomatic_complexity || n.complexity || 1;
+        const cc = n.cyclomatic_complexity || 1;
         if (isHugeProject && cc < 5) {
-          r = isSmallFunction ? 2.4 : 3.2;
-          alpha = 0.92;
-          st = 4.0;
+          r = 0.0;
+          alpha = 0.0;
         }
       }
 
@@ -523,7 +496,6 @@ export class AetherEngine {
       this.instanceData[offset + 4] = col.g;
       this.instanceData[offset + 5] = col.b;
       this.instanceData[offset + 6] = alpha;
-      this.instanceData[offset + 7] = st;
       this.instanceData[offset + 9] = gitStatusVal;
     }
 
@@ -604,7 +576,7 @@ export class AetherEngine {
     const { baseRadius, shaderType } = this.classifyNode(n);
     const scaleMult = n.id === activeId ? 1.65 : n.id === this.hoveredNodeId ? 1.35 : 1.0;
     const rawR = baseRadius * scaleMult * 2.85 * zoomFactor * zoom;
-    return Math.max(shaderType === 4.0 ? 2.2 : (shaderType > 0.5 ? 2.6 : 1.8), rawR);
+    return Math.max(shaderType > 0.5 ? 2.6 : 1.8, rawR);
   }
 
   private pickNode(sx: number, sy: number): SymbolBubble | null {
@@ -961,14 +933,8 @@ export class AetherEngine {
 
       this.selectedFolder = this.state.selectedFolder;
 
-      const currentLayout = this.state.activeLayout;
-      const currentLod = this.state.lodLevel;
-      if (this.lastActiveLayout !== currentLayout || this.lastLodLevel !== currentLod) {
-        this.lastActiveLayout = currentLayout;
-        this.lastLodLevel = currentLod;
-        const layoutDepth = currentLayout === 'Z-4' ? 4 : currentLayout === 'Z-3' ? 3 : currentLayout === 'Z-2' ? 2 : 1;
-        this.physics.setDepth(layoutDepth);
-        this.physics.wake(240);
+      if (this.lastLodLevel !== this.state.lodLevel) {
+        this.physics.setDepth(this.state.lodLevel);
         this.refreshVisionColors(true);
       } else if (
         this.lastVisionMode !== this.state.visionMode ||
@@ -1822,9 +1788,8 @@ export class AetherEngine {
         };
         this.clusters.set(folder, entry);
       } else {
-        // Fast responsive follow during drag / layout transitions, smooth damping on micro-jitter
-        const dist = Math.hypot(cx - entry.cx, cy - entry.cy);
-        const alpha = this.isDragging ? 0.90 : (dist > 25 ? 0.65 : 0.30);
+        // Exponential temporal smoothing prevents any frame-to-frame jitter or snapping
+        const alpha = 0.12;
         entry.cx += (cx - entry.cx) * alpha;
         entry.cy += (cy - entry.cy) * alpha;
         entry.sumX = sumX;
@@ -1847,7 +1812,7 @@ export class AetherEngine {
 
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
     this.folderPillBounds = [];
-    if (this.clusters.size === 0 || this.isDragging || !this.physics.isSleeping) {
+    if (this.clusters.size === 0 || this.isDragging) {
       this.syncLiveClusterEnvelopes();
     }
     if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;

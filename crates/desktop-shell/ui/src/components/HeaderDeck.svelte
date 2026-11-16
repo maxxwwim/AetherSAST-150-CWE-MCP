@@ -378,10 +378,7 @@ import { generateAuditMarkdown, generateAuditHtml, downloadBlob } from '../lib/a
       <!-- Sélecteur Niveau de Détail (LoD Continuum) -->
       <div class="flex items-center p-0.5 bg-white/[0.03] border border-white/10 rounded-md gap-0.5 text-[11px] font-mono">
         <select
-          onchange={(e) => {
-            cockpitState.lodLevel = parseInt(e.currentTarget.value, 10) as 1 | 2 | 3;
-            cockpitState.activeLayout = (`Z-${cockpitState.lodLevel}`) as 'Z-1' | 'Z-2' | 'Z-3';
-          }}
+          onchange={(e) => (cockpitState.lodLevel = parseInt(e.currentTarget.value, 10) as 1 | 2 | 3)}
           class="bg-transparent border-none text-sky-300 font-medium text-[11px] focus:outline-none cursor-pointer py-0.5 px-1.5"
           value={cockpitState.lodLevel}
           title="Continuum Spatial / Niveau de Détail (Touches 1, 2, 3)"
