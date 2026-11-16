@@ -79,6 +79,7 @@ export class AetherEngine {
   private lastVisionMode = 'standard';
   private lastActiveSymbolId: string | null = null;
   private lastLodLevel = 1;
+  private lastActiveLayout: string = 'Z-2';
   private lastFitTick = 0;
   private lastFocusTick = 0;
   private lastSnapshotTick = 0;
@@ -933,8 +934,14 @@ export class AetherEngine {
 
       this.selectedFolder = this.state.selectedFolder;
 
-      if (this.lastLodLevel !== this.state.lodLevel) {
-        this.physics.setDepth(this.state.lodLevel);
+      const activeLayout = this.state.activeLayout;
+      const targetDepth = activeLayout === 'Z-4' ? 4 : (parseInt(activeLayout.replace('Z-', ''), 10) || this.state.lodLevel);
+
+      if (this.lastLodLevel !== this.state.lodLevel || this.lastActiveLayout !== activeLayout) {
+        this.lastActiveLayout = activeLayout;
+        this.lastLodLevel = this.state.lodLevel;
+        this.physics.setDepth(targetDepth);
+        this.physics.wake(140);
         this.refreshVisionColors(true);
       } else if (
         this.lastVisionMode !== this.state.visionMode ||
@@ -1788,8 +1795,9 @@ export class AetherEngine {
         };
         this.clusters.set(folder, entry);
       } else {
-        // Exponential temporal smoothing prevents any frame-to-frame jitter or snapping
-        const alpha = 0.12;
+        // Adaptive temporal smoothing: fast catchup on layout transitions (N1 <-> N2 <-> N3), silky when settled
+        const dist = Math.hypot(cx - entry.cx, cy - entry.cy);
+        const alpha = dist > 400 ? 0.40 : (dist > 100 ? 0.24 : 0.14);
         entry.cx += (cx - entry.cx) * alpha;
         entry.cy += (cy - entry.cy) * alpha;
         entry.sumX = sumX;
@@ -1812,9 +1820,7 @@ export class AetherEngine {
 
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
     this.folderPillBounds = [];
-    if (this.clusters.size === 0 || this.isDragging) {
-      this.syncLiveClusterEnvelopes();
-    }
+    this.syncLiveClusterEnvelopes();
     if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();

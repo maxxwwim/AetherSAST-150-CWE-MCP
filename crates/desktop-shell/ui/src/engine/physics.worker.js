@@ -91,7 +91,8 @@ function computeFolderClusters(zoom = 1.0) {
       anchor = { x: liveCx, y: liveCy };
       folderAnchors.set(folder, anchor);
     } else {
-      const followRate = activeDragId ? 0.92 : 0.65;
+      const dist = Math.hypot(liveCx - anchor.x, liveCy - anchor.y);
+      const followRate = activeDragId ? 0.92 : dist > 350 ? 0.85 : 0.65;
       anchor.x += (liveCx - anchor.x) * followRate;
       anchor.y += (liveCy - anchor.y) * followRate;
     }
@@ -228,19 +229,21 @@ function stepWorkerPhysics(zoom = 1.0) {
     t.vy = (t.vy || 0) - fy;
   }
 
-  // 2b. Cellular Membrane Confinement in Obsidian Galaxy View
+  // 2b. Cellular Cluster Envelope Tracking (N1, N2, N3, N4)
   let exportClusters = null;
+  stepCount = (stepCount + 1) & 0xfff;
+  const shouldUpdateClusters = (stepCount % 2 === 0) || physicsCooldown < 10 || !cachedExportClusters;
+  if (shouldUpdateClusters) {
+    const clusterRes = computeFolderClusters(zoom);
+    exportClusters = clusterRes.exportClusters;
+    cachedExportClusters = exportClusters;
+    cachedFolderStats = clusterRes.folderStats;
+  } else {
+    exportClusters = cachedExportClusters;
+  }
+
+  // Intra-cellular node anti-stick & comfort spacing (Obsidian Galaxy View)
   if (d === 1) {
-    stepCount = (stepCount + 1) & 0xfff;
-    const shouldUpdateClusters = (stepCount % 2 === 0) || physicsCooldown < 10 || !cachedExportClusters;
-    if (shouldUpdateClusters) {
-      const clusterRes = computeFolderClusters(zoom);
-      exportClusters = clusterRes.exportClusters;
-      cachedExportClusters = exportClusters;
-      cachedFolderStats = clusterRes.folderStats;
-    } else {
-      exportClusters = cachedExportClusters;
-    }
     const folderStats = cachedFolderStats || computeFolderClusters(zoom).folderStats;
 
     // Intra-cellular node anti-stick & comfort spacing (classes, functions, files)
@@ -475,6 +478,9 @@ self.onmessage = function(e) {
     depth = payload.depth || 1;
     physicsSleeping = false;
     physicsCooldown = 150;
+    folderAnchors.clear();
+    cachedExportClusters = null;
+    cachedFolderStats = null;
   } else if (type === 'SET_LAYERS') {
     if (payload.activeLayers) activeLayers = new Set(payload.activeLayers);
     if (payload.hiddenModules) hiddenModules = new Set(payload.hiddenModules);
