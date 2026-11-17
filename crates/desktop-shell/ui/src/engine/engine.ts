@@ -169,20 +169,8 @@ export class AetherEngine {
             };
             this.clusters.set(k, entry);
           } else {
-            entry.cx = cl.cx;
-            entry.cy = cl.cy;
-            entry.sumX = cl.sumX;
-            entry.sumY = cl.sumY;
+            // Keep count synced, but preserve live 60/120 FPS smoothed geometry from syncLiveClusterEnvelopes
             entry.count = cl.count;
-            entry.computedRadius = cl.computedRadius;
-            entry.naturalRadius = cl.naturalRadius;
-            if (cl.lobeProfile) {
-              if (entry.lobeProfile.length !== 12) {
-                entry.lobeProfile = new Float32Array(cl.lobeProfile);
-              } else {
-                entry.lobeProfile.set(cl.lobeProfile);
-              }
-            }
           }
         }
       }
@@ -1685,13 +1673,20 @@ export class AetherEngine {
   ): number {
     const ptsX = new Float32Array(12);
     const ptsY = new Float32Array(12);
+
+    // Respiration cellulaire ultra-fluide & ondulation amiboïde continue (C∞ sur le cercle fermé)
+    // 1. Respiration volumétrique globale douce et apaisée (inspiration/expiration harmonieuse)
+    const globalBreath = 1.0 + 0.022 * Math.sin(breathPhase + phaseShift);
+
     for (let i = 0; i < 12; i++) {
       const prof = lobeProfile && lobeProfile[i] ? lobeProfile[i] : 1.0;
-      // Ondulation amiboïde organique fluide (membrane lipidique vivante)
-      const harmonic =
-        1.0 +
-        0.034 * Math.sin(breathPhase * 1.35 + phaseShift + i * 1.57) +
-        0.018 * Math.cos(breathPhase * 0.90 - phaseShift * 0.75 + i * 2.62);
+      // 2. Ondulation amiboïde de surface continue sans saut de phase abrupt
+      // Mode 2 : Dérive ovoïde continue rotative le long des 12 secteurs (2*pi*i/6 = pi*i/3)
+      const waveMode2 = 0.014 * Math.sin(breathPhase * 0.72 + (i * Math.PI) / 3 + phaseShift);
+      // Mode 3 : Micro-ondulation péristaltique douce fermée (3*pi*i/6 = pi*i/2)
+      const waveMode3 = 0.006 * Math.cos(breathPhase * 0.44 - (i * Math.PI) / 2 - phaseShift * 0.5);
+
+      const harmonic = globalBreath + waveMode2 + waveMode3;
       const r = radius * prof * harmonic;
       ptsX[i] = cx + _COS12[i] * r;
       ptsY[i] = cy + _SIN12[i] * r;
@@ -1824,7 +1819,8 @@ export class AetherEngine {
     if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();
-    const breathPhase = now * 0.00075;
+    // Horloge respiratoire maîtresse apaisée, ultra-fluide et douce (~9.6s par cycle)
+    const breathPhase = now * 0.00065;
     const isDenseProject = this.clusters.size > 45 || this.state.isLowMemoryMode;
     const badges: {
       folder: string;
@@ -1895,7 +1891,8 @@ export class AetherEngine {
         }
       }
 
-      const cellPulse = isEditedCell ? 0.5 + 0.5 * Math.sin(now * 0.00075 + folderPhase) : 0;
+      // Respiration synchronisée et harmonieuse des cellules modifiées (sans à-coup)
+      const cellPulse = isEditedCell ? 0.5 + 0.5 * Math.sin(breathPhase + folderPhase) : 0;
 
       // 1. Living Outer Cytoplasmic Membrane (high-perf flat fill for dense clusters)
       const topCrestY = this.traceMembraneSpline(ctx, center.x, center.y, baseR, cl.lobeProfile, breathPhase, folderPhase);
@@ -1907,9 +1904,9 @@ export class AetherEngine {
         ctx.fill();
       } else {
         const grad = ctx.createRadialGradient(center.x, center.y, Math.max(4, baseR * 0.15), center.x, center.y, Math.max(12, baseR * 1.15));
-        const bioPulse = 0.5 + 0.5 * Math.sin(now * 0.0012 + folderPhase);
-        const innerAlpha = isEditedCell ? (0.16 + cellPulse * 0.04) : isSel ? 0.16 : (0.075 + 0.022 * bioPulse);
-        const midAlpha = isEditedCell ? (0.10 + cellPulse * 0.025) : isSel ? 0.10 : 0.04;
+        const bioPulse = 0.5 + 0.5 * Math.sin(breathPhase + folderPhase);
+        const innerAlpha = isEditedCell ? (0.16 + cellPulse * 0.035) : isSel ? 0.16 : (0.075 + 0.010 * bioPulse);
+        const midAlpha = isEditedCell ? (0.10 + cellPulse * 0.02) : isSel ? 0.10 : (0.040 + 0.005 * bioPulse);
         grad.addColorStop(0, `rgba(${rR}, ${rG}, ${rB}, ${innerAlpha.toFixed(3)})`);
         grad.addColorStop(0.7, `rgba(${rR}, ${rG}, ${rB}, ${midAlpha.toFixed(3)})`);
         grad.addColorStop(1, `rgba(${rR}, ${rG}, ${rB}, 0.015)`);
@@ -1931,9 +1928,9 @@ export class AetherEngine {
       ctx.stroke();
       ctx.restore();
 
-      // 2. Living Inner Phospholipid Bilayer Cortex (skipped on dense clusters to save draw passes)
+      // 2. Living Inner Phospholipid Bilayer Cortex (cohérence de phase harmonique douce)
       if (baseR >= 26 && (!isDenseProject || isSel || isEditedCell)) {
-        this.traceMembraneSpline(ctx, center.x, center.y, baseR * 0.88, cl.lobeProfile, breathPhase * 0.88, folderPhase + 2.1);
+        this.traceMembraneSpline(ctx, center.x, center.y, baseR * 0.88, cl.lobeProfile, breathPhase, folderPhase + 0.35);
         ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isEditedCell ? 0.065 : isSel ? 0.05 : 0.022})`;
         ctx.fill();
         ctx.lineWidth = isEditedCell ? 1.2 : 0.9;
@@ -1941,10 +1938,10 @@ export class AetherEngine {
         ctx.stroke();
       }
 
-      // 3. LoD 2 Nucleus Core (skipped on dense clusters to save draw passes)
+      // 3. LoD 2 Nucleus Core (cohérence de phase harmonique douce)
       if ((this.state.lodLevel === 2 || isSel || isEditedCell) && baseR >= 45 && (!isDenseProject || isSel || isEditedCell)) {
         const nucR = Math.max(12, baseR * 0.20);
-        this.traceMembraneSpline(ctx, center.x, center.y, nucR, undefined, breathPhase * 1.25, 1.1);
+        this.traceMembraneSpline(ctx, center.x, center.y, nucR, undefined, breathPhase, folderPhase + 0.60);
         ctx.fillStyle = `rgba(${rR}, ${rG}, ${rB}, ${isEditedCell ? 0.22 : isSel ? 0.20 : 0.10})`;
         ctx.fill();
         ctx.lineWidth = 1.0;

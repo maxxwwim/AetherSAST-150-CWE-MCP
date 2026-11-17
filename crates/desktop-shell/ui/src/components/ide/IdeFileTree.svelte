@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { cockpitState } from '../../state/graphState.svelte';
   import { api } from '../../lib/api';
+  import { getFolderColor, getLayerRgba, type RgbaColor } from '../../engine/palette';
   import {
     Folder,
     FolderOpen,
@@ -34,11 +35,24 @@
     anomalyCount: number;
   }
 
+  interface FileBubbleInfo {
+    color: string;
+    layer?: string;
+    hasAnomaly: boolean;
+  }
+
   let rawFiles = $state<FileEntry[]>([]);
   let isLoading = $state(false);
   let loadError = $state<string | null>(null);
   let searchFilter = $state('');
   let expandedPaths = $state<Set<string>>(new Set(['crates', 'src', 'crates/desktop-shell', 'crates/desktop-shell/ui']));
+
+  function rgbaToHex(c: RgbaColor): string {
+    const r = Math.round(c.r * 255).toString(16).padStart(2, '0');
+    const g = Math.round(c.g * 255).toString(16).padStart(2, '0');
+    const b = Math.round(c.b * 255).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
+  }
 
   // Pre-calculate file security anomalies and bubble colors from cockpitState.graph.nodes
   let anomaliesByFile = $derived.by(() => {
@@ -56,19 +70,69 @@
     return map;
   });
 
-  let colorsByFile = $derived.by(() => {
-    const map = new Map<string, string>();
+  // Pre-calculate bubble color and layer per file from AST graph nodes
+  let bubbleInfoByFile = $derived.by(() => {
+    const map = new Map<string, FileBubbleInfo>();
     for (const node of cockpitState.graph.nodes) {
-      if (node.file_path && node.color) {
-        const norm = node.file_path.replace(/\\/g, '/');
-        // Only map if not already set or prioritize specific file nodes
-        if (!map.has(norm)) {
-          map.set(norm, node.color);
+      if (!node.file_path) continue;
+      const norm = node.file_path.replace(/\\/g, '/');
+      const isFileNode = node.is_file || (node.kind as any) === 1 || node.kind === 'File' || node.id.startsWith('file::');
+      const hasAnomaly = !!(
+        node.has_security_violation ||
+        (node.anomalies && node.anomalies.length > 0) ||
+        (node.metadata?.cve_anomalies && node.metadata.cve_anomalies.length > 0)
+      );
+
+      const existing = map.get(norm);
+      if (!existing || isFileNode || (hasAnomaly && !existing.hasAnomaly)) {
+        let color: string;
+        if (hasAnomaly) {
+          color = '#ef4444'; // Security violation alert bubble red
+        } else if (node.layer) {
+          const rgba = getLayerRgba(node.layer);
+          color = rgbaToHex(rgba);
+        } else {
+          const rgba = getFolderColor(node.folder || norm);
+          color = rgbaToHex(rgba);
         }
+
+        map.set(norm, {
+          color,
+          layer: node.layer || undefined,
+          hasAnomaly
+        });
       }
     }
     return map;
   });
+
+  function getFileBubbleColor(filePath: string): FileBubbleInfo {
+    const norm = filePath.replace(/\\/g, '/');
+    const exact = bubbleInfoByFile.get(norm);
+    if (exact) return exact;
+
+    // Check if any node in bubbleInfoByFile ends with filePath or vice versa
+    for (const [key, val] of bubbleInfoByFile.entries()) {
+      if (key.endsWith(norm) || norm.endsWith(key)) {
+        return val;
+      }
+    }
+
+    // Fallback: derive cosmic folder color from the file's parent folder
+    const parts = norm.split('/');
+    const folder = parts.length > 1 ? parts.slice(0, parts.length - 1).join('/') : 'root';
+    const folderCol = rgbaToHex(getFolderColor(folder));
+    return {
+      color: folderCol,
+      layer: undefined,
+      hasAnomaly: false
+    };
+  }
+
+  function getFolderBubbleColor(folderPath: string): string {
+    const norm = folderPath.replace(/\\/g, '/');
+    return rgbaToHex(getFolderColor(norm));
+  }
 
   async function fetchFileList() {
     isLoading = true;
@@ -323,7 +387,6 @@
 
   onMount(() => {
     fetchFileList();
-    console.log('ColorsByFile Map:', colorsByFile);
   });
 </script>
 
@@ -388,8 +451,9 @@
         {@const isExpanded = expandedPaths.has(node.path)}
         {@const isSelected = cockpitState.ideActiveFile === node.path}
         {@const IconComp = node.is_dir ? (isExpanded ? FolderOpen : Folder) : getFileIcon(node.extension)}
-        {@const iconColor = node.is_dir ? 'text-amber-300' : getFileColor(node.extension)}
-        {@const bubbleColor = node.is_dir ? null : colorsByFile.get(node.path)}
+        {@const folderColor = node.is_dir ? getFolderBubbleColor(node.path) : null}
+        {@const fileMeta = node.is_dir ? null : getFileBubbleColor(node.path)}
+        {@const itemColor = node.is_dir ? folderColor : fileMeta?.color}
 
         <div
           role="button"
@@ -419,10 +483,28 @@
             {/if}
 
             <IconComp
-              class="w-3.5 h-3.5 shrink-0 {bubbleColor ? '' : iconColor}"
-              color={bubbleColor || undefined}
+              class="w-3.5 h-3.5 shrink-0 transition-colors"
+              style="color: {itemColor}; stroke: {itemColor};"
             />
-            <span class="truncate">{node.name}</span>
+
+            {#if !node.is_dir && fileMeta}
+              <span
+                class="w-2 h-2 rounded-full shrink-0 transition-transform group-hover:scale-125"
+                style="background-color: {fileMeta.color}; box-shadow: 0 0 6px {fileMeta.color}aa;"
+                title="Bulle AST: {fileMeta.layer ? `Couche ${fileMeta.layer.toUpperCase()}` : 'Fichier'} ({fileMeta.color})"
+              ></span>
+            {/if}
+
+            <span class="truncate {fileMeta?.hasAnomaly ? 'text-rose-200' : ''}">{node.name}</span>
+
+            {#if !node.is_dir && fileMeta?.layer}
+              <span
+                class="text-[8.5px] font-mono uppercase px-1 py-0.2 rounded border shrink-0 opacity-70 group-hover:opacity-100 transition-opacity ml-auto mr-1"
+                style="color: {fileMeta.color}; border-color: {fileMeta.color}40; background-color: {fileMeta.color}15;"
+              >
+                {fileMeta.layer}
+              </span>
+            {/if}
           </div>
 
           {#if node.anomalyCount > 0}
