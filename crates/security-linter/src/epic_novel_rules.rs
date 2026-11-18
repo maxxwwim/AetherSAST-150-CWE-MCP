@@ -692,6 +692,13 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if !content.contains("static $")
+            && !content.contains("self::$")
+            && !content.contains("static::$")
+            && !content.contains("$GLOBALS[")
+        {
+            return;
+        }
         let masked_code = lexer::mask_literals(content, Lang::Php);
         let worker_markers = [
             "Octane",
@@ -756,6 +763,9 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if !content.contains("yield") || !content.contains("function ") {
+            return;
+        }
         let masked_code = lexer::mask_literals(content, Lang::Php);
         if !masked_code.contains("yield") || !masked_code.contains("function ") {
             return;
@@ -903,6 +913,9 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if content.is_ascii() {
+            return;
+        }
         if let Some((line_no, desc)) = Self::scan_invisible_trojan_chars(content) {
             out.push(LinterViolation {
                 file_path: file_path.to_string(),
@@ -938,6 +951,9 @@ impl EpicNovelRules {
 
     fn scan_invisible_trojan_chars(content: &str) -> Option<(usize, String)> {
         for (line_idx, line) in content.lines().enumerate() {
+            if line.is_ascii() {
+                continue;
+            }
             let chars: Vec<char> = line.chars().collect();
             for (ci, &ch) in chars.iter().enumerate() {
                 if matches!(ch, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}' | '\u{061C}') {
@@ -995,6 +1011,14 @@ impl EpicNovelRules {
         out: &mut Vec<LinterViolation>,
     ) {
         if lower_path.contains("/kernel") || lower_path.contains("/boot") || lower_path.contains("crt0") {
+            return;
+        }
+        if !content.contains("link_section")
+            && !content.contains("ctor")
+            && !content.contains("dtor")
+            && !content.contains("no_mangle")
+            && !content.contains("export_name")
+        {
             return;
         }
         let no_comments = lexer::mask_comments_only(content, Lang::Rust);
@@ -1074,6 +1098,9 @@ impl EpicNovelRules {
         let is_build = lower_path == "build.rs"
             || lower_path.ends_with("/build.rs")
             || lower_path.contains("/build/");
+        if !is_build && !content.contains("#[proc_macro") {
+            return;
+        }
         let no_comments = lexer::mask_comments_only(content, Lang::Rust);
         let is_proc_macro = no_comments.contains("#[proc_macro");
         if !is_build && !is_proc_macro {
@@ -1305,6 +1332,9 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if !content.contains("FFI::") {
+            return;
+        }
         let no_comments = lexer::mask_comments_only(content, Lang::Php);
         if !no_comments.contains("FFI::") {
             return;
@@ -1455,15 +1485,15 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
-        let no_comments = lexer::mask_comments_only(content, Lang::Php);
         let quick_hits = [
             "user.ini", "php.ini", ".htaccess", "auto_prepend_file",
             "auto_append_file", "opcache.preload", "zend_extension",
             "opcache_compile_file", "ini_set(",
         ];
-        if !quick_hits.iter().any(|h| no_comments.contains(h)) {
+        if !quick_hits.iter().any(|h| content.contains(h)) {
             return;
         }
+        let no_comments = lexer::mask_comments_only(content, Lang::Php);
         let write_fns = ["file_put_contents(", "fwrite(", "fputs(", "move_uploaded_file(", "copy(", "rename("];
         let ini_directives = [".user.ini", "php.ini", "auto_prepend_file", "auto_append_file", "opcache.preload", "zend_extension"];
         let taint_src = ["$_GET", "$_POST", "$_COOKIE", "$_REQUEST", "$_FILES", "base64_decode", "gzinflate", "openssl_decrypt", "/tmp", "upload"];
@@ -1531,6 +1561,18 @@ impl EpicNovelRules {
         {
             return;
         }
+        if !content.contains("PROT_EXEC")
+            && !content.contains("PAGE_EXECUTE_")
+            && !content.contains("memfd_create")
+            && !content.contains("fexecve")
+            && !content.contains("execveat")
+            && !content.contains("process_vm_writev")
+            && !content.contains("/proc/self/mem")
+            && !content.contains("/proc/thread-self/mem")
+            && !content.contains("transmute")
+        {
+            return;
+        }
         let no_comments = lexer::mask_comments_only(content, Lang::Rust);
         let has_fs_write = (no_comments.contains("OpenOptions")
             && (no_comments.contains(".write(true)") || no_comments.contains(".write_all")))
@@ -1594,6 +1636,13 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if !content.contains("rkyv::")
+            && !content.contains("archived_root")
+            && !content.contains("access_unchecked")
+            && !content.contains("deserialize_unchecked")
+        {
+            return;
+        }
         let no_comments = lexer::mask_comments_only(content, Lang::Rust);
         if !no_comments.contains("rkyv::")
             && !no_comments.contains("archived_root")
@@ -1669,6 +1718,13 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if !content.contains("global_allocator")
+            && !content.contains("GlobalAlloc")
+            && !content.contains("panic::set_hook")
+            && !content.contains("sigaction")
+        {
+            return;
+        }
         let no_comments = lexer::mask_comments_only(content, Lang::Rust);
         if !no_comments.contains("global_allocator")
             && !no_comments.contains("GlobalAlloc")
@@ -2098,6 +2154,11 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if (!content.contains("Regex::new(") && !content.contains("RegexBuilder::new("))
+            || !content.contains(".is_match(")
+        {
+            return;
+        }
         let no_comments = lexer::mask_comments_only(content, Lang::Rust);
         if !no_comments.contains("Regex::new(") && !no_comments.contains("RegexBuilder::new(") {
             return;
@@ -2396,6 +2457,11 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if !lexer::contains_ascii_case_insensitive(content, "new pdo(")
+            && !lexer::contains_ascii_case_insensitive(content, "new \\pdo(")
+        {
+            return;
+        }
         let no_comments = lexer::mask_comments_only(content, Lang::Php);
         let lower_all = no_comments.to_lowercase();
         if !lower_all.contains("new pdo(") && !lower_all.contains("new \\pdo(") {
@@ -2474,6 +2540,9 @@ impl EpicNovelRules {
         content: &str,
         out: &mut Vec<LinterViolation>,
     ) {
+        if !content.contains("${") {
+            return;
+        }
         let no_comments = lexer::mask_comments_only(content, Lang::Php);
         if !no_comments.contains("${") {
             return;

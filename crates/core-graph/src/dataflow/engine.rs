@@ -16,13 +16,8 @@ pub fn execute_track_dataflow(dfg: &DataflowGraph) -> Vec<TaintFlowTrace> {
     for source in &dfg.sources {
         for sink in &dfg.sinks {
             // If CWEs are specified, verify compatibility
-            if !source.cwe.is_empty() && !sink.cwe.is_empty() && source.cwe != "*" && sink.cwe != "*" {
-                if !source.cwe.eq_ignore_ascii_case(&sink.cwe)
-                    && !sink.cwe.contains(&source.cwe)
-                    && !source.cwe.contains(&sink.cwe)
-                {
-                    continue;
-                }
+            if !cwe_matches(&source.cwe, &sink.cwe) {
+                continue;
             }
 
             // Check if paths exist from source.var to sink.var
@@ -86,7 +81,7 @@ pub fn execute_track_dataflow(dfg: &DataflowGraph) -> Vec<TaintFlowTrace> {
                         } else if let TaintStepKind::SanitizerCall { ref cwe_targeted, .. } = edge.step_kind {
                             // If not recognized in catalog, check explicit custom cwe_targeted
                             let in_catalog = dfg.sanitizers.iter().any(|r| r.name == s_name);
-                            if !in_catalog && (cwe_targeted == "*" || cwe_targeted.eq_ignore_ascii_case(&sink.cwe) || sink.cwe.contains(cwe_targeted)) {
+                            if !in_catalog && cwe_matches(cwe_targeted, &sink.cwe) {
                                 edge_sanitized = true;
                                 sanitizer_name_found = Some(s_name.to_string());
                             }

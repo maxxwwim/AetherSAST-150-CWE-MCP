@@ -173,6 +173,7 @@ fn main() {
                             regex_patterns: vec!["fn\\s+admin_\\w+\\s*\\(".to_string(), "def\\s+admin_\\w+\\s*\\(".to_string()],
                             forbidden_tokens: vec![],
                             check_literals: false,
+                            ..Default::default()
                         },
                         test_cases: vec![
                             RuleTestCase {
@@ -190,6 +191,7 @@ fn main() {
                         ],
                     }
                 ],
+                ..Default::default()
             };
 
             let out_file = target_dir.join("plugin.yaml");

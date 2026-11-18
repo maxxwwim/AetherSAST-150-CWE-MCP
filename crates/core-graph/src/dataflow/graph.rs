@@ -88,6 +88,15 @@ impl DataflowGraph {
         self.sanitizers.push(rule);
     }
 
+    /// Applies declarative sanitizer rules from a [`TaintRuleSet`] without duplicating existing entries.
+    pub fn apply_rule_set(&mut self, rules: &TaintRuleSet) {
+        for rule in &rules.sanitizers {
+            if !self.sanitizers.contains(rule) {
+                self.sanitizers.push(rule.clone());
+            }
+        }
+    }
+
     /// Checks if a sanitizer name effectively neutralizes the targeted sink CWE
     pub fn is_sanitizer_effective(&self, sanitizer_name: &str, sink_cwe: &str) -> bool {
         self.sanitizers.iter().any(|r| r.matches(sanitizer_name, sink_cwe))

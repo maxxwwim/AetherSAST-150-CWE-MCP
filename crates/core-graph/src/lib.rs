@@ -12,7 +12,8 @@ pub use bubble::{
 };
 pub use dataflow::{
     track_dataflow, DataflowEdge, DataflowGraph, SanitizerMatchKind, SanitizerRule, SinkKind,
-    SourceKind, SsaVar, TaintFlowTrace, TaintSink, TaintSource, TaintStep, TaintStepKind,
+    SourceKind, SsaVar, TaintFlowTrace, TaintRuleSet, TaintSink, TaintSinkRule, TaintSource,
+    TaintSourceRule, TaintStep, TaintStepKind,
 };
 pub use edge::{AffiliationEdge, CategorizedLiaisons, EdgeType, FilterAffiliation, LiaisonCategory};
 pub use graph::{AetherGraph, GraphStats};

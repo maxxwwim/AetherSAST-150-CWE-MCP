@@ -118,7 +118,8 @@ pub mod ui_payload {
     pub struct UiGraphPayload {
         #[serde(flatten)]
         pub graph: AetherGraph,
-        pub edges_compact: CompactEdges,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub edges_compact: Option<CompactEdges>,
     }
 
     fn trunc(s: &mut String, max: usize) {
@@ -133,24 +134,45 @@ pub mod ui_payload {
     }
 
     pub fn build_payload(g: &AetherGraph) -> UiGraphPayload {
+        let compact = needs_compaction(g);
         let mut nodes = g.nodes.clone();
         for n in nodes.iter_mut() {
-            trunc(&mut n.docstring, 240);
-            if !(n.is_file && n.layer == "docs") {
-                n.metadata.raw_content = None;
+            n.metadata.raw_content = None;
+            if !n.metadata.cve_anomalies.is_empty() {
+                n.metadata.violations.clear();
             }
-            if let Some(h) = n.metadata.blake3_hash.as_mut() {
-                h.truncate(16);
-            }
-            if let Some(h) = n.metadata.file_blake3_hash.as_mut() {
-                h.truncate(16);
-            }
-            for m in n.metadata.methods.iter_mut() {
-                m.calls.truncate(8);
-                if let Some(d) = m.docstring.as_mut() {
-                    trunc(d, 160);
+            if compact {
+                trunc(&mut n.docstring, 240);
+                if let Some(h) = n.metadata.blake3_hash.as_mut() {
+                    h.truncate(16);
+                }
+                if let Some(h) = n.metadata.file_blake3_hash.as_mut() {
+                    h.truncate(16);
+                }
+                for m in n.metadata.methods.iter_mut() {
+                    m.calls.truncate(8);
+                    if let Some(d) = m.docstring.as_mut() {
+                        trunc(d, 160);
+                    }
                 }
             }
+        }
+
+        if !compact {
+            let graph = AetherGraph {
+                project_name: g.project_name.clone(),
+                project_path: g.project_path.clone(),
+                generated_at: g.generated_at.clone(),
+                system_prompt: None,
+                nodes,
+                edges: g.edges.clone(),
+                stats: g.stats.clone(),
+                dataflow_graph: None,
+            };
+            return UiGraphPayload {
+                graph,
+                edges_compact: None,
+            };
         }
 
         let base = g.nodes.len() as u32;
@@ -238,26 +260,31 @@ pub mod ui_payload {
             project_name: g.project_name.clone(),
             project_path: g.project_path.clone(),
             generated_at: g.generated_at.clone(),
-            system_prompt: g.system_prompt.clone(),
+            system_prompt: None,
             nodes,
             edges: Vec::new(),
             stats: g.stats.clone(),
-            dataflow_graph: g.dataflow_graph.clone(),
+            dataflow_graph: None,
         };
 
         UiGraphPayload {
             graph,
-            edges_compact: CompactEdges { ids: extra_ids, rels, types, src, dst, rel, typ, extra },
+            edges_compact: Some(CompactEdges {
+                ids: extra_ids,
+                rels,
+                types,
+                src,
+                dst,
+                rel,
+                typ,
+                extra,
+            }),
         }
     }
 
-    /// `#[serde(serialize_with)]` : graphe compact si volumineux, JSON historique sinon.
+    /// `#[serde(serialize_with)]` : graphe allégé pour l'UI (et arêtes compactées si volumineux).
     pub fn ser_graph<S: Serializer>(g: &AetherGraph, s: S) -> Result<S::Ok, S::Error> {
-        if needs_compaction(g) {
-            build_payload(g).serialize(s)
-        } else {
-            g.serialize(s)
-        }
+        build_payload(g).serialize(s)
     }
 
     pub fn ser_graph_opt<S: Serializer>(g: &Option<AetherGraph>, s: S) -> Result<S::Ok, S::Error> {
@@ -268,11 +295,7 @@ pub mod ui_payload {
     }
 
     pub fn to_json_bytes(g: &AetherGraph) -> Vec<u8> {
-        if needs_compaction(g) {
-            serde_json::to_vec(&build_payload(g)).unwrap_or_default()
-        } else {
-            serde_json::to_vec(g).unwrap_or_default()
-        }
+        serde_json::to_vec(&build_payload(g)).unwrap_or_default()
     }
 }
 
@@ -902,6 +925,7 @@ pub struct AppState {
     pub vault_graph: RwLock<Option<AetherGraph>>,
     pub detection_report: RwLock<Option<ProjectDetectionReport>>,
     pub file_save_lock: tokio::sync::Mutex<()>,
+    pub plugin_selection: security_linter::PluginSelection,
 }
 
 impl AppState {
@@ -958,7 +982,13 @@ impl AppState {
             vault_graph: RwLock::new(vault_graph),
             detection_report: RwLock::new(detection_report),
             file_save_lock: tokio::sync::Mutex::new(()),
+            plugin_selection: security_linter::PluginSelection::Default,
         }
+    }
+
+    pub fn with_plugin_selection(mut self, selection: security_linter::PluginSelection) -> Self {
+        self.plugin_selection = selection;
+        self
     }
 
     pub async fn record_telemetry(&self, mut event: AiTelemetryEvent) -> AiTelemetryEvent {
@@ -1217,8 +1247,10 @@ impl AppState {
                     if ptype.is_code() || ptype.is_mixed() {
                         let root = self.project_root.read().await.clone();
                         let excl = self.custom_exclusions.read().await.clone();
+                        let sel = self.plugin_selection.clone();
                         let scanned = tokio::task::spawn_blocking(move || {
-                            let scanner = ast_scanner::ProjectScanner::default();
+                            let scanner =
+                                ast_scanner::ProjectScanner::default().with_plugin_selection(sel);
                             scanner.scan_project_with_exclusions(&root, &excl)
                         })
                         .await

@@ -229,6 +229,7 @@ fn test_f2_tier1_unpack_community_bundle_offline_directory_structure() {
                     must_not_contain: vec!["prepared".to_string()],
                     forbidden_tokens: vec![],
                     check_literals: false,
+                    ..Default::default()
                 },
                 test_cases: vec![
                     RuleTestCase {
@@ -246,6 +247,7 @@ fn test_f2_tier1_unpack_community_bundle_offline_directory_structure() {
                 ],
             },
         ],
+        ..Default::default()
     };
 
     let manifest_yaml = serde_yaml::to_string(&manifest).expect("Serialize manifest YAML");

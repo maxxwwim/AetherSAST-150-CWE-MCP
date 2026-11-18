@@ -94,6 +94,7 @@ impl SemgrepImporter {
             description: Some(format!("Imported from Semgrep rule set: {manifest_name}")),
             enabled: true,
             rules: plugin_rules,
+            ..Default::default()
         })
     }
 
@@ -228,6 +229,7 @@ impl SemgrepImporter {
                 regex_patterns,
                 forbidden_tokens: Vec::new(),
                 check_literals: has_literals,
+                ..Default::default()
             },
             test_cases: Vec::new(),
         })

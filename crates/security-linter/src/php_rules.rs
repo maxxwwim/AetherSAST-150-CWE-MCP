@@ -394,7 +394,11 @@ impl PhpSecurityRules {
                 || (trimmed.contains("assert(") && !trimmed.contains("->assert(") && !trimmed.contains("::assert(") && (trimmed.contains("$_GET") || trimmed.contains("$_POST") || trimmed.contains(" . $")))
                 || (trimmed.contains("preg_replace(") && (trimmed.contains("/e'") || trimmed.contains("/e\"") || trimmed.contains("'/e'") || trimmed.contains("\"/e\"")));
 
-            if is_eval && !trimmed.starts_with("function ") {
+            if is_eval
+                && !trimmed.contains("function eval(")
+                && !trimmed.contains("function create_function(")
+                && !trimmed.contains("function assert(")
+            {
                 violations.push(LinterViolation {
                     file_path: file_path.to_string(),
                     line_number: line_no,

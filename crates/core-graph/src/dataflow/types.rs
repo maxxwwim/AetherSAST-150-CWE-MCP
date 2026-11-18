@@ -25,8 +25,30 @@ impl SsaVar {
 /// Category/Kind of untrusted input source.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum SourceKind {
-    HttpQueryParam, HttpBodyParam, HttpHeader, HttpCookie,
-    WebSocketPayload, FileSystemRead, DatabaseRead, FunctionArgument, Custom(String),
+    #[serde(alias = "http_query_param")]
+    HttpQueryParam,
+    #[serde(alias = "http_body_param")]
+    HttpBodyParam,
+    #[serde(alias = "http_header")]
+    HttpHeader,
+    #[serde(alias = "http_cookie")]
+    HttpCookie,
+    #[serde(alias = "websocket_payload")]
+    WebSocketPayload,
+    #[serde(alias = "file_system_read")]
+    FileSystemRead,
+    #[serde(alias = "database_read")]
+    DatabaseRead,
+    #[serde(alias = "function_argument")]
+    FunctionArgument,
+    #[serde(alias = "custom")]
+    Custom(String),
+}
+
+impl Default for SourceKind {
+    fn default() -> Self {
+        Self::Custom("custom".to_string())
+    }
 }
 
 impl std::fmt::Display for SourceKind {
@@ -70,8 +92,26 @@ impl TaintSource {
 /// Category/Kind of critical security sink.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum SinkKind {
-    SqlExecution, CommandExecution, HtmlRender, FileAccess,
-    SsrfNetworkRequest, LdapQuery, Custom(String),
+    #[serde(alias = "sql_execution")]
+    SqlExecution,
+    #[serde(alias = "command_execution")]
+    CommandExecution,
+    #[serde(alias = "html_render")]
+    HtmlRender,
+    #[serde(alias = "file_access")]
+    FileAccess,
+    #[serde(alias = "ssrf_network_request")]
+    SsrfNetworkRequest,
+    #[serde(alias = "ldap_query")]
+    LdapQuery,
+    #[serde(alias = "custom")]
+    Custom(String),
+}
+
+impl Default for SinkKind {
+    fn default() -> Self {
+        Self::Custom("custom".to_string())
+    }
 }
 
 impl std::fmt::Display for SinkKind {
@@ -221,21 +261,30 @@ impl TaintFlowTrace {
 }
 
 /// Match kind for sanitizer definitions.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum SanitizerMatchKind {
+    #[default]
+    #[serde(alias = "exact_name")]
     ExactName,
+    #[serde(alias = "method_call")]
     MethodCall,
+    #[serde(alias = "type_cast")]
     TypeCast,
+    #[serde(alias = "regex_pattern")]
     RegexPattern,
 }
 
 /// A rule specifying a sanitizer function / method that neutralizes taint for specific CWEs.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct SanitizerRule {
     pub name: String,
+    #[serde(default)]
     pub target_cwes: Vec<String>,
+    #[serde(default)]
     pub match_kind: SanitizerMatchKind,
+    #[serde(default)]
     pub language: Option<String>,
+    #[serde(default)]
     pub neutralizes_all: bool,
 }
 
@@ -253,24 +302,45 @@ impl SanitizerRule {
         self
     }
 
+    pub fn matches_language(&self, lang_or_path: &str) -> bool {
+        language_matches(self.language.as_deref(), lang_or_path)
+    }
+
+    pub fn matches_for_path(&self, func_or_expr: &str, sink_cwe: &str, lang_or_path: &str) -> bool {
+        self.matches_language(lang_or_path) && self.matches(func_or_expr, sink_cwe)
+    }
+
     pub fn matches(&self, func_or_expr: &str, sink_cwe: &str) -> bool {
-        let cwe_matches = self.neutralizes_all
-            || self.target_cwes.iter().any(|cwe| {
-                cwe == "*" || sink_cwe == "*" || cwe.eq_ignore_ascii_case(sink_cwe)
-                    || sink_cwe.contains(cwe.as_str()) || cwe.contains(sink_cwe)
-            });
-        if !cwe_matches { return false; }
+        let is_cwe_match = self.neutralizes_all
+            || self
+                .target_cwes
+                .iter()
+                .any(|cwe| cwe_matches(cwe, sink_cwe));
+        if !is_cwe_match { return false; }
         let expr = func_or_expr.trim();
+        let callee = expr.split('(').next().unwrap_or(expr).trim();
         match self.match_kind {
-            SanitizerMatchKind::ExactName => expr == self.name || expr.ends_with(&format!("::{}", self.name))
-                || expr.ends_with(&format!(".{}", self.name)) || expr.ends_with(&format!("->{}", self.name)),
-            SanitizerMatchKind::MethodCall | SanitizerMatchKind::TypeCast => expr == self.name || expr.contains(&self.name),
+            SanitizerMatchKind::ExactName => {
+                expr == self.name
+                    || callee == self.name
+                    || callee.ends_with(&format!("::{}", self.name))
+                    || callee.ends_with(&format!(".{}", self.name))
+                    || callee.ends_with(&format!("->{}", self.name))
+            }
+            SanitizerMatchKind::MethodCall | SanitizerMatchKind::TypeCast => {
+                expr == self.name || expr.contains(&self.name)
+            }
             SanitizerMatchKind::RegexPattern => {
                 let pat = &self.name;
-                if pat.starts_with('*') && pat.ends_with('*') && pat.len() >= 2 { expr.contains(&pat[1..pat.len() - 1]) }
-                else if pat.starts_with('*') { expr.ends_with(&pat[1..]) }
-                else if pat.ends_with('*') { expr.starts_with(&pat[..pat.len() - 1]) }
-                else { expr == pat }
+                if pat.starts_with('*') && pat.ends_with('*') && pat.len() >= 2 {
+                    expr.contains(&pat[1..pat.len() - 1])
+                } else if pat.starts_with('*') {
+                    callee.ends_with(&pat[1..]) || expr.ends_with(&pat[1..])
+                } else if pat.ends_with('*') {
+                    callee.starts_with(&pat[..pat.len() - 1]) || expr.starts_with(&pat[..pat.len() - 1])
+                } else {
+                    callee == pat || expr == pat
+                }
             }
         }
     }
@@ -297,5 +367,412 @@ impl SanitizerRule {
             r("dupeZ", &["CWE-170"], MethodCall), r("bytesAsValue", &["CWE-843"], MethodCall), r("bytesAsSlice", &["CWE-843"], MethodCall),
             SanitizerRule::new_all("sanitize", ExactName), SanitizerRule::new_all("clean", ExactName),
         ]
+    }
+}
+
+fn default_sink_severity() -> String {
+    "HIGH".to_string()
+}
+
+fn extract_lang_token(lang_or_path: &str) -> String {
+    let trimmed = lang_or_path.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let base = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed);
+    let token = if let Some((_, ext)) = base.rsplit_once('.') {
+        ext
+    } else {
+        base
+    };
+    token.to_ascii_lowercase()
+}
+
+/// Normalizes a language identifier or file path extension into a canonical language name.
+pub fn normalize_language(lang_or_path: &str) -> Option<&'static str> {
+    let token = extract_lang_token(lang_or_path);
+    match token.as_str() {
+        "rs" | "rust" => Some("rust"),
+        "py" | "python" | "pyw" => Some("python"),
+        "js" | "javascript" | "jsx" | "mjs" | "cjs" => Some("javascript"),
+        "ts" | "typescript" | "tsx" | "mts" | "cts" => Some("typescript"),
+        "php" | "phtml" | "php3" | "php4" | "php5" | "php7" | "phps" => Some("php"),
+        "zig" => Some("zig"),
+        "cs" | "c#" | "csharp" => Some("csharp"),
+        "sol" | "solidity" => Some("solidity"),
+        "go" | "golang" => Some("go"),
+        "rb" | "ruby" => Some("ruby"),
+        "c" | "h" => Some("c"),
+        "cpp" | "c++" | "cc" | "cxx" | "hpp" | "hh" | "hxx" => Some("cpp"),
+        "java" => Some("java"),
+        "lua" | "luau" => Some("lua"),
+        _ => None,
+    }
+}
+
+/// Checks whether a rule's optional language filter matches a target language name or file path.
+pub fn language_matches(rule_lang: Option<&str>, target_lang_or_path: &str) -> bool {
+    let Some(raw_rule) = rule_lang else {
+        return true;
+    };
+    let trimmed_rule = raw_rule.trim();
+    if trimmed_rule.is_empty()
+        || trimmed_rule == "*"
+        || trimmed_rule.eq_ignore_ascii_case("all")
+        || trimmed_rule.eq_ignore_ascii_case("any")
+    {
+        return true;
+    }
+
+    let target_token = extract_lang_token(target_lang_or_path);
+    if target_token.is_empty() {
+        return false;
+    }
+
+    match (
+        normalize_language(trimmed_rule),
+        normalize_language(target_lang_or_path),
+    ) {
+        (Some(a), Some(b)) => a == b,
+        (None, None) => extract_lang_token(trimmed_rule) == target_token,
+        _ => false,
+    }
+}
+
+fn pattern_matches_line(pattern: &str, line: &str) -> bool {
+    if pattern.is_empty() {
+        return false;
+    }
+    if !pattern.contains('*') {
+        return line.contains(pattern);
+    }
+    let mut rest = line;
+    let mut has_segment = false;
+    for part in pattern.split('*') {
+        if part.is_empty() {
+            continue;
+        }
+        has_segment = true;
+        if let Some(pos) = rest.find(part) {
+            rest = &rest[pos + part.len()..];
+        } else {
+            return false;
+        }
+    }
+    has_segment || !line.is_empty()
+}
+
+fn contains_cwe_bounded(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return false;
+    }
+    let h_bytes = haystack.as_bytes();
+    let n_bytes = needle.as_bytes();
+    let first_is_digit = n_bytes[0].is_ascii_digit();
+    let last_is_digit = n_bytes[n_bytes.len() - 1].is_ascii_digit();
+
+    let mut search_from = 0usize;
+    while let Some(rel_pos) = haystack[search_from..].find(needle) {
+        let pos = search_from + rel_pos;
+        let end = pos + needle.len();
+        let left_ok = if pos == 0 {
+            true
+        } else if first_is_digit {
+            !h_bytes[pos - 1].is_ascii_digit()
+        } else {
+            !h_bytes[pos - 1].is_ascii_alphanumeric()
+        };
+        let right_ok = if end == haystack.len() {
+            true
+        } else if last_is_digit {
+            !h_bytes[end].is_ascii_digit()
+        } else {
+            !h_bytes[end].is_ascii_alphanumeric()
+        };
+        if left_ok && right_ok {
+            return true;
+        }
+        search_from = pos + 1;
+    }
+    false
+}
+
+pub fn cwe_matches(rule_cwe: &str, target_cwe: &str) -> bool {
+    let r = rule_cwe.trim();
+    let t = target_cwe.trim();
+    if r.is_empty() || r == "*" || t.is_empty() || t == "*" {
+        return true;
+    }
+    if r.eq_ignore_ascii_case(t) {
+        return true;
+    }
+    let r_up = r.to_ascii_uppercase();
+    let t_up = t.to_ascii_uppercase();
+    contains_cwe_bounded(&r_up, &t_up) || contains_cwe_bounded(&t_up, &r_up)
+}
+
+/// Declarative taint source rule for plugin/DSL-driven SSA dataflow analysis.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct TaintSourceRule {
+    pub name: String,
+    #[serde(default)]
+    pub source_kind: SourceKind,
+    #[serde(default)]
+    pub cwe: String,
+    #[serde(default)]
+    pub patterns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub description: String,
+}
+
+impl TaintSourceRule {
+    pub fn new(
+        name: impl Into<String>,
+        source_kind: SourceKind,
+        cwe: impl Into<String>,
+        patterns: Vec<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            source_kind,
+            cwe: cwe.into(),
+            patterns,
+            language: None,
+            description: String::new(),
+        }
+    }
+
+    pub fn with_cwe(mut self, cwe: impl Into<String>) -> Self {
+        self.cwe = cwe.into();
+        self
+    }
+
+    pub fn with_language(mut self, lang: impl Into<String>) -> Self {
+        self.language = Some(lang.into());
+        self
+    }
+
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = desc.into();
+        self
+    }
+
+    pub fn matches_language(&self, lang_or_path: &str) -> bool {
+        language_matches(self.language.as_deref(), lang_or_path)
+    }
+
+    pub fn matches_line(&self, line: &str) -> bool {
+        self.patterns.iter().any(|p| pattern_matches_line(p, line))
+    }
+
+    pub fn matches(&self, line: &str, lang_or_path: &str) -> bool {
+        self.matches_language(lang_or_path) && self.matches_line(line)
+    }
+
+    pub fn to_taint_source(&self, var: SsaVar) -> TaintSource {
+        let cwe = if self.cwe.is_empty() { "*" } else { self.cwe.as_str() };
+        let mut src = TaintSource::new(var, self.source_kind.clone(), cwe);
+        if !self.description.is_empty() {
+            src = src.with_description(&self.description);
+        }
+        src
+    }
+}
+
+/// Declarative taint sink rule for plugin/DSL-driven SSA dataflow analysis.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct TaintSinkRule {
+    pub name: String,
+    #[serde(default)]
+    pub sink_kind: SinkKind,
+    #[serde(default)]
+    pub cwe: String,
+    #[serde(default)]
+    pub rule_id: String,
+    #[serde(default = "default_sink_severity")]
+    pub severity: String,
+    #[serde(default)]
+    pub patterns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub description: String,
+}
+
+impl Default for TaintSinkRule {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            sink_kind: SinkKind::default(),
+            cwe: String::new(),
+            rule_id: String::new(),
+            severity: default_sink_severity(),
+            patterns: Vec::new(),
+            language: None,
+            description: String::new(),
+        }
+    }
+}
+
+impl TaintSinkRule {
+    pub fn new(
+        name: impl Into<String>,
+        sink_kind: SinkKind,
+        cwe: impl Into<String>,
+        patterns: Vec<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            sink_kind,
+            cwe: cwe.into(),
+            rule_id: String::new(),
+            severity: default_sink_severity(),
+            patterns,
+            language: None,
+            description: String::new(),
+        }
+    }
+
+    pub fn with_cwe(mut self, cwe: impl Into<String>) -> Self {
+        self.cwe = cwe.into();
+        self
+    }
+
+    pub fn with_rule(mut self, rule_id: impl Into<String>, severity: impl Into<String>) -> Self {
+        self.rule_id = rule_id.into();
+        self.severity = severity.into();
+        self
+    }
+
+    pub fn with_language(mut self, lang: impl Into<String>) -> Self {
+        self.language = Some(lang.into());
+        self
+    }
+
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = desc.into();
+        self
+    }
+
+    pub fn matches_language(&self, lang_or_path: &str) -> bool {
+        language_matches(self.language.as_deref(), lang_or_path)
+    }
+
+    pub fn matches_line(&self, line: &str) -> bool {
+        self.patterns.iter().any(|p| pattern_matches_line(p, line))
+    }
+
+    pub fn matches(&self, line: &str, lang_or_path: &str) -> bool {
+        self.matches_language(lang_or_path) && self.matches_line(line)
+    }
+
+    pub fn to_taint_sink(&self, var: SsaVar) -> TaintSink {
+        let cwe = if self.cwe.is_empty() { "*" } else { self.cwe.as_str() };
+        let rule_id = if self.rule_id.is_empty() { self.name.as_str() } else { self.rule_id.as_str() };
+        let severity = if self.severity.is_empty() { "HIGH" } else { self.severity.as_str() };
+        let mut sink = TaintSink::new(var, self.sink_kind.clone(), cwe).with_rule(rule_id, severity);
+        if !self.description.is_empty() {
+            sink = sink.with_description(&self.description);
+        }
+        sink
+    }
+}
+
+/// Collection of declarative taint source, sink, and sanitizer rules.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaintRuleSet {
+    #[serde(default)]
+    pub sources: Vec<TaintSourceRule>,
+    #[serde(default)]
+    pub sinks: Vec<TaintSinkRule>,
+    #[serde(default)]
+    pub sanitizers: Vec<SanitizerRule>,
+}
+
+impl TaintRuleSet {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty() && self.sinks.is_empty() && self.sanitizers.is_empty()
+    }
+
+    pub fn add_source(&mut self, rule: TaintSourceRule) {
+        if !self.sources.contains(&rule) {
+            self.sources.push(rule);
+        }
+    }
+
+    pub fn add_sink(&mut self, rule: TaintSinkRule) {
+        if !self.sinks.contains(&rule) {
+            self.sinks.push(rule);
+        }
+    }
+
+    pub fn add_sanitizer(&mut self, rule: SanitizerRule) {
+        if !self.sanitizers.contains(&rule) {
+            self.sanitizers.push(rule);
+        }
+    }
+
+    /// Order-preserving, deduplicated merge of another rule set into `self`.
+    pub fn merge(&mut self, other: &TaintRuleSet) {
+        for src in &other.sources {
+            self.add_source(src.clone());
+        }
+        for sink in &other.sinks {
+            self.add_sink(sink.clone());
+        }
+        for san in &other.sanitizers {
+            self.add_sanitizer(san.clone());
+        }
+    }
+
+    pub fn sources_for_language(&self, lang_or_path: &str) -> Vec<&TaintSourceRule> {
+        self.sources.iter().filter(|r| r.matches_language(lang_or_path)).collect()
+    }
+
+    pub fn sinks_for_language(&self, lang_or_path: &str) -> Vec<&TaintSinkRule> {
+        self.sinks.iter().filter(|r| r.matches_language(lang_or_path)).collect()
+    }
+
+    pub fn sanitizers_for_language(&self, lang_or_path: &str) -> Vec<&SanitizerRule> {
+        self.sanitizers.iter().filter(|r| r.matches_language(lang_or_path)).collect()
+    }
+
+    pub fn match_sources(&self, line: &str, lang_or_path: &str) -> Vec<&TaintSourceRule> {
+        self.sources.iter().filter(|r| r.matches(line, lang_or_path)).collect()
+    }
+
+    pub fn match_sinks(&self, line: &str, lang_or_path: &str) -> Vec<&TaintSinkRule> {
+        self.sinks.iter().filter(|r| r.matches(line, lang_or_path)).collect()
+    }
+
+    pub fn match_sanitizers(&self, expr: &str, sink_cwe: &str, lang_or_path: &str) -> Vec<&SanitizerRule> {
+        self.sanitizers
+            .iter()
+            .filter(|r| r.matches_for_path(expr, sink_cwe, lang_or_path))
+            .collect()
+    }
+
+    pub fn sources_for_cwe(&self, cwe: &str) -> Vec<&TaintSourceRule> {
+        self.sources.iter().filter(|r| cwe_matches(&r.cwe, cwe)).collect()
+    }
+
+    pub fn sinks_for_cwe(&self, cwe: &str) -> Vec<&TaintSinkRule> {
+        self.sinks.iter().filter(|r| cwe_matches(&r.cwe, cwe)).collect()
+    }
+
+    pub fn find_source(&self, name: &str) -> Option<&TaintSourceRule> {
+        self.sources.iter().find(|r| r.name == name)
+    }
+
+    pub fn find_sink(&self, rule_id_or_name: &str) -> Option<&TaintSinkRule> {
+        self.sinks
+            .iter()
+            .find(|r| (!r.rule_id.is_empty() && r.rule_id == rule_id_or_name) || r.name == rule_id_or_name)
     }
 }

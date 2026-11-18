@@ -21,11 +21,12 @@ pub use contract::{EarsRequirement, ReadmeContract, ReadmeFrontmatter, SecurityR
 pub use csharp_rules::CSharpSecurityRules;
 pub use deep_rules::DeepSecurityRules;
 pub use epic_novel_rules::EpicNovelRules;
+pub use lexer::AuditContext;
 pub use linter::{CveRuleDef, LinterViolation, SecurityLinter};
 pub use php_rules::PhpSecurityRules;
 pub use plugin::{
-    MatchMode, PluginEngine, PluginManifest, PluginRule, PluginTestReport, RuleConditions,
-    RuleTestCase,
+    MatchMode, PluginEngine, PluginManifest, PluginRule, PluginSelection, PluginTestReport,
+    PrecededWindowCondition, RuleConditions, RuleTestCase,
 };
 pub use rules::AdvancedDefiRules;
 pub use sanitizer_catalog::SanitizerCatalog;

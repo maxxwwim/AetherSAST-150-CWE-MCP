@@ -317,6 +317,89 @@ fn mask_impl(src: &str, lang: Lang, mask_strings: bool) -> String {
     out
 }
 
+/// Zero-allocation ASCII case-insensitive substring search.
+#[inline]
+pub fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    let n_bytes = needle.as_bytes();
+    let h_bytes = haystack.as_bytes();
+    if n_bytes.is_empty() {
+        return true;
+    }
+    if n_bytes.len() > h_bytes.len() {
+        return false;
+    }
+    let first = n_bytes[0];
+    let max_start = h_bytes.len() - n_bytes.len();
+    let mut i = 0;
+    while i <= max_start {
+        if h_bytes[i].eq_ignore_ascii_case(&first)
+            && h_bytes[i..i + n_bytes.len()].eq_ignore_ascii_case(n_bytes)
+        {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Shared per-file lexical masking context that lazily computes and caches
+/// `masked_literals` and `masked_comments` at most once across all SAST engines.
+pub struct AuditContext<'a> {
+    pub file_path: &'a str,
+    pub lower_path: String,
+    pub raw: &'a str,
+    pub lang: Option<Lang>,
+    masked_literals_buf: std::sync::OnceLock<String>,
+    masked_comments_buf: std::sync::OnceLock<String>,
+}
+
+impl<'a> AuditContext<'a> {
+    pub fn new(file_path: &'a str, raw: &'a str) -> Self {
+        let lower_path = file_path.to_ascii_lowercase();
+        let lang = Lang::from_path(&lower_path);
+        Self {
+            file_path,
+            lower_path,
+            raw,
+            lang,
+            masked_literals_buf: std::sync::OnceLock::new(),
+            masked_comments_buf: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Returns content with both comments and string literals masked (or `raw` if `lang` is `None`).
+    pub fn masked_literals(&self) -> &str {
+        match self.lang {
+            Some(l) => self
+                .masked_literals_buf
+                .get_or_init(|| mask_literals(self.raw, l))
+                .as_str(),
+            None => self.raw,
+        }
+    }
+
+    /// Returns content with only comments masked, preserving string literals (or `raw` if `lang` is `None`).
+    pub fn masked_comments(&self) -> &str {
+        match self.lang {
+            Some(l) => self
+                .masked_comments_buf
+                .get_or_init(|| mask_comments_only(self.raw, l))
+                .as_str(),
+            None => self.raw,
+        }
+    }
+
+    /// Returns the default masked view used by `SecurityLinter` and `PluginEngine`:
+    /// comments-only for Python/PHP, comments+literals for other supported languages, or `raw` otherwise.
+    pub fn default_masked(&self) -> &str {
+        match self.lang {
+            Some(Lang::Python) | Some(Lang::Php) => self.masked_comments(),
+            Some(_) => self.masked_literals(),
+            None => self.raw,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

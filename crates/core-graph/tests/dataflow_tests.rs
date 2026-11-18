@@ -796,3 +796,4 @@ fn test_track_dataflow_api_standalone() {
     assert_eq!(traces[0].is_vulnerable, true);
     assert_eq!(traces[0].is_sanitized, false);
 }
+mod taint_dsl_tests;

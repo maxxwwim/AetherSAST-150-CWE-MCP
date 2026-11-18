@@ -1132,22 +1132,22 @@ impl SecurityLinter {
         content: &str,
         contract: Option<&ReadmeContract>,
     ) -> Vec<LinterViolation> {
-        let raw = Self::audit_file_raw(file_path, content, contract);
-        let lang = match crate::lexer::Lang::from_path(&file_path.to_lowercase()) {
-            Some(l) => l,
-            None => return raw,
-        };
-        if raw.is_empty() {
+        let ctx = crate::lexer::AuditContext::new(file_path, content);
+        Self::audit_file_with_context(&ctx, contract)
+    }
+
+    /// Audit d'un fichier en réutilisant un [`crate::lexer::AuditContext`] partagé
+    /// afin d'éviter le re-masquage lexical redondant entre `SecurityLinter` et `PluginEngine`.
+    pub fn audit_file_with_context(
+        ctx: &crate::lexer::AuditContext<'_>,
+        contract: Option<&ReadmeContract>,
+    ) -> Vec<LinterViolation> {
+        let raw = Self::audit_file_raw(ctx.file_path, ctx.raw, contract);
+        if ctx.lang.is_none() || raw.is_empty() {
             return raw;
         }
-        // Python: les règles SAST portent sur des littéraux (algorithms=["none"], Loader=...)
-        // -> on ne masque que les commentaires. Autres langages: chaînes + commentaires.
-        let masked_content = if lang == crate::lexer::Lang::Python || lang == crate::lexer::Lang::Php {
-            crate::lexer::mask_comments_only(content, lang)
-        } else {
-            crate::lexer::mask_literals(content, lang)
-        };
-        let masked: HashSet<(String, usize)> = Self::audit_file_raw(file_path, &masked_content, contract)
+        let masked_content = ctx.default_masked();
+        let masked: HashSet<(String, usize)> = Self::audit_file_raw(ctx.file_path, masked_content, contract)
             .into_iter()
             .map(|v| (v.rule_id, v.line_number))
             .collect();
@@ -1157,6 +1157,37 @@ impl SecurityLinter {
                     || masked.contains(&(v.rule_id.clone(), v.line_number))
             })
             .collect()
+    }
+
+    /// Audit d'un fichier filtré selon la sélection `--plugins`.
+    pub fn audit_file_selected(
+        ctx: &crate::lexer::AuditContext<'_>,
+        contract: Option<&ReadmeContract>,
+        selection: &crate::plugin::PluginSelection,
+    ) -> Vec<LinterViolation> {
+        match selection {
+            crate::plugin::PluginSelection::Default
+            | crate::plugin::PluginSelection::Auto
+            | crate::plugin::PluginSelection::All => Self::audit_file_with_context(ctx, contract),
+            crate::plugin::PluginSelection::Select(selectors) => {
+                if !selection.has_any_builtin_selected() {
+                    return Vec::new();
+                }
+                Self::audit_file_with_context(ctx, contract)
+                    .into_iter()
+                    .filter(|v| {
+                        selectors.iter().any(|sel| {
+                            crate::plugin::rule_matches_builtin_selector(
+                                &v.rule_id,
+                                "",
+                                ctx.file_path,
+                                sel,
+                            )
+                        })
+                    })
+                    .collect()
+            }
+        }
     }
 
     /// Tronque le contenu d'un fichier Rust dès l'ouverture d'un module de test unitaire
@@ -1450,27 +1481,30 @@ impl SecurityLinter {
 
             // 3. SAST Global & Contract: no_raw_sql (CWE-89)
             let check_raw_sql = contract.map(|c| c.frontmatter.security_rules.no_raw_sql).unwrap_or(true);
-            let upper_sql = trimmed.to_uppercase();
-            let has_sql_verb = (upper_sql.contains("SELECT ") && (upper_sql.contains(" FROM ") || upper_sql.contains(" WHERE ")))
-                || upper_sql.contains("INSERT INTO ")
-                || (upper_sql.contains("UPDATE ") && upper_sql.contains(" SET "))
-                || upper_sql.contains("DELETE FROM ");
             if !is_test_file
                 && check_raw_sql
-                && has_sql_verb
                 && (trimmed.contains("${") || trimmed.contains("format!(") || trimmed.contains('+') || trimmed.contains("%s") || trimmed.contains("f\""))
             {
-                violations.push(LinterViolation {
-                    file_path: file_path.to_string(),
-                    line_number: line_no,
-                    rule_id: "SAST_RAW_SQL_INJECTION".to_string(),
-                    cve_id: "CWE-89 / SQL-INJECTION".to_string(),
-                    severity: "CRITICAL".to_string(),
-                    message: "Dynamic SQL string concatenation detected: vulnerable to SQL Injection".to_string(),
-                    transmitted_data: Some("raw_sql_query".to_string()),
-                    transmitted_type: Some("String (Unescaped SQL Concatenation)".to_string()),
-                    remediation: "Use parameterized queries (sqlx::query!, prepared statements, or bind parameters ? / $1).".to_string(),
-                });
+                let has_sql_verb = (crate::lexer::contains_ascii_case_insensitive(trimmed, "select ")
+                    && (crate::lexer::contains_ascii_case_insensitive(trimmed, " from ")
+                        || crate::lexer::contains_ascii_case_insensitive(trimmed, " where ")))
+                    || crate::lexer::contains_ascii_case_insensitive(trimmed, "insert into ")
+                    || (crate::lexer::contains_ascii_case_insensitive(trimmed, "update ")
+                        && crate::lexer::contains_ascii_case_insensitive(trimmed, " set "))
+                    || crate::lexer::contains_ascii_case_insensitive(trimmed, "delete from ");
+                if has_sql_verb {
+                    violations.push(LinterViolation {
+                        file_path: file_path.to_string(),
+                        line_number: line_no,
+                        rule_id: "SAST_RAW_SQL_INJECTION".to_string(),
+                        cve_id: "CWE-89 / SQL-INJECTION".to_string(),
+                        severity: "CRITICAL".to_string(),
+                        message: "Dynamic SQL string concatenation detected: vulnerable to SQL Injection".to_string(),
+                        transmitted_data: Some("raw_sql_query".to_string()),
+                        transmitted_type: Some("String (Unescaped SQL Concatenation)".to_string()),
+                        remediation: "Use parameterized queries (sqlx::query!, prepared statements, or bind parameters ? / $1).".to_string(),
+                    });
+                }
             }
 
             // 4. SAST Global & Contract: no_env_access in pure domain layer (CWE-15)
@@ -1497,9 +1531,11 @@ impl SecurityLinter {
             if !is_test_file
                 && (trimmed.contains("BEGIN PRIVATE KEY")
                     || (trimmed.contains("AKIA") && trimmed.len() > 20)
-                    || ((trimmed.to_lowercase().contains("secret") || trimmed.to_lowercase().contains("api_key") || trimmed.to_lowercase().contains("private_key"))
-                        && trimmed.contains(" = \"")
+                    || (trimmed.contains(" = \"")
                         && !trimmed.contains(" = \"\"")
+                        && (crate::lexer::contains_ascii_case_insensitive(trimmed, "secret")
+                            || crate::lexer::contains_ascii_case_insensitive(trimmed, "api_key")
+                            || crate::lexer::contains_ascii_case_insensitive(trimmed, "private_key"))
                         && !trimmed.contains("env")
                         && !trimmed.contains("test")
                         && !trimmed.contains("ed25519:")
@@ -1861,33 +1897,44 @@ impl SecurityLinter {
                 }
 
                 // CVE-RUST-TRANSMUTE-SIZE-MISMATCH (CWE-843 / Unsafe Transmute Type Confusion)
-                let window_start = idx.saturating_sub(6);
-                let window_end = (idx + 4).min(lines.len());
-                let has_safety_comment = lines[window_start..window_end].iter().any(|l| {
-                    let up = l.to_uppercase();
-                    up.contains("// SAFETY:")
-                        || up.contains("// SAFE:")
-                        || up.contains("/* SAFETY:")
-                        || l.contains("is_torsion_free()")
-                        || l.contains("repr(transparent)")
-                });
-                let is_benign_unsafe = trimmed.contains("unreachable_unchecked")
-                    || trimmed.contains("from_utf8_unchecked")
-                    || trimmed.contains("env::set_var")
-                    || trimmed.contains("env::remove_var")
-                    || trimmed.contains("blst::")
-                    || lines[idx..(idx + 4).min(lines.len())]
-                        .iter()
-                        .any(|l| l.contains("env::set_var") || l.contains("env::remove_var") || l.contains("unreachable_unchecked") || l.contains("blst::"))
-                    || trimmed.contains("PhantomData<*const")
-                    || trimmed.contains("PhantomData<*mut")
-                    || trimmed.contains("unsafe trait ")
-                    || trimmed.contains("unsafe impl ")
-                    || trimmed.contains("unsafe fn ")
-                    || norm_path.contains("bls12381.rs")
-                    || norm_path.contains("core/store/src/db/rocksdb")
-                    || norm_path.contains("core/store/src/db/slice")
-                    || norm_path.contains("core/store/src/trie/mem");
+                let needs_safety_check = trimmed.contains("transmute")
+                    || trimmed.contains("unsafe")
+                    || trimmed.contains("*const ")
+                    || trimmed.contains("*mut ");
+                let has_safety_comment = if needs_safety_check {
+                    let window_start = idx.saturating_sub(6);
+                    let window_end = (idx + 4).min(lines.len());
+                    lines[window_start..window_end].iter().any(|l| {
+                        crate::lexer::contains_ascii_case_insensitive(l, "// safety:")
+                            || crate::lexer::contains_ascii_case_insensitive(l, "// safe:")
+                            || crate::lexer::contains_ascii_case_insensitive(l, "/* safety:")
+                            || l.contains("is_torsion_free()")
+                            || l.contains("repr(transparent)")
+                    })
+                } else {
+                    false
+                };
+                let is_benign_unsafe = if needs_safety_check {
+                    trimmed.contains("unreachable_unchecked")
+                        || trimmed.contains("from_utf8_unchecked")
+                        || trimmed.contains("env::set_var")
+                        || trimmed.contains("env::remove_var")
+                        || trimmed.contains("blst::")
+                        || lines[idx..(idx + 4).min(lines.len())]
+                            .iter()
+                            .any(|l| l.contains("env::set_var") || l.contains("env::remove_var") || l.contains("unreachable_unchecked") || l.contains("blst::"))
+                        || trimmed.contains("PhantomData<*const")
+                        || trimmed.contains("PhantomData<*mut")
+                        || trimmed.contains("unsafe trait ")
+                        || trimmed.contains("unsafe impl ")
+                        || trimmed.contains("unsafe fn ")
+                        || norm_path.contains("bls12381.rs")
+                        || norm_path.contains("core/store/src/db/rocksdb")
+                        || norm_path.contains("core/store/src/db/slice")
+                        || norm_path.contains("core/store/src/trie/mem")
+                } else {
+                    false
+                };
 
                 if !trimmed.starts_with("use ")
                     && (trimmed.contains("transmute(") || trimmed.contains("transmute::<"))

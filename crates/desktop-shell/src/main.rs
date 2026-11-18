@@ -76,6 +76,23 @@ pub struct Args {
     /// Run only SCA audit and output results
     #[arg(long, default_value_t = false)]
     pub sca_only: bool,
+
+    /// Select active SAST plugin packs or profiles: "auto", "all", "<pack1>,<pack2>", or "profile:<name>"
+    #[arg(long, value_name = "SPEC")]
+    pub plugins: Option<String>,
+}
+
+fn resolve_scanner_for_args(
+    project_root: &Path,
+    plugins_arg: Option<&str>,
+) -> Result<(ProjectScanner, security_linter::PluginEngine), String> {
+    let selection = match plugins_arg {
+        Some(s) => security_linter::PluginSelection::parse(s)?,
+        None => security_linter::PluginSelection::Default,
+    };
+    let scanner = ProjectScanner::default().with_plugin_selection(selection);
+    let engine = scanner.validate_plugins(project_root)?;
+    Ok((scanner, engine))
 }
 
 
@@ -177,7 +194,10 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.benchmark {
-        benchmark::run_benchmark(&args.path)?;
+        if let Err(e) = benchmark::run_benchmark_with_plugins(&args.path, args.plugins.as_deref()) {
+            eprintln!("❌ {}", e);
+            std::process::exit(1);
+        }
         return Ok(());
     }
 
@@ -384,7 +404,13 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     AuditWriter::ensure_master_rules_file(&project_root)?;
-    let scanner = ProjectScanner::default();
+    let (scanner, plugin_engine) = match resolve_scanner_for_args(&project_root, args.plugins.as_deref()) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("❌ [PLUGINS] {}", e);
+            std::process::exit(1);
+        }
+    };
     let mut graph = scanner.scan_project(&project_root);
 
     if args.sca || args.offline_sca {
@@ -416,7 +442,20 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let is_sarif = args.format.eq_ignore_ascii_case("sarif");
 
     if is_sarif {
-        let sarif_report = security_linter::sarif::SarifReport::from_anomalies(&all_anomalies, None);
+        let mut active_rules = if !matches!(
+            scanner.plugin_selection,
+            security_linter::PluginSelection::Select(_)
+        ) {
+            security_linter::SecurityLinter::get_supported_cve_rules()
+        } else {
+            Vec::new()
+        };
+        active_rules.extend(plugin_engine.get_cve_rule_defs());
+        let sarif_report = security_linter::sarif::SarifReport::from_anomalies_with_root(
+            &all_anomalies,
+            Some(&active_rules),
+            Some(&project_root),
+        );
         let sarif_json = sarif_report.to_json_string_pretty()?;
 
         if let Some(ref out_path) = args.output {
@@ -465,6 +504,9 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         let mut failed_violations = Vec::new();
 
         for a in &all_anomalies {
+            if a.taint_trace.as_ref().map_or(false, |t| t.is_sanitized) {
+                continue;
+            }
             let sev = a.severity.trim().to_uppercase();
             let triggered = match threshold.as_str() {
                 "CRITICAL" => sev == "CRITICAL",
@@ -611,8 +653,9 @@ pub async fn execute_project_pipeline(
         obsidian_vault::DetectedProjectType::PureCode => {
             let scan_path = path.clone();
             let excl = custom_excl.clone();
+            let sel = state.plugin_selection.clone();
             let code_g = tokio::task::spawn_blocking(move || {
-                let scanner = ProjectScanner::default();
+                let scanner = ProjectScanner::default().with_plugin_selection(sel);
                 scanner.scan_project_with_exclusions(&scan_path, &excl)
             })
             .await
@@ -626,10 +669,11 @@ pub async fn execute_project_pipeline(
             let scan_path1 = path.clone();
             let scan_path2 = path.clone();
             let excl = custom_excl.clone();
+            let sel = state.plugin_selection.clone();
 
             let (code_res, vault_res) = tokio::join!(
                 tokio::task::spawn_blocking(move || {
-                    let scanner = ProjectScanner::default();
+                    let scanner = ProjectScanner::default().with_plugin_selection(sel);
                     scanner.scan_project_with_exclusions(&scan_path1, &excl)
                 }),
                 tokio::task::spawn_blocking(move || {
@@ -790,6 +834,14 @@ pub async fn execute_project_pipeline(
 pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let project_root = fs::canonicalize(Path::new(&args.path)).unwrap_or_else(|_| PathBuf::from(&args.path));
+    let (scanner, _) = match resolve_scanner_for_args(&project_root, args.plugins.as_deref()) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("❌ [PLUGINS] {}", e);
+            std::process::exit(1);
+        }
+    };
+    let plugin_selection = scanner.plugin_selection.clone();
 
     AuditWriter::ensure_master_rules_file(&project_root)?;
 
@@ -807,7 +859,6 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     // 2. Scan code graph if project has code (respecting saved exclusions from .aether/settings.json)
     let saved_settings = load_project_settings(&project_root);
     let code_graph = if project_type.is_code() || project_type.is_mixed() {
-        let scanner = ProjectScanner::default();
         let g = match saved_settings.as_ref() {
             Some(s) if !s.exclusions.is_empty() => scanner.scan_project_with_exclusions(&project_root, &s.exclusions),
             _ => scanner.scan_project(&project_root),
@@ -839,15 +890,18 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     }
     .unwrap_or_else(|| core_graph::graph::AetherGraph::new("Project"));
 
-    let shared_state = Arc::new(AppState::new(
-        initial_active_graph,
-        project_root.clone(),
-        project_type,
-        active_view_mode,
-        code_graph,
-        vault_graph,
-        detection_report,
-    ));
+    let shared_state = Arc::new(
+        AppState::new(
+            initial_active_graph,
+            project_root.clone(),
+            project_type,
+            active_view_mode,
+            code_graph,
+            vault_graph,
+            detection_report,
+        )
+        .with_plugin_selection(plugin_selection),
+    );
 
     // FileWatcher background loop with debouncer quiet-window
     let watcher_root = project_root.clone();
@@ -906,8 +960,9 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         if has_code_changes || current_mode == "code" || current_mode == "ide" {
                             let custom_excl = watcher_state.custom_exclusions.read().await.clone();
                             let scan_root = current_root.clone();
+                            let sel = watcher_state.plugin_selection.clone();
                             if let Ok(updated_graph) = tokio::task::spawn_blocking(move || {
-                                let scanner = ProjectScanner::default();
+                                let scanner = ProjectScanner::default().with_plugin_selection(sel);
                                 scanner.scan_project_with_exclusions(&scan_root, &custom_excl)
                             }).await {
                                 let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
@@ -1171,7 +1226,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         match state.switch_view_mode(&req.mode).await {
                             Ok(graph) => (
                                 axum::http::StatusCode::OK,
-                                axum::Json(serde_json::to_value(graph).unwrap_or_default()),
+                                axum::Json(api_routes::ui_payload::build_payload(&graph)),
                             )
                                 .into_response(),
                             Err(api_routes::ViewModeError::InvalidMode(err)) => (
@@ -1211,7 +1266,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         };
 
                         let active_graph = execute_project_pipeline(&state, path, req.exclusions).await;
-                        axum::Json(active_graph)
+                        axum::Json(api_routes::ui_payload::build_payload(&active_graph))
                     }
                 }
             })
@@ -1230,7 +1285,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         };
 
                         let active_graph = execute_project_pipeline(&state, path, None).await;
-                        axum::Json(active_graph)
+                        axum::Json(api_routes::ui_payload::build_payload(&active_graph))
                     }
                 }
             }),
@@ -1241,7 +1296,14 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 let state = state_graph.clone();
                 async move {
                     use axum::response::IntoResponse;
-                    if q.contains_key("full") {
+                    let is_full = q
+                        .get("full")
+                        .map(|v| {
+                            let t = v.trim();
+                            t == "1" || t.eq_ignore_ascii_case("true")
+                        })
+                        .unwrap_or(false);
+                    if is_full {
                         // Format historique complet (MCP, exports) : aretes en objets, aucun allegement.
                         let g = state.graph.read().await;
                         return axum::Json(g.clone()).into_response();
@@ -1445,7 +1507,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             blake3_hash = h;
                         }
                         let exclusions = state.custom_exclusions.read().await.clone();
-                        let scanner = ProjectScanner::default();
+                        let scanner = ProjectScanner::default()
+                            .with_plugin_selection(state.plugin_selection.clone());
                         let updated_graph = scanner.scan_project_with_exclusions(&canonical_p_root, &exclusions);
                         {
                             let mut cg_guard = state.code_graph.write().await;
@@ -1488,7 +1551,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         .unwrap_or((0, None));
 
                     let exclusions = state.custom_exclusions.read().await.clone();
-                    let scanner = ProjectScanner::default();
+                    let scanner = ProjectScanner::default()
+                        .with_plugin_selection(state.plugin_selection.clone());
                     let new_graph = scanner.scan_project_with_exclusions(&target_root, &exclusions);
                     {
                         let mut cg_guard = state.code_graph.write().await;
@@ -1525,7 +1589,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     match update_contract_rules(&target_root, &req) {
                         Ok((contract_path, blake3_hash, file_blake3_hash, effective_max_lines)) => {
                             let exclusions = state.custom_exclusions.read().await.clone();
-                            let scanner = ProjectScanner::default();
+                            let scanner = ProjectScanner::default()
+                                .with_plugin_selection(state.plugin_selection.clone());
                             let new_graph = scanner.scan_project_with_exclusions(&target_root, &exclusions);
                             {
                                 let mut cg_guard = state.code_graph.write().await;
@@ -2010,7 +2075,13 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let proj_name = p_root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Project".to_string());
                     
                     let stack_str = AuditWriter::detect_project_stack(&p_root);
-                    let prompt = AuditWriter::generate_optimized_system_prompt(&p_root, &proj_name, stack_str, server_port);
+                    let mut prompt = AuditWriter::generate_optimized_system_prompt(&p_root, &proj_name, stack_str, server_port);
+                    if let Ok(custom_rules) = fs::read_to_string(p_root.join("AETHER_AI_RULES.md")) {
+                        if !custom_rules.trim().is_empty() && !prompt.contains(custom_rules.trim()) {
+                            prompt.push_str("\n\n");
+                            prompt.push_str(&custom_rules);
+                        }
+                    }
                     axum::Json(serde_json::json!({
                         "status": "ok",
                         "project_name": proj_name,

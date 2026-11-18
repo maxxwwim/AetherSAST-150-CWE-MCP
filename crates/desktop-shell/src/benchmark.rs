@@ -128,6 +128,10 @@ fn collect_source_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
                     .and_then(|s| s.to_str())
                     .unwrap_or("")
                     .to_lowercase();
+                let file_name_lower = entry.file_name().to_string_lossy().to_lowercase();
+                if ext == "md" && file_name_lower != "readme.md" {
+                    continue;
+                }
                 if matches!(
                     ext.as_str(),
                     "rs"
@@ -160,6 +164,8 @@ fn collect_source_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
                         | "java"
                         | "lua"
                         | "luau"
+                        | "zig"
+                        | "cs"
                 ) {
                     files.push(path);
                 }
@@ -242,6 +248,24 @@ pub fn current_utc_timestamp() -> String {
 
 /// Executes the multi-phase SAST benchmark on the specified project directory.
 pub fn benchmark_project(project_root: &Path) -> Result<BenchmarkMetrics, Box<dyn std::error::Error>> {
+    benchmark_project_with_plugins(project_root, None)
+}
+
+/// Executes the multi-phase SAST benchmark with an optional `--plugins` selection spec.
+pub fn benchmark_project_with_plugins(
+    project_root: &Path,
+    plugins_spec: Option<&str>,
+) -> Result<BenchmarkMetrics, Box<dyn std::error::Error>> {
+    let selection = match plugins_spec {
+        Some(s) => security_linter::PluginSelection::parse(s),
+        None => Ok(security_linter::PluginSelection::Default),
+    }
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let scanner = ProjectScanner::default().with_plugin_selection(selection.clone());
+    let plugin_engine = scanner
+        .validate_plugins(project_root)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
     let start_total = Instant::now();
 
     // -------------------------------------------------------------------------
@@ -274,7 +298,6 @@ pub fn benchmark_project(project_root: &Path) -> Result<BenchmarkMetrics, Box<dy
     // Phase 2: Parallel Rayon AST Construction & Graph Edge Resolution
     // -------------------------------------------------------------------------
     let start_ast = Instant::now();
-    let scanner = ProjectScanner::default();
     let mut graph = scanner.scan_project(project_root);
     let ast_time_ms = start_ast.elapsed().as_secs_f64() * 1000.0;
 
@@ -292,6 +315,7 @@ pub fn benchmark_project(project_root: &Path) -> Result<BenchmarkMetrics, Box<dy
         (loaded_files.len() + num_threads - 1) / num_threads
     };
 
+    let has_plugin_rules = plugin_engine.total_rules_count() > 0;
     let evaluated_violations: usize = if loaded_files.is_empty() {
         0
     } else {
@@ -299,6 +323,8 @@ pub fn benchmark_project(project_root: &Path) -> Result<BenchmarkMetrics, Box<dy
             let mut handles = Vec::new();
             for chunk in loaded_files.chunks(chunk_size) {
                 let contracts_ref = &contracts;
+                let sel_ref = &selection;
+                let eng_ref = &plugin_engine;
                 handles.push(s.spawn(move || {
                     let mut count = 0;
                     for (_, rel_path, content) in chunk {
@@ -306,8 +332,12 @@ pub fn benchmark_project(project_root: &Path) -> Result<BenchmarkMetrics, Box<dy
                             continue;
                         }
                         let contract = find_contract_for_path(contracts_ref, rel_path);
-                        let v = SecurityLinter::audit_file(rel_path, content, contract);
+                        let ctx = security_linter::lexer::AuditContext::new(rel_path, content);
+                        let v = SecurityLinter::audit_file_selected(&ctx, contract, sel_ref);
                         count += v.len();
+                        if has_plugin_rules {
+                            count += eng_ref.audit_file_with_context(&ctx).len();
+                        }
                     }
                     count
                 }));
@@ -321,11 +351,7 @@ pub fn benchmark_project(project_root: &Path) -> Result<BenchmarkMetrics, Box<dy
         .iter()
         .map(|n| n.metadata.cve_anomalies.len())
         .sum();
-    let violations_count = if evaluated_violations > 0 {
-        evaluated_violations
-    } else {
-        graph_anomalies
-    };
+    let violations_count = evaluated_violations.max(graph_anomalies);
     let cwe_time_ms = start_cwe.elapsed().as_secs_f64() * 1000.0;
 
     // -------------------------------------------------------------------------
@@ -416,6 +442,14 @@ Comparaison sur un codebase standard de ~100 000 lignes de code polyglotte (Rust
 /// Runs the benchmark on the designated target path, prints live metrics to stdout,
 /// and writes `BENCHMARK.md` at the project workspace root.
 pub fn run_benchmark(target_path: &str) -> Result<BenchmarkMetrics, Box<dyn std::error::Error>> {
+    run_benchmark_with_plugins(target_path, None)
+}
+
+/// Runs the benchmark with an optional `--plugins` selection spec.
+pub fn run_benchmark_with_plugins(
+    target_path: &str,
+    plugins_spec: Option<&str>,
+) -> Result<BenchmarkMetrics, Box<dyn std::error::Error>> {
     let raw = target_path.trim().trim_matches('"').trim_matches('\'');
     let clean = raw.strip_prefix(r"\\?\").unwrap_or(raw);
     let project_root = if clean.is_empty() || clean == "." {
@@ -430,7 +464,7 @@ pub fn run_benchmark(target_path: &str) -> Result<BenchmarkMetrics, Box<dyn std:
     println!("Cible analysée : {}", project_root.display());
     println!("Exécution des phases d'analyse lexicale, AST Rayon, évaluation 150+ CWEs...");
 
-    let metrics = benchmark_project(&project_root)?;
+    let metrics = benchmark_project_with_plugins(&project_root, plugins_spec)?;
 
     let timestamp = current_utc_timestamp();
     let markdown = generate_benchmark_markdown(&metrics, &timestamp);

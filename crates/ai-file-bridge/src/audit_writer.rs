@@ -360,6 +360,13 @@ Spécifie toujours les paramètres exacts lors de tes appels MCP :
     /// Génère le fichier maître AETHER_AI_RULES.md à la racine du projet
     pub fn ensure_master_rules_file(project_root: &Path) -> std::io::Result<()> {
         let rules_file = project_root.join("AETHER_AI_RULES.md");
+        if rules_file.exists() {
+            if let Ok(existing) = fs::read_to_string(&rules_file) {
+                if !existing.trim().is_empty() {
+                    return Ok(());
+                }
+            }
+        }
         let proj_name = project_root
             .file_name()
             .map(|s| s.to_string_lossy().to_string())

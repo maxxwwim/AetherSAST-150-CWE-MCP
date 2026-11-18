@@ -279,7 +279,7 @@ pub fn compute_complexity(slice: &str) -> u32 {
     1 + branches
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RawCall {
     pub caller: String,
     pub callee: String,
@@ -299,10 +299,61 @@ pub struct FileAnalysis {
     pub ws_emits: Vec<(String, String)>,
 }
 
-#[derive(Default)]
-pub struct ProjectScanner;
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CachedFileScan {
+    pub rel_path: String,
+    pub folder: String,
+    pub file_hash: String,
+    pub contract_folder: Option<String>,
+    pub nodes: Vec<SymbolBubble>,
+    pub calls: Vec<RawCall>,
+    pub routes_declared: Vec<(String, String)>,
+    pub routes_called: Vec<(String, String)>,
+    pub ws_handlers: Vec<(String, String)>,
+    pub ws_emits: Vec<(String, String)>,
+    pub violations: Vec<security_linter::linter::LinterViolation>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectScanner {
+    pub plugin_selection: security_linter::PluginSelection,
+    pub use_cache: bool,
+}
+
+impl Default for ProjectScanner {
+    fn default() -> Self {
+        Self {
+            plugin_selection: security_linter::PluginSelection::Default,
+            use_cache: true,
+        }
+    }
+}
 
 impl ProjectScanner {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_plugin_selection(mut self, selection: security_linter::PluginSelection) -> Self {
+        self.plugin_selection = selection;
+        self
+    }
+
+    pub fn with_cache(mut self, enabled: bool) -> Self {
+        self.use_cache = enabled;
+        self
+    }
+
+    pub fn validate_plugins<P: AsRef<Path>>(
+        &self,
+        root: P,
+    ) -> Result<security_linter::PluginEngine, String> {
+        let plugins_dir = root.as_ref().join(".aether").join("plugins");
+        let mut engine = security_linter::PluginEngine::new();
+        engine.load_with_selection(Some(&plugins_dir), &self.plugin_selection)?;
+        Ok(engine)
+    }
+
     pub fn scan_project<P: AsRef<Path>>(&self, root: P) -> AetherGraph {
         self.scan_project_with_exclusions(root, &[])
     }
@@ -601,12 +652,8 @@ impl ProjectScanner {
             }
         }
 
+        candidate_files.sort();
         let files_scanned = candidate_files.len();
-
-        let results: Vec<FileAnalysis> = candidate_files
-            .par_iter()
-            .filter_map(|path| analyze_file(root_path, path))
-            .collect();
 
         // Load aether.lock.toml if present to verify BLAKE3 contract hashes
         let mut locked_hashes: HashMap<String, String> = HashMap::new();
@@ -627,41 +674,28 @@ impl ProjectScanner {
             }
         }
 
-        // Parse README.md contracts across all folders
+        // Pre-parse README.md contracts across all folders before parallel code scanning
         let mut contracts_by_folder: HashMap<String, ReadmeContract> = HashMap::new();
-        for res in &results {
-            if res.rel_path.to_lowercase().ends_with("readme.md") {
-                if let Ok(contract) = ReadmeContract::parse(&res.folder, &res.raw_content) {
-                    contracts_by_folder.insert(res.folder.clone(), contract);
+        for path in &candidate_files {
+            let is_readme = path
+                .file_name()
+                .map(|n| n.to_string_lossy().eq_ignore_ascii_case("readme.md"))
+                .unwrap_or(false);
+            if is_readme {
+                if let Ok(raw_content) = fs::read_to_string(path) {
+                    let rel_path = path
+                        .strip_prefix(root_path)
+                        .unwrap_or(path)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    let folder = folder_from_rel_path(&rel_path);
+                    if let Ok(contract) = ReadmeContract::parse(&folder, &raw_content) {
+                        contracts_by_folder.insert(folder, contract);
+                    }
                 }
             }
         }
 
-        let mut all_raw_calls = Vec::new();
-        let mut routes_declared = Vec::new();
-        let mut routes_called = Vec::new();
-        let mut ws_handlers = Vec::new();
-        let mut ws_emits = Vec::new();
-        let mut file_contents: Vec<(String, String, String)> = Vec::new();
-        let mut file_hashes: HashMap<String, String> = HashMap::with_capacity(results.len());
-
-        for res in results {
-            let f_hash = ReadmeContract::compute_blake3_hex(&res.raw_content);
-            file_hashes.insert(res.rel_path.clone(), f_hash);
-            file_contents.push((res.rel_path, res.folder, res.raw_content));
-            graph.nodes.extend(res.nodes);
-            all_raw_calls.extend(res.calls);
-            routes_declared.extend(res.routes_declared);
-            routes_called.extend(res.routes_called);
-            ws_handlers.extend(res.ws_handlers);
-            ws_emits.extend(res.ws_emits);
-        }
-
-        // Resolve AST edges (contains, imports, calls, renders, inherits, network, submits, documents)
-        let resolved_edges = resolve_graph_edges(&mut graph.nodes, &all_raw_calls);
-        graph.edges.extend(resolved_edges);
-
-        // Attach BLAKE3 / EARS contract metadata and run SecurityLinter on all scanned files
         let find_contract_for_folder = |folder: &str| -> Option<&ReadmeContract> {
             if let Some(c) = contracts_by_folder.get(folder) {
                 return Some(c);
@@ -698,6 +732,185 @@ impl ProjectScanner {
             }
             find_contract_for_folder(folder)
         };
+
+        // Initialize lock-free PluginEngine (Send + Sync) according to self.plugin_selection
+        let plugins_dir = root_path.join(".aether").join("plugins");
+        let mut plugin_engine = security_linter::PluginEngine::new();
+        let _ = plugin_engine.load_with_selection(
+            if plugins_dir.is_dir() {
+                Some(&plugins_dir)
+            } else {
+                None
+            },
+            &self.plugin_selection,
+        );
+        let plugin_digest = plugin_engine.config_digest();
+        let taint_rules = plugin_engine.collect_taint_rules();
+        let has_taint_rules = !taint_rules.is_empty();
+        let has_plugin_rules = plugin_engine.total_rules_count() > 0;
+        let run_builtin_sast = !matches!(
+            self.plugin_selection,
+            security_linter::PluginSelection::Select(_)
+        );
+
+        let ast_cache_dir = root_path.join(".aether").join("cache").join("ast");
+        if self.use_cache && !candidate_files.is_empty() {
+            let _ = fs::create_dir_all(&ast_cache_dir);
+        }
+
+        // Parallel AST + SAST scan with deterministic BLAKE3 per-file incremental cache
+        let scanned_entries: Vec<(CachedFileScan, Option<String>)> = candidate_files
+            .par_iter()
+            .filter_map(|path| {
+                let content = fs::read_to_string(path).ok()?;
+                let rel_path = path
+                    .strip_prefix(root_path)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let folder = folder_from_rel_path(&rel_path);
+                let ext = path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                let file_hash = ReadmeContract::compute_blake3_hex(&content);
+                let contract = find_contract_for_file(&folder, &rel_path);
+                let contract_folder = contract.map(|c| c.folder_path.clone());
+                let contract_sig = match contract {
+                    Some(c) => format!(
+                        "{}:{}:{}",
+                        c.folder_path,
+                        c.blake3_hash,
+                        c.effective_max_lines(&rel_path)
+                    ),
+                    None => "none".to_string(),
+                };
+                let entry_key = ReadmeContract::compute_blake3_hex(&format!(
+                    "v1|{}|{}|{}|{}",
+                    rel_path, file_hash, contract_sig, plugin_digest
+                ));
+                let cache_file_path = ast_cache_dir.join(format!("{}.json", entry_key));
+
+                if self.use_cache && cache_file_path.is_file() {
+                    if let Ok(bytes) = fs::read(&cache_file_path) {
+                        if let Ok(cached) = serde_json::from_slice::<CachedFileScan>(&bytes) {
+                            let taint_src = if has_taint_rules && ext != "md" {
+                                Some(content)
+                            } else {
+                                None
+                            };
+                            return Some((cached, taint_src));
+                        }
+                    }
+                }
+
+                let res = analyze_file_with_content(&rel_path, &ext, &content)?;
+                let mut violations = Vec::new();
+                if ext != "md" {
+                    let ctx = security_linter::lexer::AuditContext::new(&rel_path, &content);
+                    if run_builtin_sast {
+                        violations.extend(SecurityLinter::audit_file_with_context(&ctx, contract));
+                    }
+                    if has_plugin_rules {
+                        violations.extend(plugin_engine.audit_file_with_context(&ctx));
+                    }
+                }
+
+                let scan_entry = CachedFileScan {
+                    rel_path,
+                    folder,
+                    file_hash,
+                    contract_folder,
+                    nodes: res.nodes,
+                    calls: res.calls,
+                    routes_declared: res.routes_declared,
+                    routes_called: res.routes_called,
+                    ws_handlers: res.ws_handlers,
+                    ws_emits: res.ws_emits,
+                    violations,
+                };
+
+                if self.use_cache {
+                    if let Ok(json_bytes) = serde_json::to_vec(&scan_entry) {
+                        let tmp_name = format!(
+                            ".tmp_{}_{}_{}.json",
+                            entry_key,
+                            std::process::id(),
+                            rayon::current_thread_index().unwrap_or(0)
+                        );
+                        let tmp_path = ast_cache_dir.join(tmp_name);
+                        if fs::write(&tmp_path, &json_bytes).is_ok() {
+                            if fs::rename(&tmp_path, &cache_file_path).is_err() {
+                                let _ = fs::write(&cache_file_path, &json_bytes);
+                                let _ = fs::remove_file(&tmp_path);
+                            }
+                        } else {
+                            let _ = fs::write(&cache_file_path, &json_bytes);
+                        }
+                    }
+                }
+
+                let taint_src = if has_taint_rules && ext != "md" {
+                    Some(content)
+                } else {
+                    None
+                };
+                Some((scan_entry, taint_src))
+            })
+            .collect();
+
+        let mut all_raw_calls = Vec::new();
+        let mut routes_declared = Vec::new();
+        let mut routes_called = Vec::new();
+        let mut ws_handlers = Vec::new();
+        let mut ws_emits = Vec::new();
+        let mut file_hashes: HashMap<String, String> = HashMap::with_capacity(scanned_entries.len());
+        let mut parallel_violations: Vec<(
+            String,
+            Option<String>,
+            Vec<security_linter::linter::LinterViolation>,
+        )> = Vec::new();
+        let mut taint_files: Vec<(String, String)> = Vec::new();
+
+        for (entry, taint_src) in scanned_entries {
+            file_hashes.insert(entry.rel_path.clone(), entry.file_hash);
+            if let Some(raw_src) = taint_src {
+                taint_files.push((entry.rel_path.clone(), raw_src));
+            }
+            if !entry.violations.is_empty() {
+                parallel_violations.push((
+                    entry.rel_path.clone(),
+                    entry.contract_folder,
+                    entry.violations,
+                ));
+            }
+            graph.nodes.extend(entry.nodes);
+            all_raw_calls.extend(entry.calls);
+            routes_declared.extend(entry.routes_declared);
+            routes_called.extend(entry.routes_called);
+            ws_handlers.extend(entry.ws_handlers);
+            ws_emits.extend(entry.ws_emits);
+        }
+
+        // Run SSA Dataflow Taint Extraction while raw source strings are available, then drop immediately
+        if has_taint_rules && !taint_files.is_empty() {
+            let taint_refs: Vec<(&str, &str)> = taint_files
+                .iter()
+                .map(|(p, c)| (p.as_str(), c.as_str()))
+                .collect();
+            let dfg = crate::taint_extractor::TaintExtractor::extract_multi_with_rules(
+                &taint_refs,
+                &taint_rules,
+            );
+            graph.dataflow_graph = Some(dfg);
+        }
+        drop(taint_files);
+
+        // Resolve AST edges (contains, imports, calls, renders, inherits, network, submits, documents)
+        let resolved_edges = resolve_graph_edges(&mut graph.nodes, &all_raw_calls);
+        drop(all_raw_calls);
+        graph.edges.extend(resolved_edges);
 
         // Enrich all nodes with their folder/file BLAKE3 hash, lock status, EARS count & max lines limit
         let mut tamper_edges: Vec<AffiliationEdge> = Vec::new();
@@ -761,46 +974,6 @@ impl ProjectScanner {
             node_idx_by_id.insert(n.id.clone(), idx);
         }
 
-        // Initialize PluginEngine if .aether/plugins exists
-        let plugins_dir = root_path.join(".aether").join("plugins");
-        let plugin_engine = if plugins_dir.is_dir() {
-            let mut engine = security_linter::PluginEngine::new();
-            if let Ok(count) = engine.load_from_directory(&plugins_dir) {
-                if count > 0 {
-                    Some(std::sync::Mutex::new(engine))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // Execute SecurityLinter::audit_file in parallel via Rayon across all non-markdown files
-        let parallel_violations: Vec<(String, Option<String>, Vec<security_linter::linter::LinterViolation>)> = file_contents
-            .par_iter()
-            .filter_map(|(rel_path, folder, raw_content)| {
-                if rel_path.to_lowercase().ends_with(".md") {
-                    return None;
-                }
-                let contract = find_contract_for_file(folder, rel_path);
-                let mut violations = SecurityLinter::audit_file(rel_path, raw_content, contract);
-                if let Some(ref engine_mutex) = plugin_engine {
-                    if let Ok(mut engine) = engine_mutex.lock() {
-                        violations.extend(engine.audit_file(rel_path, raw_content));
-                    }
-                }
-                if violations.is_empty() {
-                    None
-                } else {
-                    let contract_folder = contract.map(|c| c.folder_path.clone());
-                    Some((rel_path.clone(), contract_folder, violations))
-                }
-            })
-            .collect();
-
         let mut linter_edges: Vec<AffiliationEdge> = Vec::new();
         for (rel_path, contract_folder, violations) in parallel_violations {
             let file_node_id = format!("file::{}", rel_path);
@@ -838,7 +1011,10 @@ impl ProjectScanner {
 
                 // Mark file node and closest symbol node in that file (RULE_MAX_LINES is strictly file-level, never attached to a symbol)
                 let is_file_level_rule = v.rule_id == "RULE_MAX_LINES";
-                let is_lines_warning = v.rule_id == "RULE_MAX_LINES" || v.cve_id.contains("ARCH-BUDGET-EXCEEDED") || v.cve_id.contains("CONTRACT") || v.severity == "WARNING";
+                let is_lines_warning = v.rule_id == "RULE_MAX_LINES"
+                    || v.cve_id.contains("ARCH-BUDGET-EXCEEDED")
+                    || v.cve_id.contains("CONTRACT")
+                    || v.severity == "WARNING";
                 let mut best_sym_id: Option<String> = None;
                 let mut best_line = 0usize;
 
@@ -850,7 +1026,10 @@ impl ProjectScanner {
                                 n.has_security_violation = true;
                             }
                             n.metadata.violations.push(formatted.clone());
-                        } else if !is_file_level_rule && n.line_number <= v.line_number && n.line_number >= best_line {
+                        } else if !is_file_level_rule
+                            && n.line_number <= v.line_number
+                            && n.line_number >= best_line
+                        {
                             best_line = n.line_number;
                             best_sym_id = Some(n.id.clone());
                         }
@@ -905,6 +1084,118 @@ impl ProjectScanner {
             }
         }
         graph.edges.extend(linter_edges);
+
+        // Evaluate SSA Dataflow Taint propagation and materialize vulnerable plugin taint sink findings
+        if graph.dataflow_graph.is_some() {
+            let taint_traces = graph.compute_dataflow_taint(&taint_rules.sanitizers);
+            let mut taint_edges: Vec<AffiliationEdge> = Vec::new();
+            for trace in taint_traces {
+                if !trace.is_vulnerable || trace.is_sanitized {
+                    continue;
+                }
+                let sink_file = &trace.sink.file_path;
+                let sink_line = trace.sink.line;
+                let rule_id = &trace.sink.rule_id;
+
+                let mut already_attached = false;
+                if let Some(indices) = nodes_by_file.get(sink_file) {
+                    for &idx in indices {
+                        for anom in &mut graph.nodes[idx].metadata.cve_anomalies {
+                            if anom.rule_id == *rule_id && anom.line_number == sink_line {
+                                anom.is_reachable = true;
+                                if anom.exploit_path.is_empty() {
+                                    anom.exploit_path = trace.traversed_scoped_variables();
+                                }
+                                if anom.taint_trace.is_none() {
+                                    anom.taint_trace = Some(trace.clone());
+                                }
+                                already_attached = true;
+                            }
+                        }
+                    }
+                }
+
+                if !already_attached {
+                    let is_plugin_sink_rule = taint_rules
+                        .sinks
+                        .iter()
+                        .any(|s| s.rule_id == *rule_id);
+                    if !is_plugin_sink_rule {
+                        continue;
+                    }
+                    let file_node_id = format!("file::{}", sink_file);
+                    let msg = format!(
+                        "Tainted dataflow from '{}' ({}:{}) reaches sink '{}' ({})",
+                        trace.source.var.name,
+                        trace.source.file_path,
+                        trace.source.line,
+                        trace.sink.var.name,
+                        trace.sink.description
+                    );
+                    let remediation =
+                        "Sanitize or parameterize untrusted input before passing to sink."
+                            .to_string();
+                    let formatted = format!(
+                        "[{}] ({}) L{}: {} — Fix: {}",
+                        rule_id, trace.sink.severity, sink_line, msg, remediation
+                    );
+                    let anomaly_rec = CveAnomalyRecord {
+                        rule_id: rule_id.clone(),
+                        cve_id: trace.sink.cwe.clone(),
+                        severity: trace.sink.severity.clone(),
+                        line_number: sink_line,
+                        file_path: sink_file.clone(),
+                        message: msg.clone(),
+                        transmitted_data: Some(trace.sink.var.name.clone()),
+                        transmitted_type: Some(format!("{:?}", trace.sink.sink_kind)),
+                        remediation,
+                        is_reachable: true,
+                        exploit_path: trace.traversed_scoped_variables(),
+                        taint_trace: Some(trace.clone()),
+                    };
+
+                    let mut best_sym_id: Option<String> = None;
+                    let mut best_line = 0usize;
+                    if let Some(indices) = nodes_by_file.get(sink_file) {
+                        for &idx in indices {
+                            let n = &mut graph.nodes[idx];
+                            if n.is_file {
+                                n.has_security_violation = true;
+                                n.metadata.violations.push(formatted.clone());
+                            } else if n.line_number <= sink_line && n.line_number >= best_line {
+                                best_line = n.line_number;
+                                best_sym_id = Some(n.id.clone());
+                            }
+                        }
+                    }
+
+                    if let Some(ref sym_id) = best_sym_id {
+                        if let Some(&sym_idx) = node_idx_by_id.get(sym_id) {
+                            let sym_node = &mut graph.nodes[sym_idx];
+                            sym_node.has_security_violation = true;
+                            sym_node.metadata.violations.push(formatted);
+                            sym_node.metadata.cve_anomalies.push(anomaly_rec);
+                        }
+                    } else if let Some(&file_idx) = node_idx_by_id.get(&file_node_id) {
+                        let file_node = &mut graph.nodes[file_idx];
+                        file_node.has_security_violation = true;
+                        file_node.metadata.cve_anomalies.push(anomaly_rec);
+                    }
+
+                    let src_id = best_sym_id.unwrap_or_else(|| file_node_id.clone());
+                    taint_edges.push(AffiliationEdge::new_cve_violation(
+                        src_id,
+                        file_node_id,
+                        &format!("{}: {}", rule_id, msg),
+                        Some(trace.sink.cwe.clone()),
+                        Some(trace.sink.severity.clone()),
+                        Some(trace.sink.var.name.clone()),
+                        Some(format!("{:?}", trace.sink.sink_kind)),
+                    ));
+                }
+            }
+            graph.edges.extend(taint_edges);
+        }
 
         // Cross-Boundary Filter 2 : NetworkRPC Matcher (Client -> Server Laser Orange)
         for (call_route, client_id) in &routes_called {
@@ -1199,6 +1490,7 @@ fn extract_python_docstring(body_slice: &str) -> String {
     String::new()
 }
 
+#[allow(dead_code)]
 fn analyze_file(root_path: &Path, file_path: &Path) -> Option<FileAnalysis> {
     let content = fs::read_to_string(file_path).ok()?;
     let rel_path = file_path
@@ -1213,22 +1505,27 @@ fn analyze_file(root_path: &Path, file_path: &Path) -> Option<FileAnalysis> {
         .unwrap_or("")
         .to_lowercase();
 
-    match ext.as_str() {
-        "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" => Some(analyze_jsts(&rel_path, &content)),
-        "py" => Some(analyze_python(&rel_path, &content)),
-        "rs" => Some(analyze_rust(&rel_path, &content)),
+    analyze_file_with_content(&rel_path, &ext, &content)
+}
+
+fn analyze_file_with_content(rel_path: &str, ext: &str, content: &str) -> Option<FileAnalysis> {
+    set_active_line_index(content);
+    match ext {
+        "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" => Some(analyze_jsts(rel_path, content)),
+        "py" => Some(analyze_python(rel_path, content)),
+        "rs" => Some(analyze_rust(rel_path, content)),
         "cpp" | "hpp" | "cc" | "hh" | "cxx" | "hxx" | "c" | "h" | "inl" => {
-            Some(analyze_cpp(&rel_path, &content))
+            Some(analyze_cpp(rel_path, content))
         }
-        "sol" | "yul" => Some(analyze_solidity(&rel_path, &content)),
-        "md" => Some(analyze_markdown(&rel_path, &content)),
+        "sol" | "yul" => Some(analyze_solidity(rel_path, content)),
+        "md" => Some(analyze_markdown(rel_path, content)),
         "php" | "phtml" | "php3" | "php4" | "php5" | "php7" | "phps" => {
-            Some(analyze_php(&rel_path, &content))
+            Some(analyze_php(rel_path, content))
         }
-        "java" => Some(analyze_java(&rel_path, &content)),
-        "lua" | "luau" => Some(analyze_luau(&rel_path, &content)),
-        "zig" => Some(analyze_zig(&rel_path, &content)),
-        "cs" => Some(analyze_csharp(&rel_path, &content)),
+        "java" => Some(analyze_java(rel_path, content)),
+        "lua" | "luau" => Some(analyze_luau(rel_path, content)),
+        "zig" => Some(analyze_zig(rel_path, content)),
+        "cs" => Some(analyze_csharp(rel_path, content)),
         _ => None,
     }
 }
@@ -1270,7 +1567,7 @@ fn analyze_luau(rel_path: &str, content: &str) -> FileAnalysis {
     for cap in re_luau_type().captures_iter(content) {
         if let Some(t_match) = cap.get(1) {
             let type_name = t_match.as_str().to_string();
-            let line_num = content[..t_match.start()].lines().count();
+            let line_num = line_number_at(content, t_match.start());
             let sym_id = format!("type::{}::{}", rel_path, type_name);
             let mut bubble = SymbolBubble::new(
                 sym_id.clone(),
@@ -1296,7 +1593,7 @@ fn analyze_luau(rel_path: &str, content: &str) -> FileAnalysis {
     for cap in re_luau_func().captures_iter(content) {
         if let Some(fn_match) = cap.get(1) {
             let fn_name = fn_match.as_str().to_string();
-            let line_num = content[..fn_match.start()].lines().count();
+            let line_num = line_number_at(content, fn_match.start());
             let sym_id = format!("fn::{}::{}", rel_path, fn_name);
             let mut bubble = SymbolBubble::new(
                 sym_id.clone(),
@@ -3995,40 +4292,39 @@ pub fn resolve_graph_edges(
     nodes: &mut Vec<SymbolBubble>,
     raw_calls: &[RawCall],
 ) -> Vec<AffiliationEdge> {
-    let mut node_by_id: HashMap<String, String> = HashMap::with_capacity(nodes.len());
-    let mut node_idx_by_id: HashMap<String, usize> = HashMap::with_capacity(nodes.len());
-    let mut node_by_filepath: HashMap<String, String> = HashMap::new();
-    let mut node_by_name: HashMap<String, String> = HashMap::with_capacity(nodes.len());
-    let mut node_galaxy: HashMap<String, String> = HashMap::with_capacity(nodes.len());
-    let mut db_node_ids: HashSet<String> = HashSet::new();
+    let mut node_idx_by_id: HashMap<String, usize> = HashMap::with_capacity(nodes.len() + 32);
+    let mut node_by_filepath: HashMap<String, usize> = HashMap::new();
+    let mut filepath_entries: Vec<(String, usize)> = Vec::new();
+    let mut node_by_name: HashMap<String, usize> = HashMap::with_capacity(nodes.len());
+    let mut db_node_flags: Vec<bool> = vec![false; nodes.len()];
 
     for (idx, n) in nodes.iter().enumerate() {
-        node_by_id.insert(n.id.clone(), n.id.clone());
         node_idx_by_id.insert(n.id.clone(), idx);
-        node_galaxy.insert(n.id.clone(), n.galaxy.clone());
 
         if n.layer == "database"
             || n.folder == "data-nodes"
             || n.file_path.contains("/db/")
             || n.file_path.contains("/database/")
         {
-            db_node_ids.insert(n.id.clone());
+            db_node_flags[idx] = true;
         }
 
         if n.is_file {
             let fp = n.file_path.replace('\\', "/");
-            node_by_filepath.insert(fp.clone(), n.id.clone());
+            node_by_filepath.insert(fp.clone(), idx);
+            filepath_entries.push((fp.clone(), idx));
 
             let p = Path::new(&fp);
             if let Some(stem) = p.file_stem() {
                 let stem_str = stem.to_string_lossy().to_string();
-                node_by_name
-                    .entry(stem_str.clone())
-                    .or_insert_with(|| n.id.clone());
+                node_by_name.entry(stem_str).or_insert(idx);
                 if let Some(parent) = p.parent() {
                     let no_ext = parent.join(stem).to_string_lossy().replace('\\', "/");
-                    node_by_filepath.insert(no_ext.clone(), n.id.clone());
-                    node_by_filepath.insert(format!("{}/index", no_ext), n.id.clone());
+                    let idx_path = format!("{}/index", no_ext);
+                    node_by_filepath.insert(no_ext.clone(), idx);
+                    filepath_entries.push((no_ext, idx));
+                    node_by_filepath.insert(idx_path.clone(), idx);
+                    filepath_entries.push((idx_path, idx));
                 }
             }
         }
@@ -4039,12 +4335,13 @@ pub fn resolve_graph_edges(
             || n.symbol_type == "component"
             || n.symbol_type == "form"
         {
-            node_by_name.insert(n.name.clone(), n.id.clone());
+            node_by_name.insert(n.name.clone(), idx);
         }
     }
 
-    let mut resolved_edges = Vec::new();
-    let mut seen_edges: HashSet<(String, String, String)> = HashSet::new();
+    let mut resolved_edges = Vec::with_capacity(raw_calls.len());
+    let mut seen_edges: HashSet<(String, String, String)> =
+        HashSet::with_capacity(raw_calls.len());
 
     for call in raw_calls {
         let src = &call.caller;
@@ -4053,29 +4350,29 @@ pub fn resolve_graph_edges(
             continue;
         }
 
-        let mut tgt = node_by_id
+        let mut tgt_idx = node_idx_by_id
             .get(callee)
             .or_else(|| node_by_filepath.get(callee))
             .or_else(|| node_by_name.get(callee))
-            .cloned();
+            .copied();
 
         // Fuzzy match for API endpoints
-        if tgt.is_none()
+        if tgt_idx.is_none()
             && (call.relation == "network"
                 || callee.starts_with("/api")
                 || callee.starts_with("api/"))
         {
             let clean_ep = callee.trim_start_matches('/');
-            for (fp, id) in &node_by_filepath {
+            for (fp, idx) in &filepath_entries {
                 if fp.contains(clean_ep) {
-                    tgt = Some(id.clone());
+                    tgt_idx = Some(*idx);
                     break;
                 }
             }
         }
 
         // Materialize dynamic API endpoint node for unresolved network calls
-        if tgt.is_none()
+        if tgt_idx.is_none()
             && call.relation == "network"
             && callee.len() > 1
             && !callee.contains('{')
@@ -4097,15 +4394,18 @@ pub fn resolve_graph_edges(
             ep_bubble.docstring = format!("Point d'accès réseau : {}", callee);
             let new_idx = nodes.len();
             nodes.push(ep_bubble);
-            node_by_id.insert(callee.clone(), ep_id.clone());
-            node_idx_by_id.insert(ep_id.clone(), new_idx);
-            tgt = Some(ep_id);
+            db_node_flags.push(false);
+            node_idx_by_id.insert(callee.clone(), new_idx);
+            node_idx_by_id.insert(ep_id, new_idx);
+            tgt_idx = Some(new_idx);
         }
 
-        if let Some(target_id) = tgt {
+        if let Some(target_idx) = tgt_idx {
+            let target_id = nodes[target_idx].id.clone();
             if target_id != *src {
                 let key = (src.clone(), target_id.clone(), call.relation.clone());
                 if seen_edges.insert(key) {
+                    let is_db_target = db_node_flags.get(target_idx).copied().unwrap_or(false);
                     let (edge_type, mut filters) = match call.relation.as_str() {
                         "contains" => (EdgeType::Contains, FilterAffiliation::PHYSICAL),
                         "imports" => (EdgeType::Import, FilterAffiliation::PHYSICAL),
@@ -4135,7 +4435,7 @@ pub fn resolve_graph_edges(
                             FilterAffiliation::DATABASE_QUERY | FilterAffiliation::PHYSICAL,
                         ),
                         _ => {
-                            if db_node_ids.contains(&target_id) {
+                            if is_db_target {
                                 (
                                     EdgeType::DatabaseQuery,
                                     FilterAffiliation::DATABASE_QUERY | FilterAffiliation::PHYSICAL,
@@ -4149,21 +4449,18 @@ pub fn resolve_graph_edges(
                     // Detect cross-galaxy illegal import (e.g. client importing server directly)
                     let mut violation_reason = None;
                     if call.relation == "imports" {
-                        let s_gal = node_galaxy.get(src).map(|s| s.as_str()).unwrap_or("");
-                        let t_gal = node_galaxy
-                            .get(&target_id)
-                            .map(|s| s.as_str())
-                            .unwrap_or("");
-                        if (s_gal == "client" && (t_gal == "server" || t_gal == "data-nodes"))
-                            || (s_gal == "contracts" && (t_gal == "client" || t_gal == "server"))
-                        {
-                            filters |= FilterAffiliation::SECURITY_VIOLATES;
-                            let reason = format!(
-                                "[CROSS_GALAXY_VIOLATION] Import inter-galaxie illégal: '{}' ({}) -> '{}' ({})",
-                                src, s_gal, target_id, t_gal
-                            );
-                            violation_reason = Some(reason.clone());
-                            if let Some(&src_idx) = node_idx_by_id.get(src) {
+                        if let Some(&src_idx) = node_idx_by_id.get(src) {
+                            let s_gal = nodes[src_idx].galaxy.as_str();
+                            let t_gal = nodes[target_idx].galaxy.as_str();
+                            if (s_gal == "client" && (t_gal == "server" || t_gal == "data-nodes"))
+                                || (s_gal == "contracts" && (t_gal == "client" || t_gal == "server"))
+                            {
+                                filters |= FilterAffiliation::SECURITY_VIOLATES;
+                                let reason = format!(
+                                    "[CROSS_GALAXY_VIOLATION] Import inter-galaxie illégal: '{}' ({}) -> '{}' ({})",
+                                    src, s_gal, target_id, t_gal
+                                );
+                                violation_reason = Some(reason.clone());
                                 let src_node = &mut nodes[src_idx];
                                 src_node.has_security_violation = true;
                                 src_node.metadata.violations.push(reason);
@@ -4185,23 +4482,29 @@ pub fn resolve_graph_edges(
         }
     }
 
-    // Compute in_degree, out_degree, and DAG stage_idx
-    let mut in_degrees: HashMap<String, usize> = HashMap::new();
-    let mut out_degrees: HashMap<String, usize> = HashMap::new();
+    // Compute in_degree, out_degree, and DAG stage_idx using usize-indexed vectors (0 String allocations)
+    let mut in_degrees = vec![0usize; nodes.len()];
+    let mut out_degrees = vec![0usize; nodes.len()];
     for e in &resolved_edges {
-        *in_degrees.entry(e.target.clone()).or_insert(0) += 1;
-        *out_degrees.entry(e.source.clone()).or_insert(0) += 1;
+        if let Some(&t_idx) = node_idx_by_id.get(&e.target) {
+            in_degrees[t_idx] += 1;
+        }
+        if let Some(&s_idx) = node_idx_by_id.get(&e.source) {
+            out_degrees[s_idx] += 1;
+        }
     }
 
-    for n in nodes.iter_mut() {
-        n.in_degree = in_degrees.get(&n.id).copied().unwrap_or(0);
-        n.out_degree = out_degrees.get(&n.id).copied().unwrap_or(0);
+    for (idx, n) in nodes.iter_mut().enumerate() {
+        n.in_degree = in_degrees[idx];
+        n.out_degree = out_degrees[idx];
 
         if n.in_degree == 0 && n.out_degree > 0 {
             n.stage_idx = 0; // Entrypoint
         } else if n.out_degree > 0 && n.in_degree > 0 {
             n.stage_idx = 1; // Coordinator
-        } else if n.layer == "database" || n.name.to_lowercase().contains("model") {
+        } else if n.layer == "database"
+            || security_linter::lexer::contains_ascii_case_insensitive(&n.name, "model")
+        {
             n.stage_idx = 3; // Persistence
         } else {
             n.stage_idx = 2; // Processing
@@ -4211,9 +4514,48 @@ pub fn resolve_graph_edges(
     resolved_edges
 }
 
+std::thread_local! {
+    static ACTIVE_LINE_STARTS: std::cell::RefCell<Option<(usize, usize, Vec<usize>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn set_active_line_index(content: &str) {
+    let mut starts = Vec::with_capacity(content.len() / 32 + 2);
+    starts.push(0);
+    for (idx, b) in content.bytes().enumerate() {
+        if b == b'\n' {
+            starts.push(idx + 1);
+        }
+    }
+    ACTIVE_LINE_STARTS.with(|cell| {
+        *cell.borrow_mut() = Some((content.as_ptr() as usize, content.len(), starts));
+    });
+}
+
 fn line_number_at(content: &str, byte_offset: usize) -> usize {
     let end = byte_offset.min(content.len());
-    content[..end].bytes().filter(|&b| b == b'\n').count() + 1
+    let ptr = content.as_ptr() as usize;
+    let fast = ACTIVE_LINE_STARTS.with(|cell| {
+        let borrow = cell.borrow();
+        if let Some((cached_ptr, cached_len, ref starts)) = *borrow {
+            if ptr == cached_ptr && end <= cached_len {
+                return Some(starts.partition_point(|&s| s <= end));
+            }
+        }
+        None
+    });
+    if let Some(line) = fast {
+        return line.max(1);
+    }
+    set_active_line_index(content);
+    ACTIVE_LINE_STARTS
+        .with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .map(|(_, _, starts)| starts.partition_point(|&s| s <= end))
+        })
+        .unwrap_or(1)
+        .max(1)
 }
 
 fn normalize_path(path_str: &str) -> String {

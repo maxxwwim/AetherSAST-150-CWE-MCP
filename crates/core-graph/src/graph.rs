@@ -89,8 +89,8 @@ impl AetherGraph {
                 for anom in &mut node.metadata.cve_anomalies {
                     let matches_loc = (anom.file_path == *sink_file && anom.line_number == sink_line)
                         || (anom.line_number == sink_line && (anom.file_path.ends_with(sink_file) || sink_file.ends_with(&anom.file_path)))
-                        || (anom.cve_id.contains(&trace.sink.cwe) && anom.line_number == sink_line)
-                        || (anom.transmitted_data.as_deref() == Some(sink_var) && anom.cve_id.contains(&trace.sink.cwe));
+                        || (crate::dataflow::types::cwe_matches(&anom.cve_id, &trace.sink.cwe) && anom.line_number == sink_line)
+                        || (anom.transmitted_data.as_deref() == Some(sink_var) && crate::dataflow::types::cwe_matches(&anom.cve_id, &trace.sink.cwe));
 
                     if matches_loc {
                         anom.taint_trace = Some(trace.clone());

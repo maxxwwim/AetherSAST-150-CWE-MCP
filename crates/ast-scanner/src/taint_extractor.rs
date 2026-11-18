@@ -1,6 +1,6 @@
 use core_graph::dataflow::{
     DataflowEdge, DataflowGraph, SanitizerRule, SinkKind, SourceKind, SsaVar,
-    TaintSink, TaintSource, TaintStepKind,
+    TaintRuleSet, TaintSink, TaintSource, TaintStepKind,
 };
 use core_graph::graph::AetherGraph;
 use regex::Regex;
@@ -111,17 +111,35 @@ impl TaintExtractor {
         files: &[(&str, &str)],
         custom_sanitizers: &[SanitizerRule],
     ) -> DataflowGraph {
-        let mut dfg = DataflowGraph::new();
+        let mut rule_set = TaintRuleSet::new();
         for r in custom_sanitizers {
-            dfg.add_sanitizer(r.clone());
+            rule_set.add_sanitizer(r.clone());
         }
+        Self::extract_multi_with_rules(files, &rule_set)
+    }
+
+    /// Extracts SSA DataflowGraph across multiple files using a full declarative [`TaintRuleSet`]
+    /// (`taint_sources`, `taint_sinks`, and `sanitizers`).
+    pub fn extract_multi_with_rules(
+        files: &[(&str, &str)],
+        rules: &TaintRuleSet,
+    ) -> DataflowGraph {
+        let mut dfg = DataflowGraph::new();
+        dfg.apply_rule_set(rules);
 
         let mut functions: HashMap<String, FunctionMeta> = HashMap::new();
         let mut call_sites: Vec<CallSite> = Vec::new();
 
         // Pass 1: Intra-procedural SSA extraction & def-use per file
         for &(file_path, content) in files {
-            Self::extract_file_intra(file_path, content, &mut dfg, &mut functions, &mut call_sites);
+            Self::extract_file_intra(
+                file_path,
+                content,
+                rules,
+                &mut dfg,
+                &mut functions,
+                &mut call_sites,
+            );
         }
 
         // Pass 2: Inter-procedural propagation (caller arguments -> callee params, return -> caller LHS)
@@ -152,6 +170,7 @@ impl TaintExtractor {
     fn extract_file_intra(
         file_path: &str,
         content: &str,
+        rules: &TaintRuleSet,
         dfg: &mut DataflowGraph,
         functions: &mut HashMap<String, FunctionMeta>,
         call_sites: &mut Vec<CallSite>,
@@ -281,7 +300,7 @@ impl TaintExtractor {
                 );
             }
 
-            if in_function && brace_depth <= 0 && (open_braces > 0 || close_braces > 0) {
+            if !is_py && in_function && brace_depth <= 0 && (open_braces > 0 || close_braces > 0) {
                 in_function = false;
                 current_scope = "global".to_string();
             }
@@ -338,11 +357,23 @@ impl TaintExtractor {
                     dfg.add_source(source);
                 }
 
+                // Declarative plugin taint_sources matching RHS or full line
+                let matched_sources = rules.match_sources(&rhs, file_path);
+                if !matched_sources.is_empty() {
+                    for src_rule in matched_sources {
+                        dfg.add_source(src_rule.to_taint_source(lhs_var.clone()));
+                    }
+                } else {
+                    for src_rule in rules.match_sources(trimmed, file_path) {
+                        dfg.add_source(src_rule.to_taint_source(lhs_var.clone()));
+                    }
+                }
+
                 // Check if RHS is a sanitizer call
                 let mut is_sanitizer_edge = false;
                 let mut matched_sanitizer = None;
                 for rule in &dfg.sanitizers {
-                    if rule.matches(&rhs, "*") || rhs.contains(&rule.name) {
+                    if rule.matches_for_path(&rhs, "*", file_path) {
                         is_sanitizer_edge = true;
                         matched_sanitizer = Some(rule.name.clone());
                         break;
@@ -439,7 +470,7 @@ impl TaintExtractor {
                 }
             }
 
-            // Detect Sinks (CWE-89 SQLi, CWE-78 Command, CWE-79 XSS, CWE-22 Path)
+            // Detect Sinks (CWE-89 SQLi, CWE-78 Command, CWE-79 XSS, CWE-22 Path + declarative plugin sinks)
             Self::detect_sinks_on_line(
                 trimmed,
                 line_num,
@@ -447,6 +478,7 @@ impl TaintExtractor {
                 &current_scope,
                 &scope_versions,
                 is_php,
+                rules,
                 dfg,
             );
         }
@@ -460,8 +492,33 @@ impl TaintExtractor {
         scope: &str,
         scope_versions: &HashMap<String, usize>,
         is_php: bool,
+        rules: &TaintRuleSet,
         dfg: &mut DataflowGraph,
     ) {
+        let is_fn_decl = trimmed.starts_with("fn ")
+            || trimmed.starts_with("pub fn ")
+            || trimmed.starts_with("pub async fn ")
+            || trimmed.starts_with("async fn ")
+            || trimmed.starts_with("def ")
+            || trimmed.starts_with("async def ")
+            || trimmed.starts_with("function ")
+            || trimmed.starts_with("export function ");
+
+        if !is_fn_decl && !rules.sinks.is_empty() {
+            let matched_sinks = rules.match_sinks(trimmed, file_path);
+            if !matched_sinks.is_empty() {
+                let used_vars = extract_vars_in_expr(trimmed, is_php, scope_versions);
+                for sink_rule in matched_sinks {
+                    for v in &used_vars {
+                        if let Some(&ver) = scope_versions.get(v) {
+                            let var = SsaVar::new(v.clone(), ver, scope.to_string(), line_num)
+                                .with_file(file_path);
+                            dfg.add_sink(sink_rule.to_taint_sink(var));
+                        }
+                    }
+                }
+            }
+        }
         // 1. CWE-89 SQL Injection Sinks
         let is_sqli_sink = trimmed.contains("query(")
             || trimmed.contains("execute(")
@@ -597,6 +654,15 @@ impl TaintExtractor {
                 // Link Callee return value -> Caller LHS variable
                 if let Some(ref lhs_var) = call.lhs_var {
                     if let Some(ref ret_var) = target_meta.return_var {
+                        // Remove direct intra-procedural shortcut edges (arg -> lhs_var) on this call line
+                        // so taint flows accurately through the callee body (preserving any sanitization inside callee).
+                        dfg.edges.retain(|e| {
+                            !(e.line == call.line
+                                && e.to_var == *lhs_var
+                                && !e.is_sanitizer
+                                && call.arg_vars.iter().any(|av| av == &e.from_var))
+                        });
+
                         let edge = DataflowEdge {
                             from_var: ret_var.clone(),
                             to_var: lhs_var.clone(),

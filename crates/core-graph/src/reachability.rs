@@ -71,6 +71,15 @@ pub fn compute_reachability(graph: &mut AetherGraph) {
         if is_source[sink_idx] {
             let sink_id = graph.nodes[sink_idx].id.clone();
             for anom in &mut graph.nodes[sink_idx].metadata.cve_anomalies {
+                if let Some(ref trace) = anom.taint_trace {
+                    anom.is_reachable = trace.is_vulnerable && !trace.is_sanitized;
+                    if anom.is_reachable && anom.exploit_path.is_empty() {
+                        anom.exploit_path = trace.traversed_scoped_variables();
+                    } else if !anom.is_reachable {
+                        anom.exploit_path.clear();
+                    }
+                    continue;
+                }
                 anom.is_reachable = true;
                 anom.exploit_path = vec![sink_id.clone()];
             }
@@ -124,11 +133,29 @@ pub fn compute_reachability(graph: &mut AetherGraph) {
                 .collect();
 
             for anom in &mut graph.nodes[sink_idx].metadata.cve_anomalies {
+                if let Some(ref trace) = anom.taint_trace {
+                    anom.is_reachable = trace.is_vulnerable && !trace.is_sanitized;
+                    if anom.is_reachable && anom.exploit_path.is_empty() {
+                        anom.exploit_path = trace.traversed_scoped_variables();
+                    } else if !anom.is_reachable {
+                        anom.exploit_path.clear();
+                    }
+                    continue;
+                }
                 anom.is_reachable = true;
                 anom.exploit_path = exploit_path.clone();
             }
         } else {
             for anom in &mut graph.nodes[sink_idx].metadata.cve_anomalies {
+                if let Some(ref trace) = anom.taint_trace {
+                    anom.is_reachable = trace.is_vulnerable && !trace.is_sanitized;
+                    if anom.is_reachable && anom.exploit_path.is_empty() {
+                        anom.exploit_path = trace.traversed_scoped_variables();
+                    } else if !anom.is_reachable {
+                        anom.exploit_path.clear();
+                    }
+                    continue;
+                }
                 anom.is_reachable = false;
                 anom.exploit_path.clear();
             }

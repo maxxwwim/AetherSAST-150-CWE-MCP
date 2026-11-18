@@ -1502,6 +1502,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                     description: Some(format!("Custom security plugin {}", plugin_name)),
                                     enabled: true,
                                     rules: Vec::new(),
+                                    ..Default::default()
                                 })
                             } else {
                                 security_linter::plugin::PluginManifest {
@@ -1511,6 +1512,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                     description: Some(format!("Custom security plugin {}", plugin_name)),
                                     enabled: true,
                                     rules: Vec::new(),
+                                    ..Default::default()
                                 }
                             };
 
@@ -1576,6 +1578,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                     regex_patterns,
                                     forbidden_tokens,
                                     check_literals,
+                                    ..Default::default()
                                 },
                                 test_cases,
                             };

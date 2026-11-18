@@ -1,20 +1,20 @@
 # ⚡ AetherScope V2 — Performance & Competitive Benchmark
 
-> Automatiquement généré par `aether-engine --benchmark` le 2026-11-09 06:09:24 UTC
+> Automatiquement généré par `aether-engine --benchmark` le 2026-11-18 10:50:23 UTC
 
 ## 📊 Métriques d'Exécution Réelles (Ce Système)
 
 | Métrique | Valeur Mesurée |
 | :--- | :--- |
-| **Fichiers analysés** | `122` fichiers |
-| **Lignes de code (LOC)** | `56244` lignes |
-| **Temps Lexing & Masquage** | `145.47` ms |
-| **Temps Construction AST (Rayon)** | `324.61` ms |
-| **Temps Évaluation 150+ Règles CWE** | `678.68` ms |
-| **Temps Total d'Exécution** | **`1150.62` ms** |
-| **Débit Global** | **`48881` LOC/seconde** |
-| **Pic Mémoire RAM (Peak RSS)** | **`25.04` MB** |
-| **Violations & Failles Détectées** | `79` anomalies |
+| **Fichiers analysés** | `157` fichiers |
+| **Lignes de code (LOC)** | `89843` lignes |
+| **Temps Lexing & Masquage** | `151.45` ms |
+| **Temps Construction AST (Rayon)** | `104.36` ms |
+| **Temps Évaluation 150+ Règles CWE** | `462.45` ms |
+| **Temps Total d'Exécution** | **`723.28` ms** |
+| **Débit Global** | **`124216` LOC/seconde** |
+| **Pic Mémoire RAM (Peak RSS)** | **`25.74` MB** |
+| **Violations & Failles Détectées** | `44` anomalies |
 
 ---
 
