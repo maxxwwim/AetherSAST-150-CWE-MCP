@@ -49,8 +49,8 @@ fn test_r1_detect_pure_obsidian_vault_fixture() {
     assert_eq!(report.code_files_count, 0);
     assert!(report.markdown_files_count >= 3);
     assert!(report.obsidian_syntax_markers_count >= 5);
-    assert_eq!(report.default_view, "vault");
-    assert!(report.supported_views.contains(&"vault".to_string()));
+    assert_eq!(report.default_view, "vault-notes");
+    assert!(report.supported_views.contains(&"vault-notes".to_string()));
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn test_r1_detect_mixed_code_vault_fixture() {
     assert_eq!(report.default_view, "code");
     assert_eq!(
         report.supported_views,
-        vec!["code".to_string(), "vault".to_string()]
+        vec!["code".to_string(), "vault-notes".to_string()]
     );
 }
 
@@ -201,17 +201,17 @@ async fn test_r3_dual_graph_state_and_dynamic_view_mode_toggle_on_mixed_fixture(
     assert_eq!(status.active_view_mode, "code");
     assert_eq!(
         status.supported_views,
-        vec!["code".to_string(), "vault".to_string()]
+        vec!["code".to_string(), "vault-notes".to_string()]
     );
 
     // 2. Switch dynamically to vault view
     let switched_vault = state
-        .switch_view_mode("vault")
+        .switch_view_mode("vault-notes")
         .await
         .expect("Switch to vault view should succeed");
     assert!(switched_vault.nodes.iter().any(|n| n.file_path.ends_with("Overview.md")));
     assert!(switched_vault.nodes.iter().any(|n| n.file_path.ends_with("ApiGuide.md")));
-    assert_eq!(state.get_project_status().await.active_view_mode, "vault");
+    assert_eq!(state.get_project_status().await.active_view_mode, "vault-notes");
 
     // 3. Switch back to code view
     let switched_code = state
@@ -250,12 +250,12 @@ fn test_r3_cockpit_ui_switcher_and_dual_standalone_bundle() {
     assert!(html.contains("id=\"btn-menu-view-code\""));
     assert!(html.contains("id=\"btn-menu-view-vault\""));
     assert!(html.contains("switchProjectViewMode('code')"));
-    assert!(html.contains("switchProjectViewMode('vault')"));
+    assert!(html.contains("switchProjectViewMode('vault-notes')"));
 
     // Verify embedded dual-vision payload and JS controller functions
     assert!(html.contains("window.__AETHERSCOPE_DUAL_GRAPH__"));
     assert!(html.contains("\"project_type\":\"Mixed\""));
-    assert!(html.contains("\"supported_views\":[\"code\",\"vault\"]"));
+    assert!(html.contains("\"supported_views\":[\"code\",\"vault-notes\"]"));
     assert!(html.contains("async function switchProjectViewMode"));
     assert!(html.contains("fetchProjectStatus"));
 }

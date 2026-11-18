@@ -75,7 +75,7 @@ pub fn generate_modern_standalone_html(
     let vault_prepared = vault_graph.map(ensure_system_prompt);
 
     let norm_active = match active_view.trim().to_lowercase().as_str() {
-        "vault" | "notes" => "vault",
+        "vault" | "notes" | "vault-notes" => "vault-notes",
         _ => "code",
     };
 
@@ -96,13 +96,13 @@ pub fn generate_modern_standalone_html(
         .replace("</", "<\\/")
         .replace("<!--", "<\\!--");
 
-    let active_key = if norm_active == "vault" { "vault" } else { "code" };
+    let active_key = if norm_active == "vault-notes" { "vault" } else { "code" };
     let injection = format!(
         "<div id=\"view-mode-toggle\" style=\"display:none\" aria-hidden=\"true\">\n\
          <button id=\"btn-view-mode-code\" onclick=\"switchProjectViewMode('code')\"></button>\n\
-         <button id=\"btn-view-mode-vault\" onclick=\"switchProjectViewMode('vault')\"></button>\n\
+         <button id=\"btn-view-mode-vault\" onclick=\"switchProjectViewMode('vault-notes')\"></button>\n\
          <button id=\"btn-menu-view-code\" onclick=\"switchProjectViewMode('code')\"></button>\n\
-         <button id=\"btn-menu-view-vault\" onclick=\"switchProjectViewMode('vault')\"></button>\n\
+         <button id=\"btn-menu-view-vault\" onclick=\"switchProjectViewMode('vault-notes')\"></button>\n\
          </div>\n\
          <script>\n\
          window.__AETHERSCOPE_DUAL_GRAPH__ = {};\n\
@@ -235,7 +235,7 @@ mod tests {
         assert!(html.contains("window.__AETHERSCOPE_DUAL_GRAPH__"));
         assert!(html.contains("window.AETHER_DUAL_GRAPH"));
         assert!(html.contains("\"project_type\":\"Mixed\""));
-        assert!(html.contains("\"supported_views\":[\"code\",\"vault\"]"));
+        assert!(html.contains("\"supported_views\":[\"code\",\"vault-notes\"]"));
         assert!(html.contains("\"active_view\":\"code\""));
         assert!(html.contains("crates/core/src/main.rs::run"));
         assert!(html.contains("note::Architecture"));
@@ -258,13 +258,13 @@ mod tests {
             None,
             Some(&vault_graph),
             DetectedProjectType::PureObsidianVault,
-            "vault",
+            "vault-notes",
         );
 
         assert!(html.contains("window.__AETHERSCOPE_DATA__"));
         assert!(html.contains("\"project_type\":\"PureObsidianVault\""));
-        assert!(html.contains("\"supported_views\":[\"vault\",\"code\"]"));
-        assert!(html.contains("\"active_view\":\"vault\""));
+        assert!(html.contains("\"supported_views\":[\"vault-notes\",\"code\"]"));
+        assert!(html.contains("\"active_view\":\"vault-notes\""));
         assert!(html.contains("note::Index"));
     }
 

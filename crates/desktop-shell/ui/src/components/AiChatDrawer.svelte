@@ -26,10 +26,25 @@
   let inputText = $state('');
   let sending = $state(false);
   let minimized = $state(false);
+  let agentsHudOpen = $state(false);
+  let agentsHudEl = $state<HTMLDivElement | null>(null);
   let collapsedThoughts = $state<Record<string, boolean>>({});
   let copiedMsgId = $state<string | null>(null);
   let cliFeedback = $state('');
   let chatBodyEl = $state<HTMLDivElement | null>(null);
+
+  function handleAgentsHudOutsidePointer(e: PointerEvent) {
+    if (!agentsHudOpen) return;
+    if (agentsHudEl && !agentsHudEl.contains(e.target as Node)) {
+      agentsHudOpen = false;
+    }
+  }
+
+  function handleAgentsHudKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && agentsHudOpen) {
+      agentsHudOpen = false;
+    }
+  }
 
   // Draggable window offset (relative to default bottom-4 right-4 anchor)
   let dragOffset = $state<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -80,8 +95,10 @@
         api.getTelemetry().catch(() => null),
         api.getChatHistory().catch(() => null),
       ]);
-      if (telemRes?.agents?.length || telemRes?.telemetry?.target || telemRes?.history?.length) {
-        cockpitState.recordAiTelemetry(telemRes.telemetry as any, telemRes.agents, telemRes.history);
+      if (telemRes) {
+        cockpitState.recordAiTelemetry(telemRes.telemetry as any, telemRes.agents ?? [], telemRes.history);
+      } else {
+        cockpitState.pruneInactiveAgents();
       }
       if (chatRes && Array.isArray(chatRes.messages)) {
         const prevLen = cockpitState.aiChatMessages.length;
@@ -238,55 +255,135 @@
   }
 </script>
 
-<!-- Top Floating Multi-Agent Swarm Telemetry HUD (Allégé & Compact) -->
-{#if cockpitState.activeAgents.length > 0}
-  <div class="fixed top-[76px] left-1/2 -translate-x-1/2 z-40 max-w-2xl w-[94vw] sm:w-auto px-2.5 py-1 rounded-xl bg-[#130d24]/92 backdrop-blur-xl border border-purple-500/40 shadow-lg flex flex-wrap items-center justify-center gap-1.5 text-[10px]">
-    <span class="flex items-center gap-1 text-purple-200 font-bold shrink-0">
-      <Bot class="w-3 h-3 text-purple-400" />
-      {cockpitState.activeAgents.length} IA
-    </span>
-    <div class="flex flex-wrap items-center gap-1">
-      {#each cockpitState.activeAgents.slice(0, 5) as ag (ag.agentId)}
-        <button
-          type="button"
-          onclick={() => focusSymbolByName(ag.target)}
-          class="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/40 hover:bg-white/10 border text-[9.5px] font-mono text-slate-200 cursor-pointer transition-colors"
-          style="border-color: {ag.color}"
-          title="{ag.agentName} • {ag.action}: {ag.details}"
-        >
-          <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color: {ag.color}"></span>
-          <span class="font-bold">{ag.agentName}</span>
-          {#if ag.target}
-            <span class="text-slate-500">➔</span>
-            <span class="truncate max-w-[75px] text-slate-300">{ag.target}</span>
-          {/if}
-        </button>
-      {/each}
+<svelte:window onpointerdown={handleAgentsHudOutsidePointer} onkeydown={handleAgentsHudKeydown} />
+
+<!-- Left-Edge Compact Collapsible Multi-Agent IA Dock (Sous Docs/EARS, zéro encombrement au centre) -->
+{#if cockpitState.activeAgents.length > 0 && !cockpitState.isDocPanelOpen && cockpitState.viewMode !== 'ide'}
+  <div
+    bind:this={agentsHudEl}
+    class="fixed left-3 top-[94px] z-30 flex flex-col items-start gap-1.5 select-none pointer-events-auto"
+  >
+    <!-- Compact Toggle Pill -->
+    <div class="flex items-center rounded-lg bg-[#0b0f19]/92 backdrop-blur-md border border-purple-500/35 shadow-xl overflow-hidden">
+      <button
+        type="button"
+        onclick={() => (agentsHudOpen = !agentsHudOpen)}
+        aria-expanded={agentsHudOpen}
+        title={agentsHudOpen
+          ? 'Replier la liste des agents IA'
+          : `Agents IA actifs (${cockpitState.activeAgents.length}) : ${cockpitState.activeAgents.map((a) => a.agentName + (a.target ? ' → ' + a.target : '')).join(' • ')}`}
+        class="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-purple-500/15 text-[11px] font-semibold text-purple-100 transition-colors cursor-pointer"
+      >
+        <span class="relative flex h-2 w-2 shrink-0">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+        </span>
+        <Bot class="w-3.5 h-3.5 text-purple-300 shrink-0" />
+        <span class="font-mono font-bold text-[10.5px]">{cockpitState.activeAgents.length} IA</span>
+        <span class="flex items-center -space-x-0.5 ml-0.5">
+          {#each cockpitState.activeAgents.slice(0, 4) as ag (ag.agentId)}
+            <span
+              class="w-2 h-2 rounded-full ring-1 ring-[#0b0f19]"
+              style="background-color: {ag.color}"
+              title="{ag.agentName}{ag.target ? ` → ${ag.target}` : ''}"
+            ></span>
+          {/each}
+        </span>
+        <ChevronDown class="w-3 h-3 text-slate-400 transition-transform duration-150 {agentsHudOpen ? 'rotate-180' : ''}" />
+      </button>
+
+      <div class="w-px h-4 bg-white/10"></div>
+
+      <button
+        type="button"
+        onclick={() => {
+          subTab = 'agents';
+          cockpitState.isChatOpen = true;
+          agentsHudOpen = false;
+        }}
+        title="Ouvrir le suivi Copilot IA & Agents (Touche C)"
+        class="px-2 py-1.5 text-purple-300 hover:text-white hover:bg-purple-500/20 transition-colors cursor-pointer"
+      >
+        <MessageSquare class="w-3 h-3" />
+      </button>
     </div>
-    <button
-      type="button"
-      onclick={() => (cockpitState.isChatOpen = !cockpitState.isChatOpen)}
-      class="px-2 py-0.5 rounded-full bg-purple-600/35 hover:bg-purple-600/50 text-purple-100 text-[9.5px] font-semibold cursor-pointer shrink-0"
-    >
-      💬 Chat
-    </button>
-    <button
-      type="button"
-      onclick={clearAllAgentsTelemetry}
-      class="text-slate-400 hover:text-white cursor-pointer p-0.5"
-      title="Réinitialiser télémétrie agents"
-    >
-      <X class="w-3 h-3" />
-    </button>
+
+    <!-- Expanded Compact Left-Aligned Agents Popover -->
+    {#if agentsHudOpen}
+      <div class="w-[268px] max-w-[calc(100vw-24px)] rounded-xl bg-[#0b0e18]/96 backdrop-blur-xl border border-purple-500/35 shadow-[0_14px_38px_rgba(0,0,0,0.65)] overflow-hidden text-[11px]">
+        <div class="px-2.5 py-1.5 bg-[#130d24]/90 border-b border-white/10 flex items-center justify-between gap-2">
+          <span class="flex items-center gap-1.5 text-[10px] font-bold text-purple-200 uppercase tracking-wider">
+            <Activity class="w-3 h-3 text-emerald-400" />
+            Agents IA ({cockpitState.activeAgents.length})
+          </span>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              onclick={() => {
+                subTab = 'chat';
+                cockpitState.isChatOpen = true;
+                agentsHudOpen = false;
+              }}
+              class="px-1.5 py-0.5 rounded bg-purple-600/30 hover:bg-purple-600/50 border border-purple-400/30 text-purple-100 text-[9.5px] font-semibold cursor-pointer transition-colors"
+              title="Ouvrir le Chat IA"
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              onclick={async () => {
+                agentsHudOpen = false;
+                await clearAllAgentsTelemetry();
+              }}
+              class="p-1 rounded text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer transition-colors"
+              title="Réinitialiser télémétrie agents"
+            >
+              <Trash2 class="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        <div class="p-1.5 space-y-1 max-h-64 overflow-y-auto">
+          {#each cockpitState.activeAgents as ag (ag.agentId)}
+            <button
+              type="button"
+              onclick={() => {
+                focusSymbolByName(ag.target);
+                agentsHudOpen = false;
+              }}
+              class="w-full text-left px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-purple-400/35 transition-colors cursor-pointer flex flex-col gap-0.5"
+              title="{ag.agentName} • {ag.action}: {ag.details}"
+            >
+              <div class="flex items-center justify-between gap-1.5">
+                <span class="flex items-center gap-1.5 min-w-0">
+                  <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {ag.color}"></span>
+                  <span class="font-bold text-slate-100 truncate">{ag.agentName}</span>
+                </span>
+                {#if ag.target}
+                  <span class="px-1.5 py-0.2 rounded bg-black/50 border border-white/10 font-mono text-[9.5px] text-sky-300 truncate max-w-[115px] shrink-0">
+                    ➔ {ag.target}
+                  </span>
+                {/if}
+              </div>
+              {#if ag.action || ag.details}
+                <div class="text-[9.5px] text-slate-400 truncate pl-3.5">
+                  {ag.action}{ag.details ? ` — ${ag.details}` : ''}
+                </div>
+              {/if}
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
   </div>
 {/if}
 
-<!-- Bouton Flottant Permanent (Toujours visible en bas à droite quand le Chat IA est fermé) -->
-{#if !cockpitState.isChatOpen}
+<!-- Bouton Flottant Chat IA (dégagé au-dessus du Radar / Zoom, sans jamais chevaucher le footer ni le Radar) -->
+{#if !cockpitState.isChatOpen && !cockpitState.isInspectorOpen && cockpitState.viewMode !== 'ide'}
   <button
     type="button"
     onclick={() => (cockpitState.isChatOpen = true)}
-    class="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#130d24]/95 hover:bg-purple-600/90 text-white font-semibold text-xs shadow-[0_8px_30px_rgba(147,51,234,0.45)] border border-purple-400/50 backdrop-blur-xl transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer group"
+    class="fixed right-4 {cockpitState.showRadar ? 'bottom-[192px]' : 'bottom-[88px]'} z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#130d24]/92 hover:bg-purple-600/90 text-white font-semibold text-[11px] shadow-[0_8px_24px_rgba(147,51,234,0.38)] border border-purple-400/45 backdrop-blur-xl transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer group"
     title="Ouvrir le Chat IA & Copilot (Touche C)"
   >
     <div class="relative">

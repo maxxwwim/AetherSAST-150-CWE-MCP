@@ -61,6 +61,8 @@ pub struct SettingsPayload {
     pub low_memory_mode: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_settings: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rescan: Option<bool>,
 }
 
 /// Transport compact du graphe vers l'UI (gros projets type PrestaShop : 40k noeuds / 250k aretes).
@@ -695,6 +697,28 @@ pub fn assign_agent_color(agent_id: &str, agent_name: Option<&str>, explicit_col
     AI_AGENT_PALETTE[idx].to_string()
 }
 
+/// Durée maximale (en secondes) depuis le dernier ping d'une IA pour qu'elle soit considérée connectée (5 min).
+pub const AI_AGENT_TTL_SECS: u64 = 300;
+
+pub fn now_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+pub fn is_agent_ping_fresh(timestamp: u64, now_secs: u64) -> bool {
+    if timestamp == 0 {
+        return false;
+    }
+    let ts_secs = if timestamp > 100_000_000_000 {
+        timestamp / 1000
+    } else {
+        timestamp
+    };
+    now_secs.saturating_sub(ts_secs) < AI_AGENT_TTL_SECS
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AiTelemetryCache {
     #[serde(default)]
@@ -711,8 +735,10 @@ pub fn ai_telemetry_cache_path(project_root: &Path) -> PathBuf {
 
 pub fn load_ai_telemetry_cache(project_root: &Path) -> AiTelemetryCache {
     let path = ai_telemetry_cache_path(project_root);
+    let now_secs = now_unix_secs();
     if let Ok(content) = std::fs::read_to_string(&path) {
         if let Ok(mut cache) = serde_json::from_str::<AiTelemetryCache>(&content) {
+            cache.agents.retain(|ag| is_agent_ping_fresh(ag.timestamp, now_secs));
             for ag in &mut cache.agents {
                 let id = ag.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
                 ag.color = Some(assign_agent_color(&id, ag.agent_name.as_deref(), ag.color.as_deref()));
@@ -720,6 +746,11 @@ pub fn load_ai_telemetry_cache(project_root: &Path) -> AiTelemetryCache {
             for ev in &mut cache.history {
                 let id = ev.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
                 ev.color = Some(assign_agent_color(&id, ev.agent_name.as_deref(), ev.color.as_deref()));
+            }
+            if let Some(ref t) = cache.telemetry {
+                if !is_agent_ping_fresh(t.timestamp, now_secs) {
+                    cache.telemetry = cache.agents.first().cloned();
+                }
             }
             if let Some(ref mut t) = cache.telemetry {
                 let id = t.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
@@ -1018,6 +1049,7 @@ impl AppState {
             event.color.as_deref().or(existing_color.as_deref()),
         );
         event.color = Some(resolved_color);
+        agents.retain(|_, ag| is_agent_ping_fresh(ag.timestamp, now_ts));
         agents.insert(agent_key, event.clone());
 
         let mut agents_vec: Vec<AiTelemetryEvent> = agents.values().cloned().collect();
@@ -1202,19 +1234,19 @@ impl AppState {
 
     pub async fn switch_view_mode(&self, requested_mode: &str) -> Result<AetherGraph, ViewModeError> {
         let norm_mode = match requested_mode.trim().to_lowercase().as_str() {
-            "vault" | "notes" => "vault",
+            "vault" | "notes" | "vault-notes" => "vault-notes",
             "code" => "code",
             "ide" | "editor" => "ide",
             other => {
                 return Err(ViewModeError::InvalidMode(format!(
-                    "Mode de vue inconnu '{}'. Modes acceptés: 'code', 'vault', 'ide'.",
+                    "Mode de vue inconnu '{}'. Modes acceptés: 'code', 'vault-notes', 'ide'.",
                     other
                 )));
             }
         };
 
         let target_graph = match norm_mode {
-            "vault" => {
+            "vault-notes" => {
                 let cached = self.vault_graph.read().await.clone();
                 if let Some(g) = cached {
                     g
@@ -1285,7 +1317,7 @@ impl AppState {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        let (action_title, details_msg) = if norm_mode == "vault" {
+        let (action_title, details_msg) = if norm_mode == "vault-notes" {
             (
                 "Bascule Vision Vault",
                 format!("Vue Notes & Relations Obsidian activée ({} nœuds)", target_graph.nodes.len()),
@@ -2433,28 +2465,238 @@ Logique métier pure et orchestration des flux entre modèles et contrôleurs.
     created
 }
 
-pub fn pick_folder_dialog(title: &str) -> Option<PathBuf> {
-    // 1. Essai avec rfd
-    if let Some(folder) = rfd::FileDialog::new().set_title(title).pick_folder() {
-        return Some(folder);
+#[derive(Clone, Debug, Serialize)]
+pub struct FsDirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_project: bool,
+    pub stack_hint: Option<String>,
+    pub is_obsidian: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct FsListResponse {
+    pub status: String,
+    pub current_path: String,
+    pub parent_path: Option<String>,
+    pub drives: Vec<String>,
+    pub entries: Vec<FsDirEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+fn detect_folder_stack_hint(dir: &Path) -> (bool, Option<String>, bool) {
+    let is_obsidian = dir.join(".obsidian").is_dir();
+    if dir.join("Cargo.toml").is_file() {
+        return (true, Some("Rust".to_string()), is_obsidian);
+    }
+    if dir.join("package.json").is_file() {
+        return (true, Some("Node / TS".to_string()), is_obsidian);
+    }
+    if dir.join("pyproject.toml").is_file() || dir.join("requirements.txt").is_file() {
+        return (true, Some("Python".to_string()), is_obsidian);
+    }
+    if dir.join("composer.json").is_file() {
+        return (true, Some("PHP".to_string()), is_obsidian);
+    }
+    if dir.join("go.mod").is_file() {
+        return (true, Some("Go".to_string()), is_obsidian);
+    }
+    if is_obsidian {
+        return (true, Some("Obsidian Vault".to_string()), true);
+    }
+    if dir.join(".git").exists() {
+        return (true, Some("Git".to_string()), false);
+    }
+    (false, None, false)
+}
+
+pub fn list_directory_entries(requested: Option<&str>, fallback_root: &Path) -> FsListResponse {
+    let mut drives: Vec<String> = Vec::new();
+    #[cfg(windows)]
+    {
+        for b in b'A'..=b'Z' {
+            let root = format!("{}:\\", b as char);
+            if Path::new(&root).exists() {
+                drives.push(root);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        drives.push("/".to_string());
     }
 
-    // 2. Fallback garanti sur Windows via System.Windows.Forms
+    let target: PathBuf = match requested.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => {
+            let clean = raw.trim_matches('"').trim_matches('\'');
+            let stripped = clean.strip_prefix(r"\\?\").unwrap_or(clean);
+            let p = PathBuf::from(stripped);
+            if p.is_file() {
+                p.parent().map(Path::to_path_buf).unwrap_or(p)
+            } else {
+                p
+            }
+        }
+        None => fallback_root
+            .parent()
+            .filter(|p| p.is_dir())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| fallback_root.to_path_buf()),
+    };
+
+    if !target.is_dir() {
+        return FsListResponse {
+            status: "error".to_string(),
+            current_path: clean_path_string(&target),
+            parent_path: target.parent().map(clean_path_string),
+            drives,
+            entries: Vec::new(),
+            message: Some(format!("Dossier introuvable : {}", clean_path_string(&target))),
+        };
+    }
+
+    let canonical = fs::canonicalize(&target).unwrap_or(target);
+    let current_path = clean_path_string(&canonical);
+    let parent_path = canonical.parent().map(clean_path_string);
+
+    let mut entries: Vec<FsDirEntry> = Vec::new();
+    const SKIP: &[&str] = &[
+        "node_modules",
+        "target",
+        "dist",
+        "build",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "vendor",
+        "$recycle.bin",
+        "system volume information",
+    ];
+
+    if let Ok(rd) = fs::read_dir(&canonical) {
+        for entry in rd.flatten() {
+            if let Ok(ft) = entry.file_type() {
+                if !ft.is_dir() {
+                    continue;
+                }
+                let name = entry.file_name().to_string_lossy().to_string();
+                let lower = name.to_lowercase();
+                if name.starts_with('.') || SKIP.contains(&lower.as_str()) {
+                    continue;
+                }
+                let p = entry.path();
+                let (is_project, stack_hint, is_obsidian) = detect_folder_stack_hint(&p);
+                entries.push(FsDirEntry {
+                    name,
+                    path: clean_path_string(&p),
+                    is_project,
+                    stack_hint,
+                    is_obsidian,
+                });
+            }
+        }
+    }
+
+    entries.sort_by(|a, b| {
+        b.is_project
+            .cmp(&a.is_project)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    FsListResponse {
+        status: "ok".to_string(),
+        current_path,
+        parent_path,
+        drives,
+        entries,
+        message: None,
+    }
+}
+
+#[allow(dead_code)]
+pub fn pick_folder_dialog(title: &str) -> Option<PathBuf> {
+    pick_folder_dialog_in(title, None)
+}
+
+pub fn pick_folder_dialog_in(title: &str, initial_dir: Option<&Path>) -> Option<PathBuf> {
+    // 1. Essai avec rfd dans un thread OS neuf (COM STA garanti propre sur Windows,
+    //    sans pollution MTA du pool tokio, et sans réouvrir un second dialogue si l'utilisateur annule).
+    let title_owned = title.to_string();
+    let dir_owned = initial_dir.filter(|p| p.is_dir()).map(Path::to_path_buf);
+    let rfd_res = std::thread::spawn(move || {
+        let mut dlg = rfd::FileDialog::new().set_title(&title_owned);
+        if let Some(ref d) = dir_owned {
+            dlg = dlg.set_directory(d);
+        }
+        dlg.pick_folder()
+    })
+    .join();
+
+    if let Ok(folder_opt) = rfd_res {
+        return folder_opt;
+    }
+
+    // 2. Fallback Windows uniquement si rfd a paniqué/échoué (avec -STA + owner TopMost au premier plan)
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        let safe_title = title.replace('\'', "''");
+        let init_snippet = initial_dir
+            .filter(|p| p.is_dir())
+            .map(|p| {
+                let s = clean_path_string(p).replace('\'', "''");
+                format!("$f.SelectedPath = '{}'; ", s)
+            })
+            .unwrap_or_default();
         let ps_cmd = format!(
-            r#"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '{}'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ Write-Output $f.SelectedPath }}"#,
-            title
+            r#"Add-Type -AssemblyName System.Windows.Forms; $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '{}'; {}$f.ShowNewFolderButton = $true; if ($f.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {{ Write-Output $f.SelectedPath }}; $owner.Dispose()"#,
+            safe_title, init_snippet
         );
         let mut cmd = std::process::Command::new("powershell");
-        cmd.args(["-NoProfile", "-Command", &ps_cmd]);
+        cmd.args(["-NoProfile", "-STA", "-Command", &ps_cmd]);
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
         if let Ok(output) = cmd.output() {
             if output.status.success() {
                 let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !path_str.is_empty() && Path::new(&path_str).is_dir() {
+                    return Some(PathBuf::from(path_str));
+                }
+            }
+        }
+    }
+    None
+}
+
+#[allow(dead_code)]
+pub fn pick_file_dialog(title: &str) -> Option<PathBuf> {
+    let title_owned = title.to_string();
+    let rfd_res = std::thread::spawn(move || {
+        rfd::FileDialog::new().set_title(&title_owned).pick_file()
+    })
+    .join();
+
+    if let Ok(file_opt) = rfd_res {
+        return file_opt;
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let safe_title = title.replace('\'', "''");
+        let ps_cmd = format!(
+            r#"Add-Type -AssemblyName System.Windows.Forms; $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = '{}'; if ($f.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {{ Write-Output $f.FileName }}; $owner.Dispose()"#,
+            safe_title
+        );
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-STA", "-Command", &ps_cmd]);
+        cmd.creation_flags(0x08000000);
+
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path_str.is_empty() && Path::new(&path_str).is_file() {
                     return Some(PathBuf::from(path_str));
                 }
             }
@@ -2627,8 +2869,10 @@ pub fn parse_git_status_porcelain(
                         && node.metadata.cve_anomalies.iter().all(|a| {
                             a.rule_id == "RULE_MAX_LINES"
                                 || a.cve_id.contains("ARCH-BUDGET-EXCEEDED")
-                                || a.cve_id.contains("CONTRACT")
-                                || a.severity == "WARNING"
+                                || a.cve_id.contains("CONTRACT / ARCH-BUDGET")
+                                || a.cve_id == "CONTRACT_BUDGET"
+                                || (a.severity == "WARNING"
+                                    && (a.rule_id.contains("LINE") || a.cve_id.contains("BUDGET")))
                         });
                     if !only_lines {
                         has_sec = true;
@@ -2641,8 +2885,10 @@ pub fn parse_git_status_porcelain(
                     .filter(|a| {
                         a.rule_id != "RULE_MAX_LINES"
                             && !a.cve_id.contains("ARCH-BUDGET-EXCEEDED")
-                            && !a.cve_id.contains("CONTRACT")
-                            && a.severity != "WARNING"
+                            && !a.cve_id.contains("CONTRACT / ARCH-BUDGET")
+                            && a.cve_id != "CONTRACT_BUDGET"
+                            && !(a.severity == "WARNING"
+                                && (a.rule_id.contains("LINE") || a.cve_id.contains("BUDGET")))
                     })
                     .count();
                 for anomaly in &node.metadata.cve_anomalies {
@@ -2938,15 +3184,15 @@ mod app_state_tests {
             dummy_vault.clone(),
             PathBuf::from("/test/vault"),
             DetectedProjectType::PureObsidianVault,
-            "vault".to_string(),
+            "vault-notes".to_string(),
             None,
             Some(dummy_vault),
             None,
         );
 
         assert_eq!(state.get_project_type().await, DetectedProjectType::PureObsidianVault);
-        assert_eq!(state.get_active_view_mode().await, "vault");
-        assert!(state.get_supported_views().await.contains(&"vault".to_string()));
+        assert_eq!(state.get_active_view_mode().await, "vault-notes");
+        assert!(state.get_supported_views().await.contains(&"vault-notes".to_string()));
         assert!(state.get_vault_graph().await.is_some());
         assert_eq!(state.get_active_graph().await.project_name, "ObsidianVault");
     }
@@ -2971,9 +3217,9 @@ mod app_state_tests {
         let v1 = state.graph_version.load(std::sync::atomic::Ordering::SeqCst);
 
         // Toggle to vault
-        let swapped = state.switch_view_mode("vault").await.expect("Switch to vault should succeed");
+        let swapped = state.switch_view_mode("vault-notes").await.expect("Switch to vault should succeed");
         assert_eq!(swapped.project_name, "VaultGraph");
-        assert_eq!(state.get_active_view_mode().await, "vault");
+        assert_eq!(state.get_active_view_mode().await, "vault-notes");
         assert_eq!(state.get_active_graph().await.project_name, "VaultGraph");
         let v2 = state.graph_version.load(std::sync::atomic::Ordering::SeqCst);
         assert!(v2 > v1);
@@ -3004,7 +3250,7 @@ mod app_state_tests {
         // Pass alias "notes"
         let res = state.switch_view_mode("notes").await.expect("Alias 'notes' should succeed");
         assert_eq!(res.project_name, "VaultGraph");
-        assert_eq!(state.get_active_view_mode().await, "vault");
+        assert_eq!(state.get_active_view_mode().await, "vault-notes");
     }
 
     #[tokio::test]
@@ -3021,7 +3267,7 @@ mod app_state_tests {
         );
 
         // PureCode does not have vault graph and scanning fails
-        let err = state.switch_view_mode("vault").await.expect_err("Should fail");
+        let err = state.switch_view_mode("vault-notes").await.expect_err("Should fail");
         assert!(matches!(err, ViewModeError::GraphNotAvailable(_)));
 
         // "ide" and "editor" alias are supported modes and return the code graph
@@ -3250,7 +3496,7 @@ mod app_state_tests {
             let s = state.clone();
             handles.push(tokio::spawn(async move {
                 for j in 0..20 {
-                    let mode = if (i + j) % 2 == 0 { "code" } else { "vault" };
+                    let mode = if (i + j) % 2 == 0 { "code" } else { "vault-notes" };
                     let _ = s.switch_view_mode(mode).await;
                 }
             }));
@@ -3262,7 +3508,7 @@ mod app_state_tests {
 
         // Verify final state is valid
         let final_mode = state.get_active_view_mode().await;
-        assert!(final_mode == "code" || final_mode == "vault");
+        assert!(final_mode == "code" || final_mode == "vault-notes");
         let final_graph = state.get_active_graph().await;
         assert!(final_graph.project_name == "CodeGraph" || final_graph.project_name == "VaultGraph");
     }

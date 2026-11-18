@@ -1,20 +1,49 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
   import { api } from '../lib/api';
-  import { FilePlus2, X, Sparkles, Folder } from 'lucide-svelte';
+  import { FilePlus2, X, Sparkles, Folder, Upload } from '@lucide/svelte';
 
   let projectPath = $state('');
   let relPath = $state('src/services/new_service.rs');
   let codeContent = $state(`// Généré depuis AetherScope Cockpit\npub fn execute_task() {\n    // TODO: Implémenter la logique métier\n}\n`);
   let isCreating = $state(false);
   let feedback = $state<string | null>(null);
+  let localFileInputEl = $state<HTMLInputElement | null>(null);
+
+  function stripWinPrefix(p: string): string {
+    return p.replace(/^\\\\\?\\/, '');
+  }
 
   $effect(() => {
     if (cockpitState.isCreateFileModalOpen) {
-      projectPath = cockpitState.graph.project_path || '.';
+      projectPath = stripWinPrefix(cockpitState.graph.project_path || '.');
       feedback = null;
+      const pending = cockpitState.pendingImportFile;
+      if (pending) {
+        const cleanName = pending.fileName.replace(/\\/g, '/').replace(/^\/+/, '');
+        relPath = cleanName.includes('/') ? cleanName : `imported/${cleanName}`;
+        codeContent = pending.content;
+        cockpitState.pendingImportFile = null;
+      }
     }
   });
+
+  async function handleLocalFileSelected(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const cleanName = file.name.replace(/\\/g, '/').replace(/^\/+/, '');
+      relPath = cleanName.includes('/') ? cleanName : `imported/${cleanName}`;
+      codeContent = text;
+      feedback = null;
+    } catch (err: any) {
+      feedback = err?.message || 'Impossible de lire le fichier sélectionné.';
+    } finally {
+      input.value = '';
+    }
+  }
 
   function applySuggestion(prefix: string, defaultFile: string, snippet: string) {
     relPath = `${prefix}${defaultFile}`;
@@ -31,13 +60,17 @@
         file_path: relPath.trim(),
         content: codeContent,
       });
+      if (res?.status !== 'ok') {
+        feedback = res?.message || 'Erreur lors de la création / import du fichier.';
+        return;
+      }
       if (res.graph) {
         cockpitState.setGraph(res.graph);
         cockpitState.filterVersion += 1;
         cockpitState.requestCameraFit();
       }
-      if (res.created_symbol) {
-        const hit = cockpitState.resolveTargetNode(res.file_path || res.created_symbol);
+      if (res.created_symbol || res.file_path) {
+        const hit = cockpitState.resolveTargetNode(res.file_path || res.created_symbol || '');
         if (hit) cockpitState.selectSymbol(hit.id, true);
       }
       cockpitState.isCreateFileModalOpen = false;
@@ -67,18 +100,34 @@
         <div class="flex items-center gap-2.5">
           <FilePlus2 class="w-5 h-5 text-emerald-400" />
           <div>
-            <h2 class="text-sm font-bold text-white">Créer un Fichier & Mettre à Jour le Graphe</h2>
-            <p class="text-[11px] text-slate-400">Écrit le fichier sur disque et re-scanne instantanément l'AST</p>
+            <h2 class="text-sm font-bold text-white">Importer ou Créer un Fichier & Mettre à Jour le Graphe</h2>
+            <p class="text-[11px] text-slate-400">Importe un fichier local ou crée un fichier sur disque et re-scanne instantanément l'AST</p>
           </div>
         </div>
-        <button
-          type="button"
-          onclick={closeModal}
-          aria-label="Fermer création de fichier"
-          class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
-        >
-          <X class="w-4 h-4" />
-        </button>
+        <div class="flex items-center gap-2">
+          <input
+            bind:this={localFileInputEl}
+            type="file"
+            class="hidden"
+            onchange={handleLocalFileSelected}
+          />
+          <button
+            type="button"
+            onclick={() => localFileInputEl?.click()}
+            class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-[11px] font-semibold text-sky-200 cursor-pointer"
+          >
+            <Upload class="w-3.5 h-3.5" />
+            <span>Importer depuis le PC…</span>
+          </button>
+          <button
+            type="button"
+            onclick={closeModal}
+            aria-label="Fermer création de fichier"
+            class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div class="p-5 space-y-3.5 text-xs">

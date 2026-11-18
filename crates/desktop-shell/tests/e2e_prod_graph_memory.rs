@@ -1370,7 +1370,7 @@ async fn t2_f9_view_mode_aliases_and_case_whitespace_normalization() {
     assert_slim_ui_payload_invariants(&r_notes.json(), "view_mode NOTES");
 
     let status_vault = http_get(guard.port, "/api/project/status").await.json();
-    assert_eq!(status_vault["active_view_mode"], "vault");
+    assert_eq!(status_vault["active_view_mode"], "vault-notes");
 
     let r_editor = http_post_json(
         guard.port,

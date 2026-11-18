@@ -28,7 +28,11 @@ export class AetherApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path, exclusions }),
     });
-    return res.json();
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur analyse HTTP ${res.status}`);
+    }
+    return data;
   }
 
   async getTasks(): Promise<TaskItem[]> {
@@ -217,14 +221,50 @@ export class AetherApiClient {
     return res.json();
   }
 
-  async pickWorkspace(): Promise<{ status: string; workspace?: string }> {
-    const res = await fetch(`${this.baseUrl}/api/dialog/pick_workspace`, { method: 'POST' });
-    return res.json();
+  async listDirectory(path?: string): Promise<{
+    status: string;
+    current_path: string;
+    parent_path?: string | null;
+    drives: string[];
+    entries: {
+      name: string;
+      path: string;
+      is_project: boolean;
+      stack_hint?: string | null;
+      is_obsidian: boolean;
+    }[];
+    message?: string;
+  }> {
+    const q = path && path.trim() ? `?path=${encodeURIComponent(path.trim())}` : '';
+    const res = await fetch(`${this.baseUrl}/api/fs/list${q}`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) {
+      throw new Error(data?.message || `Erreur lecture dossier HTTP ${res.status}`);
+    }
+    return data;
   }
 
-  async pickProject(): Promise<{ status: string; project_path?: string; graph?: AetherGraph }> {
+  async pickWorkspace(): Promise<{
+    status: string;
+    workspace?: string;
+    projects?: { name: string; path: string }[];
+    message?: string;
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/dialog/pick_workspace`, { method: 'POST' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.message || `Erreur sélecteur workspace HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async pickProject(): Promise<{ status: string; project_path?: string; graph?: AetherGraph; message?: string }> {
     const res = await fetch(`${this.baseUrl}/api/dialog/pick_project`, { method: 'POST' });
-    return res.json();
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.message || `Erreur sélecteur projet HTTP ${res.status}`);
+    }
+    return data;
   }
 
   async getSettings(): Promise<any> {
@@ -243,6 +283,7 @@ export class AetherApiClient {
     show_file_titles?: boolean;
     low_memory_mode?: boolean;
     ui_settings?: any;
+    rescan?: boolean;
   }): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/settings`, {
       method: 'POST',
@@ -261,7 +302,7 @@ export class AetherApiClient {
     return res.json();
   }
 
-  async switchViewMode(mode: 'code' | 'vault' | 'ide'): Promise<any> {
+  async switchViewMode(mode: 'code' | 'vault' | 'vault-notes' | 'ide'): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/view_mode`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -395,13 +436,17 @@ export class AetherApiClient {
     project_path: string;
     file_path: string;
     content: string;
-  }): Promise<{ status: string; file_path: string; created_symbol: string; graph?: AetherGraph }> {
+  }): Promise<{ status: string; file_path?: string; created_symbol?: string; message?: string; graph?: AetherGraph }> {
     const res = await fetch(`${this.baseUrl}/api/ai/create_file`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    return res.json();
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur import/création fichier HTTP ${res.status}`);
+    }
+    return data;
   }
 
   async setAiTarget(symbolId: string, actionType?: string): Promise<any> {

@@ -582,6 +582,113 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn is_lines_budget_anomaly(rule_id: &str, cve_id: &str, severity: &str) -> bool {
+    rule_id == "RULE_MAX_LINES"
+        || cve_id.contains("ARCH-BUDGET-EXCEEDED")
+        || cve_id.contains("CONTRACT / ARCH-BUDGET")
+        || cve_id == "CONTRACT_BUDGET"
+        || (severity == "WARNING" && (rule_id.contains("LINE") || cve_id.contains("BUDGET")))
+}
+
+fn apply_settings_filters_to_graph(
+    graph: &mut core_graph::graph::AetherGraph,
+    active_opt: Option<&[String]>,
+    ignored_cwes: &[String],
+) {
+    let ignored_set: std::collections::HashSet<String> = ignored_cwes
+        .iter()
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if active_opt.is_none() && ignored_set.is_empty() {
+        return;
+    }
+    let allowed_set_opt: Option<std::collections::HashSet<&str>> = active_opt
+        .map(|allowed| allowed.iter().map(|s| s.as_str()).collect());
+
+    let is_violation_allowed = |rule_str: &str, cve_str: &str| -> bool {
+        if let Some(ref allowed_set) = allowed_set_opt {
+            if !rule_str.is_empty() && rule_str != "RULE_MAX_LINES" && !allowed_set.contains(rule_str) {
+                if !(rule_str == "BLAKE3_TAMPERED" && !allowed_set.is_empty()) {
+                    return false;
+                }
+            }
+        }
+        let rule_up = rule_str.to_uppercase();
+        let cve_up = cve_str.to_uppercase();
+        if !rule_up.is_empty() && ignored_set.contains(&rule_up) {
+            return false;
+        }
+        if !cve_up.is_empty() && ignored_set.contains(&cve_up) {
+            return false;
+        }
+        if ignored_set.iter().any(|ign| {
+            (!cve_up.is_empty() && cve_up.contains(ign))
+                || (!rule_up.is_empty() && rule_up.contains(ign))
+        }) {
+            return false;
+        }
+        true
+    };
+
+    let mut files_with_active_sym_cwe: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+
+    for node in &mut graph.nodes {
+        node.metadata
+            .cve_anomalies
+            .retain(|a| is_violation_allowed(a.rule_id.as_str(), a.cve_id.as_str()));
+
+        node.metadata.violations.retain(|raw| {
+            let trimmed = raw.trim();
+            let (rule_str, rest) = if let Some(after_open) = trimmed.strip_prefix('[') {
+                if let Some(close_idx) = after_open.find(']') {
+                    (&after_open[..close_idx], after_open[close_idx + 1..].trim())
+                } else {
+                    ("", trimmed)
+                }
+            } else {
+                ("", trimmed)
+            };
+            let cve_str = if let Some(after_p) = rest.strip_prefix('(') {
+                if let Some(end_p) = after_p.find(')') {
+                    let inside = &after_p[..end_p];
+                    inside.split('|').next().unwrap_or("").trim()
+                } else {
+                    ""
+                }
+            } else {
+                ""
+            };
+            is_violation_allowed(rule_str, cve_str)
+        });
+
+        let has_non_lines_cwe = node
+            .metadata
+            .cve_anomalies
+            .iter()
+            .any(|a| !is_lines_budget_anomaly(&a.rule_id, &a.cve_id, &a.severity));
+        if !node.is_file {
+            node.has_security_violation = has_non_lines_cwe;
+            if has_non_lines_cwe {
+                files_with_active_sym_cwe.insert(node.file_path.clone());
+            }
+        }
+    }
+
+    for node in &mut graph.nodes {
+        if node.is_file {
+            let has_own_non_lines = node
+                .metadata
+                .cve_anomalies
+                .iter()
+                .any(|a| !is_lines_budget_anomaly(&a.rule_id, &a.cve_id, &a.severity));
+            node.has_security_violation =
+                has_own_non_lines || files_with_active_sym_cwe.contains(&node.file_path);
+        }
+    }
+}
+
 /// Core pipeline executing deterministic project detection, dual vault/code scanning,
 /// state caching, SAST live audit, and cockpit HUD telemetry emission.
 pub async fn execute_project_pipeline(
@@ -654,12 +761,15 @@ pub async fn execute_project_pipeline(
             let scan_path = path.clone();
             let excl = custom_excl.clone();
             let sel = state.plugin_selection.clone();
-            let code_g = tokio::task::spawn_blocking(move || {
+            let active_rules = state.active_cve_rules.read().await.clone();
+            let ignored_cwes = state.ignored_cwes.read().await.clone();
+            let mut code_g = tokio::task::spawn_blocking(move || {
                 let scanner = ProjectScanner::default().with_plugin_selection(sel);
                 scanner.scan_project_with_exclusions(&scan_path, &excl)
             })
             .await
             .unwrap_or_else(|_| core_graph::graph::AetherGraph::new(&proj_display));
+            apply_settings_filters_to_graph(&mut code_g, active_rules.as_deref(), &ignored_cwes);
 
             *state.code_graph.write().await = Some(code_g.clone());
             *state.vault_graph.write().await = None;
@@ -670,6 +780,8 @@ pub async fn execute_project_pipeline(
             let scan_path2 = path.clone();
             let excl = custom_excl.clone();
             let sel = state.plugin_selection.clone();
+            let active_rules = state.active_cve_rules.read().await.clone();
+            let ignored_cwes = state.ignored_cwes.read().await.clone();
 
             let (code_res, vault_res) = tokio::join!(
                 tokio::task::spawn_blocking(move || {
@@ -681,7 +793,8 @@ pub async fn execute_project_pipeline(
                 })
             );
 
-            let code_g = code_res.unwrap_or_else(|_| core_graph::graph::AetherGraph::new(&proj_display));
+            let mut code_g = code_res.unwrap_or_else(|_| core_graph::graph::AetherGraph::new(&proj_display));
+            apply_settings_filters_to_graph(&mut code_g, active_rules.as_deref(), &ignored_cwes);
             let vault_g = match vault_res {
                 Ok(Ok(g)) => g,
                 Ok(Err(e)) => {
@@ -856,13 +969,20 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
         .map(|r| r.default_view.clone())
         .unwrap_or_else(|| "code".to_string());
 
-    // 2. Scan code graph if project has code (respecting saved exclusions from .aether/settings.json)
+    // 2. Scan code graph if project has code (respecting saved exclusions & CWE filters from .aether/settings.json)
     let saved_settings = load_project_settings(&project_root);
     let code_graph = if project_type.is_code() || project_type.is_mixed() {
-        let g = match saved_settings.as_ref() {
+        let mut g = match saved_settings.as_ref() {
             Some(s) if !s.exclusions.is_empty() => scanner.scan_project_with_exclusions(&project_root, &s.exclusions),
             _ => scanner.scan_project(&project_root),
         };
+        if let Some(ref s) = saved_settings {
+            apply_settings_filters_to_graph(
+                &mut g,
+                s.active_cve_rules.as_deref(),
+                s.ignored_cwes.as_deref().unwrap_or(&[]),
+            );
+        }
         let (all_violations, audited_files_count) = extract_live_audit_from_graph(&g);
         let _ = AuditWriter::write_live_audit(&project_root, &all_violations, audited_files_count);
         Some(g)
@@ -992,6 +1112,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     let state_update_contract = shared_state.clone();
     let state_pick_ws = shared_state.clone();
     let state_pick_proj = shared_state.clone();
+    let state_fs_list = shared_state.clone();
     let state_init_proj = shared_state.clone();
     let state_workspace = shared_state.clone();
     let state_telemetry = shared_state.clone();
@@ -1098,24 +1219,56 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // Dialogue natif : Choisir le dossier contenant TOUS les projets
+        // Explorateur de dossiers & workspaces côté serveur (navigation fluide sans blocage de dialogue natif)
+        .route(
+            "/api/fs/list",
+            axum::routing::get({
+                let state = state_fs_list.clone();
+                move |axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>| {
+                    let state = state.clone();
+                    async move {
+                        let req_path = query.get("path").cloned();
+                        let fallback_root = state.project_root.read().await.clone();
+                        let resp = tokio::task::spawn_blocking(move || {
+                            list_directory_entries(req_path.as_deref(), &fallback_root)
+                        })
+                        .await
+                        .unwrap_or_else(|e| FsListResponse {
+                            status: "error".to_string(),
+                            current_path: String::new(),
+                            parent_path: None,
+                            drives: Vec::new(),
+                            entries: Vec::new(),
+                            message: Some(format!("Erreur lecture dossier : {}", e)),
+                        });
+                        axum::Json(resp)
+                    }
+                }
+            }),
+        )
+        // Dialogue natif : Choisir le dossier contenant TOUS les projets (ne modifie pas project_root avant analyse)
         .route(
             "/api/dialog/pick_workspace",
             axum::routing::post(move || {
                 let state = state_pick_ws.clone();
                 async move {
-                    let chosen = tokio::task::spawn_blocking(|| {
-                        pick_folder_dialog("SÃ©lectionnez le dossier racine contenant tous les projets")
+                    let init_dir = {
+                        let p = state.project_root.read().await;
+                        p.parent().map(Path::to_path_buf).unwrap_or_else(|| p.clone())
+                    };
+                    let chosen = tokio::task::spawn_blocking(move || {
+                        pick_folder_dialog_in(
+                            "Sélectionnez le dossier racine contenant tous les projets",
+                            Some(&init_dir),
+                        )
                     })
                     .await
                     .ok()
                     .flatten();
 
                     if let Some(folder) = chosen {
-                        let path_str = folder.to_string_lossy().to_string();
+                        let path_str = clean_path_string(&folder);
                         let projects = discover_candidate_projects(&folder);
-                        let mut p_guard = state.project_root.write().await;
-                        *p_guard = folder;
                         axum::Json(PickWorkspaceResponse {
                             status: "ok".to_string(),
                             workspace: Some(path_str),
@@ -1137,15 +1290,22 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             axum::routing::post(move || {
                 let state = state_pick_proj.clone();
                 async move {
-                    let chosen = tokio::task::spawn_blocking(|| {
-                        pick_folder_dialog("Sélectionnez le projet à ouvrir et analyser")
+                    let init_dir = {
+                        let p = state.project_root.read().await;
+                        p.parent().map(Path::to_path_buf).unwrap_or_else(|| p.clone())
+                    };
+                    let chosen = tokio::task::spawn_blocking(move || {
+                        pick_folder_dialog_in(
+                            "Sélectionnez le projet à ouvrir et analyser",
+                            Some(&init_dir),
+                        )
                     })
                     .await
                     .ok()
                     .flatten();
 
                     if let Some(folder) = chosen {
-                        let path_str = folder.to_string_lossy().to_string();
+                        let path_str = clean_path_string(&folder);
                         let active_graph = execute_project_pipeline(&state, folder, None).await;
                         axum::Json(PickProjectResponse {
                             status: "ok".to_string(),
@@ -1257,16 +1417,39 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 move |axum::extract::Json(req): axum::extract::Json<AnalyzeRequest>| {
                     let state = state.clone();
                     async move {
+                        use axum::http::StatusCode;
+                        use axum::response::IntoResponse;
+
                         let raw = req.path.trim().trim_matches('"').trim_matches('\'');
                         let clean = raw.strip_prefix(r"\\?\").unwrap_or(raw);
-                        let path = if clean.is_empty() || clean == "." {
+                        let mut path = if clean.is_empty() || clean == "." {
                             state.project_root.read().await.clone()
                         } else {
                             fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
                         };
 
+                        if !path.exists() {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": format!("Chemin introuvable : {}", clean)
+                                })),
+                            )
+                                .into_response();
+                        }
+                        if path.is_file() {
+                            if let Some(parent) = path.parent() {
+                                path = parent.to_path_buf();
+                            }
+                        }
+
                         let active_graph = execute_project_pipeline(&state, path, req.exclusions).await;
-                        axum::Json(api_routes::ui_payload::build_payload(&active_graph))
+                        (
+                            StatusCode::OK,
+                            axum::Json(api_routes::ui_payload::build_payload(&active_graph)),
+                        )
+                            .into_response()
                     }
                 }
             })
@@ -1275,17 +1458,40 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 move |axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>| {
                     let state = state.clone();
                     async move {
+                        use axum::http::StatusCode;
+                        use axum::response::IntoResponse;
+
                         let p_str = query.get("path").cloned().unwrap_or_default();
                         let raw = p_str.trim().trim_matches('"').trim_matches('\'');
                         let clean = raw.strip_prefix(r"\\?\").unwrap_or(raw);
-                        let path = if clean.is_empty() || clean == "." {
+                        let mut path = if clean.is_empty() || clean == "." {
                             state.project_root.read().await.clone()
                         } else {
                             fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
                         };
 
+                        if !path.exists() {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                axum::Json(serde_json::json!({
+                                    "status": "error",
+                                    "message": format!("Chemin introuvable : {}", clean)
+                                })),
+                            )
+                                .into_response();
+                        }
+                        if path.is_file() {
+                            if let Some(parent) = path.parent() {
+                                path = parent.to_path_buf();
+                            }
+                        }
+
                         let active_graph = execute_project_pipeline(&state, path, None).await;
-                        axum::Json(api_routes::ui_payload::build_payload(&active_graph))
+                        (
+                            StatusCode::OK,
+                            axum::Json(api_routes::ui_payload::build_payload(&active_graph)),
+                        )
+                            .into_response()
                     }
                 }
             }),
@@ -1381,9 +1587,10 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     };
 
                     // Validate client project_path if non-empty / non-dot
-                    let proj_trimmed = req.project_path.trim();
-                    if !proj_trimmed.is_empty() && proj_trimmed != "." {
-                        let candidate_proj = PathBuf::from(proj_trimmed);
+                    let proj_trimmed = req.project_path.trim().trim_matches('"').trim_matches('\'');
+                    let proj_clean = proj_trimmed.strip_prefix(r"\\?\").unwrap_or(proj_trimmed);
+                    if !proj_clean.is_empty() && proj_clean != "." {
+                        let candidate_proj = PathBuf::from(proj_clean);
                         if let Ok(canon_cand) = fs::canonicalize(&candidate_proj) {
                             if !canon_cand.starts_with(&canonical_p_root) {
                                 return (
@@ -1856,25 +2063,37 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 }
             }),
         )
-        // TÃ©lÃ©mÃ©trie IA Multi-Agents SimultanÃ©s
+        // Télémétrie IA Multi-Agents Simultanés (uniquement agents connectés avec ping < 5 min)
         .route(
             "/api/ai/telemetry",
             axum::routing::get({
                 let state = state_telemetry.clone();
                 move || async move {
+                    let now_secs = now_unix_secs();
                     let is_empty = state.active_agents.read().await.is_empty();
                     if is_empty {
                         let p_root = state.project_root.read().await.clone();
                         state.reload_telemetry_cache(&p_root).await;
                     }
-                    let t = state.telemetry.read().await.clone();
-                    let agents_map = state.active_agents.read().await;
+                    let mut agents_map = state.active_agents.write().await;
+                    agents_map.retain(|_, ag| is_agent_ping_fresh(ag.timestamp, now_secs));
                     let mut agents: Vec<AiTelemetryEvent> = agents_map.values().cloned().collect();
                     agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
                     drop(agents_map);
+
+                    let fresh_telemetry = {
+                        let mut t_guard = state.telemetry.write().await;
+                        if let Some(ref ev) = *t_guard {
+                            if !is_agent_ping_fresh(ev.timestamp, now_secs) {
+                                *t_guard = agents.first().cloned();
+                            }
+                        }
+                        t_guard.clone()
+                    };
+
                     let history = state.telemetry_history.read().await.clone();
                     axum::Json(serde_json::json!({
-                        "telemetry": t,
+                        "telemetry": fresh_telemetry,
                         "agents": agents,
                         "history": history
                     }))
@@ -2239,9 +2458,10 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     };
 
                     // Validate client project_path if non-empty / non-dot
-                    let proj_trimmed = req.project_path.trim();
-                    if !proj_trimmed.is_empty() && proj_trimmed != "." {
-                        let candidate_proj = PathBuf::from(proj_trimmed);
+                    let proj_trimmed = req.project_path.trim().trim_matches('"').trim_matches('\'');
+                    let proj_clean = proj_trimmed.strip_prefix(r"\\?\").unwrap_or(proj_trimmed);
+                    if !proj_clean.is_empty() && proj_clean != "." {
+                        let candidate_proj = PathBuf::from(proj_clean);
                         if let Ok(canon_cand) = fs::canonicalize(&candidate_proj) {
                             if !canon_cand.starts_with(&canonical_p_root) {
                                 return (
@@ -2341,8 +2561,14 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                             .into_response();
                     }
 
-                    let scanner = ProjectScanner::default();
-                    let new_graph = scanner.scan_project(&p_root);
+                    let exclusions = state.custom_exclusions.read().await.clone();
+                    let scanner = ProjectScanner::default()
+                        .with_plugin_selection(state.plugin_selection.clone());
+                    let new_graph = scanner.scan_project_with_exclusions(&p_root, &exclusions);
+                    {
+                        let mut cg_guard = state.code_graph.write().await;
+                        *cg_guard = Some(new_graph.clone());
+                    }
                     let mut g_guard = state.graph.write().await;
                     *g_guard = new_graph.clone();
                     state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2691,20 +2917,30 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         show_file_titles,
                         low_memory_mode,
                         ui_settings,
+                        rescan: None,
                     })
                 }
             })
             .post({
                 let state = state_settings.clone();
                 move |axum::extract::Json(payload): axum::extract::Json<SettingsPayload>| async move {
-                    {
+                    let prev_exclusions = state.custom_exclusions.read().await.clone();
+                    let prev_active_rules = state.active_cve_rules.read().await.clone();
+                    let prev_ignored_cwes = state.ignored_cwes.read().await.clone();
+
+                    let exclusions_changed = !payload.exclusions.is_empty() && payload.exclusions != prev_exclusions;
+                    if !payload.exclusions.is_empty() || payload.rescan == Some(true) {
                         let mut excl_guard = state.custom_exclusions.write().await;
                         *excl_guard = payload.exclusions.clone();
                     }
+                    let active_rules_changed = payload.active_cve_rules.is_some()
+                        && payload.active_cve_rules != prev_active_rules;
                     if let Some(ref rules) = payload.active_cve_rules {
                         let mut cve_guard = state.active_cve_rules.write().await;
                         *cve_guard = Some(rules.clone());
                     }
+                    let ignored_changed = payload.ignored_cwes.is_some()
+                        && payload.ignored_cwes.as_deref() != Some(prev_ignored_cwes.as_slice());
                     if let Some(ref ignored) = payload.ignored_cwes {
                         let mut ign_guard = state.ignored_cwes.write().await;
                         *ign_guard = ignored.clone();
@@ -2737,54 +2973,68 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         let mut g = state.low_memory_mode.write().await;
                         *g = Some(v);
                     }
-                    let p_root = state.project_root.read().await.clone();
-                    save_project_settings(&p_root, &payload);
 
-                    let scanner = ProjectScanner::default();
-                    let mut new_graph = scanner.scan_project_with_exclusions(&p_root, &payload.exclusions);
+                    // Persist the merged settings so partial POSTs (e.g. ignore CWE) never wipe UI display toggles
+                    let merged_exclusions = state.custom_exclusions.read().await.clone();
                     let active_opt = state.active_cve_rules.read().await.clone();
                     let ignored_cwes = state.ignored_cwes.read().await.clone();
-                    let ignored_set: std::collections::HashSet<String> = ignored_cwes.iter().map(|s| s.to_uppercase()).collect();
-                    if active_opt.is_some() || !ignored_set.is_empty() {
-                        let allowed_set_opt: Option<std::collections::HashSet<&str>> = active_opt.as_ref().map(|allowed| allowed.iter().map(|s| s.as_str()).collect());
-                        for node in &mut new_graph.nodes {
-                            node.metadata.cve_anomalies.retain(|a| {
-                                let rule_str = a.rule_id.as_str();
-                                if let Some(ref allowed_set) = allowed_set_opt {
-                                    if !allowed_set.contains(rule_str) {
-                                        return false;
-                                    }
-                                }
-                                let rule_up = rule_str.to_uppercase();
-                                let cve_up = a.cve_id.to_uppercase();
-                                if ignored_set.contains(&rule_up) || ignored_set.contains(&cve_up) {
-                                    return false;
-                                }
-                                if ignored_set.iter().any(|ign| !ign.is_empty() && (cve_up.contains(ign) || rule_up.contains(ign))) {
-                                    return false;
-                                }
-                                true
-                            });
-                            if node.metadata.cve_anomalies.is_empty()
-                                || node.metadata.cve_anomalies.iter().all(|a| a.rule_id == "RULE_MAX_LINES" || a.severity == "WARNING" || a.cve_id.contains("ARCH-BUDGET-EXCEEDED") || a.cve_id.contains("CONTRACT"))
-                            {
-                                node.has_security_violation = false;
-                            }
+                    let merged_payload = SettingsPayload {
+                        exclusions: merged_exclusions.clone(),
+                        active_cve_rules: active_opt.clone(),
+                        ignored_cwes: Some(ignored_cwes.clone()),
+                        cve_catalogue: None,
+                        mcp_binary_path: None,
+                        show_alerts: *state.show_alerts.read().await,
+                        show_cwe_bubbles: *state.show_cwe_bubbles.read().await,
+                        show_cwe_titles: *state.show_cwe_titles.read().await,
+                        show_folder_titles: *state.show_folder_titles.read().await,
+                        show_file_titles: *state.show_file_titles.read().await,
+                        low_memory_mode: *state.low_memory_mode.read().await,
+                        ui_settings: state.saved_ui_settings.read().await.clone(),
+                        rescan: None,
+                    };
+                    let p_root = state.project_root.read().await.clone();
+                    save_project_settings(&p_root, &merged_payload);
+
+                    let needs_rescan = payload.rescan == Some(true)
+                        || exclusions_changed
+                        || active_rules_changed
+                        || ignored_changed;
+
+                    let (total_nodes, total_edges) = if needs_rescan {
+                        let scanner = ProjectScanner::default()
+                            .with_plugin_selection(state.plugin_selection.clone());
+                        let mut new_graph = scanner.scan_project_with_exclusions(&p_root, &merged_exclusions);
+                        apply_settings_filters_to_graph(
+                            &mut new_graph,
+                            active_opt.as_deref(),
+                            &ignored_cwes,
+                        );
+                        let tn = new_graph.nodes.len();
+                        let te = new_graph.edges.len();
+                        {
+                            let mut cg_guard = state.code_graph.write().await;
+                            *cg_guard = Some(new_graph.clone());
                         }
-                    }
-                    let mut g_guard = state.graph.write().await;
-                    *g_guard = new_graph.clone();
-                    state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let mut g_guard = state.graph.write().await;
+                        *g_guard = new_graph;
+                        state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        (tn, te)
+                    } else {
+                        let g_guard = state.graph.read().await;
+                        (g_guard.nodes.len(), g_guard.edges.len())
+                    };
+
                     let catalogue = security_linter::SecurityLinter::get_supported_cve_rules();
                     let active_resp = active_opt.unwrap_or_else(|| catalogue.iter().map(|r| r.rule_id.clone()).collect());
                     axum::Json(serde_json::json!({
                         "status": "ok",
-                        "exclusions": payload.exclusions,
+                        "exclusions": merged_exclusions,
                         "active_cve_rules": active_resp,
                         "ignored_cwes": ignored_cwes,
                         "cve_catalogue": catalogue,
-                        "total_nodes": new_graph.nodes.len(),
-                        "total_edges": new_graph.edges.len()
+                        "total_nodes": total_nodes,
+                        "total_edges": total_edges
                     }))
                 }
             }),

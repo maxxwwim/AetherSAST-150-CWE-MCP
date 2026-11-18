@@ -992,8 +992,8 @@ impl ProjectScanner {
 
             for v in violations {
                 let formatted = format!(
-                    "[{}] ({}) L{}: {} — Fix: {}",
-                    v.rule_id, v.severity, v.line_number, v.message, v.remediation
+                    "[{}] ({} | {}) L{}: {} — Fix: {}",
+                    v.rule_id, v.cve_id, v.severity, v.line_number, v.message, v.remediation
                 );
 
                 let anomaly_rec = CveAnomalyRecord {
@@ -1013,8 +1013,10 @@ impl ProjectScanner {
                 let is_file_level_rule = v.rule_id == "RULE_MAX_LINES";
                 let is_lines_warning = v.rule_id == "RULE_MAX_LINES"
                     || v.cve_id.contains("ARCH-BUDGET-EXCEEDED")
-                    || v.cve_id.contains("CONTRACT")
-                    || v.severity == "WARNING";
+                    || v.cve_id.contains("CONTRACT / ARCH-BUDGET")
+                    || v.cve_id == "CONTRACT_BUDGET"
+                    || (v.severity == "WARNING"
+                        && (v.rule_id.contains("LINE") || v.cve_id.contains("BUDGET")));
                 let mut best_sym_id: Option<String> = None;
                 let mut best_line = 0usize;
 

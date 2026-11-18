@@ -72,8 +72,8 @@
     ctx.lineWidth = 1.2;
     ctx.strokeRect(vx, vy, vw, vh);
 
-    // 4. Plot Multi-Agent AI Trails & Beacons
-    const agents = cockpitState.activeAgents;
+    // 4. Plot Multi-Agent AI Trails & Beacons (only connected agents with ping < 5 min)
+    const agents = cockpitState.activeAgents.filter((ag) => !cockpitState.isAgentInactive(ag));
     const trails = cockpitState.agentTrails;
     const nowTs = Date.now();
 

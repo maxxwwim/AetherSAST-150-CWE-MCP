@@ -11,9 +11,9 @@ import {
 } from './shaders';
 import { PhysicsController, type FolderClusterEntry } from './physics';
 import { getLayerRgba, getFolderColor, formatFolderLabel, SEVERITY_COLORS, CONTRACT_WARNING_COLOR, type RgbaColor } from './palette';
-import { normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly, type CockpitState } from '../state/graphState.svelte';
+import { normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly, formatCweShortId, type CockpitState } from '../state/graphState.svelte';
 import { playSpatialTone } from '../lib/sound';
-import type { SymbolBubble } from '../types/graph';
+import type { SymbolBubble, CveAnomalyRecord } from '../types/graph';
 
 // Precomputed 12-sector trigonometric tables for C1-continuous cellular membranes
 const _COS12 = new Float32Array(12);
@@ -89,7 +89,9 @@ export class AetherEngine {
   private selectedFolder: string | null = null;
   private hasInitialCameraFit = false;
   private folderPillBounds: { folder: string; x: number; y: number; w: number; h: number }[] = [];
+  private labelBounds: { x: number; y: number; w: number; h: number }[] = [];
   private anomalyNodeIndices: number[] = [];
+  private fileAnomaliesByPath = new Map<string, CveAnomalyRecord[]>();
   private agentSmoothPositions = new Map<string, { x: number; y: number }>();
 
   // Mouse interaction state
@@ -313,12 +315,7 @@ export class AetherEngine {
       this.instanceData[offset + 9] = this.getNodeGitShaderVal(n);
     }
 
-    this.anomalyNodeIndices = [];
-    for (let i = 0; i < nodes.length; i++) {
-      if (getNodeAlertKind(nodes[i]) !== 'none') {
-        this.anomalyNodeIndices.push(i);
-      }
-    }
+    this.rebuildAnomalyIndex(nodes);
 
     this.seedInitialClusters(nodes);
     this.refreshVisionColors(false);
@@ -376,10 +373,67 @@ export class AetherEngine {
     }
   }
 
+  private isAnomalyIgnored = (ruleId?: string, cveId?: string) => this.state.isCweIgnored(ruleId, cveId);
+
+  private rebuildAnomalyIndex(nodes: SymbolBubble[]) {
+    this.anomalyNodeIndices = [];
+    this.fileAnomaliesByPath.clear();
+
+    // First collect real structured anomalies from child symbols by file_path
+    const byFile = new Map<string, CveAnomalyRecord[]>();
+    const seenByFile = new Map<string, Set<string>>();
+    const addToFile = (fp: string | undefined, list: CveAnomalyRecord[] | undefined) => {
+      if (!fp || !list || list.length === 0) return;
+      const keyPath = fp.replace(/\\/g, '/').toLowerCase();
+      let arr = byFile.get(keyPath);
+      let seen = seenByFile.get(keyPath);
+      if (!arr) {
+        arr = [];
+        seen = new Set<string>();
+        byFile.set(keyPath, arr);
+        seenByFile.set(keyPath, seen);
+      }
+      for (const a of list) {
+        if (this.isAnomalyIgnored(a.rule_id, a.cve_id)) continue;
+        const k = `${a.line_number || 0}|${String(a.rule_id || a.cve_id || '').toUpperCase()}`;
+        if (!seen!.has(k)) {
+          seen!.add(k);
+          arr.push(a);
+        }
+      }
+    };
+
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!n.is_file) addToFile(n.file_path, n.anomalies);
+    }
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n.is_file) addToFile(n.file_path, n.anomalies);
+    }
+    this.fileAnomaliesByPath = byFile;
+
+    for (let i = 0; i < nodes.length; i++) {
+      if (getNodeAlertKind(nodes[i], this.isAnomalyIgnored) !== 'none') {
+        this.anomalyNodeIndices.push(i);
+      }
+    }
+  }
+
+  private getEffectiveAnomalies(n: SymbolBubble): CveAnomalyRecord[] {
+    if (n.is_file && n.file_path) {
+      const keyPath = n.file_path.replace(/\\/g, '/').toLowerCase();
+      const aggregated = this.fileAnomaliesByPath.get(keyPath);
+      if (aggregated && aggregated.length > 0) return aggregated;
+    }
+    return (n.anomalies || []).filter((a) => !this.isAnomalyIgnored(a.rule_id, a.cve_id));
+  }
+
   public refreshVisionColors(upload = true) {
     const nodes = this.state.graph.nodes;
     if (!nodes || this.instanceData.length < nodes.length * 10) return;
 
+    const filterChanged = this.lastFilterVersion !== this.state.filterVersion;
     const mode = this.state.visionMode;
     const activeId = this.state.activeSymbol?.id || null;
     const lod = this.state.lodLevel;
@@ -388,6 +442,10 @@ export class AetherEngine {
     this.lastActiveSymbolId = activeId;
     this.lastLodLevel = lod;
     this.lastFilterVersion = this.state.filterVersion;
+
+    if (filterChanged) {
+      this.rebuildAnomalyIndex(nodes);
+    }
 
     this.activeNeighbors.clear();
     if (mode === 'xray' && activeId) {
@@ -401,6 +459,9 @@ export class AetherEngine {
     }
 
     const isHugeProject = nodes.length > 2500;
+    const showAlerts = this.state.settings.showAlerts;
+    const showCweBubbles = this.state.settings.showCweBubbles;
+
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       const offset = i * 10;
@@ -414,14 +475,11 @@ export class AetherEngine {
       if (n.id === activeId) r *= 1.65;
       else if (n.id === this.hoveredNodeId) r *= 1.35;
 
-      const alertKind = getNodeAlertKind(n);
+      const alertKind = getNodeAlertKind(n, this.isAnomalyIgnored);
       const isSecurityAlert = alertKind === 'security';
       const isLinesAlert = alertKind === 'lines_exceeded';
 
       // --- LoD BUBBLE FILTERING & SMART COLLAPSE ---
-      // LoD 1 (Architecture Macro): Masque les 25 000+ fonctions/méthodes secondaires pour une vue claire des fichiers/classes/alertes
-      // LoD 2 (Méso): Affiche fichiers, classes, et fonctions à forte complexité (cc >= 5) ou alertées
-      // LoD 3 (Micro): Affiche l'intégralité des symboles AST
       if (lod === 1 && isFunction && !isSecurityAlert && !isFocus) {
         r = 0.0;
         alpha = 0.0;
@@ -457,16 +515,19 @@ export class AetherEngine {
         }
       }
 
-      if (!this.state.settings.showCweBubbles && isSecurityAlert) {
+      if (!showCweBubbles && isSecurityAlert) {
         alpha = 0.0;
         r = 0.0;
-      } else if (this.state.settings.showAlerts) {
+      } else if (showAlerts) {
         if (isSecurityAlert && mode === 'standard') {
-          col = SEVERITY_COLORS.CRITICAL;
-          r *= 1.3;
+          const eff = this.getEffectiveAnomalies(n).filter((a) => !isLinesExceededAnomaly(a));
+          const hasCritical = eff.some((a) => String(a.severity || '').toUpperCase() === 'CRITICAL');
+          const hasHigh = eff.some((a) => String(a.severity || '').toUpperCase() === 'HIGH');
+          col = hasCritical ? SEVERITY_COLORS.CRITICAL : hasHigh ? SEVERITY_COLORS.HIGH : SEVERITY_COLORS.CRITICAL;
+          r *= n.is_file ? 1.18 : 1.12;
         } else if (isLinesAlert && mode === 'standard') {
           col = CONTRACT_WARNING_COLOR;
-          r *= 1.18;
+          r *= 1.12;
         }
       }
 
@@ -475,10 +536,10 @@ export class AetherEngine {
         r *= 0.42;
       }
 
-      let gitStatusVal = 0.0;
-      if (n.git_status === 'modified') gitStatusVal = 1.0;
-      else if (n.git_status === 'untracked') gitStatusVal = 2.0;
-      else if (n.git_status === 'violation') gitStatusVal = 3.0;
+      let gitStatusVal = this.getNodeGitShaderVal(n);
+      if (gitStatusVal === 3.0 && (!showAlerts || !showCweBubbles)) {
+        gitStatusVal = 0.0;
+      }
 
       this.instanceData[offset + 2] = r;
       this.instanceData[offset + 3] = col.r;
@@ -584,6 +645,7 @@ export class AetherEngine {
       const n = nodes[i];
       if (disabledLayers[n.layer || 'utility']) continue;
       if (disabledModules[n.folder || n.cluster_id || 'root']) continue;
+      if (!this.state.settings.showCweBubbles && getNodeAlertKind(n, this.isAnomalyIgnored) === 'security') continue;
       if (isXray && !this.activeNeighbors.has(n.id)) continue;
 
       const p = this.worldToScreen(n.x, n.y);
@@ -1000,10 +1062,10 @@ export class AetherEngine {
     this.renderLayoutScenery(ctx);
     this.renderMembranes(ctx, now);
     this.renderEdges(ctx, now);
+    this.renderLabels(ctx);
     this.renderGitDiffBadges(ctx, now);
     this.renderSecurityBeacons(ctx, now);
     this.renderAiAgentOverlay(ctx, now, dt);
-    this.renderLabels(ctx);
   }
 
   private captureSnapshot() {
@@ -1112,14 +1174,33 @@ export class AetherEngine {
     const disabledLayers = this.state.disabledLayers;
     const disabledModules = this.state.disabledModules;
     const zoom = this.camera.zoom;
+    const activeId = this.state.activeSymbol?.id || null;
+    const W = this.logicalWidth;
+    const H = this.logicalHeight;
 
     ctx.save();
-    ctx.font = '700 9.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+    ctx.font = '600 9.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.textBaseline = 'middle';
-    ctx.textAlign = 'center';
+    ctx.textAlign = 'left';
 
-    let drawn = 0;
-    for (let i = 0; i < nodes.length && drawn < 96; i++) {
+    const placed: { x: number; y: number; w: number; h: number }[] = this.folderPillBounds.map((b) => ({
+      x: b.x - 3,
+      y: b.y - 3,
+      w: b.w + 6,
+      h: b.h + 6,
+    }));
+    const collides = (x: number, y: number, w: number, h: number) => {
+      for (const r of placed) {
+        if (x < r.x + r.w + 3 && x + w + 3 > r.x && y < r.y + r.h + 3 && y + h + 3 > r.y) return true;
+      }
+      return false;
+    };
+
+    let drawnRings = 0;
+    let drawnPills = 0;
+    const maxPills = zoom < 0.25 ? 8 : 16;
+
+    for (let i = 0; i < nodes.length && drawnRings < 64; i++) {
       const n = nodes[i];
       const ek = n.edit_kind || (
         n.git_status === 'violation' ? 'violation'
@@ -1132,92 +1213,86 @@ export class AetherEngine {
       if (ek === 'none') continue;
       if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
 
+      const isFocus = n.id === this.hoveredNodeId || n.id === activeId;
+      // Only show git-diff indicators on file nodes or focused/hovered symbol (prevents 60+ stacked child-symbol overlays)
+      if (!n.is_file && !isFocus) continue;
+
+      // Never draw redundant "FAILLE ÉDIT" boxes: security nodes are rendered cleanly by renderSecurityBeacons
+      if (ek === 'violation') continue;
+
       const p = this.worldToScreen(n.x, n.y);
-      if (p.x < -80 || p.x > this.logicalWidth + 80 || p.y < -80 || p.y > this.logicalHeight + 80) continue;
+      if (p.x < -60 || p.x > W + 60 || p.y < -60 || p.y > H + 60) continue;
 
       let badgeText = '';
-      let ringHex = '#facc15';
-      let strokeColor = '';
-      let fillColor = '';
-      let textColor = '';
+      let accentHex = '#facc15';
+      let strokeColor = 'rgba(250, 204, 21, 0.72)';
+      let textColor = '#fef08a';
 
       if (ek === 'modif') {
-        badgeText = n.is_file ? '✏️ FICHIER MODIFIÉ' : '✏️ MODIF';
-        ringHex = '#facc15';
-        strokeColor = 'rgba(250, 204, 21, 0.95)';
-        fillColor = 'rgba(38, 28, 6, 0.92)';
+        badgeText = 'MODIF';
+        accentHex = '#facc15';
+        strokeColor = 'rgba(250, 204, 21, 0.72)';
         textColor = '#fef08a';
       } else if (ek === 'text') {
-        badgeText = '📝 TEXTE / DOC';
-        ringHex = '#22d3ee';
-        strokeColor = 'rgba(34, 211, 238, 0.95)';
-        fillColor = 'rgba(6, 32, 44, 0.92)';
+        badgeText = 'DOC';
+        accentHex = '#22d3ee';
+        strokeColor = 'rgba(34, 211, 238, 0.72)';
         textColor = '#a5f3fc';
       } else if (ek === 'new_file') {
-        badgeText = n.is_file ? '✨ NOUVEAU FICHIER' : '✨ +SYMBOLE';
-        ringHex = '#34d399';
-        strokeColor = 'rgba(52, 211, 153, 0.95)';
-        fillColor = 'rgba(6, 36, 24, 0.92)';
+        badgeText = '+FICHIER';
+        accentHex = '#34d399';
+        strokeColor = 'rgba(52, 211, 153, 0.75)';
         textColor = '#a7f3d0';
       } else if (ek === 'new_folder') {
-        badgeText = '📁✨ +DOSSIER';
-        ringHex = '#c084fc';
-        strokeColor = 'rgba(192, 132, 252, 0.95)';
-        fillColor = 'rgba(32, 12, 48, 0.92)';
+        badgeText = '+DOSSIER';
+        accentHex = '#c084fc';
+        strokeColor = 'rgba(192, 132, 252, 0.75)';
         textColor = '#e9d5ff';
-      } else if (ek === 'violation') {
-        badgeText = '🚨 FAILLE ÉDIT';
-        ringHex = '#ef4444';
-        strokeColor = 'rgba(239, 68, 68, 0.95)';
-        fillColor = 'rgba(45, 10, 10, 0.95)';
-        textColor = '#fecaca';
       } else {
         continue;
       }
 
-      const baseR = n.is_file || n.is_class ? 16 : 11;
-      const screenR = Math.max(10, baseR * Math.sqrt(Math.max(0.22, zoom)));
-      const pulse = 0.5 + 0.5 * Math.sin(now * 0.0008 + i * 0.7);
+      const visR = this.getNodeScreenRadius(n, activeId);
+      const ringR = Math.max(5.5, Math.min(22, visR * 0.58 + 3));
       const isRecent = Boolean(n.last_edit_ts && now - n.last_edit_ts < 15000);
 
-      // 1. Calm, Steady Bioluminescent Bubble Corona Ring (no rapid spinning or strobing)
-      ctx.save();
+      // Subtle, crisp git status ring (zero heavy shadowBlur blotches)
       ctx.beginPath();
-      ctx.arc(p.x, p.y, screenR + 5 + pulse * 1.2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = isRecent ? 2.0 : 1.4;
-      ctx.shadowColor = ringHex;
-      ctx.shadowBlur = isRecent ? 10 : 6;
-      ctx.globalAlpha = isRecent ? 0.88 : 0.70;
+      ctx.lineWidth = isRecent || isFocus ? 1.5 : 1.05;
       ctx.stroke();
-      ctx.restore();
+      drawnRings++;
 
-      const isFocus = n.id === this.hoveredNodeId || n.id === this.state.activeSymbol?.id;
-      if (!isFocus && !isRecent && zoom < 0.28 && !n.is_file) {
-        drawn++;
-        continue;
-      }
+      if (!isFocus && !isRecent && zoom < 0.35) continue;
+      if (drawnPills >= maxPills && !isFocus) continue;
 
-      const tw = ctx.measureText(badgeText).width + 10;
-      const hasSec = Boolean(n.has_security_violation || (n.anomalies && n.anomalies.length > 0) || (n.violations && n.violations.length > 0));
-      const by = hasSec ? p.y + screenR + 6 : p.y - screenR - 18;
-      const bx = p.x - tw * 0.5;
+      const padX = 6;
+      const dotW = 8;
+      const pillH = 16;
+      const tw = Math.ceil(ctx.measureText(badgeText).width) + padX * 2 + dotW;
+      const bx = Math.max(4, Math.min(W - tw - 4, Math.round(p.x - tw * 0.5)));
+      const by = Math.round(p.y + ringR + 5);
 
-      ctx.fillStyle = fillColor;
+      if (by + pillH > H - 28 || (!isFocus && collides(bx, by, tw, pillH))) continue;
+      placed.push({ x: bx, y: by, w: tw, h: pillH });
+      drawnPills++;
+
+      ctx.fillStyle = 'rgba(10, 14, 24, 0.90)';
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1.1;
-      ctx.shadowColor = ringHex;
-      ctx.shadowBlur = 6;
+      ctx.lineWidth = 1.0;
       ctx.beginPath();
-      ctx.roundRect(bx, by, tw, 15, 4);
+      ctx.roundRect(bx, by, tw, pillH, pillH / 2);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = textColor;
-      ctx.shadowBlur = 0;
-      ctx.fillText(badgeText, p.x, by + 7.5);
+      ctx.beginPath();
+      ctx.arc(bx + padX + 2, by + pillH / 2, 2.3, 0, Math.PI * 2);
+      ctx.fillStyle = accentHex;
+      ctx.fill();
 
-      drawn++;
+      ctx.fillStyle = textColor;
+      ctx.fillText(badgeText, bx + padX + dotW, by + pillH / 2 + 0.5);
     }
 
     ctx.restore();
@@ -1227,94 +1302,265 @@ export class AetherEngine {
     if (!this.state.settings.showAlerts) return;
     const nodes = this.state.graph.nodes;
     if (!nodes || nodes.length === 0) return;
-    const anomalyIndices = this.anomalyNodeIndices.length > 0 ? this.anomalyNodeIndices : null;
-    const targetCount = anomalyIndices ? anomalyIndices.length : nodes.length;
-    if (targetCount === 0) return;
+    const anomalyIndices = this.anomalyNodeIndices;
+    if (anomalyIndices.length === 0) return;
 
     const disabledLayers = this.state.disabledLayers;
     const disabledModules = this.state.disabledModules;
     const zoom = this.camera.zoom;
+    const showTitles = this.state.settings.showCweTitles;
+    const activeId = this.state.activeSymbol?.id || null;
+    const W = this.logicalWidth;
+    const H = this.logicalHeight;
 
+    type SeverityLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LINES';
+    type Beacon = {
+      x: number;
+      y: number;
+      ringR: number;
+      sev: SeverityLevel;
+      code: string;
+      extraCount: number;
+      prio: number;
+      isFocus: boolean;
+    };
+    const beacons: Beacon[] = [];
+
+    // ---- Passe 1 : anneaux fins proportionnels à la bulle (pas de pâté rouge au dézoom)
     ctx.save();
-    ctx.font = '700 9.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-    ctx.textBaseline = 'middle';
-
-    let drawn = 0;
-    for (let k = 0; k < targetCount && drawn < 48; k++) {
-      const i = anomalyIndices ? anomalyIndices[k] : k;
+    let rings = 0;
+    for (let k = 0; k < anomalyIndices.length && rings < 260; k++) {
+      const i = anomalyIndices[k];
       const n = nodes[i];
       if (!n) continue;
       if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
-      const alertKind = getNodeAlertKind(n);
+
+      const alertKind = getNodeAlertKind(n, this.isAnomalyIgnored);
       if (alertKind === 'none') continue;
       if (!this.state.settings.showCweBubbles && alertKind === 'security') continue;
-      const isLinesWarn = alertKind === 'lines_exceeded';
-      const anom = n.anomalies || [];
+
+      const isFocus = n.id === this.hoveredNodeId || n.id === activeId;
+      // En vue macro/méso (zoom < 0.55), agréger par fichier évite d'empiler 30 anneaux de sous-fonctions
+      if (!n.is_file && !isFocus && zoom < 0.55) continue;
 
       const p = this.worldToScreen(n.x, n.y);
-      if (p.x < -50 || p.x > this.logicalWidth + 50 || p.y < -50 || p.y > this.logicalHeight + 50) continue;
+      if (p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) continue;
 
-      // Calm, slow breathing aura (crimson for security, amber for contract lines warning)
-      const gentleBreath = 0.5 + 0.5 * Math.sin(now * 0.0014 + i * 0.45);
-      const baseR = n.is_file || n.is_class ? 16 : 11;
-      const ringR = Math.max(11, baseR * Math.sqrt(Math.max(0.25, zoom)) + gentleBreath * 2.0);
+      const isLinesWarn = alertKind === 'lines_exceeded';
+      const effAnom = this.getEffectiveAnomalies(n);
+      const secAnoms = effAnom.filter((a) => !isLinesExceededAnomaly(a));
 
-      // Soft ambient outer halo
+      let sev: SeverityLevel = isLinesWarn ? 'LINES' : 'HIGH';
+      if (!isLinesWarn) {
+        if (secAnoms.some((a) => String(a.severity || '').toUpperCase() === 'CRITICAL')) sev = 'CRITICAL';
+        else if (secAnoms.some((a) => String(a.severity || '').toUpperCase() === 'HIGH')) sev = 'HIGH';
+        else if (secAnoms.length > 0) sev = 'MEDIUM';
+        else sev = 'CRITICAL';
+      }
+
+      const visR = this.getNodeScreenRadius(n, activeId);
+      const breath = 0.5 + 0.5 * Math.sin(now * 0.0018 + i * 0.55);
+      const ringR = Math.max(5.5, Math.min(24, visR * 0.56 + 3.2)) + (isFocus ? breath * 2.0 : breath * 0.8);
+
+      const rgb =
+        sev === 'LINES' ? '245, 158, 11'
+          : sev === 'CRITICAL' ? '244, 63, 94'
+            : sev === 'HIGH' ? '251, 146, 60'
+              : '250, 204, 21';
+
+      // Aura externe très légère (ne sature plus jamais en bloc rouge opaque)
       ctx.beginPath();
-      ctx.arc(p.x, p.y, ringR + 4, 0, Math.PI * 2);
-      ctx.fillStyle = isLinesWarn
-        ? `rgba(245, 158, 11, ${(0.07 + gentleBreath * 0.05).toFixed(3)})`
-        : `rgba(239, 68, 68, ${(0.06 + gentleBreath * 0.05).toFixed(3)})`;
+      ctx.arc(p.x, p.y, ringR + 3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${rgb}, ${(isFocus ? 0.14 : 0.055).toFixed(3)})`;
       ctx.fill();
 
-      // Steady inner ring
+      // Anneau net
       ctx.beginPath();
       ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
-      ctx.strokeStyle = isLinesWarn
-        ? `rgba(251, 191, 36, ${(0.62 + gentleBreath * 0.24).toFixed(2)})`
-        : `rgba(248, 113, 113, ${(0.52 + gentleBreath * 0.24).toFixed(2)})`;
-      ctx.lineWidth = 1.35;
+      ctx.strokeStyle = `rgba(${rgb}, ${(isFocus ? 0.92 : 0.62 + breath * 0.18).toFixed(2)})`;
+      ctx.lineWidth = isFocus ? 1.8 : 1.15;
       ctx.stroke();
+      rings++;
 
-      // Alert pill on files, focused/hovered nodes, or when zoomed in (steady position, legible)
-      const isFocus = n.id === this.hoveredNodeId || n.id === this.state.activeSymbol?.id;
-      if (this.state.settings.showCweTitles && (isFocus || n.is_file || zoom >= 0.42)) {
-        let shortTag: string;
+      if (showTitles && (isFocus || n.is_file || zoom >= 0.55)) {
+        let code: string;
+        let extraCount = 0;
+        let prio = 0;
         if (isLinesWarn) {
           const maxLim = n.metadata?.max_lines_limit || 300;
           const curLoc = n.loc || n.metadata?.lines || 0;
-          shortTag = curLoc > 0 ? `⚠️ ${curLoc}/${maxLim} L` : '⚠️ CONTRAT LIGNES';
+          code = curLoc > 0 ? `${curLoc}/${maxLim} L` : 'Max L';
+          prio = 1;
         } else {
-          const primary = anom.find((a) => !isLinesExceededAnomaly(a)) || anom[0];
-          const tagText = primary ? `🚨 ${primary.cve_id || primary.rule_id || 'CWE'}` : '🚨 SAST CWE';
-          shortTag = tagText.length > 18 ? tagText.slice(0, 17) + '…' : tagText;
+          // Prioriser la faille la plus critique et compter les CWE de sécurité réelles
+          const rankSev = (s?: string) => {
+            const u = String(s || '').toUpperCase();
+            return u === 'CRITICAL' ? 3 : u === 'HIGH' ? 2 : 1;
+          };
+          const sortedSec = [...secAnoms].sort((a, b) => rankSev(b.severity) - rankSev(a.severity));
+          const primary = sortedSec[0];
+          code = primary ? formatCweShortId(primary.cve_id, primary.rule_id) : 'CWE';
+          extraCount = Math.max(0, sortedSec.length - 1);
+          prio = sev === 'CRITICAL' ? 4 : sev === 'HIGH' ? 3 : 2;
         }
-        const tw = ctx.measureText(shortTag).width + 10;
-        const fixedOffset = Math.max(12, baseR * Math.sqrt(Math.max(0.25, zoom)) + 4);
-        const bx = p.x - tw * 0.5;
-        const by = p.y - fixedOffset - 16;
+        if (n.is_file) prio += 0.5;
+        beacons.push({ x: p.x, y: p.y, ringR, sev, code, extraCount, prio, isFocus });
+      }
+    }
 
-        ctx.fillStyle = isLinesWarn ? 'rgba(120, 53, 15, 0.92)' : 'rgba(127, 29, 29, 0.90)';
-        ctx.strokeStyle = isLinesWarn ? 'rgba(245, 158, 11, 0.88)' : 'rgba(248, 113, 113, 0.85)';
-        ctx.lineWidth = 1.0;
+    // ---- Passe 2 : pastilles CWE compactes, verre dépoli sombre, anti-collision avec dossiers + labels
+    if (beacons.length > 0) {
+      beacons.sort((a, b) => Number(b.isFocus) - Number(a.isFocus) || b.prio - a.prio || b.extraCount - a.extraCount);
+
+      const fontPx = Math.min(11.5, Math.max(9.5, 9.8 + (zoom - 0.3) * 1.4));
+      const mainFont = `700 ${fontPx.toFixed(1)}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+      const countFont = `700 ${Math.max(8.5, fontPx - 1.2).toFixed(1)}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+
+      const pillH = Math.round(fontPx + 8);
+      const padL = 7;
+      const padR = 7;
+      const dotArea = 9;
+
+      // Pré-remplit les zones occupées par les badges de dossiers et les labels de fichiers
+      const placed: { x: number; y: number; w: number; h: number }[] = [
+        ...this.folderPillBounds.map((b) => ({ x: b.x - 2, y: b.y - 2, w: b.w + 4, h: b.h + 4 })),
+        ...this.labelBounds.map((b) => ({ x: b.x - 1, y: b.y - 1, w: b.w + 2, h: b.h + 2 })),
+      ];
+      const hit = (x: number, y: number, w: number, h: number) => {
+        for (const r of placed) {
+          if (x < r.x + r.w + 4 && x + w + 4 > r.x && y < r.y + r.h + 4 && y + h + 4 > r.y) return true;
+        }
+        return false;
+      };
+
+      const maxPills = zoom < 0.12 ? 14 : zoom < 0.35 ? 24 : 42;
+      let drawnPills = 0;
+
+      for (const b of beacons) {
+        if (drawnPills >= maxPills && !b.isFocus) break;
+
+        ctx.font = mainFont;
+        const codeW = Math.ceil(ctx.measureText(b.code).width);
+        let extraText = '';
+        let extraChipW = 0;
+        if (b.extraCount > 0) {
+          extraText = `+${b.extraCount}`;
+          ctx.font = countFont;
+          extraChipW = Math.ceil(ctx.measureText(extraText).width) + 9;
+        }
+        const tw = padL + dotArea + codeW + (extraChipW > 0 ? 5 + extraChipW : 0) + padR;
+        const baseY = Math.round(b.y - b.ringR - pillH - 6);
+        const centerBx = Math.round(b.x - tw / 2);
+
+        // Positions candidates autour de la bulle : dessus, haut-droite, haut-gauche, étage +1, droite, gauche, dessous
+        const candidates: [number, number][] = [
+          [centerBx, baseY],
+          [Math.round(b.x + b.ringR + 6), Math.round(b.y - pillH - 2)],
+          [Math.round(b.x - b.ringR - tw - 6), Math.round(b.y - pillH - 2)],
+          [centerBx, baseY - (pillH + 5)],
+          [Math.round(b.x + b.ringR + 6), Math.round(b.y - pillH / 2)],
+          [Math.round(b.x - b.ringR - tw - 6), Math.round(b.y - pillH / 2)],
+          [centerBx, Math.round(b.y + b.ringR + 6)],
+        ];
+
+        let bx = centerBx;
+        let by = baseY;
+        let ok = false;
+        for (const [cxRaw, cy] of candidates) {
+          const cx = Math.max(6, Math.min(W - tw - 6, cxRaw));
+          if (cy < 54 || cy + pillH > H - 32) continue;
+          if (!hit(cx, cy, tw, pillH)) {
+            bx = cx;
+            by = cy;
+            ok = true;
+            break;
+          }
+        }
+        if (!ok) {
+          if (!b.isFocus) continue;
+          bx = Math.max(6, Math.min(W - tw - 6, centerBx));
+          by = Math.max(54, Math.min(H - pillH - 32, baseY));
+        }
+
+        placed.push({ x: bx, y: by, w: tw, h: pillH });
+        drawnPills++;
+
+        const palette =
+          b.sev === 'LINES'
+            ? { accent: '#f59e0b', border: 'rgba(245, 158, 11, 0.72)', bg: 'rgba(18, 14, 8, 0.90)', text: '#fde68a', chipBg: 'rgba(245, 158, 11, 0.22)', chipTxt: '#fcd34d' }
+            : b.sev === 'CRITICAL'
+              ? { accent: '#f43f5e', border: 'rgba(244, 63, 94, 0.78)', bg: 'rgba(17, 10, 16, 0.92)', text: '#ffe4e6', chipBg: 'rgba(244, 63, 94, 0.24)', chipTxt: '#fda4af' }
+              : b.sev === 'HIGH'
+                ? { accent: '#fb923c', border: 'rgba(251, 146, 60, 0.78)', bg: 'rgba(18, 12, 10, 0.92)', text: '#ffedd5', chipBg: 'rgba(251, 146, 60, 0.24)', chipTxt: '#fdba74' }
+                : { accent: '#facc15', border: 'rgba(250, 204, 21, 0.72)', bg: 'rgba(17, 15, 9, 0.90)', text: '#fef9c3', chipBg: 'rgba(250, 204, 21, 0.20)', chipTxt: '#fde047' };
+
+        // Fin trait connecteur vers la bulle
+        const pillCx = bx + tw / 2;
+        const pillCy = by + pillH / 2;
+        const dx = b.x - pillCx;
+        const dy = b.y - pillCy;
+        const d = Math.hypot(dx, dy) || 1;
+        if (d > b.ringR + pillH * 0.6) {
+          const anchorX = Math.max(bx + 4, Math.min(bx + tw - 4, b.x));
+          const anchorY = by + pillH < b.y ? by + pillH : by > b.y ? by : pillCy;
+          ctx.beginPath();
+          ctx.moveTo(anchorX, anchorY);
+          ctx.lineTo(b.x - (dx / d) * b.ringR, b.y - (dy / d) * b.ringR);
+          ctx.strokeStyle = palette.border;
+          ctx.globalAlpha = 0.42;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.globalAlpha = 1.0;
+        }
+
+        // Corps de la pastille (sombre verre dépoli, bord net 1px, zéro flou baveux)
+        ctx.fillStyle = palette.bg;
+        ctx.strokeStyle = b.isFocus ? palette.accent : palette.border;
+        ctx.lineWidth = b.isFocus ? 1.5 : 1.0;
         ctx.beginPath();
-        ctx.roundRect(bx, by, tw, 15, 4);
+        ctx.roundRect(bx, by, tw, pillH, 6);
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = isLinesWarn ? '#fde68a' : '#fecaca';
-        ctx.textAlign = 'center';
-        ctx.fillText(shortTag, p.x, by + 7.5);
+        // Point de gravité net
+        ctx.beginPath();
+        ctx.arc(bx + padL + 2.5, by + pillH / 2, 2.7, 0, Math.PI * 2);
+        ctx.fillStyle = palette.accent;
+        ctx.fill();
+
+        // Identifiant CWE clair (ex: CWE-88, PATH-008, CWE-1075)
+        ctx.font = mainFont;
+        ctx.fillStyle = palette.text;
+        ctx.fillText(b.code, bx + padL + dotArea, by + pillH / 2 + 0.5);
+
+        // Mini-badge compteur (+N) sur la droite si plusieurs failles
+        if (extraChipW > 0) {
+          const chipX = bx + padL + dotArea + codeW + 5;
+          const chipH = pillH - 5;
+          const chipY = by + 2.5;
+          ctx.fillStyle = palette.chipBg;
+          ctx.beginPath();
+          ctx.roundRect(chipX, chipY, extraChipW, chipH, 4);
+          ctx.fill();
+
+          ctx.font = countFont;
+          ctx.fillStyle = palette.chipTxt;
+          ctx.fillText(extraText, chipX + 4.5, by + pillH / 2 + 0.5);
+        }
       }
-      drawn++;
     }
     ctx.restore();
   }
 
   private renderAiAgentOverlay(ctx: CanvasRenderingContext2D, now: number, dt = 16.6) {
-    const agents = this.state.activeAgents;
+    const rawAgents = this.state.activeAgents;
     const trails = this.state.agentTrails;
-    if (!agents || agents.length === 0) return;
+    if (!rawAgents || rawAgents.length === 0) return;
+    // Only render agents that pinged within the last 5 minutes
+    const agents = rawAgents.filter((ag) => !this.state.isAgentInactive(ag));
+    if (agents.length === 0) return;
 
     // Prune stale agent positions to prevent memory leaks over time
     if (this.agentSmoothPositions.size > 40) {
@@ -1429,41 +1675,41 @@ export class AetherEngine {
         }
 
         if (validPoints.length > 1) {
-          // Pass 1: Diffused colored glow path
+          // Pass 1: Subtle diffused glow path
           ctx.beginPath();
           ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
           for (let i = 1; i < validPoints.length; i++) {
             ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
           }
           ctx.strokeStyle = agColor;
-          ctx.lineWidth = Math.max(2.5, 4.0 * Math.sqrt(zoom));
-          ctx.globalAlpha = 0.20;
+          ctx.lineWidth = Math.max(1.5, 2.2 * Math.sqrt(zoom));
+          ctx.globalAlpha = 0.12;
           ctx.stroke();
 
-          // Pass 2: Clean dashed core line (lightweight, zero heavy photon bead loops)
+          // Pass 2: Lightweight dashed trajectory core
           ctx.beginPath();
           ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
           for (let i = 1; i < validPoints.length; i++) {
             ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
           }
-          ctx.setLineDash([8, 6]);
-          ctx.lineDashOffset = -(now * 0.02 + idx * 3);
+          ctx.setLineDash([6, 6]);
+          ctx.lineDashOffset = -(now * 0.015 + idx * 3);
           ctx.strokeStyle = agColor;
-          ctx.globalAlpha = 0.85;
-          ctx.lineWidth = Math.max(1.5, 2.0 * Math.sqrt(zoom));
+          ctx.globalAlpha = 0.48;
+          ctx.lineWidth = Math.max(1.0, 1.3 * Math.sqrt(zoom));
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Pass 3: Static, clean waypoint markers on visited bubbles
+          // Pass 3: Subtle waypoint dots
           for (let i = 0; i < validPoints.length; i++) {
             const wp = validPoints[i];
             const isLatest = i === validPoints.length - 1;
-            const wpRadius = isLatest ? 4.0 : 2.5;
+            const wpRadius = isLatest ? 3.2 : 2.0;
 
             ctx.beginPath();
             ctx.arc(wp.s.x, wp.s.y, wpRadius, 0, Math.PI * 2);
             ctx.fillStyle = isLatest ? '#ffffff' : agColor;
-            ctx.globalAlpha = isLatest ? 0.90 : 0.60;
+            ctx.globalAlpha = isLatest ? 0.85 : 0.45;
             ctx.fill();
           }
           ctx.globalAlpha = 1.0;
@@ -2069,28 +2315,26 @@ export class AetherEngine {
     tipY: number,
     angle: number,
     size: number,
-    fillColor: string
+    fillColor: string,
+    alpha = 0.85
   ) {
-    const spread = 0.44;
+    const spread = 0.42;
     ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.moveTo(tipX, tipY);
     ctx.lineTo(tipX - Math.cos(angle - spread) * size, tipY - Math.sin(angle - spread) * size);
-    ctx.lineTo(tipX - Math.cos(angle + spread) * size * 0.72, tipY - Math.sin(angle + spread) * size * 0.72);
+    ctx.lineTo(tipX - Math.cos(angle) * size * 0.66, tipY - Math.sin(angle) * size * 0.66);
     ctx.lineTo(tipX - Math.cos(angle + spread) * size, tipY - Math.sin(angle + spread) * size);
     ctx.closePath();
     ctx.fillStyle = fillColor;
-    if (!this.state.isLowMemoryMode) {
-      ctx.shadowColor = fillColor;
-      ctx.shadowBlur = 8;
-    }
     ctx.fill();
     ctx.restore();
   }
 
   private isSmallFunctionCulled(n: SymbolBubble, activeId: string | null): boolean {
     if (n.id === activeId || n.id === this.hoveredNodeId) return false;
-    const alertKind = getNodeAlertKind(n);
+    const alertKind = getNodeAlertKind(n, this.isAnomalyIgnored);
     if (alertKind === 'security' || alertKind === 'lines_exceeded') return false;
     const { isFunction } = this.classifyNode(n);
     if (!isFunction) return false;
@@ -2145,22 +2389,27 @@ export class AetherEngine {
     }[] = [];
 
     const isHuge = edges.length > 2500 || this.state.graph.nodes.length > 1800 || isEco;
-    const edgeCap = isHuge ? (zoom < 0.25 ? (isEco ? 250 : 500) : (isEco ? 450 : 900)) : 2200;
+    const edgeCap = isHuge
+      ? (zoom < 0.25 ? (isEco ? 160 : 280) : (isEco ? 340 : 620))
+      : (zoom < 0.25 ? 520 : 1200);
 
-    // 1. Process incident edges for the focused/hovered node directly (O(deg) via index)
+    // 1. Process incident edges for the focused/hovered node directly (O(deg) via index, capped & lighter)
     if (focusId) {
       const incident = this.state.incidentEdges(focusId);
-      for (let k = 0; k < incident.length && focusEdges.length < 64; k++) {
+      const maxFocusEdges = isHoverFocus ? 32 : 20;
+      for (let k = 0; k < incident.length && focusEdges.length < maxFocusEdges; k++) {
         const e = incident[k];
         const s = this.nodeMap.get(e.source);
         const t = this.nodeMap.get(e.target);
         if (!s || !t) continue;
-        if (!this.state.settings.showCweBubbles && (getNodeAlertKind(s) === 'security' || getNodeAlertKind(t) === 'security')) continue;
+        if (!this.state.settings.showCweBubbles && (getNodeAlertKind(s, this.isAnomalyIgnored) === 'security' || getNodeAlertKind(t, this.isAnomalyIgnored) === 'security')) continue;
         if (disabledLayers[s.layer || 'utility'] || disabledLayers[t.layer || 'utility']) continue;
         if (disabledModules[s.folder || s.cluster_id || 'root'] || disabledModules[t.folder || t.cluster_id || 'root']) continue;
 
         const rel = normalizeEdgeRelation(e.relation || e.edge_type);
         if (disabledRelations[rel]) continue;
+        // Skip noisy internal `contains` edges on mega-hubs when plenty of semantic edges exist
+        if (rel === 'contains' && incident.length > 18 && !isHoverFocus) continue;
 
         const p1 = this.worldToScreen(s.x, s.y);
         const p2 = this.worldToScreen(t.x, t.y);
@@ -2170,8 +2419,8 @@ export class AetherEngine {
         const isCurved = isCross && rel !== 'contains';
         const dx = p2.x - p1.x;
         const dy = p2.y - p1.y;
-        const cx = isCurved ? (p1.x + p2.x) * 0.5 - dy * 0.14 : null;
-        const cy = isCurved ? (p1.y + p2.y) * 0.5 + dx * 0.14 : null;
+        const cx = isCurved ? (p1.x + p2.x) * 0.5 - dy * 0.11 : null;
+        const cy = isCurved ? (p1.y + p2.y) * 0.5 + dx * 0.11 : null;
 
         const isWarnEdge =
           rel === 'warns' ||
@@ -2223,7 +2472,7 @@ export class AetherEngine {
       const s = this.nodeMap.get(e.source);
       const t = this.nodeMap.get(e.target);
       if (!s || !t) continue;
-      if (!this.state.settings.showCweBubbles && (getNodeAlertKind(s) === 'security' || getNodeAlertKind(t) === 'security')) continue;
+      if (!this.state.settings.showCweBubbles && (getNodeAlertKind(s, this.isAnomalyIgnored) === 'security' || getNodeAlertKind(t, this.isAnomalyIgnored) === 'security')) continue;
       if (disabledLayers[s.layer || 'utility'] || disabledLayers[t.layer || 'utility']) continue;
       if (disabledModules[s.folder || s.cluster_id || 'root'] || disabledModules[t.folder || t.cluster_id || 'root']) continue;
 
@@ -2290,8 +2539,8 @@ export class AetherEngine {
       if (isCurved && cx !== null && cy !== null) {
         targetPath.quadraticCurveTo(cx, cy, p2.x, p2.y);
 
-        if (!isEco && pulseParticles.length < 48 && (isXray || pipe || i % 7 === 0)) {
-          const u = ((now * 0.00032 + i * 0.17) % 1 + 1) % 1;
+        if (!isEco && pulseParticles.length < 14 && (isXray || pipe || (zoom >= 0.22 && i % 19 === 0))) {
+          const u = ((now * 0.00024 + i * 0.17) % 1 + 1) % 1;
           const inv = 1 - u;
           pulseParticles.push({
             x: inv * inv * p1.x + 2 * inv * u * cx + u * u * p2.x,
@@ -2303,84 +2552,89 @@ export class AetherEngine {
         targetPath.lineTo(p2.x, p2.y);
       }
 
-      // Subtle mid-edge directional chevrons on visible non-focus call/data edges when zoomed in
-      if (!isEco && !focusId && zoom >= 1.15 && dist >= 44 && midChevrons.length < 180) {
+      // Subtle mid-edge directional chevrons on visible non-focus edges only when closely zoomed in
+      if (!isEco && !focusId && zoom >= 1.35 && dist >= 64 && midChevrons.length < 36) {
         const mx = isCurved && cx !== null && cy !== null ? 0.25 * p1.x + 0.5 * cx + 0.25 * p2.x : (p1.x + p2.x) * 0.5;
         const my = isCurved && cx !== null && cy !== null ? 0.25 * p1.y + 0.5 * cy + 0.25 * p2.y : (p1.y + p2.y) * 0.5;
         midChevrons.push({
           x: mx,
           y: my,
           angle: Math.atan2(dy, dx),
-          color: rel === 'imports' ? 'rgba(251, 191, 36, 0.55)' : rel === 'queries' ? 'rgba(192, 132, 252, 0.65)' : 'rgba(56, 189, 248, 0.55)',
+          color: rel === 'imports' ? 'rgba(251, 191, 36, 0.36)' : rel === 'queries' ? 'rgba(192, 132, 252, 0.42)' : 'rgba(56, 189, 248, 0.36)',
         });
       }
     }
 
     ctx.save();
     ctx.lineCap = 'round';
-    const w = Math.max(0.75, Math.min(2.0, 1.15 * Math.sqrt(zoom)));
-    const zoomFade = zoom < 0.08 ? Math.max(0.12, zoom * 12.5) : 1.0;
-    const bgDim = (isHoverFocus && focusEdges.length > 0 ? 0.45 : 1.0) * zoomFade;
+    const w = Math.max(0.5, Math.min(1.25, 0.78 * Math.sqrt(zoom)));
+    const zoomFade = zoom < 0.22 ? Math.max(0.24, (zoom / 0.22) * 0.85) : 1.0;
+    const bgDim = (isHoverFocus && focusEdges.length > 0 ? 0.28 : 1.0) * zoomFade;
 
     if (hasImports) {
-      ctx.lineWidth = w * 0.85;
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = `rgba(245, 158, 11, ${(pipe ? 0.08 : 0.16) * bgDim})`;
+      ctx.lineWidth = w * 0.75;
+      ctx.setLineDash([4, 5]);
+      ctx.strokeStyle = `rgba(245, 158, 11, ${(pipe ? 0.05 : 0.085) * bgDim})`;
       ctx.stroke(pImports);
       ctx.setLineDash([]);
     }
     if (hasCalls) {
-      ctx.lineWidth = w;
-      ctx.strokeStyle = `rgba(56, 189, 248, ${(isXray ? 0.58 : pipe ? 0.08 : 0.19) * bgDim})`;
+      ctx.lineWidth = w * 0.9;
+      ctx.strokeStyle = `rgba(56, 189, 248, ${(isXray ? 0.45 : pipe ? 0.05 : 0.11) * bgDim})`;
       ctx.stroke(pCalls);
     }
     if (hasSubmits) {
-      ctx.lineWidth = pipe ? w * 2.1 : w * 1.4;
-      ctx.strokeStyle = `rgba(255, 107, 0, ${(pipe ? 0.85 : 0.45) * bgDim})`;
+      ctx.lineWidth = pipe ? w * 1.6 : w * 1.05;
+      ctx.strokeStyle = `rgba(255, 107, 0, ${(pipe ? 0.75 : 0.26) * bgDim})`;
       ctx.stroke(pSubmits);
     }
     if (hasNetwork) {
-      ctx.lineWidth = pipe ? w * 2.1 : w * 1.4;
-      ctx.strokeStyle = `rgba(0, 200, 255, ${(pipe ? 0.88 : 0.45) * bgDim})`;
+      ctx.lineWidth = pipe ? w * 1.6 : w * 1.05;
+      ctx.strokeStyle = `rgba(0, 200, 255, ${(pipe ? 0.78 : 0.26) * bgDim})`;
       ctx.stroke(pNetwork);
     }
     if (hasQueries) {
-      ctx.lineWidth = pipe ? w * 2.1 : w * 1.3;
-      ctx.strokeStyle = `rgba(168, 85, 247, ${(pipe ? 0.88 : 0.45) * bgDim})`;
+      ctx.lineWidth = pipe ? w * 1.6 : w * 1.0;
+      ctx.strokeStyle = `rgba(168, 85, 247, ${(pipe ? 0.78 : 0.25) * bgDim})`;
       ctx.stroke(pQueries);
     }
     if (hasRealtime) {
-      ctx.lineWidth = pipe ? w * 2.1 : w * 1.35;
-      ctx.strokeStyle = `rgba(52, 211, 153, ${(pipe ? 0.90 : 0.48) * bgDim})`;
+      ctx.lineWidth = pipe ? w * 1.6 : w * 1.05;
+      ctx.strokeStyle = `rgba(52, 211, 153, ${(pipe ? 0.80 : 0.28) * bgDim})`;
       ctx.stroke(pRealtime);
     }
     if (hasWarns) {
-      ctx.lineWidth = w * 1.45;
-      ctx.setLineDash([5, 4]);
-      ctx.strokeStyle = `rgba(249, 115, 22, ${0.68 * bgDim})`;
+      ctx.lineWidth = w * 1.1;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = `rgba(249, 115, 22, ${0.34 * bgDim})`;
       ctx.stroke(pWarns);
       ctx.setLineDash([]);
     }
     if (hasViolates) {
-      ctx.lineWidth = w * 1.55;
-      ctx.strokeStyle = `rgba(239, 68, 68, ${0.65 * bgDim})`;
+      ctx.lineWidth = w * 1.15;
+      ctx.strokeStyle = `rgba(239, 68, 68, ${0.36 * bgDim})`;
       ctx.stroke(pViolates);
     }
     for (let i = 0; i < midChevrons.length; i++) {
       const ch = midChevrons[i];
-      this.drawEdgeArrow(ctx, ch.x, ch.y, ch.angle, 6.5, ch.color);
+      this.drawEdgeArrow(ctx, ch.x, ch.y, ch.angle, 4.6, ch.color, 0.55);
     }
-    for (let i = 0; i < pulseParticles.length; i++) {
-      const pt = pulseParticles[i];
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, isXray || pipe ? 2.6 : 1.9, 0, Math.PI * 2);
-      ctx.fillStyle = pt.color;
-      ctx.fill();
+    if (pulseParticles.length > 0) {
+      ctx.save();
+      ctx.globalAlpha = isXray || pipe ? 0.75 : 0.52;
+      for (let i = 0; i < pulseParticles.length; i++) {
+        const pt = pulseParticles[i];
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, isXray || pipe ? 2.0 : 1.35, 0, Math.PI * 2);
+        ctx.fillStyle = pt.color;
+        ctx.fill();
+      }
+      ctx.restore();
     }
 
-    // Highlighted directional links, arrowheads & relation badges for hovered or active node
+    // Highlighted directional links, arrowheads & relation badges for hovered or active node (allégés & raffinés)
     if (focusEdges.length > 0) {
-      const showPillLabels = isHoverFocus && focusEdges.length <= 16;
+      const showPillLabels = isHoverFocus && focusEdges.length <= 12;
       const neighborSet = new Map<string, { node: SymbolBubble; p: { x: number; y: number }; color: string }>();
 
       for (let i = 0; i < focusEdges.length; i++) {
@@ -2395,18 +2649,19 @@ export class AetherEngine {
         const angle = Math.atan2(tangentY, tangentX);
 
         const targetR = this.getNodeScreenRadius(fe.targetNode, activeId);
-        const tipOffset = Math.min(dist * 0.45, Math.max(8, targetR * 0.42 + 5));
+        const tipOffset = Math.min(dist * 0.45, Math.max(7, targetR * 0.42 + 4));
         const tipX = fe.p2.x - (tangentX / tLen) * tipOffset;
         const tipY = fe.p2.y - (tangentY / tLen) * tipOffset;
 
         ctx.save();
+        ctx.globalAlpha = isHoverFocus ? 0.78 : 0.48;
         ctx.strokeStyle = meta.color;
-        ctx.lineWidth = isHoverFocus ? Math.max(1.8, w * 1.75) : Math.max(1.4, w * 1.35);
-        if (!isEco) {
+        ctx.lineWidth = isHoverFocus ? Math.max(1.25, w * 1.4) : Math.max(0.95, w * 1.05);
+        if (!isEco && isHoverFocus) {
           ctx.shadowColor = meta.color;
-          ctx.shadowBlur = isHoverFocus ? 10 : 5;
+          ctx.shadowBlur = 4;
         }
-        if (meta.dashed) ctx.setLineDash([6, 4]);
+        if (meta.dashed) ctx.setLineDash([5, 4]);
         ctx.beginPath();
         ctx.moveTo(fe.p1.x, fe.p1.y);
         if (fe.cx !== null && fe.cy !== null) {
@@ -2418,22 +2673,27 @@ export class AetherEngine {
         ctx.setLineDash([]);
         ctx.restore();
 
-        // Directional arrowhead pointing caller -> callee / importer -> imported / source -> data
-        this.drawEdgeArrow(ctx, tipX, tipY, angle, isHoverFocus ? 10.5 : 8.5, meta.color);
+        // Crisp lightweight directional arrowhead
+        this.drawEdgeArrow(ctx, tipX, tipY, angle, isHoverFocus ? 7.5 : 5.8, meta.color, isHoverFocus ? 0.88 : 0.62);
 
-        // Animated flow bead traveling strictly in call direction (source -> target)
-        const u = ((now * 0.00095 + i * 0.21) % 1 + 1) % 1;
-        const inv = 1 - u;
-        const bx = fe.cx !== null && fe.cy !== null
-          ? inv * inv * fe.p1.x + 2 * inv * u * fe.cx + u * u * fe.p2.x
-          : fe.p1.x + (fe.p2.x - fe.p1.x) * u;
-        const by = fe.cx !== null && fe.cy !== null
-          ? inv * inv * fe.p1.y + 2 * inv * u * fe.cy + u * u * fe.p2.y
-          : fe.p1.y + (fe.p2.y - fe.p1.y) * u;
-        ctx.beginPath();
-        ctx.arc(bx, by, 3.0, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
+        // Subtle flow bead traveling in call direction (only on hover or first 10 selected edges)
+        if (isHoverFocus || i < 10) {
+          const u = ((now * 0.00062 + i * 0.21) % 1 + 1) % 1;
+          const inv = 1 - u;
+          const bx = fe.cx !== null && fe.cy !== null
+            ? inv * inv * fe.p1.x + 2 * inv * u * fe.cx + u * u * fe.p2.x
+            : fe.p1.x + (fe.p2.x - fe.p1.x) * u;
+          const by = fe.cx !== null && fe.cy !== null
+            ? inv * inv * fe.p1.y + 2 * inv * u * fe.cy + u * u * fe.p2.y
+            : fe.p1.y + (fe.p2.y - fe.p1.y) * u;
+          ctx.save();
+          ctx.globalAlpha = isHoverFocus ? 0.85 : 0.55;
+          ctx.beginPath();
+          ctx.arc(bx, by, isHoverFocus ? 2.1 : 1.6, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.restore();
+        }
 
         if (fe.sourceNode.id !== focusId && !neighborSet.has(fe.sourceNode.id)) {
           neighborSet.set(fe.sourceNode.id, { node: fe.sourceNode, p: fe.p1, color: meta.color });
@@ -2528,6 +2788,7 @@ export class AetherEngine {
   }
 
   private renderLabels(ctx: CanvasRenderingContext2D) {
+    this.labelBounds = [];
     const nodes = this.state.graph.nodes;
     if (!nodes || nodes.length === 0) return;
     const zoom = this.camera.zoom;
@@ -2556,7 +2817,7 @@ export class AetherEngine {
       if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
       const isFocus = n.id === activeId || n.id === this.hoveredNodeId;
       if (!this.state.settings.showFileTitles && !isFocus) continue;
-      if (!this.state.settings.showCweBubbles && getNodeAlertKind(n) === 'security') continue;
+      if (!this.state.settings.showCweBubbles && getNodeAlertKind(n, this.isAnomalyIgnored) === 'security') continue;
       if (isXray && !this.activeNeighbors.has(n.id)) continue;
       if (!isFocus && zoom < 0.30) continue;
       if (!isFocus && zoom < 0.55 && !n.is_file && !n.is_class) continue;
@@ -2573,8 +2834,11 @@ export class AetherEngine {
 
       const rawName = n.name || '';
       const displayName = !isFocus && rawName.length > maxLen ? rawName.slice(0, maxLen - 2) + '..' : rawName;
+      const ly = p.y + Math.max(14, 22 * zoom);
+      const tw = ctx.measureText(displayName).width;
       ctx.fillStyle = isFocus ? '#38bdf8' : 'rgba(226, 232, 240, 0.88)';
-      ctx.fillText(displayName, p.x, p.y + Math.max(14, 22 * zoom));
+      ctx.fillText(displayName, p.x, ly);
+      this.labelBounds.push({ x: p.x - tw * 0.5, y: ly - 10, w: tw, h: 13 });
       drawn++;
     }
     ctx.restore();

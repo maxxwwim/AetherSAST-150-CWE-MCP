@@ -5,16 +5,43 @@
   const node = $derived(cockpitState.hoveredSymbol);
   const pos = $derived(cockpitState.hoverScreenPos);
 
-  const alertKind = $derived(getNodeAlertKind(node));
+  const isIgnored = (r?: string, c?: string) => cockpitState.isCweIgnored(r, c);
+  const alertKind = $derived(getNodeAlertKind(node, isIgnored));
   const hasSec = $derived(alertKind === 'security');
   const hasLinesWarn = $derived(alertKind === 'lines_exceeded');
-  const primaryAnomaly = $derived.by(() => {
-    const list = node?.anomalies || [];
-    if (list.length === 0) return null;
-    if (hasSec) return list.find((a) => !isLinesExceededAnomaly(a)) || list[0];
-    return list[0];
+  const effectiveAnomalies = $derived.by(() => {
+    if (!node) return [];
+    const seen = new Set<string>();
+    const out: typeof node.anomalies = [];
+    const pushAll = (arr?: typeof node.anomalies) => {
+      if (!arr) return;
+      for (const a of arr) {
+        if (isIgnored(a.rule_id, a.cve_id)) continue;
+        const k = `${a.line_number || 0}|${String(a.rule_id || a.cve_id || '').toUpperCase()}`;
+        if (!seen.has(k)) {
+          seen.add(k);
+          out.push(a);
+        }
+      }
+    };
+    if (node.is_file && node.file_path) {
+      for (const n of cockpitState.graph.nodes) {
+        if (!n.is_file && n.file_path === node.file_path) pushAll(n.anomalies);
+      }
+    }
+    pushAll(node.anomalies);
+    return out;
   });
-  const anomaliesCount = $derived(node?.anomalies?.length || 0);
+  const primaryAnomaly = $derived.by(() => {
+    if (effectiveAnomalies.length === 0) return null;
+    if (hasSec) return effectiveAnomalies.find((a) => !isLinesExceededAnomaly(a)) || effectiveAnomalies[0];
+    return effectiveAnomalies[0];
+  });
+  const anomaliesCount = $derived(
+    hasSec
+      ? effectiveAnomalies.filter((a) => !isLinesExceededAnomaly(a)).length
+      : effectiveAnomalies.length
+  );
 
   const hoverLinks = $derived.by(() => {
     if (!node) {

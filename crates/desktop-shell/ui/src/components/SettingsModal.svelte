@@ -9,45 +9,54 @@
   let isSaving = $state(false);
   let statusMsg = $state<string | null>(null);
   let loadedFromApi = $state(false);
+  let allRulesExplicitlyDisabled = $state(false);
 
   $effect(() => {
-    if (cockpitState.isSettingsModalOpen && !loadedFromApi) {
-      loadedFromApi = true;
-      api
-        .getSettings()
-        .then((res) => {
-          if (Array.isArray(res.exclusions) && res.exclusions.length > 0) {
-            cockpitState.settings.exclusions = res.exclusions;
-            exclusionsText = res.exclusions.join('\n');
-          }
-          if (Array.isArray(res.cve_catalogue)) {
-            cockpitState.cveCatalogue = res.cve_catalogue;
-          }
-          if (Array.isArray(res.active_cve_rules) && res.active_cve_rules.length > 0) {
-            cockpitState.settings.activeCveRules = res.active_cve_rules;
-          }
-          if (Array.isArray(res.ignored_cwes) && res.ignored_cwes.length > 0) {
-            cockpitState.settings.ignoredCwes = res.ignored_cwes;
-            ignoredInput = res.ignored_cwes.join(', ');
-          }
-          if (typeof res.show_alerts === 'boolean') cockpitState.settings.showAlerts = res.show_alerts;
-          if (typeof res.show_cwe_bubbles === 'boolean') cockpitState.settings.showCweBubbles = res.show_cwe_bubbles;
-          if (typeof res.show_cwe_titles === 'boolean') cockpitState.settings.showCweTitles = res.show_cwe_titles;
-          if (typeof res.show_folder_titles === 'boolean') {
-            cockpitState.settings.showFolderTitles = res.show_folder_titles;
-            cockpitState.settings.showFolderBadges = res.show_folder_titles;
-          }
-          if (typeof res.show_file_titles === 'boolean') cockpitState.settings.showFileTitles = res.show_file_titles;
-          if (res.ui_settings && typeof res.ui_settings === 'object') {
-            Object.assign(cockpitState.settings, res.ui_settings);
-          }
-          if (res.mcp_binary_path) {
-            cockpitState.settings.mcpBinaryPath = res.mcp_binary_path;
-          }
-        })
-        .catch(() => {
-          // keep local defaults when running standalone offline HTML
-        });
+    if (cockpitState.isSettingsModalOpen) {
+      exclusionsText = cockpitState.settings.exclusions.join('\n');
+      ignoredInput = cockpitState.settings.ignoredCwes.join(', ');
+      statusMsg = null;
+      if (!loadedFromApi) {
+        loadedFromApi = true;
+        api
+          .getSettings()
+          .then((res) => {
+            if (res.ui_settings && typeof res.ui_settings === 'object') {
+              Object.assign(cockpitState.settings, res.ui_settings);
+            }
+            if (Array.isArray(res.exclusions) && res.exclusions.length > 0) {
+              cockpitState.settings.exclusions = res.exclusions;
+              exclusionsText = res.exclusions.join('\n');
+            }
+            if (Array.isArray(res.cve_catalogue)) {
+              cockpitState.cveCatalogue = res.cve_catalogue;
+            }
+            if (Array.isArray(res.active_cve_rules)) {
+              cockpitState.settings.activeCveRules = res.active_cve_rules;
+              allRulesExplicitlyDisabled = res.active_cve_rules.length === 0 && (res.cve_catalogue?.length || 0) > 0;
+            }
+            if (Array.isArray(res.ignored_cwes)) {
+              cockpitState.settings.ignoredCwes = res.ignored_cwes;
+              ignoredInput = res.ignored_cwes.join(', ');
+            }
+            if (typeof res.show_alerts === 'boolean') cockpitState.settings.showAlerts = res.show_alerts;
+            if (typeof res.show_cwe_bubbles === 'boolean') cockpitState.settings.showCweBubbles = res.show_cwe_bubbles;
+            if (typeof res.show_cwe_titles === 'boolean') cockpitState.settings.showCweTitles = res.show_cwe_titles;
+            if (typeof res.show_folder_titles === 'boolean') {
+              cockpitState.settings.showFolderTitles = res.show_folder_titles;
+              cockpitState.settings.showFolderBadges = res.show_folder_titles;
+            }
+            if (typeof res.show_file_titles === 'boolean') cockpitState.settings.showFileTitles = res.show_file_titles;
+            if (typeof res.low_memory_mode === 'boolean') cockpitState.settings.lowMemoryMode = res.low_memory_mode;
+            if (res.mcp_binary_path) {
+              cockpitState.settings.mcpBinaryPath = res.mcp_binary_path;
+            }
+            cockpitState.filterVersion += 1;
+          })
+          .catch(() => {
+            // keep local defaults when running standalone offline HTML
+          });
+      }
     }
   });
 
@@ -82,22 +91,31 @@
   }
 
   function isRuleActive(ruleId: string): boolean {
+    if (allRulesExplicitlyDisabled) return false;
     if (cockpitState.settings.activeCveRules.length === 0) return true;
     return cockpitState.settings.activeCveRules.includes(ruleId);
   }
 
   function toggleRule(ruleId: string) {
+    if (allRulesExplicitlyDisabled) {
+      allRulesExplicitlyDisabled = false;
+      cockpitState.settings.activeCveRules = [ruleId];
+      return;
+    }
     if (cockpitState.settings.activeCveRules.length === 0) {
       cockpitState.settings.activeCveRules = cockpitState.cveCatalogue.map((r: any) => r.rule_id);
     }
     if (cockpitState.settings.activeCveRules.includes(ruleId)) {
-      cockpitState.settings.activeCveRules = cockpitState.settings.activeCveRules.filter((id) => id !== ruleId);
+      const next = cockpitState.settings.activeCveRules.filter((id) => id !== ruleId);
+      cockpitState.settings.activeCveRules = next;
+      if (next.length === 0) allRulesExplicitlyDisabled = true;
     } else {
       cockpitState.settings.activeCveRules = [...cockpitState.settings.activeCveRules, ruleId];
     }
   }
 
   function toggleAllRules(enable: boolean) {
+    allRulesExplicitlyDisabled = !enable;
     cockpitState.settings.activeCveRules = enable
       ? cockpitState.cveCatalogue.map((r: any) => r.rule_id)
       : [];
@@ -118,13 +136,16 @@
 
     cockpitState.settings.exclusions = exclusions;
     cockpitState.settings.ignoredCwes = ignoredCwes;
-    cockpitState.saveLocalSettings();
+    cockpitState.saveLocalSettings(false);
 
     try {
       const res = await api.saveSettings({
         exclusions,
-        active_cve_rules:
-          cockpitState.settings.activeCveRules.length > 0 ? cockpitState.settings.activeCveRules : undefined,
+        active_cve_rules: allRulesExplicitlyDisabled
+          ? []
+          : cockpitState.settings.activeCveRules.length > 0
+            ? cockpitState.settings.activeCveRules
+            : undefined,
         ignored_cwes: ignoredCwes,
         show_alerts: cockpitState.settings.showAlerts,
         show_cwe_bubbles: cockpitState.settings.showCweBubbles,
@@ -133,9 +154,11 @@
         show_file_titles: cockpitState.settings.showFileTitles,
         low_memory_mode: cockpitState.settings.lowMemoryMode,
         ui_settings: cockpitState.settings as any,
+        rescan: true,
       });
       const updated = await api.getGraph();
       cockpitState.setGraph(updated);
+      cockpitState.filterVersion += 1;
       statusMsg = `✅ Enregistré & Rescanné : ${res.total_nodes ?? updated.nodes.length} nœuds, ${res.total_edges ?? updated.edges.length} flux`;
     } catch {
       statusMsg = '💾 Préférences locales enregistrées (mode standalone hors-ligne)';

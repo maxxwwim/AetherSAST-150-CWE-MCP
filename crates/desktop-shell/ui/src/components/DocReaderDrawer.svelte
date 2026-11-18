@@ -715,7 +715,7 @@
   <button
     type="button"
     onclick={() => cockpitState.openDoc('library')}
-    class="fixed left-3 top-[80px] z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0b0f19]/92 hover:bg-emerald-500/20 backdrop-blur-md border border-emerald-500/35 text-[11px] font-semibold text-emerald-200 shadow-xl cursor-pointer transition-all"
+    class="fixed left-3 top-[56px] z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0b0f19]/92 hover:bg-emerald-500/20 backdrop-blur-md border border-emerald-500/35 text-[11px] font-semibold text-emerald-200 shadow-xl cursor-pointer transition-all"
     title="Ouvrir le panneau Docs, EARS & Source à gauche"
   >
     <BookOpen class="w-3.5 h-3.5 text-emerald-400" />
@@ -731,7 +731,7 @@
   <aside
     class={embedded
       ? "w-full h-full bg-[#070b14] flex flex-col overflow-hidden select-text"
-      : `fixed left-0 sm:left-3 top-[76px] bottom-7 w-full ${wideMode ? 'sm:w-[740px]' : 'sm:w-[520px]'} max-w-full sm:max-w-[95vw] bg-[#070b14]/96 backdrop-blur-2xl border border-emerald-500/35 rounded-none sm:rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.92)] z-40 flex flex-col overflow-hidden transition-all duration-200 select-text`}
+      : `fixed left-0 sm:left-3 top-[52px] bottom-7 w-full ${wideMode ? 'sm:w-[740px]' : 'sm:w-[520px]'} max-w-full sm:max-w-[95vw] bg-[#070b14]/96 backdrop-blur-2xl border border-emerald-500/35 rounded-none sm:rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.92)] z-40 flex flex-col overflow-hidden transition-all duration-200 select-text`}
   >
     <!-- Top Header Bar -->
     <div class="px-3.5 py-2.5 bg-gradient-to-r from-[#0c1426] via-[#09101d] to-[#0b1322] border-b border-white/10 flex items-center justify-between gap-2 shrink-0">

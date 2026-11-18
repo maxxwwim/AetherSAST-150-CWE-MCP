@@ -11,7 +11,11 @@
     Sparkles,
     FolderOpen,
     Hammer,
-    CheckCircle2
+    CheckCircle2,
+    ArrowUp,
+    Search,
+    ChevronRight,
+    HardDrive
   } from '@lucide/svelte';
 
   interface ArchTemplateDef {
@@ -106,15 +110,82 @@
     },
   ];
 
+  interface WorkspaceDirEntry {
+    name: string;
+    path: string;
+    is_project: boolean;
+    stack_hint?: string | null;
+    is_obsidian: boolean;
+  }
+
   let hubTab = $state<'create' | 'manage'>('create');
   let selectedArch = $state<ArchTemplateDef['id']>('rust');
   let topologyMode = $state<'local' | 'dissociated'>('local');
   let parentDir = $state('C:\\Users\\1234\\Desktop\\Projets');
   let newProjName = $state('MonSuperProjet');
   let projectPath = $state(cockpitState.graph.project_path || '.');
-  let knownProjects = $state<string[]>([]);
+  let knownProjects = $state<{ name: string; path: string }[]>([]);
   let isBusy = $state(false);
   let feedback = $state<{ ok: boolean; text: string; dirs?: string[] } | null>(null);
+
+  // Interactive Workspace Explorer state
+  let wsPathInput = $state('');
+  let wsCurrentPath = $state('');
+  let wsParentPath = $state<string | null>(null);
+  let wsDrives = $state<string[]>([]);
+  let wsEntries = $state<WorkspaceDirEntry[]>([]);
+  let wsFilter = $state('');
+  let wsLoading = $state(false);
+  let wsError = $state<string | null>(null);
+
+  const filteredWsEntries = $derived.by(() => {
+    const q = wsFilter.trim().toLowerCase();
+    if (!q) return wsEntries;
+    return wsEntries.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        (e.stack_hint && e.stack_hint.toLowerCase().includes(q))
+    );
+  });
+
+  function stripWinPrefix(p: string): string {
+    return (p || '').replace(/^\\\\\?\\/, '');
+  }
+
+  function stackBadgeIcon(hint?: string | null): string {
+    if (!hint) return '📁';
+    const h = hint.toLowerCase();
+    if (h.includes('rust')) return '🦀';
+    if (h.includes('node')) return '🟢';
+    if (h.includes('python')) return '🐍';
+    if (h.includes('php')) return '🐘';
+    if (h.includes('go')) return '🐹';
+    if (h.includes('obsidian')) return '🧠';
+    if (h.includes('git')) return '🔀';
+    return '📦';
+  }
+
+  async function loadWorkspaceDir(targetPath?: string) {
+    wsLoading = true;
+    wsError = null;
+    try {
+      const res = await api.listDirectory(targetPath);
+      if (res.status === 'ok') {
+        wsCurrentPath = stripWinPrefix(res.current_path);
+        wsPathInput = wsCurrentPath;
+        wsParentPath = res.parent_path ? stripWinPrefix(res.parent_path) : null;
+        wsDrives = res.drives || [];
+        wsEntries = res.entries || [];
+        wsFilter = '';
+      } else {
+        wsError = res.message || 'Impossible de lire ce dossier.';
+      }
+    } catch (e: any) {
+      wsError = e?.message || 'Explorateur serveur indisponible.';
+    } finally {
+      wsLoading = false;
+    }
+  }
 
   const selectedTemplate = $derived(
     ARCHITECTURES.find((a) => a.id === selectedArch) || ARCHITECTURES[0]
@@ -130,23 +201,35 @@
   onMount(async () => {
     try {
       const res = await api.getProjects();
-      if (Array.isArray(res?.projects)) knownProjects = res.projects;
-      if (res?.default_project) projectPath = res.default_project;
+      if (Array.isArray(res?.projects)) {
+        knownProjects = res.projects.map((p: any) =>
+          typeof p === 'string'
+            ? { name: p.split(/[\\/]/).filter(Boolean).pop() || p, path: stripWinPrefix(p) }
+            : { name: p.name || stripWinPrefix(p.path || ''), path: stripWinPrefix(p.path || '') }
+        );
+      }
+      if (res?.default_project) projectPath = stripWinPrefix(res.default_project);
     } catch {
       // ignore if offline
     }
   });
 
   $effect(() => {
-    if (cockpitState.isHubModalOpen && cockpitState.graph.project_path) {
-      projectPath = cockpitState.graph.project_path;
-      const cur = cockpitState.graph.project_path;
-      const parts = cur.split(/[\\/]/).filter(Boolean);
-      if (parts.length > 1) {
-        parts.pop();
-        const sep = cur.includes('\\') ? '\\' : '/';
-        const prefix = cur.startsWith('/') ? '/' : '';
-        parentDir = prefix + parts.join(sep);
+    if (cockpitState.isHubModalOpen) {
+      hubTab = cockpitState.hubModalTab || 'create';
+      if (cockpitState.graph.project_path) {
+        const cur = stripWinPrefix(cockpitState.graph.project_path);
+        projectPath = cur;
+        const parts = cur.split(/[\\/]/).filter(Boolean);
+        if (parts.length > 1) {
+          parts.pop();
+          const sep = cur.includes('\\') ? '\\' : '/';
+          const prefix = cur.startsWith('/') ? '/' : '';
+          parentDir = prefix + parts.join(sep);
+        }
+      }
+      if (hubTab === 'manage' && !wsCurrentPath) {
+        void loadWorkspaceDir();
       }
     }
   });
@@ -155,10 +238,14 @@
     try {
       const res = await api.pickWorkspace();
       if (res?.status === 'ok' && res.workspace) {
-        parentDir = res.workspace;
+        const clean = stripWinPrefix(res.workspace);
+        parentDir = clean;
+        if (hubTab === 'manage') {
+          await loadWorkspaceDir(clean);
+        }
       }
     } catch {
-      feedback = { ok: false, text: 'Sélecteur natif indisponible en mode headless — saisissez le chemin.' };
+      feedback = { ok: false, text: 'Sélecteur natif indisponible — naviguez directement ci-dessous ou saisissez le chemin.' };
     }
   }
 
@@ -244,11 +331,16 @@
   }
 
   async function switchMode(mode: 'code' | 'vault') {
-    cockpitState.viewMode = mode;
+    const norm = mode === 'vault' ? 'vault-notes' : 'code';
+    cockpitState.viewMode = norm;
     try {
-      await api.switchViewMode(mode);
-      const g = await api.getGraph();
-      cockpitState.setGraph(g);
+      const g = await api.switchViewMode(norm);
+      if (g && Array.isArray(g.nodes)) {
+        cockpitState.setGraph(g);
+      } else {
+        const fetched = await api.getGraph();
+        cockpitState.setGraph(fetched);
+      }
       cockpitState.requestCameraFit();
       feedback = { ok: true, text: `🔄 Mode ${mode === 'code' ? 'Code Source' : 'Obsidian Vault'} activé` };
     } catch {
@@ -301,11 +393,15 @@
         </button>
         <button
           type="button"
-          onclick={() => (hubTab = 'manage')}
+          onclick={() => {
+            hubTab = 'manage';
+            cockpitState.hubModalTab = 'manage';
+            if (!wsCurrentPath) void loadWorkspaceDir();
+          }}
           class="py-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer {hubTab === 'manage' ? 'border-emerald-400 text-emerald-300' : 'border-transparent text-slate-400 hover:text-white'}"
         >
           <FolderOpen class="w-3.5 h-3.5" />
-          Ouvrir / Scanner / Export HTML
+          Parcourir un Workspace / Ouvrir / Export HTML
         </button>
       </div>
 
@@ -432,18 +528,167 @@
             </div>
           </div>
         {:else}
-          <!-- Existing Workspace Scanner / Picker / Dual-Vision / Export -->
+          <!-- Interactive Workspace & Directory Explorer + Project Opener + Dual-Vision + Export -->
           <div class="space-y-4">
+            <!-- Interactive Workspace Browser -->
+            <div class="rounded-xl bg-white/[0.025] border border-emerald-500/25 overflow-hidden">
+              <div class="px-3.5 py-2.5 bg-[#0c1424] border-b border-white/10 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2 text-xs font-bold text-emerald-200">
+                  <FolderOpen class="w-4 h-4 text-emerald-400" />
+                  <span>Explorateur de Workspace</span>
+                  {#if wsEntries.length > 0}
+                    <span class="px-1.5 py-0.2 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono text-emerald-300">
+                      {wsEntries.length} dossiers
+                    </span>
+                  {/if}
+                </div>
+                <div class="flex items-center gap-1.5">
+                  {#if wsDrives.length > 0}
+                    <div class="flex items-center gap-1">
+                      <HardDrive class="w-3 h-3 text-slate-500" />
+                      {#each wsDrives as drv}
+                        <button
+                          type="button"
+                          onclick={() => loadWorkspaceDir(drv)}
+                          class="px-1.5 py-0.5 rounded text-[10px] font-mono border cursor-pointer transition-colors {wsCurrentPath.toUpperCase().startsWith(drv.toUpperCase())
+                            ? 'bg-sky-500/20 border-sky-400/50 text-sky-200'
+                            : 'bg-black/40 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'}"
+                        >
+                          {drv}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onclick={browseWorkspaceDir}
+                    class="flex items-center gap-1 px-2 py-1 rounded-md bg-white/8 hover:bg-white/15 border border-white/15 text-[10.5px] font-semibold text-slate-200 cursor-pointer"
+                    title="Ouvrir la boîte de dialogue native Windows"
+                  >
+                    <FolderOpen class="w-3 h-3 text-amber-300" />
+                    Dialogue natif
+                  </button>
+                </div>
+              </div>
+
+              <!-- Path Navigation Bar -->
+              <div class="p-3 space-y-2.5">
+                <form
+                  onsubmit={(e) => {
+                    e.preventDefault();
+                    void loadWorkspaceDir(wsPathInput);
+                  }}
+                  class="flex items-center gap-1.5"
+                >
+                  <button
+                    type="button"
+                    disabled={!wsParentPath || wsLoading}
+                    onclick={() => wsParentPath && loadWorkspaceDir(wsParentPath)}
+                    title="Monter au dossier parent"
+                    class="p-1.5 rounded-lg bg-white/5 hover:bg-white/12 border border-white/10 text-slate-300 disabled:opacity-35 cursor-pointer shrink-0"
+                  >
+                    <ArrowUp class="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    type="text"
+                    bind:value={wsPathInput}
+                    placeholder="Chemin du dossier workspace (ex: C:\Users\...\Projets)"
+                    class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-black/50 border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-emerald-400"
+                  />
+                  <button
+                    type="submit"
+                    disabled={wsLoading}
+                    class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-[11px] font-semibold text-emerald-200 cursor-pointer shrink-0"
+                  >
+                    {wsLoading ? '...' : 'Ouvrir'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy || !wsCurrentPath}
+                    onclick={async () => {
+                      await rescanProject(wsCurrentPath);
+                      cockpitState.isHubModalOpen = false;
+                    }}
+                    title="Analyser le dossier actuellement affiché comme projet"
+                    class="px-2.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-[11px] font-bold text-slate-950 cursor-pointer shrink-0"
+                  >
+                    Analyser ici
+                  </button>
+                </form>
+
+                <!-- Search filter inside workspace -->
+                <div class="relative">
+                  <Search class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" />
+                  <input
+                    type="text"
+                    bind:value={wsFilter}
+                    placeholder="Filtrer les projets / dossiers de ce workspace (nom ou stack : Rust, Node, Python, Obsidian)…"
+                    class="w-full pl-8 pr-3 py-1.5 rounded-lg bg-black/35 border border-white/10 text-[11px] text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-sky-400/50"
+                  />
+                </div>
+
+                {#if wsError}
+                  <div class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/35 text-[11px] font-mono text-rose-200">
+                    {wsError}
+                  </div>
+                {/if}
+
+                <!-- Directory & Project Entries List -->
+                <div class="max-h-56 overflow-y-auto space-y-1 pr-0.5">
+                  {#if wsLoading}
+                    <div class="py-6 text-center text-xs text-slate-400 font-mono">Lecture du workspace…</div>
+                  {:else if filteredWsEntries.length === 0}
+                    <div class="py-5 text-center text-xs text-slate-500">
+                      Aucun sous-dossier trouvé dans <span class="font-mono text-slate-300">{wsCurrentPath || 'ce répertoire'}</span>.
+                    </div>
+                  {:else}
+                    {#each filteredWsEntries as entry (entry.path)}
+                      <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.06] hover:border-sky-400/35 transition-colors">
+                        <button
+                          type="button"
+                          onclick={() => loadWorkspaceDir(entry.path)}
+                          class="flex-1 min-w-0 flex items-center gap-2 text-left cursor-pointer"
+                          title="Explorer le dossier {entry.path}"
+                        >
+                          <span class="text-sm shrink-0">{stackBadgeIcon(entry.stack_hint)}</span>
+                          <span class="font-mono text-[11.5px] font-semibold text-slate-100 truncate">{entry.name}</span>
+                          {#if entry.stack_hint}
+                            <span class="px-1.5 py-0.2 rounded bg-sky-500/15 border border-sky-400/30 text-[9.5px] font-mono text-sky-300 shrink-0">
+                              {entry.stack_hint}
+                            </span>
+                          {/if}
+                          <ChevronRight class="w-3 h-3 text-slate-500 shrink-0 ml-auto" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onclick={async () => {
+                            await rescanProject(entry.path);
+                            cockpitState.isHubModalOpen = false;
+                          }}
+                          class="px-2.5 py-1 rounded-md bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-[10.5px] font-semibold text-sky-200 cursor-pointer shrink-0 disabled:opacity-50"
+                        >
+                          Analyser
+                        </button>
+                      </div>
+                    {/each}
+                  {/if}
+                </div>
+              </div>
+            </div>
+
+            <!-- Direct Path Entry & Single Project Picker -->
             <div class="space-y-1.5">
               <div class="flex items-center justify-between">
-                <label for="hub-project-path" class="text-xs font-semibold text-slate-300">Chemin du Projet / Workspace</label>
+                <label for="hub-project-path" class="text-xs font-semibold text-slate-300">Chemin direct du Projet actif</label>
                 <button
                   type="button"
                   disabled={isBusy}
                   onclick={browseAndOpenProject}
                   class="text-[11px] text-sky-300 hover:text-sky-200 font-semibold cursor-pointer flex items-center gap-1"
                 >
-                  <FolderOpen class="w-3.5 h-3.5" /> Choisir via explorateur
+                  <FolderOpen class="w-3.5 h-3.5" /> Choisir 1 projet (Windows)
                 </button>
               </div>
               <div class="flex gap-2">
@@ -467,15 +712,19 @@
 
             {#if knownProjects.length > 0}
               <div class="space-y-1.5">
-                <div class="text-[11px] font-semibold text-slate-400">Workspaces Détectés ({knownProjects.length})</div>
-                <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                  {#each knownProjects as p}
+                <div class="text-[11px] font-semibold text-slate-400">Accès rapide ({knownProjects.length})</div>
+                <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                  {#each knownProjects as p (p.path)}
                     <button
                       type="button"
-                      onclick={() => rescanProject(p)}
+                      onclick={async () => {
+                        await rescanProject(p.path);
+                        cockpitState.isHubModalOpen = false;
+                      }}
+                      title={p.path}
                       class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-sky-500/20 border border-white/10 hover:border-sky-400/50 font-mono text-[10.5px] text-slate-200 cursor-pointer"
                     >
-                      📂 {p}
+                      📂 {p.name}
                     </button>
                   {/each}
                 </div>
@@ -498,7 +747,7 @@
                 <button
                   type="button"
                   onclick={() => switchMode('vault')}
-                  class="py-2 rounded-lg border text-xs font-semibold cursor-pointer {cockpitState.viewMode === 'vault' ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200' : 'bg-black/30 border-white/10 text-slate-400 hover:text-white'}"
+                  class="py-2 rounded-lg border text-xs font-semibold cursor-pointer {cockpitState.viewMode === 'vault-notes' ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200' : 'bg-black/30 border-white/10 text-slate-400 hover:text-white'}"
                 >
                   🧠 Obsidian Vault & Notes
                 </button>

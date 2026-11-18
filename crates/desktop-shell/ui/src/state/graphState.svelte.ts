@@ -9,6 +9,10 @@ export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): bo
   const cve = String(a.cve_id || a.cwe_class || '').toUpperCase();
   const msg = String(a.message || a.description || a.title || '').toUpperCase();
   const sev = String(a.severity || '').toUpperCase();
+  // RULE_FORBIDDEN_IMPORT (CWE-1075 / ARCH-CONTRACT-VIOLATION) is a real architecture/security violation, NOT a line-budget warning
+  if (rule === 'RULE_FORBIDDEN_IMPORT' || rule.includes('FORBIDDEN_IMPORT') || cve.includes('ARCH-CONTRACT-VIOLATION')) {
+    return false;
+  }
   return (
     rule === 'RULE_MAX_LINES' ||
     rule.includes('MAX_LINES') ||
@@ -17,7 +21,6 @@ export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): bo
     cve.includes('ARCH-BUDGET') ||
     cve.includes('CONTRACT-BUDGET') ||
     cve.includes('CONTRACT / ARCH-BUDGET') ||
-    cve.includes('CWE-1075') ||
     cve === 'CONTRACT_BUDGET' ||
     msg.includes('RULE_MAX_LINES') ||
     msg.includes('MAXIMUM LINE LIMIT') ||
@@ -27,19 +30,57 @@ export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): bo
     (sev === 'WARNING' &&
       (rule.includes('LINE') ||
         cve.includes('BUDGET') ||
-        cve.includes('CONTRACT') ||
-        msg.includes('LINE') ||
+        msg.includes('LINE LIMIT') ||
         msg.includes('BUDGET')))
   );
 }
 
-export function getNodeAlertKind(n?: SymbolBubble | null): 'security' | 'lines_exceeded' | 'none' {
+/**
+ * Formats a verbose CWE/AETHER rule identifier into a concise, crisp graph pill code.
+ * Examples:
+ * - "CWE-88 / POSIX-ARGUMENT-INJECTION-RCE" -> "CWE-88"
+ * - "AETHER-PATH-008 / PATH-JOIN-ABSOLUTE-OVERWRITE" -> "PATH-008"
+ * - "CWE-353 / BLAKE3-INTEGRITY" -> "CWE-353"
+ * - "CVE-RUST-ASYNC-MUTEX" -> "ASYNC-MUTEX"
+ */
+export function formatCweShortId(cveId?: string | null, ruleId?: string | null): string {
+  const rawCve = String(cveId || '').trim();
+  const rawRule = String(ruleId || '').trim();
+  const combined = `${rawCve} ${rawRule}`;
+
+  const cweMatch = combined.match(/\bCWE-\d+\b/i);
+  if (cweMatch) return cweMatch[0].toUpperCase();
+
+  const aetherMatch = combined.match(/\bAETHER-([A-Z]+-\d+)\b/i);
+  if (aetherMatch) return aetherMatch[1].toUpperCase();
+
+  const base = (rawCve && rawCve.toUpperCase() !== 'CWE-SAST' && rawCve.toUpperCase() !== 'CWE')
+    ? rawCve.split(/\s*\/\s*/)[0].trim()
+    : rawRule;
+
+  if (!base || base.toUpperCase() === 'SAST-VIOLATION' || base.toUpperCase() === 'CWE-SAST') {
+    return 'SAST';
+  }
+  const cleaned = base
+    .replace(/^AETHER-(?:RUST|PHP|JS|PY|CS|ZIG|WEB3|L1)-/i, '')
+    .replace(/^(?:CVE|PLUGIN)-(?:RUST|PHP|JS|PY|CS|ZIG|INJ|NET|DB|WEB3|L1|CPP)-/i, '')
+    .replace(/^RULE_/i, '');
+  return cleaned.length > 14 ? cleaned.slice(0, 13) + '…' : cleaned;
+}
+
+export function getNodeAlertKind(
+  n?: SymbolBubble | null,
+  isIgnored?: (ruleId?: string, cveId?: string) => boolean
+): 'security' | 'lines_exceeded' | 'none' {
   if (!n) return 'none';
-  const list = [
+  const rawList = [
     ...(n.anomalies || []),
     ...(n.violations || []),
     ...(n.metadata?.cve_anomalies || []),
   ];
+  const list = isIgnored
+    ? rawList.filter((a) => !isIgnored(a.rule_id, a.cve_id))
+    : rawList;
   const strViolations = n.metadata?.violations || [];
 
   let hasLines = false;
@@ -54,7 +95,7 @@ export function getNodeAlertKind(n?: SymbolBubble | null): 'security' | 'lines_e
     }
   }
 
-  if (!hasRealSecurity) {
+  if (!hasRealSecurity && rawList.length === 0) {
     for (const v of strViolations) {
       const up = String(v || '').toUpperCase();
       if (
@@ -82,7 +123,7 @@ export function getNodeAlertKind(n?: SymbolBubble | null): 'security' | 'lines_e
 
   if (hasLines) return 'lines_exceeded';
 
-  if (n.has_security_violation) {
+  if (n.has_security_violation && rawList.length === 0) {
     return 'security';
   }
 
@@ -149,9 +190,9 @@ export interface CockpitSettings {
 
 export const AI_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 300,000 ms (5 minutes)
 
-const EMPTY_METHODS: any[] = Object.freeze([]) as any[];
-const EMPTY_ATTRIBUTES: any[] = Object.freeze([]) as any[];
-const EMPTY_ANOMALIES: any[] = Object.freeze([]) as any[];
+const EMPTY_METHODS: any[] = Object.freeze([]) as unknown as any[];
+const EMPTY_ATTRIBUTES: any[] = Object.freeze([]) as unknown as any[];
+const EMPTY_ANOMALIES: any[] = Object.freeze([]) as unknown as any[];
 
 const DEFAULT_SETTINGS: CockpitSettings = {
   maxLabelLength: 18,
@@ -241,14 +282,23 @@ interface SavedAiCache {
   }[];
 }
 
+function isFreshAgentTimestamp(ts?: number): boolean {
+  if (typeof ts !== 'number' || ts <= 0) return false;
+  const normMs = ts < 1e11 ? ts * 1000 : ts;
+  return Date.now() - normMs < AI_INACTIVITY_TIMEOUT_MS;
+}
+
 function loadSavedAiCache(): SavedAiCache {
   try {
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem('aetherscope_ai_cache');
       if (raw) {
         const parsed = JSON.parse(raw);
+        const freshAgents = Array.isArray(parsed.activeAgents)
+          ? parsed.activeAgents.filter((ag: any) => isFreshAgentTimestamp(ag?.timestamp))
+          : [];
         return {
-          activeAgents: Array.isArray(parsed.activeAgents) ? parsed.activeAgents : [],
+          activeAgents: freshAgents,
           agentTrails: parsed.agentTrails && typeof parsed.agentTrails === 'object' ? parsed.agentTrails : {},
           aiTrail: Array.isArray(parsed.aiTrail) ? parsed.aiTrail : [],
         };
@@ -287,7 +337,7 @@ export class CockpitState {
   lodLevel = $state<1 | 2 | 3>(1);
   activeLayout = $state<'Z-1' | 'Z-2' | 'Z-3' | 'Z-4'>('Z-2');
   visionMode = $state<'standard' | 'xray' | 'heatmap' | 'deadcode'>('standard');
-  viewMode = $state<'code' | 'vault' | 'ide'>('code');
+  viewMode = $state<'code' | 'vault-notes' | 'ide'>('code');
   ideActiveFile = $state<string | null>(null);
   ideTargetLine = $state<number | null>(null);
   ideCursorPosition = $state<{ line: number; ch: number } | null>(null);
@@ -315,6 +365,11 @@ export class CockpitState {
   isSynthesisOpen = $state(false);
   isCommandPaletteOpen = $state(false);
   isHubModalOpen = $state(false);
+  hubModalTab = $state<'create' | 'manage'>('create');
+  openProjectHub(tab: 'create' | 'manage' = 'create') {
+    this.hubModalTab = tab;
+    this.isHubModalOpen = true;
+  }
   isBountyModalOpen = $state(false);
   isGameServersModalOpen = $state(false);
   isSettingsModalOpen = $state(false);
@@ -323,6 +378,7 @@ export class CockpitState {
   isSurfaceScannerOpen = $state(false);
   isTasksModalOpen = $state(false);
   isCreateFileModalOpen = $state(false);
+  pendingImportFile = $state<{ fileName: string; content: string } | null>(null);
   isIgnoredCweModalOpen = $state(false);
   isChatOpen = $state(false);
   isMcpModalOpen = $state(false);
@@ -332,6 +388,7 @@ export class CockpitState {
   graphVersion = $state(0);
   liveConnected = $state(false);
   isDemoMode = $state(false);
+  isVaultEnabled = $state<boolean>(true);
   bountyOutOfScopePatterns = $state<string[]>([]);
   isScanningProject = $state(false);
   scanningTargetPath = $state('');
@@ -576,23 +633,66 @@ export class CockpitState {
     }
   }
 
+  pruneInactiveAgents() {
+    const fresh = this.activeAgents.filter((ag) => !this.isAgentInactive(ag));
+    if (fresh.length !== this.activeAgents.length) {
+      this.activeAgents = fresh;
+      if (this.aiTelemetry && this.isAgentInactive(this.aiTelemetry)) {
+        const head = fresh[0];
+        this.aiTelemetry = head
+          ? {
+              target: head.target,
+              action: head.action,
+              details: head.details,
+              timestamp: head.timestamp,
+              nodeId: head.nodeId,
+              agentName: head.agentName,
+              agentId: head.agentId,
+              color: head.color,
+            }
+          : null;
+      }
+      this.saveLocalAiCache();
+    }
+  }
+
   recordAiTelemetry(
-    ev: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string },
+    ev: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string } | null | undefined,
     agentsList?: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[],
     historyList?: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[]
   ) {
-    const incoming = agentsList && agentsList.length > 0 ? agentsList : ev?.target ? [ev] : [];
-    if (incoming.length === 0 && (!historyList || historyList.length === 0)) return;
+    const hasAuthoritativeAgentsList = Array.isArray(agentsList);
+    const incoming = hasAuthoritativeAgentsList
+      ? agentsList
+      : ev?.target
+        ? [ev]
+        : [];
+    if (incoming.length === 0 && (!historyList || historyList.length === 0)) {
+      if (hasAuthoritativeAgentsList) {
+        if (this.activeAgents.length > 0 || this.aiTelemetry !== null) {
+          this.activeAgents = [];
+          this.aiTelemetry = null;
+          this.saveLocalAiCache();
+        }
+      } else {
+        this.pruneInactiveAgents();
+      }
+      return;
+    }
 
     let anyNew = false;
     let latestAutoFocusId: string | null = null;
     const nextTrails = { ...this.agentTrails };
     const mergedGlobalTrail = [...this.aiTrail];
 
-    // Seed activeMap with all existing active agents so none are discarded!
+    // Keep only still-connected agents (last ping < 5 minutes)
     const activeMap = new Map<string, (typeof this.activeAgents)[0]>();
-    for (const ag of this.activeAgents) {
-      activeMap.set(ag.agentId, ag);
+    if (!hasAuthoritativeAgentsList) {
+      for (const ag of this.activeAgents) {
+        if (!this.isAgentInactive(ag)) {
+          activeMap.set(ag.agentId, ag);
+        }
+      }
     }
 
     // Reconstruct history if provided from backend cache
@@ -641,6 +741,7 @@ export class CockpitState {
     for (const item of incoming) {
       if (!item?.target) continue;
       const normTs = item.timestamp < 1e11 ? item.timestamp * 1000 : item.timestamp;
+      if (!isFreshAgentTimestamp(normTs)) continue;
       const agentId = item.agent_id || item.agent_name || (
         item.action?.toLowerCase().includes('claude') ? 'claude-mcp'
           : item.action?.toLowerCase().includes('gemini') ? 'gemini-mcp'
@@ -711,7 +812,9 @@ export class CockpitState {
       }
     }
 
-    const sortedActive = Array.from(activeMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+    const sortedActive = Array.from(activeMap.values())
+      .filter((ag) => !this.isAgentInactive(ag))
+      .sort((a, b) => b.timestamp - a.timestamp);
     // Cap active agents to prevent unbounded accumulation
     if (sortedActive.length > 20) {
       sortedActive.length = 20;
@@ -746,6 +849,8 @@ export class CockpitState {
         color: head.color,
       };
       this.lastTelemetryTs = head.timestamp;
+    } else {
+      this.aiTelemetry = null;
     }
 
     if (anyNew && latestAutoFocusId && this.settings.aiAutoCam) {
@@ -788,7 +893,9 @@ export class CockpitState {
           show_cwe_titles: this.settings.showCweTitles,
           show_folder_titles: this.settings.showFolderTitles,
           show_file_titles: this.settings.showFileTitles,
+          low_memory_mode: this.settings.lowMemoryMode,
           ui_settings: this.settings as any,
+          rescan: false,
         });
       } catch {
         // standalone offline mode
@@ -1094,12 +1201,32 @@ export class CockpitState {
 
   rawViolations = $derived.by(() => {
     const list: CveAnomalyRecord[] = [];
+    const seen = new Set<string>();
+    const pushDedup = (v: CveAnomalyRecord) => {
+      const key = `${(v.file_path || '').toLowerCase()}|${v.line_number || 0}|${(v.rule_id || v.cve_id || '').toUpperCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push(v);
+    };
+    // Prefer structured symbol-level cve_anomalies first so file-level summary strings never shadow real CWE records
     for (const node of this.graph.nodes) {
-      if (node.anomalies && node.anomalies.length > 0) {
-        list.push(...node.anomalies);
+      if (!node.is_file) {
+        if (node.anomalies && node.anomalies.length > 0) {
+          for (const a of node.anomalies) pushDedup(a);
+        }
+        if (node.violations && node.violations.length > 0) {
+          for (const v of node.violations) pushDedup(v);
+        }
       }
-      if (node.violations && node.violations.length > 0) {
-        list.push(...node.violations);
+    }
+    for (const node of this.graph.nodes) {
+      if (node.is_file) {
+        if (node.anomalies && node.anomalies.length > 0) {
+          for (const a of node.anomalies) pushDedup(a);
+        }
+        if (node.violations && node.violations.length > 0) {
+          for (const v of node.violations) pushDedup(v);
+        }
       }
     }
     return list;
@@ -1248,25 +1375,57 @@ export class CockpitState {
         });
       } else if (meta.violations && meta.violations.length > 0) {
         anomalies = meta.violations.map((msg) => {
+          const ruleMatch = msg.match(/^\[([^\]]+)\]/);
+          const parsedRule = ruleMatch ? ruleMatch[1].trim() : '';
+          const metaParens = msg.match(/^\[[^\]]+\]\s*\(([^)]+)\)/);
+          let parsedCve = '';
+          let parsedSev = '';
+          if (metaParens) {
+            const parts = metaParens[1].split('|').map((s) => s.trim());
+            if (parts.length >= 2) {
+              parsedCve = parts[0];
+              parsedSev = parts[1];
+            } else {
+              parsedSev = parts[0];
+            }
+          }
+          const lineMatch = msg.match(/\bL(\d+):/);
+          const parsedLine = lineMatch ? parseInt(lineMatch[1], 10) : (rawNode.line_number || 1);
+          if (!parsedCve) {
+            const inlineCwe = msg.match(/\b(CWE-\d+|AETHER-[A-Z]+-\d+)\b/i);
+            if (inlineCwe) parsedCve = inlineCwe[1].toUpperCase();
+          }
+          const isForbiddenImport =
+            parsedRule === 'RULE_FORBIDDEN_IMPORT' ||
+            msg.includes('RULE_FORBIDDEN_IMPORT') ||
+            msg.includes('Forbidden import');
           const isMaxLines =
-            msg.includes('RULE_MAX_LINES') ||
-            msg.includes('ARCH-BUDGET-EXCEEDED') ||
-            msg.includes('CONTRACT') ||
-            msg.includes('maximum line limit') ||
-            msg.includes('BUDGET LIGNES');
+            !isForbiddenImport &&
+            (parsedRule === 'RULE_MAX_LINES' ||
+              msg.includes('RULE_MAX_LINES') ||
+              msg.includes('ARCH-BUDGET-EXCEEDED') ||
+              msg.includes('maximum line limit') ||
+              msg.includes('BUDGET LIGNES'));
+          const effectiveRule = parsedRule || (isMaxLines ? 'RULE_MAX_LINES' : 'SAST-VIOLATION');
+          const effectiveCve = isMaxLines
+            ? 'CONTRACT / ARCH-BUDGET-EXCEEDED'
+            : isForbiddenImport
+              ? (parsedCve || 'CWE-1075')
+              : (parsedCve || parsedRule || 'CWE-SAST');
+          const effectiveSev = isMaxLines ? 'WARNING' : (parsedSev || 'HIGH');
           return {
-            rule_id: isMaxLines ? 'RULE_MAX_LINES' : 'SAST-VIOLATION',
-            cve_id: isMaxLines ? 'CONTRACT / ARCH-BUDGET-EXCEEDED' : 'CWE-SAST',
-            cwe_class: isMaxLines ? 'CONTRACT_BUDGET' : 'CWE-SAST',
-            severity: isMaxLines ? 'WARNING' : 'HIGH',
-            title: isMaxLines ? 'Dépassement Budget Lignes' : 'Violation SAST / Contrat',
+            rule_id: effectiveRule,
+            cve_id: effectiveCve,
+            cwe_class: isMaxLines ? 'CONTRACT_BUDGET' : effectiveCve,
+            severity: effectiveSev,
+            title: isMaxLines ? 'Dépassement Budget Lignes' : effectiveRule,
             description: msg,
             message: msg,
             remediation: isMaxLines
               ? 'Découper le fichier ou ajuster la limite max_lines dans le contrat BLAKE3.'
               : 'Inspecter la source et sceller les entrées/sorties.',
             file_path: rawNode.file_path,
-            line_number: rawNode.line_number || 1,
+            line_number: parsedLine,
           };
         });
       }
@@ -1441,11 +1600,9 @@ export class CockpitState {
       this.lodLevel = 1;
       this.settings.lowMemoryMode = true;
     }
-    if (normalizedNodes.length > 0 && !this.activeSymbol) {
-      this.activeSymbol = normalizedNodes[0];
-    } else if (this.activeSymbol) {
+    if (this.activeSymbol) {
       const updatedActive = normalizedNodes.find((n) => n.id === this.activeSymbol?.id);
-      if (updatedActive) this.activeSymbol = updatedActive;
+      this.activeSymbol = updatedActive || null;
     }
     if (this.engine) {
       this.engine.syncGraphToEngine(!incremental);

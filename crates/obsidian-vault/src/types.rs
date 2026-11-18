@@ -44,7 +44,7 @@ impl DetectedProjectType {
     /// Recommended default cockpit view mode.
     pub fn default_view(&self) -> &'static str {
         match self {
-            Self::PureObsidianVault => "vault",
+            Self::PureObsidianVault => "vault-notes",
             Self::PureCode | Self::Mixed => "code",
         }
     }
@@ -52,8 +52,8 @@ impl DetectedProjectType {
     /// List of available cockpit view modes for this project classification.
     pub fn supported_views(&self) -> Vec<&'static str> {
         match self {
-            Self::PureObsidianVault => vec!["vault", "code"],
-            Self::Mixed => vec!["code", "vault"],
+            Self::PureObsidianVault => vec!["vault-notes", "code"],
+            Self::Mixed => vec!["code", "vault-notes"],
             Self::PureCode => vec!["code"],
         }
     }
@@ -111,7 +111,7 @@ impl ProjectDetectionReport {
 
     /// Returns true if the vault vision mode is supported for this project.
     pub fn is_vault_mode_available(&self) -> bool {
-        self.supported_views.iter().any(|v| v == "vault")
+        self.supported_views.iter().any(|v| v == "vault-notes")
     }
 
     /// Returns true if the code vision mode is supported for this project.

@@ -386,8 +386,8 @@ mod tests {
         assert_eq!(report.code_files_count, 0);
         assert_eq!(report.markdown_files_count, 2);
         assert!(report.obsidian_syntax_markers_count >= 1);
-        assert_eq!(report.default_view, "vault");
-        assert!(report.supported_views.contains(&"vault".to_string()));
+        assert_eq!(report.default_view, "vault-notes");
+        assert!(report.supported_views.contains(&"vault-notes".to_string()));
         assert!(report.supported_views.contains(&"code".to_string()));
     }
 
@@ -408,7 +408,7 @@ mod tests {
         assert_eq!(report.project_type, DetectedProjectType::PureObsidianVault);
         assert_eq!(report.code_files_count, 1);
         assert_eq!(report.markdown_files_count, 12);
-        assert_eq!(report.default_view, "vault");
+        assert_eq!(report.default_view, "vault-notes");
     }
 
     #[test]
@@ -536,7 +536,7 @@ Ignored single hashtag: # not_a_tag
         assert!(json.contains("\"project_type\":\"Mixed\""));
         assert!(json.contains("\"has_obsidian_dir\":true"));
         assert!(json.contains("\"obsidian_dir_path\":\"docs/.obsidian\""));
-        assert!(json.contains("\"supported_views\":[\"code\",\"vault\"]"));
+        assert!(json.contains("\"supported_views\":[\"code\",\"vault-notes\"]"));
         assert!(json.contains("\"default_view\":\"code\""));
 
         let deserialized: ProjectDetectionReport = serde_json::from_str(&json).unwrap();

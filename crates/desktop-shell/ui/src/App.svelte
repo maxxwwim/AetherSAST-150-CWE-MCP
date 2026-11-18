@@ -36,13 +36,23 @@
       if (e.key === '1' || e.code === 'Digit1') {
         e.preventDefault();
         cockpitState.viewMode = 'code';
-        api.switchViewMode('code').catch(() => {});
+        api.switchViewMode('code').then((g) => {
+          if (g && Array.isArray(g.nodes)) {
+            cockpitState.setGraph(g);
+            cockpitState.requestCameraFit();
+          }
+        }).catch(() => {});
         return;
       }
       if (e.key === '2' || e.code === 'Digit2') {
         e.preventDefault();
-        cockpitState.viewMode = 'vault';
-        api.switchViewMode('vault').catch(() => {});
+        cockpitState.viewMode = 'vault-notes';
+        api.switchViewMode('vault-notes').then((g) => {
+          if (g && Array.isArray(g.nodes)) {
+            cockpitState.setGraph(g);
+            cockpitState.requestCameraFit();
+          }
+        }).catch(() => {});
         return;
       }
       if (e.key === '3' || e.code === 'Digit3') {
@@ -195,13 +205,16 @@
         }
         if (settingsRes.status === 'fulfilled' && settingsRes.value) {
           const s = settingsRes.value;
-          if (Array.isArray(s.ignored_cwes) && s.ignored_cwes.length > 0) {
+          if (s.ui_settings && typeof s.ui_settings === 'object') {
+            Object.assign(cockpitState.settings, s.ui_settings);
+          }
+          if (Array.isArray(s.ignored_cwes)) {
             cockpitState.settings.ignoredCwes = s.ignored_cwes;
           }
           if (Array.isArray(s.exclusions) && s.exclusions.length > 0) {
             cockpitState.settings.exclusions = s.exclusions;
           }
-          if (Array.isArray(s.active_cve_rules) && s.active_cve_rules.length > 0) {
+          if (Array.isArray(s.active_cve_rules)) {
             cockpitState.settings.activeCveRules = s.active_cve_rules;
           }
           if (typeof s.show_alerts === 'boolean') cockpitState.settings.showAlerts = s.show_alerts;
@@ -212,10 +225,9 @@
             cockpitState.settings.showFolderBadges = s.show_folder_titles;
           }
           if (typeof s.show_file_titles === 'boolean') cockpitState.settings.showFileTitles = s.show_file_titles;
-          if (s.ui_settings && typeof s.ui_settings === 'object') {
-            Object.assign(cockpitState.settings, s.ui_settings);
-          }
+          if (typeof s.low_memory_mode === 'boolean') cockpitState.settings.lowMemoryMode = s.low_memory_mode;
           cockpitState.saveLocalSettings(false);
+          cockpitState.filterVersion += 1;
         }
         await cockpitState.fetchGitStatus().catch(() => {});
       } catch {
@@ -251,23 +263,22 @@
       // Continuous Git diff status poll
       cockpitState.fetchGitStatus().catch(() => {});
 
-      // Continuous AI telemetry poll so agent avatars orbit and animate on WebGL canvas even when AI chat drawer is closed
+      // Continuous AI telemetry poll (only connected agents with ping < 5 min)
       try {
         const teleRes = await api.getTelemetry();
-        if (teleRes && (teleRes.telemetry || teleRes.agents || teleRes.history)) {
-          cockpitState.recordAiTelemetry(teleRes.telemetry as any, teleRes.agents, teleRes.history);
+        if (teleRes) {
+          cockpitState.recordAiTelemetry(teleRes.telemetry as any, teleRes.agents ?? [], teleRes.history);
         }
       } catch {
-        // offline or quiet telemetry
+        cockpitState.pruneInactiveAgents();
       }
 
-      // Periodic tasks poll (every 4s) so AI agent tasks appear in UI automatically
+      // Periodic tasks poll (every 4s) — tasks stay in the Tasks board and do NOT fabricate fake live AI pings
       if (tickCount % 2 === 0) {
         try {
           const tasks = await api.getTasks();
           if (Array.isArray(tasks)) {
             cockpitState.tasks = tasks;
-            cockpitState.syncTaskAgentsToTelemetry(tasks);
           }
         } catch {
           // offline or quiet tasks
