@@ -1600,9 +1600,11 @@ export class CockpitState {
       this.lodLevel = 1;
       this.settings.lowMemoryMode = true;
     }
-    if (this.activeSymbol) {
+    if (normalizedNodes.length > 0 && !this.activeSymbol) {
+      this.activeSymbol = normalizedNodes[0];
+    } else if (this.activeSymbol) {
       const updatedActive = normalizedNodes.find((n) => n.id === this.activeSymbol?.id);
-      this.activeSymbol = updatedActive || null;
+      if (updatedActive) this.activeSymbol = updatedActive;
     }
     if (this.engine) {
       this.engine.syncGraphToEngine(!incremental);

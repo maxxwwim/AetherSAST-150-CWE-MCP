@@ -2388,17 +2388,25 @@ export class AetherEngine {
       isIncoming: boolean;
     }[] = [];
 
-    const isHuge = edges.length > 2500 || this.state.graph.nodes.length > 1800 || isEco;
+    const isHuge = edges.length > 3500 || this.state.graph.nodes.length > 2200;
     const edgeCap = isHuge
-      ? (zoom < 0.25 ? (isEco ? 160 : 280) : (isEco ? 340 : 620))
-      : (zoom < 0.25 ? 520 : 1200);
+      ? (zoom < 0.25 ? (isEco ? 900 : 1400) : (isEco ? 1400 : 2200))
+      : 2600;
 
-    // 1. Process incident edges for the focused/hovered node directly (O(deg) via index, capped & lighter)
+    // 1. Process incident edges for the focused/hovered node directly (O(deg) via index)
     if (focusId) {
       const incident = this.state.incidentEdges(focusId);
-      const maxFocusEdges = isHoverFocus ? 32 : 20;
-      for (let k = 0; k < incident.length && focusEdges.length < maxFocusEdges; k++) {
-        const e = incident[k];
+      const maxFocusEdges = 48;
+      // Prioritize semantic calls/imports/data/security edges before structural `contains`
+      const orderedIncident = incident.length > maxFocusEdges
+        ? [...incident].sort((a, b) => {
+            const ra = normalizeEdgeRelation(a.relation || a.edge_type) === 'contains' ? 1 : 0;
+            const rb = normalizeEdgeRelation(b.relation || b.edge_type) === 'contains' ? 1 : 0;
+            return ra - rb;
+          })
+        : incident;
+      for (let k = 0; k < orderedIncident.length && focusEdges.length < maxFocusEdges; k++) {
+        const e = orderedIncident[k];
         const s = this.nodeMap.get(e.source);
         const t = this.nodeMap.get(e.target);
         if (!s || !t) continue;
@@ -2408,8 +2416,6 @@ export class AetherEngine {
 
         const rel = normalizeEdgeRelation(e.relation || e.edge_type);
         if (disabledRelations[rel]) continue;
-        // Skip noisy internal `contains` edges on mega-hubs when plenty of semantic edges exist
-        if (rel === 'contains' && incident.length > 18 && !isHoverFocus) continue;
 
         const p1 = this.worldToScreen(s.x, s.y);
         const p2 = this.worldToScreen(t.x, t.y);
@@ -2419,8 +2425,8 @@ export class AetherEngine {
         const isCurved = isCross && rel !== 'contains';
         const dx = p2.x - p1.x;
         const dy = p2.y - p1.y;
-        const cx = isCurved ? (p1.x + p2.x) * 0.5 - dy * 0.11 : null;
-        const cy = isCurved ? (p1.y + p2.y) * 0.5 + dx * 0.11 : null;
+        const cx = isCurved ? (p1.x + p2.x) * 0.5 - dy * 0.13 : null;
+        const cy = isCurved ? (p1.y + p2.y) * 0.5 + dx * 0.13 : null;
 
         const isWarnEdge =
           rel === 'warns' ||
@@ -2459,15 +2465,20 @@ export class AetherEngine {
       }
     }
 
-    // 2. Sample background edges up to edgeCap
+    // 2. Sample background edges up to edgeCap (never starve semantic calls/imports behind `contains`)
     const maxBackground = edgeCap;
     let drawnCount = 0;
-    const stride = isHuge ? Math.max(1, Math.floor(edges.length / (edgeCap * 3))) : 1;
+    const stride = isHuge ? Math.max(1, Math.floor(edges.length / (edgeCap * 2))) : 1;
 
     for (let i = 0; i < edges.length && drawnCount < maxBackground; i += stride) {
       const e = edges[i];
       if (focusId && (e.source === focusId || e.target === focusId)) continue;
       if (isXray && e.source !== activeId && e.target !== activeId) continue;
+
+      const rel = normalizeEdgeRelation(e.relation || e.edge_type);
+      if (disabledRelations[rel]) continue;
+      // At zoomed-out macro views, skip internal file->symbol `contains` spokes so `calls` and `imports` stay 100% visible
+      if (rel === 'contains' && zoom < 0.35) continue;
 
       const s = this.nodeMap.get(e.source);
       const t = this.nodeMap.get(e.target);
@@ -2475,9 +2486,6 @@ export class AetherEngine {
       if (!this.state.settings.showCweBubbles && (getNodeAlertKind(s, this.isAnomalyIgnored) === 'security' || getNodeAlertKind(t, this.isAnomalyIgnored) === 'security')) continue;
       if (disabledLayers[s.layer || 'utility'] || disabledLayers[t.layer || 'utility']) continue;
       if (disabledModules[s.folder || s.cluster_id || 'root'] || disabledModules[t.folder || t.cluster_id || 'root']) continue;
-
-      const rel = normalizeEdgeRelation(e.relation || e.edge_type);
-      if (disabledRelations[rel]) continue;
 
       const p1 = this.worldToScreen(s.x, s.y);
       const p2 = this.worldToScreen(t.x, t.y);
@@ -2539,102 +2547,122 @@ export class AetherEngine {
       if (isCurved && cx !== null && cy !== null) {
         targetPath.quadraticCurveTo(cx, cy, p2.x, p2.y);
 
-        if (!isEco && pulseParticles.length < 14 && (isXray || pipe || (zoom >= 0.22 && i % 19 === 0))) {
-          const u = ((now * 0.00024 + i * 0.17) % 1 + 1) % 1;
+        if (pulseParticles.length < 28 && (isXray || pipe || i % 9 === 0)) {
+          const u = ((now * 0.00028 + i * 0.17) % 1 + 1) % 1;
           const inv = 1 - u;
           pulseParticles.push({
             x: inv * inv * p1.x + 2 * inv * u * cx + u * u * p2.x,
             y: inv * inv * p1.y + 2 * inv * u * cy + u * u * p2.y,
-            color: isWarnEdge ? '#fb923c' : isViolEdge ? '#f87171' : rel === 'realtime' ? '#34d399' : rel === 'queries' ? '#c084fc' : '#38bdf8',
+            color: isWarnEdge ? '#fb923c' : isViolEdge ? '#f87171' : rel === 'realtime' ? '#34d399' : rel === 'queries' ? '#c084fc' : rel === 'imports' ? '#fbbf24' : '#38bdf8',
           });
         }
       } else {
         targetPath.lineTo(p2.x, p2.y);
       }
 
-      // Subtle mid-edge directional chevrons on visible non-focus edges only when closely zoomed in
-      if (!isEco && !focusId && zoom >= 1.35 && dist >= 64 && midChevrons.length < 36) {
-        const mx = isCurved && cx !== null && cy !== null ? 0.25 * p1.x + 0.5 * cx + 0.25 * p2.x : (p1.x + p2.x) * 0.5;
-        const my = isCurved && cx !== null && cy !== null ? 0.25 * p1.y + 0.5 * cy + 0.25 * p2.y : (p1.y + p2.y) * 0.5;
+      // Directional chevrons on visible call, import & data links (always visible across zoom levels so direction is clear)
+      if (rel !== 'contains' && dist >= 34 && midChevrons.length < 150 && (isCross || zoom >= 0.30)) {
+        const u = 0.62;
+        const inv = 1 - u;
+        const mx = isCurved && cx !== null && cy !== null
+          ? inv * inv * p1.x + 2 * inv * u * cx + u * u * p2.x
+          : p1.x + dx * u;
+        const my = isCurved && cx !== null && cy !== null
+          ? inv * inv * p1.y + 2 * inv * u * cy + u * u * p2.y
+          : p1.y + dy * u;
+        // True curve tangent at u for accurate arrow orientation
+        const tx = isCurved && cx !== null ? 2 * inv * (cx - p1.x) + 2 * u * (p2.x - cx) : dx;
+        const ty = isCurved && cy !== null ? 2 * inv * (cy - p1.y) + 2 * u * (p2.y - cy) : dy;
         midChevrons.push({
           x: mx,
           y: my,
-          angle: Math.atan2(dy, dx),
-          color: rel === 'imports' ? 'rgba(251, 191, 36, 0.36)' : rel === 'queries' ? 'rgba(192, 132, 252, 0.42)' : 'rgba(56, 189, 248, 0.36)',
+          angle: Math.atan2(ty, tx),
+          color: isViolEdge
+            ? 'rgba(248, 113, 113, 0.78)'
+            : isWarnEdge
+              ? 'rgba(251, 146, 60, 0.75)'
+              : rel === 'imports' || rel === 'inherits'
+                ? 'rgba(251, 191, 36, 0.72)'
+                : rel === 'queries'
+                  ? 'rgba(192, 132, 252, 0.75)'
+                  : rel === 'realtime'
+                    ? 'rgba(52, 211, 153, 0.75)'
+                    : 'rgba(56, 189, 248, 0.72)',
         });
       }
     }
 
     ctx.save();
     ctx.lineCap = 'round';
-    const w = Math.max(0.5, Math.min(1.25, 0.78 * Math.sqrt(zoom)));
-    const zoomFade = zoom < 0.22 ? Math.max(0.24, (zoom / 0.22) * 0.85) : 1.0;
-    const bgDim = (isHoverFocus && focusEdges.length > 0 ? 0.28 : 1.0) * zoomFade;
+    const w = Math.max(0.75, Math.min(1.65, 1.0 * Math.sqrt(zoom)));
+    const zoomFade = zoom < 0.06 ? Math.max(0.58, zoom * 10.0) : 1.0;
+    const bgDim = (isHoverFocus && focusEdges.length > 0 ? 0.45 : 1.0) * zoomFade;
 
     if (hasImports) {
-      ctx.lineWidth = w * 0.75;
-      ctx.setLineDash([4, 5]);
-      ctx.strokeStyle = `rgba(245, 158, 11, ${(pipe ? 0.05 : 0.085) * bgDim})`;
+      ctx.lineWidth = Math.max(0.8, w * 0.9);
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = `rgba(251, 191, 36, ${(pipe ? 0.12 : 0.28) * bgDim})`;
       ctx.stroke(pImports);
       ctx.setLineDash([]);
     }
     if (hasCalls) {
-      ctx.lineWidth = w * 0.9;
-      ctx.strokeStyle = `rgba(56, 189, 248, ${(isXray ? 0.45 : pipe ? 0.05 : 0.11) * bgDim})`;
+      ctx.lineWidth = Math.max(0.9, w);
+      ctx.strokeStyle = `rgba(56, 189, 248, ${(isXray ? 0.62 : pipe ? 0.12 : 0.32) * bgDim})`;
       ctx.stroke(pCalls);
     }
     if (hasSubmits) {
-      ctx.lineWidth = pipe ? w * 1.6 : w * 1.05;
-      ctx.strokeStyle = `rgba(255, 107, 0, ${(pipe ? 0.75 : 0.26) * bgDim})`;
+      ctx.lineWidth = pipe ? w * 1.9 : w * 1.25;
+      ctx.strokeStyle = `rgba(255, 107, 0, ${(pipe ? 0.85 : 0.48) * bgDim})`;
       ctx.stroke(pSubmits);
     }
     if (hasNetwork) {
-      ctx.lineWidth = pipe ? w * 1.6 : w * 1.05;
-      ctx.strokeStyle = `rgba(0, 200, 255, ${(pipe ? 0.78 : 0.26) * bgDim})`;
+      ctx.lineWidth = pipe ? w * 1.9 : w * 1.25;
+      ctx.strokeStyle = `rgba(0, 200, 255, ${(pipe ? 0.88 : 0.48) * bgDim})`;
       ctx.stroke(pNetwork);
     }
     if (hasQueries) {
-      ctx.lineWidth = pipe ? w * 1.6 : w * 1.0;
-      ctx.strokeStyle = `rgba(168, 85, 247, ${(pipe ? 0.78 : 0.25) * bgDim})`;
+      ctx.lineWidth = pipe ? w * 1.9 : w * 1.2;
+      ctx.strokeStyle = `rgba(168, 85, 247, ${(pipe ? 0.88 : 0.46) * bgDim})`;
       ctx.stroke(pQueries);
     }
     if (hasRealtime) {
-      ctx.lineWidth = pipe ? w * 1.6 : w * 1.05;
-      ctx.strokeStyle = `rgba(52, 211, 153, ${(pipe ? 0.80 : 0.28) * bgDim})`;
+      ctx.lineWidth = pipe ? w * 1.9 : w * 1.25;
+      ctx.strokeStyle = `rgba(52, 211, 153, ${(pipe ? 0.90 : 0.50) * bgDim})`;
       ctx.stroke(pRealtime);
     }
     if (hasWarns) {
-      ctx.lineWidth = w * 1.1;
-      ctx.setLineDash([5, 5]);
-      ctx.strokeStyle = `rgba(249, 115, 22, ${0.34 * bgDim})`;
+      ctx.lineWidth = w * 1.25;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = `rgba(249, 115, 22, ${0.55 * bgDim})`;
       ctx.stroke(pWarns);
       ctx.setLineDash([]);
     }
     if (hasViolates) {
-      ctx.lineWidth = w * 1.15;
-      ctx.strokeStyle = `rgba(239, 68, 68, ${0.36 * bgDim})`;
+      ctx.lineWidth = w * 1.3;
+      ctx.strokeStyle = `rgba(239, 68, 68, ${0.58 * bgDim})`;
       ctx.stroke(pViolates);
     }
     for (let i = 0; i < midChevrons.length; i++) {
       const ch = midChevrons[i];
-      this.drawEdgeArrow(ctx, ch.x, ch.y, ch.angle, 4.6, ch.color, 0.55);
+      this.drawEdgeArrow(ctx, ch.x, ch.y, ch.angle, 5.8, ch.color, 0.82);
     }
     if (pulseParticles.length > 0) {
       ctx.save();
-      ctx.globalAlpha = isXray || pipe ? 0.75 : 0.52;
+      ctx.globalAlpha = isXray || pipe ? 0.85 : 0.72;
       for (let i = 0; i < pulseParticles.length; i++) {
         const pt = pulseParticles[i];
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, isXray || pipe ? 2.0 : 1.35, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, isXray || pipe ? 2.2 : 1.7, 0, Math.PI * 2);
         ctx.fillStyle = pt.color;
         ctx.fill();
       }
       ctx.restore();
     }
 
-    // Highlighted directional links, arrowheads & relation badges for hovered or active node (allégés & raffinés)
+    // Highlighted directional links, arrowheads & relation badges (`➔ APPEL`, `← APPEL`, `IMPORT`) for hovered or active node
     if (focusEdges.length > 0) {
-      const showPillLabels = isHoverFocus && focusEdges.length <= 12;
+      const showPillLabels = focusEdges.length <= 28;
+      const placedTagBoxes: { x: number; y: number; w: number; h: number }[] = [];
       const neighborSet = new Map<string, { node: SymbolBubble; p: { x: number; y: number }; color: string }>();
 
       for (let i = 0; i < focusEdges.length; i++) {
@@ -2654,12 +2682,12 @@ export class AetherEngine {
         const tipY = fe.p2.y - (tangentY / tLen) * tipOffset;
 
         ctx.save();
-        ctx.globalAlpha = isHoverFocus ? 0.78 : 0.48;
+        ctx.globalAlpha = isHoverFocus ? 0.90 : 0.74;
         ctx.strokeStyle = meta.color;
-        ctx.lineWidth = isHoverFocus ? Math.max(1.25, w * 1.4) : Math.max(0.95, w * 1.05);
-        if (!isEco && isHoverFocus) {
+        ctx.lineWidth = isHoverFocus ? Math.max(1.4, w * 1.45) : Math.max(1.15, w * 1.2);
+        if (isHoverFocus) {
           ctx.shadowColor = meta.color;
-          ctx.shadowBlur = 4;
+          ctx.shadowBlur = 5;
         }
         if (meta.dashed) ctx.setLineDash([5, 4]);
         ctx.beginPath();
@@ -2673,27 +2701,25 @@ export class AetherEngine {
         ctx.setLineDash([]);
         ctx.restore();
 
-        // Crisp lightweight directional arrowhead
-        this.drawEdgeArrow(ctx, tipX, tipY, angle, isHoverFocus ? 7.5 : 5.8, meta.color, isHoverFocus ? 0.88 : 0.62);
+        // Crisp directional arrowhead pointing caller -> callee / importer -> imported
+        this.drawEdgeArrow(ctx, tipX, tipY, angle, isHoverFocus ? 8.5 : 7.2, meta.color, isHoverFocus ? 0.95 : 0.85);
 
-        // Subtle flow bead traveling in call direction (only on hover or first 10 selected edges)
-        if (isHoverFocus || i < 10) {
-          const u = ((now * 0.00062 + i * 0.21) % 1 + 1) % 1;
-          const inv = 1 - u;
-          const bx = fe.cx !== null && fe.cy !== null
-            ? inv * inv * fe.p1.x + 2 * inv * u * fe.cx + u * u * fe.p2.x
-            : fe.p1.x + (fe.p2.x - fe.p1.x) * u;
-          const by = fe.cx !== null && fe.cy !== null
-            ? inv * inv * fe.p1.y + 2 * inv * u * fe.cy + u * u * fe.p2.y
-            : fe.p1.y + (fe.p2.y - fe.p1.y) * u;
-          ctx.save();
-          ctx.globalAlpha = isHoverFocus ? 0.85 : 0.55;
-          ctx.beginPath();
-          ctx.arc(bx, by, isHoverFocus ? 2.1 : 1.6, 0, Math.PI * 2);
-          ctx.fillStyle = '#ffffff';
-          ctx.fill();
-          ctx.restore();
-        }
+        // Flow bead traveling in call/import direction (source -> target)
+        const u = ((now * 0.00072 + i * 0.21) % 1 + 1) % 1;
+        const inv = 1 - u;
+        const bx = fe.cx !== null && fe.cy !== null
+          ? inv * inv * fe.p1.x + 2 * inv * u * fe.cx + u * u * fe.p2.x
+          : fe.p1.x + (fe.p2.x - fe.p1.x) * u;
+        const by = fe.cx !== null && fe.cy !== null
+          ? inv * inv * fe.p1.y + 2 * inv * u * fe.cy + u * u * fe.p2.y
+          : fe.p1.y + (fe.p2.y - fe.p1.y) * u;
+        ctx.save();
+        ctx.globalAlpha = isHoverFocus ? 0.92 : 0.78;
+        ctx.beginPath();
+        ctx.arc(bx, by, isHoverFocus ? 2.3 : 1.9, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.restore();
 
         if (fe.sourceNode.id !== focusId && !neighborSet.has(fe.sourceNode.id)) {
           neighborSet.set(fe.sourceNode.id, { node: fe.sourceNode, p: fe.p1, color: meta.color });
@@ -2702,7 +2728,7 @@ export class AetherEngine {
           neighborSet.set(fe.targetNode.id, { node: fe.targetNode, p: fe.p2, color: meta.color });
         }
 
-        if (showPillLabels && dist >= 72) {
+        if (showPillLabels && fe.rel !== 'contains' && dist >= 58) {
           const mx = fe.cx !== null && fe.cy !== null
             ? 0.25 * fe.p1.x + 0.5 * fe.cx + 0.25 * fe.p2.x
             : (fe.p1.x + fe.p2.x) * 0.5;
@@ -2711,17 +2737,26 @@ export class AetherEngine {
             : (fe.p1.y + fe.p2.y) * 0.5;
           ctx.font = '700 8.5px ui-monospace, monospace';
           const tw = ctx.measureText(meta.tag).width + 8;
-          ctx.fillStyle = 'rgba(7, 10, 18, 0.88)';
-          ctx.beginPath();
-          ctx.roundRect(mx - tw * 0.5, my - 7, tw, 14, 4);
-          ctx.fill();
-          ctx.strokeStyle = meta.color;
-          ctx.lineWidth = 0.85;
-          ctx.stroke();
-          ctx.fillStyle = meta.color;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(meta.tag, mx, my + 0.5);
+          const th = 14;
+          const tx = mx - tw * 0.5;
+          const ty = my - 7;
+          const overlaps = placedTagBoxes.some(
+            (b) => tx < b.x + b.w + 3 && tx + tw + 3 > b.x && ty < b.y + b.h + 2 && ty + th + 2 > b.y
+          );
+          if (!overlaps) {
+            placedTagBoxes.push({ x: tx, y: ty, w: tw, h: th });
+            ctx.fillStyle = 'rgba(7, 10, 18, 0.90)';
+            ctx.beginPath();
+            ctx.roundRect(tx, ty, tw, th, 4);
+            ctx.fill();
+            ctx.strokeStyle = meta.color;
+            ctx.lineWidth = 0.85;
+            ctx.stroke();
+            ctx.fillStyle = meta.color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(meta.tag, mx, my + 0.5);
+          }
         }
       }
 
