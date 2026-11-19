@@ -125,6 +125,18 @@ impl AuditWriter {
             content.push_str("\n## 🔒 Contrat du dossier (`README.md`)\n\n");
             content.push_str(&format!("- **Imports autorisés :** `{:?}`\n", c.frontmatter.allowed_imports));
             content.push_str(&format!("- **Imports INTERDITS :** `{:?}`\n", c.frontmatter.forbidden_imports));
+            if !c.frontmatter.forbidden_functions.is_empty() {
+                content.push_str(&format!("- **Fonctions INTERDITES :** `{:?}`\n", c.frontmatter.forbidden_functions));
+            }
+            if !c.frontmatter.allowed_extensions.is_empty() {
+                content.push_str(&format!("- **Extensions autorisées :** `{:?}`\n", c.frontmatter.allowed_extensions));
+            }
+            if !c.frontmatter.forbidden_extensions.is_empty() {
+                content.push_str(&format!("- **Extensions INTERDITES :** `{:?}`\n", c.frontmatter.forbidden_extensions));
+            }
+            if let Some(max_files) = c.frontmatter.max_files_per_folder {
+                content.push_str(&format!("- **Fichiers max par dossier :** `{}`\n", max_files));
+            }
             content.push_str(&format!("- **Lignes max :** `{}`\n\n", c.effective_max_lines(&symbol.file_path)));
 
             if !c.ears_requirements.is_empty() {

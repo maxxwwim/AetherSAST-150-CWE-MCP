@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.6.0] - 2026-11-19
 
 ### Added
+- **🛡️ Contrats Architecturaux BLAKE3 Étendus (`RULE_FORBIDDEN_FUNCTION`, `RULE_FORBIDDEN_EXTENSION`, `RULE_MAX_FILES`) (`security-linter`, `ast-scanner`, `desktop-shell`, `ai-file-bridge`)**:
+  - Nouveaux champs YAML dans le frontmatter des contrats `README.md` : `forbidden_functions`, `allowed_extensions`, `forbidden_extensions` et `max_files_per_folder`.
+  - Détection par frontières lexicales des appels de fonctions/macros interdites (`eval`, `unwrap`, `println!`, etc.) sans faux positifs sur les déclarations ou sous-identifiants, générant une alerte critique `RULE_FORBIDDEN_FUNCTION` (`CWE-1075`) sur le nœud appelant et une arête vers le contrat `README.md`.
+  - Contrôle de structure de dossier dans `ast-scanner` : vérification des extensions sur tous les fichiers (y compris binaires/non-code rattachés au `README.md` via `RULE_FORBIDDEN_EXTENSION`) et alerte de budget `RULE_MAX_FILES` en cas de dépassement de `max_files_per_folder`.
+  - Prise en charge complète dans `POST /api/contracts/update`, `/api/git/status` (`ears_violation`), les filtres cockpit, `ACTIVE_TARGET.md`, le handshake XML IA et l'UI WebGL (`graphState.svelte.ts`, `SynthesisHud.svelte`).
 - **🌊 Configurateur Taint Dataflow SSA Inter-Procédural Certifié & Serde Robuste (`core-graph`, `desktop-shell`, `security-linter`, `PluginsModal.svelte`, `demoPlugins.ts`)**:
   - Enrichissement exhaustif du modèle dataflow (`SourceKind`, `SinkKind` avec variantes `EnvironmentVar`, `Deserialization`, `CodeEval`, désérialiseurs Serde multi-formats string/map/tagged enum YAML).
   - Sanitizers multi-patterns (`patterns: Vec<String>`) avec support `target_cwes` (alias `neutralizes_cwes`) et matching multi-regex.

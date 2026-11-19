@@ -574,6 +574,8 @@ impl ProjectScanner {
         ];
 
         let mut candidate_files = Vec::new();
+        // Tous les fichiers non exclus (code ou non) : sert aux règles de contrat extensions / max fichiers
+        let mut contract_scope_files: Vec<String> = Vec::new();
         for entry in WalkDir::new(root_path)
             .into_iter()
             .filter_entry(|e| {
@@ -600,7 +602,7 @@ impl ProjectScanner {
             // [SÉCURITÉ V2 / SECRET GUARD] Jamais de secrets/.env/clés dans le graphe ni dans l'analyse
             if security_linter::SecretGuard::is_secret_path(&*rel) {
                 continue;
-            }
+            }            contract_scope_files.push(rel.replace('\\', "/"));
             if let Ok(meta) = entry.metadata() {
                 if meta.len() > 1_500_000 {
                     continue;
@@ -966,6 +968,66 @@ impl ProjectScanner {
         }
         graph.edges.extend(tamper_edges);
 
+        // Règles de contrat « structure » : extensions interdites (fichiers non scannés) et nombre max de fichiers par dossier.
+        // Les fichiers de code scannés reçoivent RULE_FORBIDDEN_EXTENSION directement via le linter.
+        {
+            let scanned_rel: HashSet<String> = candidate_files
+                .iter()
+                .map(|p| {
+                    p.strip_prefix(root_path)
+                        .unwrap_or(p)
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                })
+                .collect();
+            let readme_rel_of = |c: &ReadmeContract| -> String {
+                if c.folder_path == "root" || c.folder_path.is_empty() {
+                    "README.md".to_string()
+                } else {
+                    format!("{}/README.md", c.folder_path.trim_matches('/'))
+                }
+            };
+            let mut files_per_folder: HashMap<String, usize> = HashMap::new();
+            let mut structure_violations: Vec<(
+                String,
+                Option<String>,
+                Vec<security_linter::linter::LinterViolation>,
+            )> = Vec::new();
+            for rel in &contract_scope_files {
+                let name_lower = rel.rsplit('/').next().unwrap_or(rel).to_lowercase();
+                if name_lower == "readme.md" {
+                    continue;
+                }
+                let folder = folder_from_rel_path(rel);
+                let Some(contract) = find_contract_for_folder(&folder) else {
+                    continue;
+                };
+                *files_per_folder.entry(folder.clone()).or_insert(0) += 1;
+                if scanned_rel.contains(rel) {
+                    continue;
+                }
+                if let Some(mut v) = SecurityLinter::contract_extension_violation(rel, contract) {
+                    // Pas de nœud pour ce fichier : l'alerte est portée par le README du contrat.
+                    let anchor = readme_rel_of(contract);
+                    v.file_path = anchor.clone();
+                    structure_violations.push((anchor, Some(contract.folder_path.clone()), vec![v]));
+                }
+            }
+            let mut folders_sorted: Vec<(&String, &usize)> = files_per_folder.iter().collect();
+            folders_sorted.sort();
+            for (folder, count) in folders_sorted {
+                let Some(contract) = find_contract_for_folder(folder) else {
+                    continue;
+                };
+                let anchor = readme_rel_of(contract);
+                if let Some(v) =
+                    SecurityLinter::contract_max_files_violation(&anchor, folder, *count, contract)
+                {
+                    structure_violations.push((anchor, Some(contract.folder_path.clone()), vec![v]));
+                }
+            }
+            parallel_violations.extend(structure_violations);
+        }
         // Pre-index node indices by file_path and by node ID for instant O(1) lookup during violation mapping
         let mut nodes_by_file: HashMap<String, Vec<usize>> = HashMap::new();
         let mut node_idx_by_id: HashMap<String, usize> = HashMap::with_capacity(graph.nodes.len());
@@ -1010,8 +1072,12 @@ impl ProjectScanner {
                 };
 
                 // Mark file node and closest symbol node in that file (RULE_MAX_LINES is strictly file-level, never attached to a symbol)
-                let is_file_level_rule = v.rule_id == "RULE_MAX_LINES";
+                let is_file_level_rule = matches!(
+                    v.rule_id.as_str(),
+                    "RULE_MAX_LINES" | "RULE_MAX_FILES" | "RULE_FORBIDDEN_EXTENSION"
+                );
                 let is_lines_warning = v.rule_id == "RULE_MAX_LINES"
+                    || v.rule_id == "RULE_MAX_FILES"
                     || v.cve_id.contains("ARCH-BUDGET-EXCEEDED")
                     || v.cve_id.contains("CONTRACT / ARCH-BUDGET")
                     || v.cve_id == "CONTRACT_BUDGET"
@@ -5018,6 +5084,49 @@ pub fn validate_nights(n: u32) -> bool {
         assert!(!found_files.contains(&"ui.spec.ts".to_string()), "ui.spec.ts should be excluded");
         assert!(!found_files.contains(&"integration.rs".to_string()), "integration.rs should be excluded");
         assert!(!found_files.contains(&"db.rs".to_string()), "db.rs should be excluded");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_scanner_contract_structure_rules_reach_graph() {
+        let temp_dir = std::env::temp_dir().join(format!("aether_test_structure_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+        let svc = temp_dir.join("svc");
+        let _ = std::fs::create_dir_all(&svc);
+        let _ = std::fs::write(
+            svc.join("README.md"),
+            "---\nid: svc\nlayer: domain\nforbidden_functions: [\"unwrap\"]\nforbidden_extensions: [\"exe\"]\nmax_files_per_folder: 3\n---\n# Svc\n",
+        );
+        let _ = std::fs::write(svc.join("a.rs"), "pub fn run(o: Option<i32>) -> i32 {\n    o.unwrap()\n}\n");
+        let _ = std::fs::write(svc.join("b.rs"), "pub fn b() {}\n");
+        let _ = std::fs::write(svc.join("c.rs"), "pub fn c() {}\n");
+        let _ = std::fs::write(svc.join("d.rs"), "pub fn d() {}\n");
+        let _ = std::fs::write(svc.join("blob.exe"), "MZ");
+
+        let graph = ProjectScanner::default().scan_project(&temp_dir);
+        let rules_of = |file: &str| -> Vec<String> {
+            graph
+                .nodes
+                .iter()
+                .filter(|n| n.file_path == file)
+                .flat_map(|n| n.metadata.cve_anomalies.iter().map(|a| a.rule_id.clone()))
+                .collect()
+        };
+
+        assert!(rules_of("svc/a.rs").contains(&"RULE_FORBIDDEN_FUNCTION".to_string()), "forbidden function must be flagged on the code node");
+        let readme_rules = rules_of("svc/README.md");
+        assert!(readme_rules.contains(&"RULE_FORBIDDEN_EXTENSION".to_string()), "non-scanned .exe must be reported on the contract README: {:?}", readme_rules);
+        assert!(readme_rules.contains(&"RULE_MAX_FILES".to_string()), "too many files must be reported on the contract README: {:?}", readme_rules);
+        assert!(!rules_of("svc/b.rs").iter().any(|r| r.starts_with("RULE_FORBIDDEN_") || r == "RULE_MAX_FILES"));
+
+        let a_node = graph.nodes.iter().find(|n| n.file_path == "svc/a.rs" && n.is_file).unwrap();
+        assert!(a_node.has_security_violation, "forbidden function is a blocking violation");
+        let readme_node = graph.nodes.iter().find(|n| n.file_path == "svc/README.md" && n.is_file).unwrap();
+        assert!(readme_node.has_security_violation, "forbidden extension marks the README as violated");
+        assert!(
+            graph.edges.iter().any(|e| e.violation_details.as_deref().is_some_and(|d| d.contains("RULE_MAX_FILES"))),
+            "a warning edge must exist for RULE_MAX_FILES"
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

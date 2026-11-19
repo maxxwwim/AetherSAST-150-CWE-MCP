@@ -93,9 +93,16 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       cyclomatic_complexity: 11,
       in_degree: 4,
       out_degree: 1,
-      docstring: 'Vérificateur architectural des contrats de taille (dépassement max de lignes).',
-      methods: [{ name: 'validate_budget', signature: 'fn validate_budget(&self, path: &Path) -> Result<()>', line: 95 }],
-      attributes: [{ name: 'max_lines', type: 'u32' }],
+      docstring: 'Vérificateur architectural des contrats BLAKE3 (budget de lignes/fichiers, fonctions, imports et extensions interdits).',
+      methods: [
+        { name: 'validate_budget', signature: 'fn validate_budget(&self, path: &Path) -> Result<()>', line: 95 },
+        { name: 'verify_contract_structure', signature: 'fn verify_contract_structure(&self, contract: &ReadmeContract) -> Vec<LinterViolation>', line: 120 },
+      ],
+      attributes: [
+        { name: 'max_lines', type: 'u32' },
+        { name: 'max_files_per_folder', type: 'Option<usize>' },
+        { name: 'forbidden_functions', type: 'Vec<String>' },
+      ],
       is_orphan: false,
       anomalies: [
         {

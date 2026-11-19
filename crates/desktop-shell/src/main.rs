@@ -630,6 +630,10 @@ pub(crate) fn apply_settings_filters_to_graph(
                 !rule_str.is_empty() && !native_ids.contains(rule_str) && !allowed_set.is_empty();
             if !rule_str.is_empty()
                 && rule_str != "RULE_MAX_LINES"
+                && !matches!(
+                    rule_str,
+                    "RULE_MAX_FILES" | "RULE_FORBIDDEN_FUNCTION" | "RULE_FORBIDDEN_EXTENSION"
+                )
                 && !allowed_set.contains(rule_str)
                 && !exempt_blake3
                 && !is_custom_plugin_rule

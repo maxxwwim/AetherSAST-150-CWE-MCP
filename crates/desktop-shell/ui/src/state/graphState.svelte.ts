@@ -19,13 +19,22 @@ export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): bo
   const cve = String(a.cve_id || a.cwe_class || '').toUpperCase();
   const msg = String(a.message || a.description || a.title || '').toUpperCase();
   const sev = String(a.severity || '').toUpperCase();
-  // RULE_FORBIDDEN_IMPORT (CWE-1075 / ARCH-CONTRACT-VIOLATION) is a real architecture/security violation, NOT a line-budget warning
-  if (rule === 'RULE_FORBIDDEN_IMPORT' || rule.includes('FORBIDDEN_IMPORT') || cve.includes('ARCH-CONTRACT-VIOLATION')) {
+  // RULE_FORBIDDEN_* (CWE-1075 / ARCH-CONTRACT-VIOLATION) and BLAKE3_TAMPERED are real architecture/security violations, NOT budget warnings
+  if (
+    rule === 'RULE_FORBIDDEN_IMPORT' ||
+    rule.startsWith('RULE_FORBIDDEN_') ||
+    rule.includes('FORBIDDEN_') ||
+    rule === 'BLAKE3_TAMPERED' ||
+    cve.includes('ARCH-CONTRACT-VIOLATION') ||
+    cve.includes('BLAKE3-INTEGRITY')
+  ) {
     return false;
   }
   return (
     rule === 'RULE_MAX_LINES' ||
+    rule === 'RULE_MAX_FILES' ||
     rule.includes('MAX_LINES') ||
+    rule.includes('MAX_FILES') ||
     rule.includes('LINE_LIMIT') ||
     rule.includes('LINE_BUDGET') ||
     cve.includes('ARCH-BUDGET') ||
@@ -33,10 +42,14 @@ export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): bo
     cve.includes('CONTRACT / ARCH-BUDGET') ||
     cve === 'CONTRACT_BUDGET' ||
     msg.includes('RULE_MAX_LINES') ||
+    msg.includes('RULE_MAX_FILES') ||
     msg.includes('MAXIMUM LINE LIMIT') ||
+    msg.includes('MAXIMUM FILE LIMIT') ||
     msg.includes('EXCEEDS CONTRACT MAXIMUM LINE') ||
+    msg.includes('EXCEEDS CONTRACT MAXIMUM FILE') ||
     msg.includes('BUDGET DE LIGNES') ||
     msg.includes('BUDGET LIGNES') ||
+    msg.includes('BUDGET FICHIERS') ||
     (sev === 'WARNING' &&
       (rule.includes('LINE') ||
         cve.includes('BUDGET') ||
@@ -109,11 +122,17 @@ export function getNodeAlertKind(
     for (const v of strViolations) {
       const up = String(v || '').toUpperCase();
       if (
-        up.includes('RULE_MAX_LINES') ||
-        up.includes('ARCH-BUDGET-EXCEEDED') ||
-        up.includes('MAXIMUM LINE LIMIT') ||
-        up.includes('BUDGET LIGNES') ||
-        up.includes('EXCEEDS CONTRACT MAXIMUM LINE')
+        !up.includes('RULE_FORBIDDEN_') &&
+        !up.includes('BLAKE3_TAMPERED') &&
+        (up.includes('RULE_MAX_LINES') ||
+          up.includes('RULE_MAX_FILES') ||
+          up.includes('ARCH-BUDGET-EXCEEDED') ||
+          up.includes('MAXIMUM LINE LIMIT') ||
+          up.includes('MAXIMUM FILE LIMIT') ||
+          up.includes('BUDGET LIGNES') ||
+          up.includes('BUDGET FICHIERS') ||
+          up.includes('EXCEEDS CONTRACT MAXIMUM LINE') ||
+          up.includes('EXCEEDS CONTRACT MAXIMUM FILE'))
       ) {
         hasLines = true;
       } else {
@@ -1523,7 +1542,9 @@ export class CockpitState {
             ...a,
             cve_id: isMax ? 'CONTRACT / ARCH-BUDGET-EXCEEDED' : a.cve_id || a.cwe_class || 'CWE',
             cwe_class: isMax ? 'CONTRACT_BUDGET' : a.cwe_class || a.cve_id || 'CWE',
-            title: isMax ? 'Dépassement Budget Lignes' : a.title || a.rule_id || a.cve_id || 'Security Alert',
+            title: isMax
+              ? (String(a.rule_id || '').toUpperCase() === 'RULE_MAX_FILES' ? 'Dépassement Budget Fichiers' : 'Dépassement Budget Lignes')
+              : a.title || a.rule_id || a.cve_id || 'Security Alert',
             description: a.description || a.message || '',
           };
         });
@@ -1553,31 +1574,42 @@ export class CockpitState {
             parsedRule === 'RULE_FORBIDDEN_IMPORT' ||
             msg.includes('RULE_FORBIDDEN_IMPORT') ||
             msg.includes('Forbidden import');
+          const isContractRule =
+            isForbiddenImport ||
+            parsedRule.startsWith('RULE_FORBIDDEN_') ||
+            msg.includes('RULE_FORBIDDEN_');
+          const isMaxFiles = parsedRule === 'RULE_MAX_FILES' || msg.includes('RULE_MAX_FILES');
           const isMaxLines =
-            !isForbiddenImport &&
+            !isContractRule &&
+            !isMaxFiles &&
             (parsedRule === 'RULE_MAX_LINES' ||
               msg.includes('RULE_MAX_LINES') ||
               msg.includes('ARCH-BUDGET-EXCEEDED') ||
               msg.includes('maximum line limit') ||
               msg.includes('BUDGET LIGNES'));
-          const effectiveRule = parsedRule || (isMaxLines ? 'RULE_MAX_LINES' : 'SAST-VIOLATION');
-          const effectiveCve = isMaxLines
+          const isBudgetWarn = isMaxLines || isMaxFiles;
+          const effectiveRule = parsedRule || (isMaxFiles ? 'RULE_MAX_FILES' : isMaxLines ? 'RULE_MAX_LINES' : 'SAST-VIOLATION');
+          const effectiveCve = isBudgetWarn
             ? 'CONTRACT / ARCH-BUDGET-EXCEEDED'
-            : isForbiddenImport
+            : isContractRule
               ? (parsedCve || 'CWE-1075')
               : (parsedCve || parsedRule || 'CWE-SAST');
-          const effectiveSev = isMaxLines ? 'WARNING' : (parsedSev || 'HIGH');
+          const effectiveSev = isBudgetWarn ? 'WARNING' : (parsedSev || 'HIGH');
           return {
             rule_id: effectiveRule,
             cve_id: effectiveCve,
-            cwe_class: isMaxLines ? 'CONTRACT_BUDGET' : effectiveCve,
+            cwe_class: isBudgetWarn ? 'CONTRACT_BUDGET' : effectiveCve,
             severity: effectiveSev,
-            title: isMaxLines ? 'Dépassement Budget Lignes' : effectiveRule,
+            title: isMaxFiles ? 'Dépassement Budget Fichiers' : isMaxLines ? 'Dépassement Budget Lignes' : effectiveRule,
             description: msg,
             message: msg,
-            remediation: isMaxLines
-              ? 'Découper le fichier ou ajuster la limite max_lines dans le contrat BLAKE3.'
-              : 'Inspecter la source et sceller les entrées/sorties.',
+            remediation: isMaxFiles
+              ? 'Scinder le dossier ou ajuster max_files_per_folder dans le contrat BLAKE3.'
+              : isMaxLines
+                ? 'Découper le fichier ou ajuster la limite max_lines dans le contrat BLAKE3.'
+                : isContractRule
+                  ? 'Corriger la violation du contrat du dossier (README.md) ou ajuster ses règles puis re-signer le contrat.'
+                  : 'Inspecter la source et sceller les entrées/sorties.',
             file_path: rawNode.file_path,
             line_number: parsedLine,
           };

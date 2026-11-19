@@ -25,8 +25,75 @@ pub struct ReadmeFrontmatter {
     pub allowed_imports: Vec<String>,
     #[serde(default)]
     pub forbidden_imports: Vec<String>,
+    /// Fonctions / macros dont l'appel est interdit dans le dossier (ex: `eval`, `unwrap`, `println!`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forbidden_functions: Vec<String>,
+    /// Liste blanche d'extensions de fichiers (ex: `rs`, `toml`). Vide = tout est autorisé.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_extensions: Vec<String>,
+    /// Liste noire d'extensions de fichiers (ex: `exe`, `js`, `d.ts`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forbidden_extensions: Vec<String>,
+    /// Nombre maximal de fichiers directement présents dans un dossier couvert par ce contrat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_files_per_folder: Option<usize>,
     #[serde(default)]
     pub security_rules: SecurityRules,
+}
+
+/// Normalise une extension déclarée dans un contrat : `.EXE`, `*.exe` et `exe` → `exe`.
+fn normalize_extension(raw: &str) -> String {
+    raw.trim()
+        .trim_start_matches('*')
+        .trim_start_matches('.')
+        .to_lowercase()
+}
+
+/// Vrai si `line` contient un appel à la fonction (ou macro `nom!`) `pattern`, hors déclaration
+/// (`fn nom(`, `def nom(`, `function nom(`) et hors identifiant plus long (`retrieval(` ≠ `eval(`).
+pub fn line_calls_function(line: &str, pattern: &str) -> bool {
+    let name = pattern.trim().trim_end_matches("()");
+    let is_macro = name.ends_with('!');
+    let core = name.trim_end_matches('!');
+    if core.is_empty() {
+        return false;
+    }
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let bytes = line.as_bytes();
+    let mut start = 0usize;
+    while let Some(pos) = line[start..].find(core) {
+        let abs = start + pos;
+        let end = abs + core.len();
+        let before_ok = abs == 0 || !is_ident(bytes[abs - 1]);
+        let rest = line[end..].trim_start();
+        let after_ok = if is_macro {
+            rest.starts_with('!')
+        } else {
+            rest.starts_with('(')
+        };
+        if before_ok && after_ok {
+            let prefix = line[..abs].trim_end();
+            let is_declaration = ["fn", "def", "function"].iter().any(|kw| {
+                prefix.ends_with(kw)
+                    && (prefix.len() == kw.len()
+                        || !is_ident(prefix.as_bytes()[prefix.len() - kw.len() - 1]))
+            });
+            if !is_declaration {
+                return true;
+            }
+        }
+        start = end;
+    }
+    false
+}
+
+/// Mise à jour optionnelle des règles « structure » d'un contrat (`None` = champ inchangé).
+#[derive(Debug, Clone, Default)]
+pub struct ContractStructureUpdate {
+    pub forbidden_functions: Option<Vec<String>>,
+    pub allowed_extensions: Option<Vec<String>>,
+    pub forbidden_extensions: Option<Vec<String>>,
+    pub max_files_per_folder: Option<usize>,
 }
 
 fn default_max_lines() -> usize {
@@ -75,6 +142,10 @@ impl ReadmeContract {
                 file_max_lines: HashMap::new(),
                 allowed_imports: Vec::new(),
                 forbidden_imports: Vec::new(),
+                forbidden_functions: Vec::new(),
+                allowed_extensions: Vec::new(),
+                forbidden_extensions: Vec::new(),
+                max_files_per_folder: None,
                 security_rules: SecurityRules::default(),
             }
         };
@@ -125,6 +196,59 @@ impl ReadmeContract {
     /// Vérifie si le hash BLAKE3 correspond au lockfile
     pub fn verify_lock(&self, expected_hash: &str) -> bool {
         self.blake3_hash == expected_hash
+    }
+
+    /// Vérifie l'extension d'un fichier vis-à-vis de `forbidden_extensions` / `allowed_extensions`.
+    /// Retourne `Some(raison)` si le fichier viole le contrat. Le `README.md` du contrat est toujours exempté.
+    pub fn extension_violation(&self, file_path: &str) -> Option<String> {
+        let name = file_path
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(file_path)
+            .to_lowercase();
+        if name == "readme.md" {
+            return None;
+        }
+        let matches_ext = |ext: &String| {
+            let norm = normalize_extension(ext);
+            !norm.is_empty() && name.ends_with(&format!(".{}", norm))
+        };
+        if let Some(bad) = self
+            .frontmatter
+            .forbidden_extensions
+            .iter()
+            .find(|e| matches_ext(e))
+        {
+            return Some(format!(
+                "extension '.{}' is forbidden by folder contract",
+                normalize_extension(bad)
+            ));
+        }
+        let allowed = &self.frontmatter.allowed_extensions;
+        let has_extension = name
+            .rfind('.')
+            .map(|idx| idx > 0 && idx + 1 < name.len())
+            .unwrap_or(false);
+        if !allowed.is_empty() && has_extension && !allowed.iter().any(matches_ext) {
+            let list = allowed
+                .iter()
+                .map(|e| format!(".{}", normalize_extension(e)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Some(format!(
+                "extension of '{}' is not in the allowed list ({})",
+                name, list
+            ));
+        }
+        None
+    }
+
+    /// Retourne la première fonction interdite appelée sur cette ligne, si elle existe.
+    pub fn forbidden_function_on_line<'a>(&'a self, line: &str) -> Option<&'a String> {
+        self.frontmatter
+            .forbidden_functions
+            .iter()
+            .find(|pat| line_calls_function(line, pat))
     }
 
     /// Retourne la limite de lignes spécifique au fichier si définie dans `file_max_lines`
@@ -197,6 +321,27 @@ impl ReadmeContract {
         allowed_imports: Option<Vec<String>>,
         forbidden_imports: Option<Vec<String>>,
     ) -> String {
+        Self::upsert_contract_content_with_structure(
+            existing_content,
+            folder_path,
+            folder_max_lines,
+            file_override,
+            allowed_imports,
+            forbidden_imports,
+            &ContractStructureUpdate::default(),
+        )
+    }
+
+    /// Variante complète : met aussi à jour fonctions interdites, extensions et limite de fichiers.
+    pub fn upsert_contract_content_with_structure(
+        existing_content: Option<&str>,
+        folder_path: &str,
+        folder_max_lines: Option<usize>,
+        file_override: Option<(&str, Option<usize>)>,
+        allowed_imports: Option<Vec<String>>,
+        forbidden_imports: Option<Vec<String>>,
+        structure: &ContractStructureUpdate,
+    ) -> String {
         let clean_folder = if folder_path.is_empty() || folder_path == "." {
             "root"
         } else {
@@ -210,6 +355,10 @@ impl ReadmeContract {
             file_max_lines: HashMap::new(),
             allowed_imports: Vec::new(),
             forbidden_imports: Vec::new(),
+            forbidden_functions: Vec::new(),
+            allowed_extensions: Vec::new(),
+            forbidden_extensions: Vec::new(),
+            max_files_per_folder: None,
             security_rules: SecurityRules::default(),
         };
 
@@ -268,6 +417,19 @@ impl ReadmeContract {
         if let Some(forbidden) = forbidden_imports {
             frontmatter.forbidden_imports = forbidden;
         }
+        if let Some(funcs) = &structure.forbidden_functions {
+            frontmatter.forbidden_functions = funcs.clone();
+        }
+        if let Some(exts) = &structure.allowed_extensions {
+            frontmatter.allowed_extensions = exts.clone();
+        }
+        if let Some(exts) = &structure.forbidden_extensions {
+            frontmatter.forbidden_extensions = exts.clone();
+        }
+        if let Some(max_files) = structure.max_files_per_folder {
+            // 0 = supprimer la limite
+            frontmatter.max_files_per_folder = if max_files == 0 { None } else { Some(max_files) };
+        }
 
         let yaml = serde_yaml::to_string(&frontmatter).unwrap_or_else(|_| {
             format!(
@@ -320,5 +482,52 @@ mod tests {
         let parsed2 = ReadmeContract::parse("crates/core-graph", &cleared).unwrap();
         assert_eq!(parsed2.effective_max_lines("crates/core-graph/src/bubble.rs"), 350);
         assert_ne!(parsed.blake3_hash, parsed2.blake3_hash);
+    }
+
+    #[test]
+    fn test_line_calls_function_boundaries() {
+        assert!(line_calls_function("let x = eval(input);", "eval"));
+        assert!(line_calls_function("window.eval (code)", "eval"));
+        assert!(line_calls_function("opt.unwrap();", "unwrap"));
+        assert!(line_calls_function("println!(\"x\");", "println!"));
+        assert!(!line_calls_function("let y = retrieval(a);", "eval"));
+        assert!(!line_calls_function("eprintln!(\"x\");", "println!"));
+        assert!(!line_calls_function("fn eval(x: i32) {}", "eval"));
+        assert!(!line_calls_function("def eval(x):", "eval"));
+        assert!(!line_calls_function("let eval = 3;", "eval"));
+    }
+
+    #[test]
+    fn test_contract_structure_rules_roundtrip() {
+        let content = "---\nid: svc\nlayer: domain\nforbidden_functions: [\"eval\", \"unwrap\"]\nallowed_extensions: [\"rs\", \".toml\"]\nforbidden_extensions: [\"exe\", \"d.ts\"]\nmax_files_per_folder: 3\n---\n# Svc\n";
+        let c = ReadmeContract::parse("svc", content).unwrap();
+        assert_eq!(c.frontmatter.max_files_per_folder, Some(3));
+        assert!(c.forbidden_function_on_line("x.unwrap();").is_some());
+        assert!(c.forbidden_function_on_line("x.unwrap_or(1);").is_none());
+        assert!(c.extension_violation("svc/run.exe").is_some());
+        assert!(c.extension_violation("svc/types.d.ts").is_some());
+        assert!(c.extension_violation("svc/main.rs").is_none());
+        assert!(c.extension_violation("svc/Cargo.TOML").is_none());
+        assert!(c.extension_violation("svc/app.py").is_some(), "not in allowed list");
+        assert!(c.extension_violation("svc/LICENSE").is_none(), "no extension => ignored");
+        assert!(c.extension_violation("svc/README.md").is_none(), "contract itself is exempt");
+
+        let updated = ReadmeContract::upsert_contract_content_with_structure(
+            Some(content),
+            "svc",
+            None,
+            None,
+            None,
+            None,
+            &ContractStructureUpdate {
+                forbidden_functions: Some(vec!["dbg!".to_string()]),
+                max_files_per_folder: Some(0),
+                ..Default::default()
+            },
+        );
+        let c2 = ReadmeContract::parse("svc", &updated).unwrap();
+        assert_eq!(c2.frontmatter.forbidden_functions, vec!["dbg!".to_string()]);
+        assert_eq!(c2.frontmatter.max_files_per_folder, None);
+        assert_eq!(c2.frontmatter.forbidden_extensions.len(), 2, "untouched fields preserved");
     }
 }

@@ -440,6 +440,15 @@ pub struct UpdateContractRequest {
     pub allowed_imports: Option<Vec<String>>,
     #[serde(default)]
     pub forbidden_imports: Option<Vec<String>>,
+    #[serde(default)]
+    pub forbidden_functions: Option<Vec<String>>,
+    #[serde(default)]
+    pub allowed_extensions: Option<Vec<String>>,
+    #[serde(default)]
+    pub forbidden_extensions: Option<Vec<String>>,
+    /// 0 = supprimer la limite de fichiers par dossier
+    #[serde(default)]
+    pub max_files_per_folder: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -1738,13 +1747,20 @@ pub fn update_contract_rules(
         }
     });
 
-    let updated_content = ReadmeContract::upsert_contract_content(
+    let structure_update = security_linter::contract::ContractStructureUpdate {
+        forbidden_functions: req.forbidden_functions.clone(),
+        allowed_extensions: req.allowed_extensions.clone(),
+        forbidden_extensions: req.forbidden_extensions.clone(),
+        max_files_per_folder: req.max_files_per_folder,
+    };
+    let updated_content = ReadmeContract::upsert_contract_content_with_structure(
         existing_content.as_deref(),
         &target_folder,
         req.max_lines_per_file,
         file_override_arg,
         req.allowed_imports.clone(),
         req.forbidden_imports.clone(),
+        &structure_update,
     );
 
     if let Some(parent) = readme_path.parent() {
@@ -2845,7 +2861,17 @@ pub fn parse_git_status_porcelain(
                     }
                 }
                 for v in &node.metadata.violations {
-                    if v.contains("RULE_MAX_LINES") || v.contains("ARCH-BUDGET-EXCEEDED") || v.contains("CONTRACT") {
+                    // Violations de contrat bloquantes (imports / fonctions / extensions interdits, BLAKE3 altéré)
+                    if v.contains("RULE_FORBIDDEN_") || v.contains("BLAKE3_TAMPERED") {
+                        ears_violation = true;
+                        has_sec = true;
+                        continue;
+                    }
+                    if v.contains("RULE_MAX_LINES")
+                        || v.contains("RULE_MAX_FILES")
+                        || v.contains("ARCH-BUDGET-EXCEEDED")
+                        || v.contains("CONTRACT")
+                    {
                         continue;
                     }
                     if v.contains("RULE_FORBIDDEN_IMPORT")

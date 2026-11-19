@@ -742,6 +742,33 @@ impl SecurityLinter {
                 default_enabled: true,
             },
             CveRuleDef {
+                rule_id: "RULE_FORBIDDEN_FUNCTION".to_string(),
+                cve_id: "CWE-1075 / ARCH-CONTRACT-VIOLATION".to_string(),
+                name: "Appel de Fonction Interdite par le Contrat de Dossier".to_string(),
+                category: "Architecture / Boundary".to_string(),
+                severity: "CRITICAL".to_string(),
+                description: "Appel d'une fonction ou macro listée dans forbidden_functions du contrat README.md du dossier.".to_string(),
+                default_enabled: true,
+            },
+            CveRuleDef {
+                rule_id: "RULE_FORBIDDEN_EXTENSION".to_string(),
+                cve_id: "CWE-1075 / ARCH-CONTRACT-VIOLATION".to_string(),
+                name: "Extension de Fichier Interdite par le Contrat de Dossier".to_string(),
+                category: "Architecture / Boundary".to_string(),
+                severity: "HIGH".to_string(),
+                description: "Fichier dont l'extension est dans forbidden_extensions ou absente d'allowed_extensions dans le contrat du dossier.".to_string(),
+                default_enabled: true,
+            },
+            CveRuleDef {
+                rule_id: "RULE_MAX_FILES".to_string(),
+                cve_id: "CONTRACT / ARCH-BUDGET-EXCEEDED".to_string(),
+                name: "Dépassement du Nombre Maximal de Fichiers par Dossier".to_string(),
+                category: "Architecture / Boundary".to_string(),
+                severity: "WARNING".to_string(),
+                description: "Le dossier contient plus de fichiers que max_files_per_folder défini dans son contrat README.md.".to_string(),
+                default_enabled: true,
+            },
+            CveRuleDef {
                 rule_id: "SAST_DIRECT_ENV_ACCESS".to_string(),
                 cve_id: "CWE-15 / DIRECT-ENV-ACCESS".to_string(),
                 name: "Accès Direct aux Variables d'Environnement".to_string(),
@@ -1056,6 +1083,9 @@ impl SecurityLinter {
         "CVE-WEB3-AUTH-BYPASS-MOCK",
         "SAST_DIRECT_ENV_ACCESS",
         "RULE_FORBIDDEN_IMPORT",
+        "RULE_FORBIDDEN_FUNCTION",
+        "RULE_FORBIDDEN_EXTENSION",
+        "RULE_MAX_FILES",
         "RULE_MAX_LINES",
         "CVE-DB-REDIS-UNAUTH-KEYS-DOS",
         "CVE-RUST-COMMAND-INJECTION-SHELL",
@@ -1209,6 +1239,51 @@ impl SecurityLinter {
         content
     }
 
+    /// Violation `RULE_FORBIDDEN_EXTENSION` pour un fichier selon le contrat de son dossier.
+    pub fn contract_extension_violation(
+        file_path: &str,
+        contract: &ReadmeContract,
+    ) -> Option<LinterViolation> {
+        let reason = contract.extension_violation(file_path)?;
+        Some(LinterViolation {
+            file_path: file_path.to_string(),
+            line_number: 1,
+            rule_id: "RULE_FORBIDDEN_EXTENSION".to_string(),
+            cve_id: "CWE-1075 / ARCH-CONTRACT-VIOLATION".to_string(),
+            severity: "HIGH".to_string(),
+            message: format!("Forbidden file extension: {} ({})", reason, file_path),
+            transmitted_data: Some(file_path.to_string()),
+            transmitted_type: Some("FileExtension (Folder Contract Violation)".to_string()),
+            remediation: "Move or rename the file, or update allowed_extensions / forbidden_extensions in the folder contract.".to_string(),
+        })
+    }
+
+    /// Violation `RULE_MAX_FILES` quand un dossier dépasse `max_files_per_folder`.
+    pub fn contract_max_files_violation(
+        anchor_path: &str,
+        folder: &str,
+        file_count: usize,
+        contract: &ReadmeContract,
+    ) -> Option<LinterViolation> {
+        let limit = contract.frontmatter.max_files_per_folder?;
+        if file_count <= limit {
+            return None;
+        }
+        Some(LinterViolation {
+            file_path: anchor_path.to_string(),
+            line_number: 1,
+            rule_id: "RULE_MAX_FILES".to_string(),
+            cve_id: "CONTRACT / ARCH-BUDGET-EXCEEDED".to_string(),
+            severity: "WARNING".to_string(),
+            message: format!(
+                "Folder '{}' exceeds contract maximum file limit ({} > {} files)",
+                folder, file_count, limit
+            ),
+            transmitted_data: Some("folder_file_count".to_string()),
+            transmitted_type: Some("Integer (Files in Folder)".to_string()),
+            remediation: "Split the folder into sub-modules or raise max_files_per_folder in the folder contract.".to_string(),
+        })
+    }
     fn audit_file_raw(
         file_path: &str,
         content: &str,
@@ -1373,6 +1448,12 @@ impl SecurityLinter {
                 }
             }
         }
+        // 1b. Règle allowed_extensions / forbidden_extensions (Architecture & Contrat BLAKE3)
+        if let Some(c) = contract {
+            if let Some(v) = Self::contract_extension_violation(file_path, c) {
+                violations.push(v);
+            }
+        }
 
         // Exécution des règles avancées DeFi & EVC (Arrondis asymétriques, Cache Stale, Hook Bypass)
         violations.extend(crate::rules::AdvancedDefiRules::audit_file(
@@ -1476,6 +1557,20 @@ impl SecurityLinter {
                             remediation: format!("Remove reference to '{}'. Pass dependencies via contracts/ abstractions.", forbidden),
                         });
                     }
+                }
+                // 2b. Règle forbidden_functions (appel de fonction / macro interdit par le contrat)
+                if let Some(forbidden_fn) = c.forbidden_function_on_line(trimmed) {
+                    violations.push(LinterViolation {
+                        file_path: file_path.to_string(),
+                        line_number: line_no,
+                        rule_id: "RULE_FORBIDDEN_FUNCTION".to_string(),
+                        cve_id: "CWE-1075 / ARCH-CONTRACT-VIOLATION".to_string(),
+                        severity: "CRITICAL".to_string(),
+                        message: format!("Forbidden function call detected: '{}' violates folder contract", forbidden_fn),
+                        transmitted_data: Some(forbidden_fn.clone()),
+                        transmitted_type: Some("FunctionCall (Forbidden by Folder Contract)".to_string()),
+                        remediation: format!("Replace the call to '{}' with an approved abstraction or update forbidden_functions in the folder contract.", forbidden_fn),
+                    });
                 }
             }
 
@@ -4008,6 +4103,10 @@ mod tests {
                 file_max_lines: std::collections::HashMap::new(),
                 allowed_imports: vec![],
                 forbidden_imports: vec!["sqlx".to_string()],
+                forbidden_functions: vec![],
+                allowed_extensions: vec![],
+                forbidden_extensions: vec![],
+                max_files_per_folder: None,
                 security_rules: SecurityRules {
                     no_raw_sql: true,
                     no_env_access: true,

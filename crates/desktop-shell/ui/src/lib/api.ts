@@ -494,6 +494,10 @@ export class AetherApiClient {
     clear_file_override?: boolean;
     allowed_imports?: string[];
     forbidden_imports?: string[];
+    forbidden_functions?: string[];
+    allowed_extensions?: string[];
+    forbidden_extensions?: string[];
+    max_files_per_folder?: number;
   }): Promise<{
     status: string;
     message: string;

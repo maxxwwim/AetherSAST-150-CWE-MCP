@@ -88,6 +88,30 @@ impl HandshakePacker {
                 xml.push_str(&format!("      <forbidden>{}</forbidden>\n", f));
             }
             xml.push_str("    </forbidden_imports>\n");
+            if !c.frontmatter.forbidden_functions.is_empty() {
+                xml.push_str("    <forbidden_functions>\n");
+                for f in &c.frontmatter.forbidden_functions {
+                    xml.push_str(&format!("      <function>{}</function>\n", f));
+                }
+                xml.push_str("    </forbidden_functions>\n");
+            }
+            if !c.frontmatter.allowed_extensions.is_empty() {
+                xml.push_str("    <allowed_extensions>\n");
+                for ext in &c.frontmatter.allowed_extensions {
+                    xml.push_str(&format!("      <ext>{}</ext>\n", ext));
+                }
+                xml.push_str("    </allowed_extensions>\n");
+            }
+            if !c.frontmatter.forbidden_extensions.is_empty() {
+                xml.push_str("    <forbidden_extensions>\n");
+                for ext in &c.frontmatter.forbidden_extensions {
+                    xml.push_str(&format!("      <ext>{}</ext>\n", ext));
+                }
+                xml.push_str("    </forbidden_extensions>\n");
+            }
+            if let Some(max_files) = c.frontmatter.max_files_per_folder {
+                xml.push_str(&format!("    <max_files_per_folder>{}</max_files_per_folder>\n", max_files));
+            }
             xml.push_str("  </contract_rules>\n");
         }
 
