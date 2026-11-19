@@ -1046,100 +1046,162 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
         .with_plugin_selection(plugin_selection),
     );
 
-    // FileWatcher background loop with debouncer quiet-window
+    // FileWatcher background loop with adaptive debouncer (100ms quiet window, 500ms max burst wait)
     let watcher_root = project_root.clone();
     let watcher_state = shared_state.clone();
 
     tokio::spawn(async move {
         if let Ok(mut watcher) = FileWatcherBridge::new(&watcher_root) {
             let mut pending_changes = std::collections::HashSet::new();
+            let mut first_change_time: Option<std::time::Instant> = None;
             let mut last_change_time: Option<std::time::Instant> = None;
-            let debounce_delay = std::time::Duration::from_millis(250);
+            let debounce_delay = std::time::Duration::from_millis(100);
+            let max_batch_delay = std::time::Duration::from_millis(500);
 
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
                 let current_root = watcher_state.project_root.read().await.clone();
                 if current_root != watcher.project_root {
                     let _ = watcher.switch_root(&current_root);
                     pending_changes.clear();
+                    first_change_time = None;
                     last_change_time = None;
                 }
 
                 let changed = watcher.poll_changed_files();
                 if !changed.is_empty() {
+                    let now = std::time::Instant::now();
+                    if first_change_time.is_none() {
+                        first_change_time = Some(now);
+                    }
                     for file in changed {
                         pending_changes.insert(file);
                     }
-                    last_change_time = Some(std::time::Instant::now());
+                    last_change_time = Some(now);
                 }
 
-                // Trigger re-scan only when quiet window (250ms) has elapsed
-                if let Some(t) = last_change_time {
-                    if t.elapsed() >= debounce_delay && !pending_changes.is_empty() {
-                        let files_to_process = std::mem::take(&mut pending_changes);
-                        last_change_time = None;
+                // Trigger re-scan when quiet window (100ms) has elapsed OR max burst window (500ms) reached
+                let should_trigger = !pending_changes.is_empty()
+                    && (last_change_time.is_some_and(|t| t.elapsed() >= debounce_delay)
+                        || first_change_time.is_some_and(|t| t.elapsed() >= max_batch_delay));
 
-                        let current_mode = watcher_state.get_active_view_mode().await;
-                        let is_visual_plugin_file = |p: &std::path::Path| -> bool {
-                            let s = p.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
-                            s.contains(".aether/plugins/visuals/")
-                                || p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("glsl"))
-                        };
-                        let has_visual_changes = files_to_process.iter().any(|p| is_visual_plugin_file(p));
-                        if has_visual_changes {
-                            watcher_state
-                                .visual_plugins_version
-                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        }
-                        let has_md_changes = files_to_process.iter().any(|p| p.extension().is_some_and(|ext| ext == "md"));
-                        let has_code_changes = files_to_process
-                            .iter()
-                            .any(|p| !is_visual_plugin_file(p) && p.extension().is_some_and(|ext| ext != "md"));
-                        if has_visual_changes && !has_md_changes && !has_code_changes {
-                            continue;
-                        }
+                if should_trigger {
+                    let files_to_process = std::mem::take(&mut pending_changes);
+                    first_change_time = None;
+                    last_change_time = None;
 
-                        // Refresh vault graph if md changed or in vault mode
-                        if has_md_changes || current_mode == "vault" {
-                            let scan_root = current_root.clone();
-                            if let Ok(Ok(v_graph)) = tokio::task::spawn_blocking(move || {
-                                obsidian_vault::scan_obsidian_vault(&scan_root)
-                            }).await {
-                                *watcher_state.vault_graph.write().await = Some(v_graph.clone());
-                                if current_mode == "vault" {
-                                    *watcher_state.graph.write().await = v_graph;
-                                    watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                                }
-                            }
-                        }
+                    // Invalidate cached git status so subsequent git diff queries see disk changes immediately
+                    if let Ok(mut git_guard) = watcher_state.git_raw_cache.lock() {
+                        *git_guard = None;
+                    }
 
-                        // Refresh code graph if code changed or in code/ide mode
-                        if has_code_changes || current_mode == "code" || current_mode == "ide" {
-                            let custom_excl = watcher_state.custom_exclusions.read().await.clone();
-                            let active_rules = watcher_state.active_cve_rules.read().await.clone();
-                            let ignored_cwes = watcher_state.ignored_cwes.read().await.clone();
-                            let scan_root = current_root.clone();
-                            let sel = watcher_state.plugin_selection.clone();
-                            if let Ok(mut updated_graph) = tokio::task::spawn_blocking(move || {
-                                let scanner = ProjectScanner::default().with_plugin_selection(sel);
-                                scanner.scan_project_with_exclusions(&scan_root, &custom_excl)
-                            }).await {
-                                apply_settings_filters_to_graph(
-                                    &mut updated_graph,
-                                    active_rules.as_deref(),
-                                    &ignored_cwes,
-                                );
-                                let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
-                                let _ = AuditWriter::write_live_audit(&current_root, &violations, file_count);
-                                *watcher_state.code_graph.write().await = Some(updated_graph.clone());
-                                if current_mode == "code" || current_mode == "ide" {
-                                    *watcher_state.graph.write().await = updated_graph;
-                                    *watcher_state.ui_graph_cache.write().await = None;
-                                    watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                                }
+                    let rel_changed_files: Vec<String> = files_to_process
+                        .iter()
+                        .map(|p| {
+                            p.strip_prefix(&current_root)
+                                .unwrap_or(p)
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                        })
+                        .filter(|s| !s.is_empty())
+                        .collect();
+
+                    let current_mode = watcher_state.get_active_view_mode().await;
+                    let is_vault_mode = current_mode == "vault" || current_mode == "vault-notes";
+                    let is_visual_plugin_file = |p: &std::path::Path| -> bool {
+                        let s = p.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+                        s.contains(".aether/plugins/visuals/")
+                            || p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("glsl"))
+                    };
+                    let has_visual_changes = files_to_process.iter().any(|p| is_visual_plugin_file(p));
+                    if has_visual_changes {
+                        watcher_state
+                            .visual_plugins_version
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+
+                    let has_dir_changes = files_to_process
+                        .iter()
+                        .any(|p| p.extension().is_none() || p.is_dir());
+                    let has_readme_changes = files_to_process.iter().any(|p| {
+                        p.file_name()
+                            .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("readme.md"))
+                    });
+                    let has_md_changes = has_dir_changes
+                        || files_to_process.iter().any(|p| {
+                            p.extension().is_some_and(|ext| {
+                                ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("mdx")
+                            })
+                        });
+                    let has_code_changes = has_dir_changes
+                        || has_readme_changes
+                        || files_to_process.iter().any(|p| {
+                            !is_visual_plugin_file(p)
+                                && p.extension().is_some_and(|ext| {
+                                    !ext.eq_ignore_ascii_case("md") && !ext.eq_ignore_ascii_case("mdx")
+                                })
+                        });
+
+                    *watcher_state.last_changed_files.write().await = rel_changed_files.clone();
+
+                    if has_visual_changes && !has_md_changes && !has_code_changes {
+                        watcher_state.notify_graph_change(rel_changed_files, "visual");
+                        continue;
+                    }
+
+                    let p_type = *watcher_state.project_type.read().await;
+
+                    // Refresh vault graph if md changed in a vault/mixed project or in vault mode
+                    if (has_md_changes && (p_type.is_vault() || p_type.is_mixed())) || is_vault_mode {
+                        let scan_root = current_root.clone();
+                        if let Ok(Ok(v_graph)) = tokio::task::spawn_blocking(move || {
+                            obsidian_vault::scan_obsidian_vault(&scan_root)
+                        })
+                        .await
+                        {
+                            *watcher_state.vault_graph.write().await = Some(v_graph.clone());
+                            if is_vault_mode {
+                                *watcher_state.graph.write().await = v_graph;
+                                *watcher_state.ui_graph_cache.write().await = None;
+                                watcher_state
+                                    .graph_version
+                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             }
                         }
                     }
+
+                    // Refresh code graph if code/README/folder changed
+                    if has_code_changes {
+                        let custom_excl = watcher_state.custom_exclusions.read().await.clone();
+                        let active_rules = watcher_state.active_cve_rules.read().await.clone();
+                        let ignored_cwes = watcher_state.ignored_cwes.read().await.clone();
+                        let scan_root = current_root.clone();
+                        let sel = watcher_state.plugin_selection.clone();
+                        if let Ok(mut updated_graph) = tokio::task::spawn_blocking(move || {
+                            let scanner = ProjectScanner::default().with_plugin_selection(sel);
+                            scanner.scan_project_with_exclusions(&scan_root, &custom_excl)
+                        })
+                        .await
+                        {
+                            apply_settings_filters_to_graph(
+                                &mut updated_graph,
+                                active_rules.as_deref(),
+                                &ignored_cwes,
+                            );
+                            let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
+                            let _ = AuditWriter::write_live_audit(&current_root, &violations, file_count);
+                            *watcher_state.code_graph.write().await = Some(updated_graph.clone());
+                            if !is_vault_mode {
+                                *watcher_state.graph.write().await = updated_graph;
+                                *watcher_state.ui_graph_cache.write().await = None;
+                                watcher_state
+                                    .graph_version
+                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            }
+                        }
+                    }
+
+                    watcher_state.notify_graph_change(rel_changed_files, "watcher");
                 }
             }
         }
@@ -1148,6 +1210,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
     let state_viewer = shared_state.clone();
     let state_graph = shared_state.clone();
     let state_graph_version = shared_state.clone();
+    let state_graph_events = shared_state.clone();
     let state_projects = shared_state.clone();
     let state_analyze = shared_state.clone();
     let state_analyze_get = shared_state.clone();
@@ -1576,7 +1639,101 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 async move {
                     let v = state.graph_version.load(std::sync::atomic::Ordering::SeqCst);
                     let vv = state.visual_plugins_version.load(std::sync::atomic::Ordering::SeqCst);
-                    axum::Json(serde_json::json!({ "version": v, "visual_version": vv }))
+                    let fv = state.fs_version.load(std::sync::atomic::Ordering::SeqCst);
+                    let changed = state.last_changed_files.read().await.clone();
+                    axum::Json(serde_json::json!({
+                        "version": v,
+                        "visual_version": vv,
+                        "fs_version": fv,
+                        "changed_files": changed
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/api/graph/events",
+            axum::routing::get({
+                let state = state_graph_events.clone();
+                move || {
+                    let state = state.clone();
+                    async move {
+                        use axum::response::sse::{Event, KeepAlive, Sse};
+                        let rx = state.event_tx.subscribe();
+                        let initial_event = api_routes::GraphWatchEvent {
+                            version: state.graph_version.load(std::sync::atomic::Ordering::SeqCst),
+                            visual_version: state
+                                .visual_plugins_version
+                                .load(std::sync::atomic::Ordering::SeqCst),
+                            fs_version: state.fs_version.load(std::sync::atomic::Ordering::SeqCst),
+                            changed_files: Vec::new(),
+                            kind: "sync".to_string(),
+                        };
+                        let stream = futures_util::stream::unfold(
+                            (rx, state, Some(initial_event)),
+                            |(mut rx, state, pending_init)| async move {
+                                if let Some(init_ev) = pending_init {
+                                    let data = serde_json::to_string(&init_ev).unwrap_or_default();
+                                    return Some((
+                                        Ok::<Event, std::convert::Infallible>(
+                                            Event::default().data(data),
+                                        ),
+                                        (rx, state, None),
+                                    ));
+                                }
+                                loop {
+                                    match rx.recv().await {
+                                        Ok(ev) => {
+                                            let data =
+                                                serde_json::to_string(&ev).unwrap_or_default();
+                                            return Some((
+                                                Ok::<Event, std::convert::Infallible>(
+                                                    Event::default().data(data),
+                                                ),
+                                                (rx, state, None),
+                                            ));
+                                        }
+                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(
+                                            _,
+                                        )) => {
+                                            let sync_ev = api_routes::GraphWatchEvent {
+                                                version: state
+                                                    .graph_version
+                                                    .load(std::sync::atomic::Ordering::SeqCst),
+                                                visual_version: state
+                                                    .visual_plugins_version
+                                                    .load(std::sync::atomic::Ordering::SeqCst),
+                                                fs_version: state
+                                                    .fs_version
+                                                    .load(std::sync::atomic::Ordering::SeqCst),
+                                                changed_files: state
+                                                    .last_changed_files
+                                                    .read()
+                                                    .await
+                                                    .clone(),
+                                                kind: "lag_resync".to_string(),
+                                            };
+                                            let data = serde_json::to_string(&sync_ev)
+                                                .unwrap_or_default();
+                                            return Some((
+                                                Ok::<Event, std::convert::Infallible>(
+                                                    Event::default().data(data),
+                                                ),
+                                                (rx, state, None),
+                                            ));
+                                        }
+                                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                            return None;
+                                        }
+                                    }
+                                }
+                            },
+                        );
+                        Sse::new(stream).keep_alive(
+                            KeepAlive::new()
+                                .interval(std::time::Duration::from_secs(15))
+                                .text("keep-alive"),
+                        )
+                    }
                 }
             }),
         )

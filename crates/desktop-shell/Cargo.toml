@@ -27,6 +27,7 @@ serde_yaml.workspace = true
 chrono.workspace = true
 tokio.workspace = true
 axum.workspace = true
+futures-util = "0.3"
 clap.workspace = true
 colored.workspace = true
 webbrowser.workspace = true

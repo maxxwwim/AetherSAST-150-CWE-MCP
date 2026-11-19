@@ -869,6 +869,15 @@ impl std::fmt::Display for ViewModeError {
 
 impl std::error::Error for ViewModeError {}
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GraphWatchEvent {
+    pub version: u64,
+    pub visual_version: u64,
+    pub fs_version: u64,
+    pub changed_files: Vec<String>,
+    pub kind: String,
+}
+
 pub struct AppState {
     pub graph: RwLock<AetherGraph>,
     pub project_root: RwLock<PathBuf>,
@@ -877,6 +886,9 @@ pub struct AppState {
     pub telemetry_history: RwLock<Vec<AiTelemetryEvent>>,
     pub chat_messages: RwLock<Vec<AiChatMessage>>,
     pub graph_version: std::sync::atomic::AtomicU64,
+    pub fs_version: std::sync::atomic::AtomicU64,
+    pub last_changed_files: RwLock<Vec<String>>,
+    pub event_tx: tokio::sync::broadcast::Sender<GraphWatchEvent>,
     pub custom_exclusions: RwLock<Vec<String>>,
     pub active_cve_rules: RwLock<Option<Vec<String>>>,
     pub ignored_cwes: RwLock<Vec<String>>,
@@ -937,6 +949,7 @@ impl AppState {
             let key = ag.agent_id.clone().unwrap_or_else(|| "primary-agent".to_string());
             initial_agents.insert(key, ag);
         }
+        let (event_tx, _) = tokio::sync::broadcast::channel(128);
         Self {
             graph: RwLock::new(graph),
             project_root: RwLock::new(project_root),
@@ -945,6 +958,9 @@ impl AppState {
             telemetry_history: RwLock::new(cached.history),
             chat_messages: RwLock::new(Vec::new()),
             graph_version: std::sync::atomic::AtomicU64::new(1),
+            fs_version: std::sync::atomic::AtomicU64::new(1),
+            last_changed_files: RwLock::new(Vec::new()),
+            event_tx,
             custom_exclusions: RwLock::new(custom_exclusions),
             active_cve_rules: RwLock::new(active_cve_rules),
             ignored_cwes: RwLock::new(ignored_cwes),
@@ -967,6 +983,19 @@ impl AppState {
             file_save_lock: tokio::sync::Mutex::new(()),
             plugin_selection: security_linter::PluginSelection::Default,
         }
+    }
+
+    pub fn notify_graph_change(&self, changed_files: Vec<String>, kind: &str) {
+        let v = self.graph_version.load(std::sync::atomic::Ordering::SeqCst);
+        let vv = self.visual_plugins_version.load(std::sync::atomic::Ordering::SeqCst);
+        let fv = self.fs_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let _ = self.event_tx.send(GraphWatchEvent {
+            version: v,
+            visual_version: vv,
+            fs_version: fv,
+            changed_files,
+            kind: kind.to_string(),
+        });
     }
 
     pub fn with_plugin_selection(mut self, selection: security_linter::PluginSelection) -> Self {
@@ -1263,7 +1292,9 @@ impl AppState {
             let mut graph_guard = self.graph.write().await;
             *graph_guard = target_graph.clone();
         }
+        *self.ui_graph_cache.write().await = None;
         self.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.notify_graph_change(Vec::new(), "switch_view");
 
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1425,6 +1456,8 @@ pub fn list_project_files(project_root: &Path) -> Vec<FileTreeItem> {
                 || name == "dist"
                 || name == ".aether"
                 || name == ".gemini"
+                || name.contains("WebView2")
+                || (name.starts_with('.') && name.contains(".tmp."))
             {
                 return false;
             }

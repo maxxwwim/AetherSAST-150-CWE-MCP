@@ -201,6 +201,9 @@
         ]);
         if (verRes.status === 'fulfilled' && typeof verRes.value?.version === 'number') {
           cockpitState.graphVersion = verRes.value.version;
+          if (typeof verRes.value?.fs_version === 'number') {
+            cockpitState.fsVersion = verRes.value.fs_version;
+          }
           cockpitState.liveConnected = true;
         }
         if (statusRes.status === 'fulfilled' && statusRes.value) {
@@ -243,7 +246,108 @@
       }
     })();
 
-    // Live graph version watcher, Git diff, tasks & AI agent telemetry (polls every 2s)
+    let isRefreshingGraph = false;
+    let pendingGraphRefresh = false;
+
+    async function refreshGraphIncremental() {
+      if (isRefreshingGraph) {
+        pendingGraphRefresh = true;
+        return;
+      }
+      isRefreshingGraph = true;
+      try {
+        do {
+          pendingGraphRefresh = false;
+          const updated = await api.getGraph();
+          cockpitState.setGraph(updated, true);
+          await Promise.allSettled([
+            cockpitState.syncProjectStatus(),
+            cockpitState.fetchGitStatus(true),
+          ]);
+        } while (pendingGraphRefresh);
+      } finally {
+        isRefreshingGraph = false;
+      }
+    }
+
+    async function handleWatchVersionPayload(res: {
+      version?: number;
+      visual_version?: number;
+      fs_version?: number;
+      changed_files?: string[];
+    }) {
+      cockpitState.liveConnected = true;
+      if (cockpitState.isDemoMode) {
+        cockpitState.isDemoMode = false;
+      }
+
+      if (Array.isArray(res?.changed_files) && res.changed_files.length > 0) {
+        cockpitState.lastChangedFiles = res.changed_files;
+      }
+
+      let fsChanged = false;
+      if (typeof res?.fs_version === 'number') {
+        if (cockpitState.fsVersion > 0 && res.fs_version !== cockpitState.fsVersion) {
+          cockpitState.fsVersion = res.fs_version;
+          cockpitState.lastExternalSyncTs = Date.now();
+          fsChanged = true;
+        } else if (cockpitState.fsVersion === 0) {
+          cockpitState.fsVersion = res.fs_version;
+        }
+      }
+
+      let graphChanged = false;
+      if (typeof res?.version === 'number') {
+        if (cockpitState.graphVersion > 0 && res.version !== cockpitState.graphVersion) {
+          cockpitState.graphVersion = res.version;
+          graphChanged = true;
+          if (!fsChanged) {
+            cockpitState.fsVersion += 1;
+            cockpitState.lastExternalSyncTs = Date.now();
+          }
+          await refreshGraphIncremental();
+        } else if (cockpitState.graphVersion === 0) {
+          cockpitState.graphVersion = res.version;
+        }
+      }
+
+      if (fsChanged && !graphChanged) {
+        cockpitState.fetchGitStatus(true).catch(() => {});
+      }
+
+      // Live hot-reload of WebGL visual plugins (.aether/plugins/visuals/*.glsl / *.yaml)
+      if (typeof res?.visual_version === 'number') {
+        if (cockpitState.visualPluginsVersion > 0 && res.visual_version !== cockpitState.visualPluginsVersion) {
+          cockpitState.visualPluginsVersion = res.visual_version;
+          await cockpitState.loadVisualPlugins(false);
+        } else if (cockpitState.visualPluginsVersion === 0) {
+          cockpitState.visualPluginsVersion = res.visual_version;
+        }
+      }
+    }
+
+    // Real-time SSE push stream (/api/graph/events) for sub-150ms IDE & Graph reload
+    let eventSource: EventSource | null = null;
+    if (typeof EventSource !== 'undefined') {
+      try {
+        eventSource = new EventSource(api.getGraphEventsUrl());
+        eventSource.onmessage = (ev) => {
+          try {
+            const payload = JSON.parse(ev.data);
+            void handleWatchVersionPayload(payload);
+          } catch {
+            // ignore malformed event
+          }
+        };
+        eventSource.onerror = () => {
+          // Browser auto-reconnects EventSource; fallback poll below remains active
+        };
+      } catch {
+        eventSource = null;
+      }
+    }
+
+    // Fallback version check, Git diff, tasks & AI agent telemetry (polls every 2s)
     let tickCount = 0;
     versionTimer = setInterval(async () => {
       tickCount++;
@@ -252,30 +356,7 @@
       }
       try {
         const res = await api.getGraphVersion();
-        cockpitState.liveConnected = true;
-        if (cockpitState.isDemoMode) {
-          cockpitState.isDemoMode = false;
-        }
-        if (typeof res?.version === 'number' && cockpitState.graphVersion > 0 && res.version !== cockpitState.graphVersion) {
-          cockpitState.graphVersion = res.version;
-          const updated = await api.getGraph();
-          cockpitState.setGraph(updated, true);
-          await Promise.allSettled([
-            cockpitState.syncProjectStatus(),
-            cockpitState.fetchGitStatus(true),
-          ]);
-        } else if (typeof res?.version === 'number' && cockpitState.graphVersion === 0) {
-          cockpitState.graphVersion = res.version;
-        }
-        // Live hot-reload of WebGL visual plugins (.aether/plugins/visuals/*.glsl / *.yaml)
-        if (typeof res?.visual_version === 'number') {
-          if (cockpitState.visualPluginsVersion > 0 && res.visual_version !== cockpitState.visualPluginsVersion) {
-            cockpitState.visualPluginsVersion = res.visual_version;
-            await cockpitState.loadVisualPlugins(false);
-          } else if (cockpitState.visualPluginsVersion === 0) {
-            cockpitState.visualPluginsVersion = res.visual_version;
-          }
-        }
+        await handleWatchVersionPayload(res);
       } catch {
         cockpitState.liveConnected = false;
       }
@@ -307,6 +388,10 @@
     }, 2000);
 
     return () => {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
       if (versionTimer) clearInterval(versionTimer);
       window.removeEventListener('aether:viewmode', handleExternalViewMode);
     };

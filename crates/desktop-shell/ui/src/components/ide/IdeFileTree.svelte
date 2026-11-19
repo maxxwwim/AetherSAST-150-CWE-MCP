@@ -385,8 +385,32 @@
     }
   }
 
+  let lastSyncedFsVer = 0;
+  let lastSyncedGraphVer = 0;
+  let lastSyncedProjPath = '';
+
   onMount(() => {
+    lastSyncedFsVer = cockpitState.fsVersion;
+    lastSyncedGraphVer = cockpitState.graphVersion;
+    lastSyncedProjPath = cockpitState.graph.project_path || '';
     fetchFileList();
+  });
+
+  // Auto-refresh file tree whenever file watcher SSE event or project/graph version changes
+  $effect(() => {
+    const fsVer = cockpitState.fsVersion;
+    const gVer = cockpitState.graphVersion;
+    const pPath = cockpitState.graph.project_path || '';
+    if (
+      (fsVer > 0 && fsVer !== lastSyncedFsVer) ||
+      (gVer > 0 && gVer !== lastSyncedGraphVer) ||
+      (pPath && pPath !== lastSyncedProjPath)
+    ) {
+      lastSyncedFsVer = fsVer;
+      lastSyncedGraphVer = gVer;
+      lastSyncedProjPath = pPath;
+      void fetchFileList();
+    }
   });
 </script>
 

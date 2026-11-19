@@ -39,6 +39,8 @@
   let isSaving = $state(false);
   let errorMessage = $state<string | null>(null);
   let successNotice = $state<string | null>(null);
+  let externalConflictContent = $state<string | null>(null);
+  let lastHandledFsVersion = 0;
 
   // Target line highlight flash (active for ~2.5s on jump)
   let highlightedLine = $state<number | null>(null);
@@ -201,6 +203,7 @@
       loadedFile = filePath;
       content = b.content;
       savedContent = b.savedContent;
+      externalConflictContent = null;
       cursorLine = b.cursorLine || 1;
       cursorCol = b.cursorCol || 1;
       cockpitState.ideCursorPosition = { line: cursorLine, ch: cursorCol };
@@ -216,10 +219,131 @@
     await loadFileFromDisk(filePath);
   }
 
+  function isPathAffectedByExternalChanges(filePath: string, changedList: string[]): boolean {
+    if (!changedList || changedList.length === 0) return true;
+    const normTarget = filePath.replace(/\\/g, '/').toLowerCase().trim();
+    for (const raw of changedList) {
+      const c = raw.replace(/\\/g, '/').toLowerCase().trim();
+      if (!c) continue;
+      if (
+        normTarget === c ||
+        normTarget.endsWith('/' + c) ||
+        c.endsWith('/' + normTarget) ||
+        normTarget.startsWith(c + '/')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async function syncActiveFileFromExternalDisk(filePath: string) {
+    if (!filePath || isSaving || isLoading) return;
+    try {
+      const res = await api.getFileContent(filePath, true);
+      if (loadedFile !== filePath) return;
+      if (res && res.status === 'ok' && typeof res.content === 'string') {
+        const diskContent = res.content;
+        if (diskContent === content) {
+          savedContent = diskContent;
+          externalConflictContent = null;
+          if (buffers[filePath]) {
+            buffers[filePath].savedContent = diskContent;
+          }
+          return;
+        }
+        if (!isDirty) {
+          const prevScrollTop = textareaEl?.scrollTop ?? previewContainerEl?.scrollTop ?? 0;
+          content = diskContent;
+          savedContent = diskContent;
+          externalConflictContent = null;
+          const newTotalLines = Math.max(1, diskContent.split('\n').length);
+          cursorLine = Math.min(cursorLine, newTotalLines);
+          buffers[filePath] = {
+            content: diskContent,
+            savedContent: diskContent,
+            cursorLine,
+            cursorCol
+          };
+          await tick();
+          if (textareaEl) textareaEl.scrollTop = prevScrollTop;
+          if (previewContainerEl) previewContainerEl.scrollTop = prevScrollTop;
+          successNotice = 'Synchronisé automatiquement (modification externe)';
+          setTimeout(() => {
+            if (successNotice === 'Synchronisé automatiquement (modification externe)') {
+              successNotice = null;
+            }
+          }, 2600);
+        } else if (diskContent !== savedContent) {
+          externalConflictContent = diskContent;
+        }
+      }
+    } catch {
+      // ignore transient read error during external write
+    }
+  }
+
+  function acceptExternalDiskVersion() {
+    if (externalConflictContent === null || !loadedFile) return;
+    const prevScrollTop = textareaEl?.scrollTop ?? previewContainerEl?.scrollTop ?? 0;
+    content = externalConflictContent;
+    savedContent = externalConflictContent;
+    externalConflictContent = null;
+    buffers[loadedFile] = {
+      content,
+      savedContent,
+      cursorLine,
+      cursorCol
+    };
+    tick().then(() => {
+      if (textareaEl) textareaEl.scrollTop = prevScrollTop;
+      if (previewContainerEl) previewContainerEl.scrollTop = prevScrollTop;
+    });
+    successNotice = 'Version disque rechargée';
+    setTimeout(() => {
+      if (successNotice === 'Version disque rechargée') {
+        successNotice = null;
+      }
+    }, 2500);
+  }
+
+  function keepLocalEditsOverExternal() {
+    if (externalConflictContent === null || !loadedFile) return;
+    savedContent = externalConflictContent;
+    if (buffers[loadedFile]) {
+      buffers[loadedFile].savedContent = externalConflictContent;
+    }
+    externalConflictContent = null;
+  }
+
+  // React to live external file/folder modifications from SSE watcher
+  $effect(() => {
+    const fsVer = cockpitState.fsVersion;
+    if (fsVer <= 0 || fsVer === lastHandledFsVersion) return;
+    lastHandledFsVersion = fsVer;
+
+    const changedList = cockpitState.lastChangedFiles || [];
+
+    // 1. Invalidate non-dirty cached buffers for background tabs that changed on disk
+    for (const tabPath of Object.keys(buffers)) {
+      if (tabPath !== loadedFile && isPathAffectedByExternalChanges(tabPath, changedList)) {
+        if (!isTabDirty(tabPath)) {
+          delete buffers[tabPath];
+        }
+      }
+    }
+
+    // 2. Auto-reload or prompt conflict for currently active file if affected
+    if (loadedFile && isPathAffectedByExternalChanges(loadedFile, changedList)) {
+      void syncActiveFileFromExternalDisk(loadedFile);
+    }
+  });
+
   async function loadFileFromDisk(filePath: string) {
     isLoading = true;
     errorMessage = null;
     successNotice = null;
+    externalConflictContent = null;
     try {
       const res = await api.getFileContent(filePath, true);
       if (res && res.status === 'ok') {
@@ -261,6 +385,7 @@
       const res = await api.saveFile(cockpitState.ideActiveFile, content);
       if (res && res.status === 'ok') {
         savedContent = content;
+        externalConflictContent = null;
         if (loadedFile && buffers[loadedFile]) {
           buffers[loadedFile].savedContent = content;
         }
@@ -699,7 +824,31 @@
     </div>
   {/if}
 
-  <!-- Error or Success Alert Notices -->
+  <!-- Error, External Conflict, or Success Alert Notices -->
+  {#if externalConflictContent !== null}
+    <div class="px-3 py-1.5 bg-amber-500/20 border-b border-amber-500/40 text-amber-200 text-[11px] font-mono flex items-center justify-between gap-2 shrink-0">
+      <div class="flex items-center gap-1.5 min-w-0">
+        <AlertCircle class="w-3.5 h-3.5 text-amber-400 shrink-0" />
+        <span class="truncate">Ce fichier a été modifié à l'extérieur sur le disque alors que vous avez des modifications non enregistrées.</span>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          onclick={acceptExternalDiskVersion}
+          class="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold cursor-pointer transition-colors"
+        >
+          Charger version disque
+        </button>
+        <button
+          type="button"
+          onclick={keepLocalEditsOverExternal}
+          class="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-amber-100 border border-amber-400/30 cursor-pointer transition-colors"
+        >
+          Garder mes modifications
+        </button>
+      </div>
+    </div>
+  {/if}
   {#if errorMessage}
     <div class="px-3 py-1 bg-rose-500/20 border-b border-rose-500/30 text-rose-300 text-[11px] font-mono flex items-center justify-between gap-2 shrink-0">
       <div class="flex items-center gap-1.5">

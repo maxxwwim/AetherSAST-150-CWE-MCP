@@ -158,51 +158,67 @@
   });
 
   // Load Source Code file
-  async function loadCodeFile(path: string) {
+  async function loadCodeFile(path: string, force = false) {
     if (!path || path.endsWith('.md') || path.endsWith('.mdx')) {
       loadedCodeContent = '';
       loadedCodePath = '';
       return;
     }
-    if (loadedCodePath === path && loadedCodeContent) return;
-    loadingCode = true;
+    if (!force && loadedCodePath === path && loadedCodeContent) return;
+    if (!force) loadingCode = true;
     try {
       const res = await api.getFileContent(path);
       if (res?.status === 'ok' && typeof res.content === 'string') {
         loadedCodeContent = res.content;
         loadedCodePath = res.path || path;
-      } else {
+      } else if (!force) {
         loadedCodeContent = '';
       }
     } catch {
-      loadedCodeContent = '';
+      if (!force) loadedCodeContent = '';
     } finally {
       loadingCode = false;
     }
   }
 
   // Load Markdown Doc file
-  async function loadDocFile(path: string) {
+  async function loadDocFile(path: string, force = false) {
     if (!path) return;
-    if (loadedDocPath === path && loadedDocContent) return;
-    loadingDoc = true;
+    if (!force && loadedDocPath === path && loadedDocContent) return;
+    if (!force) loadingDoc = true;
     loadError = '';
     try {
       const res = await api.getFileContent(path);
       if (res?.status === 'ok' && typeof res.content === 'string') {
         loadedDocContent = res.content;
         loadedDocPath = res.path || path;
-      } else {
+      } else if (!force) {
         loadedDocContent = '';
         loadError = res?.message || `Impossible de charger ${path}`;
       }
     } catch (e: any) {
-      loadedDocContent = '';
-      loadError = String(e?.message || e || 'Erreur réseau');
+      if (!force) {
+        loadedDocContent = '';
+        loadError = String(e?.message || e || 'Erreur réseau');
+      }
     } finally {
       loadingDoc = false;
     }
   }
+
+  let lastDocFsVersion = 0;
+  $effect(() => {
+    const fsVer = cockpitState.fsVersion;
+    if (fsVer <= 0 || fsVer === lastDocFsVersion) return;
+    lastDocFsVersion = fsVer;
+    if (!cockpitState.isDocPanelOpen) return;
+    if (loadedCodePath && !isEditingCode) {
+      void loadCodeFile(loadedCodePath, true);
+    }
+    if (loadedDocPath && !isEditingDoc) {
+      void loadDocFile(loadedDocPath, true);
+    }
+  });
 
   // Reactively synchronize files whenever panel opens or target symbol/folder changes
   $effect(() => {

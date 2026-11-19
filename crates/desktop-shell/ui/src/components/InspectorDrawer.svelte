@@ -120,13 +120,15 @@
 
   $effect(() => {
     const sym = cockpitState.activeSymbol;
+    const fsVer = cockpitState.fsVersion;
+    const cacheKey = sym ? `${sym.id}::${fsVer}` : '';
     if (!sym || sym.docstring || !sym.file_path || sym.is_file) {
       lazyAstComment = '';
-      lazyLoadedForId = sym?.id || '';
+      lazyLoadedForId = cacheKey;
       return;
     }
-    if (lazyLoadedForId === sym.id) return;
-    lazyLoadedForId = sym.id;
+    if (lazyLoadedForId === cacheKey) return;
+    lazyLoadedForId = cacheKey;
     api
       .getFileContent(sym.file_path)
       .then((res) => {

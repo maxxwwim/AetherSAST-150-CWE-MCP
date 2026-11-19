@@ -445,9 +445,18 @@ export class AetherApiClient {
     return res.json();
   }
 
-  async getGraphVersion(): Promise<{ version: number; visual_version?: number }> {
+  async getGraphVersion(): Promise<{
+    version: number;
+    visual_version?: number;
+    fs_version?: number;
+    changed_files?: string[];
+  }> {
     const res = await fetch(`${this.baseUrl}/api/graph/version`);
     return res.json();
+  }
+
+  getGraphEventsUrl(): string {
+    return `${this.baseUrl}/api/graph/events`;
   }
 
   async saveDoc(payload: {

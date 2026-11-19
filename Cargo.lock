@@ -884,6 +884,7 @@ dependencies = [
  "clap",
  "colored",
  "core-graph",
+ "futures-util",
  "obsidian-vault",
  "rfd",
  "security-linter",

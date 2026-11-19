@@ -482,6 +482,9 @@ export class CockpitState {
   physicsPaused = $state(false);
   snapshotRequestTick = $state(0);
   graphVersion = $state(0);
+  fsVersion = $state(0);
+  lastChangedFiles = $state<string[]>([]);
+  lastExternalSyncTs = $state(0);
   liveConnected = $state(false);
   isDemoMode = $state(false);
   isVaultEnabled = $state<boolean>(false);
@@ -1446,6 +1449,45 @@ export class CockpitState {
 
     const nowTs = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
+    const changedFilesNorm = new Set<string>(
+      (this.lastChangedFiles || []).map((p) => p.replace(/\\/g, '/').toLowerCase().trim()).filter(Boolean)
+    );
+    const resolveNewFolderCenter = (targetFolder: string): { cx: number; cy: number } => {
+      const existing = folderSums.get(targetFolder);
+      if (existing && existing.count > 0) {
+        return { cx: existing.sx / existing.count, cy: existing.sy / existing.count };
+      }
+      // Look for nearest ancestor folder in folderSums
+      let cur = targetFolder.replace(/\\/g, '/');
+      while (cur.includes('/')) {
+        cur = cur.slice(0, cur.lastIndexOf('/'));
+        const parentSum = folderSums.get(cur);
+        if (parentSum && parentSum.count > 0) {
+          let hash = 0;
+          for (let i = 0; i < targetFolder.length; i++) {
+            hash = (hash * 31 + targetFolder.charCodeAt(i)) | 0;
+          }
+          const angle = ((Math.abs(hash) % 360) * Math.PI) / 180;
+          const cx = parentSum.sx / parentSum.count + Math.cos(angle) * 145;
+          const cy = parentSum.sy / parentSum.count + Math.sin(angle) * 145;
+          folderSums.set(targetFolder, { sx: cx, sy: cy, count: 1 });
+          return { cx, cy };
+        }
+      }
+      const rootSum = folderSums.get('root');
+      let hash = 0;
+      for (let i = 0; i < targetFolder.length; i++) {
+        hash = (hash * 31 + targetFolder.charCodeAt(i)) | 0;
+      }
+      const angle = ((Math.abs(hash) % 360) * Math.PI) / 180;
+      const baseCx = rootSum && rootSum.count > 0 ? rootSum.sx / rootSum.count : 0;
+      const baseCy = rootSum && rootSum.count > 0 ? rootSum.sy / rootSum.count : 0;
+      const cx = baseCx + Math.cos(angle) * 210;
+      const cy = baseCy + Math.sin(angle) * 210;
+      folderSums.set(targetFolder, { sx: cx, sy: cy, count: 1 });
+      return { cx, cy };
+    };
+
     const isHuge = rawNodes.length > 2500 || this.settings.lowMemoryMode;
 
     const normalizedNodes = rawNodes.map((rawNode) => {
@@ -1588,10 +1630,31 @@ export class CockpitState {
         const docChanged = (rawNode.docstring || '') !== (prev.docstring || '');
         const methodsChanged = methods.length !== (prev.methods?.length || 0);
         const anomChanged = anomalies.length !== (prev.anomalies?.length || 0);
+        const hashChanged = Boolean(
+          (meta.blake3_hash && prev.metadata?.blake3_hash && meta.blake3_hash !== prev.metadata.blake3_hash) ||
+            (meta.file_blake3_hash &&
+              prev.metadata?.file_blake3_hash &&
+              meta.file_blake3_hash !== prev.metadata.file_blake3_hash)
+        );
+        const normNodeFile = (rawNode.file_path || '').replace(/\\/g, '/').toLowerCase().trim();
+        const fileTouchedByWatcher =
+          normNodeFile.length > 0 &&
+          (changedFilesNorm.has(normNodeFile) ||
+            Array.from(changedFilesNorm).some(
+              (cf) => normNodeFile.endsWith('/' + cf) || cf.endsWith('/' + normNodeFile)
+            ));
         const secAnomCount = anomalies.filter((a) => !isLinesExceededAnomaly(a)).length;
         const prevSecAnomCount = (prev.anomalies || []).filter((a) => !isLinesExceededAnomaly(a)).length;
 
-        if (locChanged || ccChanged || docChanged || methodsChanged || anomChanged) {
+        if (
+          locChanged ||
+          ccChanged ||
+          docChanged ||
+          methodsChanged ||
+          anomChanged ||
+          hashChanged ||
+          fileTouchedByWatcher
+        ) {
           lastEditTs = nowTs;
           if (secAnomCount > prevSecAnomCount || Boolean(effectiveHasSec && !prev.has_security_violation)) {
             editKind = 'violation';
@@ -1619,12 +1682,10 @@ export class CockpitState {
           editKind = 'new_file';
           nodeGitStatus = 'untracked';
         }
-        // Spawn inside parent folder cell centroid if available
-        const fCenter = folderSums.get(folder);
-        if (fCenter && fCenter.count > 0) {
-          posX = fCenter.sx / fCenter.count + (Math.random() - 0.5) * 42;
-          posY = fCenter.sy / fCenter.count + (Math.random() - 0.5) * 42;
-        }
+        // Spawn inside parent or cohesive new folder cell centroid
+        const fCenter = resolveNewFolderCenter(folder);
+        posX = fCenter.cx + (Math.random() - 0.5) * 38;
+        posY = fCenter.cy + (Math.random() - 0.5) * 38;
       } else {
         this.knownTrackedFolders.add(folder);
       }
