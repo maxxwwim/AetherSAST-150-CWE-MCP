@@ -57,10 +57,10 @@ impl ReadmeContract {
         let mut frontmatter_str = "";
         let mut body_str = content;
 
-        if content.starts_with("---") {
-            if let Some(end_idx) = content[3..].find("---") {
-                frontmatter_str = &content[3..end_idx + 3];
-                body_str = &content[end_idx + 6..];
+        if let Some(after_open) = content.strip_prefix("---") {
+            if let Some(end_idx) = after_open.find("---") {
+                frontmatter_str = &after_open[..end_idx];
+                body_str = &after_open[end_idx + 3..];
             }
         }
 
@@ -222,9 +222,9 @@ impl ReadmeContract {
             if let Ok(parsed) = Self::parse(clean_folder, raw) {
                 frontmatter = parsed.frontmatter;
             }
-            if raw.starts_with("---") {
-                if let Some(end_idx) = raw[3..].find("---") {
-                    let rest = &raw[end_idx + 6..];
+            if let Some(after_open) = raw.strip_prefix("---") {
+                if let Some(end_idx) = after_open.find("---") {
+                    let rest = &after_open[end_idx + 3..];
                     body = rest.trim_start_matches(['\r', '\n']).to_string();
                 } else {
                     body = raw.to_string();

@@ -9,7 +9,7 @@ export interface RgbaColor {
   a: number;
 }
 
-export const LAYER_COLORS: Record<string, RgbaColor> = {
+const LAYER_COLORS: Record<string, RgbaColor> = {
   ui: { r: 0.22, g: 0.74, b: 0.97, a: 1.0 },        // #38bdf8 Sky Blue
   action: { r: 0.66, g: 0.33, b: 0.97, a: 1.0 },    // #a855f7 Purple
   domain: { r: 0.06, g: 0.73, b: 0.51, a: 1.0 },    // #10b981 Emerald
@@ -29,31 +29,10 @@ export const SEVERITY_COLORS: Record<string, RgbaColor> = {
 
 export const CONTRACT_WARNING_COLOR: RgbaColor = { r: 0.98, g: 0.72, b: 0.15, a: 1.0 }; // #fbbf24 Warm Amber Gold
 
-export const GIT_STATUS_COLORS = {
-  clean: '#64748b',
-  modified: '#facc15', // Pulsing yellow/amber
-  untracked: '#34d399', // Radiant emerald green
-  violation: '#ef4444', // Warning crimson red
-};
-
 export function getLayerRgba(layer?: string): RgbaColor {
   if (!layer) return LAYER_COLORS.default;
   const key = layer.toLowerCase();
   return LAYER_COLORS[key] || LAYER_COLORS.default;
-}
-
-export function parseHexColor(hex: string, alpha = 1.0): RgbaColor {
-  let c = hex.replace('#', '');
-  if (c.length === 3) {
-    c = c.split('').map(x => x + x).join('');
-  }
-  const num = parseInt(c, 16);
-  return {
-    r: ((num >> 16) & 255) / 255,
-    g: ((num >> 8) & 255) / 255,
-    b: (num & 255) / 255,
-    a: alpha
-  };
 }
 
 const BRANCH_HUES: Record<string, number> = {

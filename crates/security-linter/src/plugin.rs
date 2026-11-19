@@ -18,16 +18,13 @@ fn default_category() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum MatchMode {
+    #[default]
     LineByLine,
     WholeFile,
 }
 
-impl Default for MatchMode {
-    fn default() -> Self {
-        MatchMode::LineByLine
-    }
-}
 
 /// Condition de fenêtrage contextuel : la règle se déclenche uniquement si aucun des `patterns`
 /// n'est présent dans les `lines` lignes précédant strictement la ligne fautive.
@@ -266,14 +263,14 @@ impl PluginManifest {
             let prof = prof.trim();
             self.profile
                 .as_deref()
-                .map_or(false, |p| p.eq_ignore_ascii_case(prof))
+                .is_some_and(|p| p.eq_ignore_ascii_case(prof))
                 || self.tags.iter().any(|t| t.eq_ignore_ascii_case(prof))
         } else {
             self.name.eq_ignore_ascii_case(sel)
                 || self
                     .folder_alias
                     .as_deref()
-                    .map_or(false, |f| f.eq_ignore_ascii_case(sel))
+                    .is_some_and(|f| f.eq_ignore_ascii_case(sel))
         }
     }
 
@@ -647,10 +644,9 @@ fn compute_line_ast_scopes(raw_lines: &[&str], lower_path: &str) -> Vec<LineAstS
                 active_brace_fn = None;
             }
         }
-        if cfg_test_active && cfg_test_opened && brace_depth <= cfg_test_base_depth {
-            cfg_test_active = false;
-            cfg_test_pending = false;
-        } else if cfg_test_pending && !cfg_test_opened && open_braces == 0 && trimmed.ends_with(';') {
+        if (cfg_test_active && cfg_test_opened && brace_depth <= cfg_test_base_depth)
+            || (cfg_test_pending && !cfg_test_opened && open_braces == 0 && trimmed.ends_with(';'))
+        {
             cfg_test_active = false;
             cfg_test_pending = false;
         }
@@ -731,7 +727,7 @@ impl PluginEngine {
                             .parent()
                             .and_then(|p| p.file_name())
                             .map(|s| s.to_string_lossy().to_string());
-                        if let Ok(_) = self.load_from_str(&content) {
+                        if self.load_from_str(&content).is_ok() {
                             if let Some(last) = self.plugins.last_mut() {
                                 last.folder_alias = folder_alias;
                                 if last.enabled {
@@ -1043,8 +1039,8 @@ impl PluginEngine {
                                 }
                             }
 
-                            if !line_triggered && fallback_must_contain {
-                                if rule
+                            if !line_triggered && fallback_must_contain
+                                && rule
                                     .conditions
                                     .must_contain
                                     .iter()
@@ -1052,7 +1048,6 @@ impl PluginEngine {
                                 {
                                     line_triggered = true;
                                 }
-                            }
 
                             if line_triggered {
                                 // Vérification de la fenêtre contextuelle not_preceded_within_lines

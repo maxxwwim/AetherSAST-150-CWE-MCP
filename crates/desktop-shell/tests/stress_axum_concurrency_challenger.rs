@@ -312,7 +312,6 @@ async fn test_stress_axum_high_concurrency_readers_writers_live_server() {
 
     // 1. Spawn 25 Reader tasks querying /api/project/status
     for _ in 0..25 {
-        let port = port;
         let counter = total_status_reads.clone();
         let stop = stop_signal.clone();
         handles.push(tokio::spawn(async move {
@@ -334,7 +333,6 @@ async fn test_stress_axum_high_concurrency_readers_writers_live_server() {
 
     // 2. Spawn 25 Reader tasks querying /api/graph
     for _ in 0..25 {
-        let port = port;
         let counter = total_graph_reads.clone();
         let stop = stop_signal.clone();
         handles.push(tokio::spawn(async move {
@@ -359,7 +357,6 @@ async fn test_stress_axum_high_concurrency_readers_writers_live_server() {
 
     // 3. Spawn 15 Reader tasks querying /api/graph/version (monotonically non-decreasing)
     for _ in 0..15 {
-        let port = port;
         let counter = total_version_reads.clone();
         let stop = stop_signal.clone();
         handles.push(tokio::spawn(async move {
@@ -387,7 +384,6 @@ async fn test_stress_axum_high_concurrency_readers_writers_live_server() {
 
     // 4. Spawn 15 Writer tasks calling POST /api/view_mode (toggling modes)
     for worker_id in 0..15 {
-        let port = port;
         let counter = total_view_switches.clone();
         let stop = stop_signal.clone();
         handles.push(tokio::spawn(async move {

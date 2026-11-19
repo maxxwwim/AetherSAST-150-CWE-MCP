@@ -8,7 +8,7 @@ security_rules:
   no_raw_sql: true
   no_env_access: true
 ---
-# 🔮 obsidian-vault — Obsidian Knowledge Graph Engine & PathGuard Confinement (v2.4.0)
+# 🔮 obsidian-vault — Obsidian Knowledge Graph Engine & PathGuard Confinement (v2.5.1)
 
 Dedicated knowledge base parser and security confinement engine for Obsidian vaults (`.obsidian`, Markdown notes, YAML frontmatter, wikilinks `[[...]]`, transclusions `![[...]]`, and `#tags`). Enforces strict `PathGuard` confinement against CWE-22 path traversal, executes a 4-stage project classifier (`PureObsidianVault`, `PureCode`, `Mixed`), and projects notes into `core-graph` for Dual-Vision 3D cockpit visualization.
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
   import { api } from '../lib/api';
-  import { ShieldOff, X, RotateCcw } from 'lucide-svelte';
+  import { ShieldOff, X, RotateCcw } from '@lucide/svelte';
 
   async function persistIgnored() {
     try {

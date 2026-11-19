@@ -1855,7 +1855,7 @@ pub(crate) fn format_search_symbols_response(
         }
     }
 
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.sort_by_key(|b| std::cmp::Reverse(b.0));
     let total_matches = scored.len();
     let display_items: Vec<_> = scored.into_iter().take(limit).collect();
 

@@ -4,6 +4,9 @@
 target/
 **/target/
 /target-build/
+/target_clean/
+/target_new/
+.pytest_cache/
 **/__pycache__/
 *.pyc
 **/*.rs.bk
@@ -40,6 +43,7 @@ crates/**/.aether/*
 !requirements.txt
 *.tmp
 *.bak
+*.backup
 *.swp
 *.patch
 instances/**/world/

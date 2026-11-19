@@ -4,7 +4,7 @@
 //! - F4: SSA variable core model (`SsaVar`), Sources, Sinks, and `DataflowGraph`.
 //! - F5: Intra-procedural def-use SSA tracking and inter-procedural argument & return value propagation.
 //! - F6: Sanitizer neutralization engine preventing alert emission when sanitized,
-//!       and producing exact variable identifier traces when unsanitized.
+//!   and producing exact variable identifier traces when unsanitized.
 //! - Tier 2 Boundary Cases: cyclic calls termination, branch merge ambiguity, nested sanitizers, disconnected flows.
 
 use core_graph::dataflow::{

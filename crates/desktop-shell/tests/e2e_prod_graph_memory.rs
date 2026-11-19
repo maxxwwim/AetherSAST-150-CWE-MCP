@@ -337,12 +337,12 @@ fn edge_count_from_graph_json(v: &Value) -> usize {
 
 fn assert_slim_ui_payload_invariants(v: &Value, context: &str) {
     assert!(
-        v.get("system_prompt").map_or(true, |x| x.is_null()),
+        v.get("system_prompt").is_none_or(|x| x.is_null()),
         "[{}] slimmed ui_payload must omit top-level system_prompt",
         context
     );
     assert!(
-        v.get("dataflow_graph").map_or(true, |x| x.is_null()),
+        v.get("dataflow_graph").is_none_or(|x| x.is_null()),
         "[{}] slimmed ui_payload must omit top-level dataflow_graph",
         context
     );
@@ -356,7 +356,7 @@ fn assert_slim_ui_payload_invariants(v: &Value, context: &str) {
             .get("metadata")
             .unwrap_or_else(|| panic!("[{}] node {} missing metadata", context, node_id));
         assert!(
-            meta.get("raw_content").map_or(true, |x| x.is_null()),
+            meta.get("raw_content").is_none_or(|x| x.is_null()),
             "[{}] node {} must omit metadata.raw_content in slimmed ui_payload",
             context,
             node_id
@@ -587,11 +587,11 @@ async fn t1_f8_graph_ui_omits_system_prompt_and_dataflow_graph() {
     let g = resp.json();
 
     assert!(
-        g.get("system_prompt").map_or(true, |x| x.is_null()),
+        g.get("system_prompt").is_none_or(|x| x.is_null()),
         "slimmed /api/graph must omit system_prompt even on small projects"
     );
     assert!(
-        g.get("dataflow_graph").map_or(true, |x| x.is_null()),
+        g.get("dataflow_graph").is_none_or(|x| x.is_null()),
         "slimmed /api/graph must omit dataflow_graph even when taint analysis runs"
     );
     assert!(

@@ -7,11 +7,6 @@ export class AetherApiClient {
     this.baseUrl = baseUrl;
   }
 
-  async getHealth(): Promise<{ status: string; engine: string }> {
-    const res = await fetch(`${this.baseUrl}/api/health`);
-    return res.json();
-  }
-
   async getGraph(): Promise<AetherGraph> {
     const res = await fetch(`${this.baseUrl}/api/graph`);
     return res.json();
@@ -170,11 +165,6 @@ export class AetherApiClient {
 
   async newAiSession(): Promise<{ status: string; message?: string }> {
     const res = await fetch(`${this.baseUrl}/api/ai/new_session`, { method: 'POST' });
-    return res.json();
-  }
-
-  async getAiStatus(): Promise<{ status: string }> {
-    const res = await fetch(`${this.baseUrl}/api/ai/status`);
     return res.json();
   }
 
@@ -364,11 +354,6 @@ export class AetherApiClient {
 
   async getGraphVersion(): Promise<{ version: number }> {
     const res = await fetch(`${this.baseUrl}/api/graph/version`);
-    return res.json();
-  }
-
-  async getProjectStatus(): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/project/status`);
     return res.json();
   }
 

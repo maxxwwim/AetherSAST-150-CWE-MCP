@@ -1,7 +1,73 @@
 version = 2
 project_id = "aether-engine"
-stack_type = "HybridMmoWeb3"
+stack_type = "PureRust"
 topology_mode = "MonorepoLocal"
+
+[galaxies.root]
+path = "."
+role = "Signed contract for root"
+remote_sync = false
+readme_blake3 = "d25171b8189ba6c0b5ab173dea03449f3574b18a680b641171bee43fe70437ef"
+
+[galaxies.crates]
+path = "./crates"
+role = "Signed contract for crates"
+remote_sync = false
+readme_blake3 = "89d29d166a1abf1eced7629e1b6970c4901029f256a20bc2399064adf2148555"
+
+[galaxies."crates/core-graph"]
+path = "./crates/core-graph"
+role = "Signed contract for crates/core-graph"
+remote_sync = false
+readme_blake3 = "3c742885f331dd19d743f6dec53b9bcb383a15a8eae6d209d6f995e3ad12aab2"
+
+[galaxies."crates/security-linter"]
+path = "./crates/security-linter"
+role = "Signed contract for crates/security-linter"
+remote_sync = false
+readme_blake3 = "59e58094f5c061d6f19039567cfd8fee02cd85adc0b7ea88da5e09a314c5f670"
+
+[galaxies."crates/security-linter/tests"]
+path = "./crates/security-linter/tests"
+role = "Signed contract for crates/security-linter/tests"
+remote_sync = false
+readme_blake3 = "850ef9658bc537c954fe7378550801424bd8e6a434be56c3f1ecf22e35fb0846"
+
+[galaxies."crates/arch-templates"]
+path = "./crates/arch-templates"
+role = "Signed contract for crates/arch-templates"
+remote_sync = false
+readme_blake3 = "8cb6b399e9c15e05b0a55203c885203137e8ea9eba1a6aaa612a40230729ec5c"
+
+[galaxies."crates/ast-scanner"]
+path = "./crates/ast-scanner"
+role = "Signed contract for crates/ast-scanner"
+remote_sync = false
+readme_blake3 = "75c225c857281d2b5697c414296e8af2e419e9c0d96c65e353bd92fe93451140"
+
+[galaxies."crates/obsidian-vault"]
+path = "./crates/obsidian-vault"
+role = "Signed contract for crates/obsidian-vault"
+remote_sync = false
+readme_blake3 = "9be7721f65197e709e8bcc5900ca7173aa4258ec948b7d8c973a447414d0cc57"
+
+[galaxies."crates/ai-file-bridge"]
+path = "./crates/ai-file-bridge"
+role = "Signed contract for crates/ai-file-bridge"
+remote_sync = false
+readme_blake3 = "2f2a00654e1915236cafd0ffd662d8d1275f2bb923cb5139bf06088abecd9e42"
+
+[galaxies."crates/desktop-shell"]
+path = "./crates/desktop-shell"
+role = "Signed contract for crates/desktop-shell"
+remote_sync = false
+readme_blake3 = "872be0f299a2be5e2dca67e4b7709e23994f21e841f949aaa810a16f4ff37c0e"
+
+[galaxies."crates/desktop-shell/ui"]
+path = "./crates/desktop-shell/ui"
+role = "Signed contract for crates/desktop-shell/ui"
+remote_sync = false
+readme_blake3 = "dde73e8bf3d7eeeab1711babf2cc68015b97004553e51c0b19d1264454f6365a"
 
 [galaxies."crates/desktop-shell/tests/fixtures/fixture_pure_code_project"]
 path = "./crates/desktop-shell/tests/fixtures/fixture_pure_code_project"
@@ -9,97 +75,11 @@ role = "Signed contract for crates/desktop-shell/tests/fixtures/fixture_pure_cod
 remote_sync = false
 readme_blake3 = "97e04675dd5ff806f2fa8ebfaf572a3e7d28f3b72f0109ed77c4b6476c9eb6da"
 
-[galaxies."crates/obsidian-vault"]
-path = "./crates/obsidian-vault"
-role = "Signed contract for crates/obsidian-vault"
-remote_sync = false
-readme_blake3 = "6b9f2f3b2115733c0ea3dba17d2cde000f41ce6c9f34292dc82ae6682e8ec3c1"
-
-[galaxies."crates/desktop-shell/ui"]
-path = "./crates/desktop-shell/ui"
-role = "Signed contract for crates/desktop-shell/ui"
-remote_sync = false
-readme_blake3 = "5d56391e24770acbea3fc2c0a616e029d21f8ec928299dba64367c52801e5732"
-
-[galaxies.client]
-path = "./client"
-role = "PixiJS / Svelte WebGL presentation, UI forms and local states"
-remote_sync = false
-
-[galaxies."crates/ast-scanner"]
-path = "./crates/ast-scanner"
-role = "Signed contract for crates/ast-scanner"
-remote_sync = false
-readme_blake3 = "ac3ebad6342be0c6cec8593228e936e64552805a87d324bde80e77f62a124412"
-
-[galaxies."crates/core-graph"]
-path = "./crates/core-graph"
-role = "Signed contract for crates/core-graph"
-remote_sync = false
-readme_blake3 = "495aa7e9e1a92ca5deffbd7b5f04a7d348a18addcdbc70efb324b2e5ea14cba7"
-
-[galaxies."crates/security-linter"]
-path = "./crates/security-linter"
-role = "Signed contract for crates/security-linter"
-remote_sync = false
-readme_blake3 = "248b1aed7dccf3a607cbfc8d0193fd4a026498b96f695b6cc0493c599aad6b54"
-
-[galaxies.server]
-path = "./server"
-role = "Rust WebSocket high-concurrency game loop and domain services"
-remote_sync = false
-
-[galaxies.data-nodes]
-path = "./data-nodes"
-role = "PostgreSQL player state, Redis pub/sub and Web3 indexers"
-remote_sync = false
-
-[galaxies."crates/arch-templates"]
-path = "./crates/arch-templates"
-role = "Signed contract for crates/arch-templates"
-remote_sync = false
-readme_blake3 = "d73beb98db79fa52ae76b8e7d0159a0125040bdb798c4750c526b372d2b7da71"
-
-[galaxies."crates/desktop-shell"]
-path = "./crates/desktop-shell"
-role = "Signed contract for crates/desktop-shell"
-remote_sync = false
-readme_blake3 = "473c5f4082a578d9e5c1532627c44b8ca2d70f7fdd19aa84a08f212cf6ef7615"
-
-[galaxies.root]
-path = "."
-role = "Signed contract for root"
-remote_sync = false
-readme_blake3 = "c935454a31705ea3af2823e637ab00d534706a8263f649b555349e124eb38698"
-
-[galaxies.crates]
-path = "./crates"
-role = "Signed contract for crates"
-remote_sync = false
-readme_blake3 = "787ed8eab26b65e9f2dd352ce4164ed72dfa23f7b70f339fa4d3c01d89978b36"
-
 [galaxies.cwe]
 path = "./cwe"
 role = "Signed contract for cwe"
 remote_sync = false
-readme_blake3 = "6759ea2214a75c14ea01905da2df8218f6c89edf6e918517bae59d44fd80e09c"
-
-[galaxies.contracts]
-path = "./contracts"
-role = "Smart contracts ABI, WebSocket packet definitions, shared types"
-remote_sync = false
-
-[galaxies."crates/security-linter/tests"]
-path = "./crates/security-linter/tests"
-role = "Signed contract for crates/security-linter/tests"
-remote_sync = false
-readme_blake3 = "a10bfc733a8beb7a263fe4aa38a607b5469adedd25e59d77511fbb9dc54d65e8"
-
-[galaxies."crates/ai-file-bridge"]
-path = "./crates/ai-file-bridge"
-role = "Signed contract for crates/ai-file-bridge"
-remote_sync = false
-readme_blake3 = "4115383507fde37697ff526484cffcf45e187c369de3af67bbcdbe32633fab93"
+readme_blake3 = "62f189a0255bf87feaf8c14c2f942413e037ab63e909ddc403bdfc9a09367e60"
 
 [guardrails]
 block_forbidden_imports = true

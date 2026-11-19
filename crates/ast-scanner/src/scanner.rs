@@ -1038,8 +1038,7 @@ impl ProjectScanner {
                     }
                 }
 
-                if !is_file_level_rule && best_sym_id.is_some() {
-                    let sym_id = best_sym_id.as_ref().unwrap();
+                if let Some(sym_id) = best_sym_id.as_ref().filter(|_| !is_file_level_rule) {
                     if let Some(&sym_idx) = node_idx_by_id.get(sym_id) {
                         let sym_node = &mut graph.nodes[sym_idx];
                         if !is_lines_warning {
@@ -1450,7 +1449,7 @@ fn extract_leading_doc(content: &str, start_byte: usize, is_rust: bool) -> Strin
                 }
                 in_block_comment = false;
             } else {
-                let inner = &line[..line.len() - 2];
+                let inner = line.strip_suffix("*/").unwrap_or(line);
                 let part = inner.trim_start_matches('*').trim();
                 if !part.is_empty() {
                     collected.push(part.to_string());
@@ -1460,15 +1459,12 @@ fn extract_leading_doc(content: &str, start_byte: usize, is_rust: bool) -> Strin
         }
 
         // Line comments:
-        if line.starts_with("///") || line.starts_with("//!") {
-            let text = line[3..].trim();
-            collected.push(text.to_string());
-        } else if line.starts_with("//") {
-            let text = line[2..].trim();
-            collected.push(text.to_string());
-        } else if line.starts_with('#') {
-            let text = line[1..].trim();
-            collected.push(text.to_string());
+        if let Some(rest) = line.strip_prefix("///").or_else(|| line.strip_prefix("//!")) {
+            collected.push(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix("//") {
+            collected.push(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix('#') {
+            collected.push(rest.trim().to_string());
         } else {
             break;
         }
@@ -1480,34 +1476,16 @@ fn extract_leading_doc(content: &str, start_byte: usize, is_rust: bool) -> Strin
 
 fn extract_python_docstring(body_slice: &str) -> String {
     let trimmed = body_slice.trim_start();
-    if trimmed.starts_with("\"\"\"") {
-        if let Some(end) = trimmed[3..].find("\"\"\"") {
-            return trimmed[3..3 + end].trim().to_string();
+    if let Some(rest) = trimmed.strip_prefix("\"\"\"") {
+        if let Some(end) = rest.find("\"\"\"") {
+            return rest[..end].trim().to_string();
         }
-    } else if trimmed.starts_with("'''") {
-        if let Some(end) = trimmed[3..].find("'''") {
-            return trimmed[3..3 + end].trim().to_string();
+    } else if let Some(rest) = trimmed.strip_prefix("'''") {
+        if let Some(end) = rest.find("'''") {
+            return rest[..end].trim().to_string();
         }
     }
     String::new()
-}
-
-#[allow(dead_code)]
-fn analyze_file(root_path: &Path, file_path: &Path) -> Option<FileAnalysis> {
-    let content = fs::read_to_string(file_path).ok()?;
-    let rel_path = file_path
-        .strip_prefix(root_path)
-        .unwrap_or(file_path)
-        .to_string_lossy()
-        .replace('\\', "/");
-
-    let ext = file_path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    analyze_file_with_content(&rel_path, &ext, &content)
 }
 
 fn analyze_file_with_content(rel_path: &str, ext: &str, content: &str) -> Option<FileAnalysis> {
@@ -2043,8 +2021,7 @@ fn analyze_java(rel_path: &str, content: &str) -> FileAnalysis {
                 && callee != "out"
                 && callee != "println"
                 && callee != "print"
-            {
-                if !method_calls.contains(&callee.to_string()) {
+                && !method_calls.contains(&callee.to_string()) {
                     method_calls.push(callee.to_string());
                     calls.push(RawCall {
                         caller: node_id.clone(),
@@ -2053,7 +2030,6 @@ fn analyze_java(rel_path: &str, content: &str) -> FileAnalysis {
                         order_label: format!("Appel {}", callee),
                     });
                 }
-            }
         }
 
         let kind = if is_endpoint {
@@ -2872,8 +2848,8 @@ fn analyze_rust(rel_path: &str, content: &str) -> FileAnalysis {
         for q_cap in re_rs_qual_call().captures_iter(body_slice) {
             let prefix = q_cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let method = q_cap.get(2).map(|m| m.as_str()).unwrap_or("");
-            if !prefix.is_empty() && !is_rust_keyword(prefix) && prefix != "Self" && prefix != "std" {
-                if seen_local_calls.insert(prefix.to_string()) {
+            if !prefix.is_empty() && !is_rust_keyword(prefix) && prefix != "Self" && prefix != "std"
+                && seen_local_calls.insert(prefix.to_string()) {
                     calls.push(RawCall {
                         caller: node_id.clone(),
                         callee: prefix.to_string(),
@@ -2881,9 +2857,8 @@ fn analyze_rust(rel_path: &str, content: &str) -> FileAnalysis {
                         order_label: format!("Appel {}::{}", prefix, method),
                     });
                 }
-            }
-            if !method.is_empty() && !is_rust_keyword(method) {
-                if seen_local_calls.insert(method.to_string()) {
+            if !method.is_empty() && !is_rust_keyword(method)
+                && seen_local_calls.insert(method.to_string()) {
                     calls.push(RawCall {
                         caller: node_id.clone(),
                         callee: method.to_string(),
@@ -2891,13 +2866,12 @@ fn analyze_rust(rel_path: &str, content: &str) -> FileAnalysis {
                         order_label: format!("Appel {}", method),
                     });
                 }
-            }
         }
 
         for c_cap in re_call_ident().captures_iter(body_slice) {
             let callee = c_cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            if !callee.is_empty() && callee != name && !is_rust_keyword(callee) {
-                if seen_local_calls.insert(callee.to_string()) {
+            if !callee.is_empty() && callee != name && !is_rust_keyword(callee)
+                && seen_local_calls.insert(callee.to_string()) {
                     calls.push(RawCall {
                         caller: node_id.clone(),
                         callee: callee.to_string(),
@@ -2905,7 +2879,6 @@ fn analyze_rust(rel_path: &str, content: &str) -> FileAnalysis {
                         order_label: format!("Appel {}", callee),
                     });
                 }
-            }
         }
 
         for r_cap in re_rs_route().captures_iter(body_slice) {
@@ -3593,7 +3566,7 @@ fn analyze_solidity(rel_path: &str, content: &str) -> FileAnalysis {
     }
 
     // 3. Appels de fonctions internes / inter-contrats
-    for (_line_idx, line) in content.lines().enumerate() {
+    for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with('*') {
             continue;
@@ -3861,8 +3834,8 @@ pub fn analyze_zig(rel_path: &str, content: &str) -> FileAnalysis {
 
         for c_cap in re_zig_call().captures_iter(body_slice) {
             let callee = c_cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            if !callee.is_empty() && callee != name && !is_zig_keyword(callee) {
-                if seen_local_calls.insert(callee.to_string()) {
+            if !callee.is_empty() && callee != name && !is_zig_keyword(callee)
+                && seen_local_calls.insert(callee.to_string()) {
                     method_calls.push(callee.to_string());
                     calls.push(RawCall {
                         caller: node_id.clone(),
@@ -3871,7 +3844,6 @@ pub fn analyze_zig(rel_path: &str, content: &str) -> FileAnalysis {
                         order_label: format!("Appel {}", callee),
                     });
                 }
-            }
         }
 
         let mut fn_bubble = SymbolBubble::new(
@@ -4163,8 +4135,7 @@ pub fn analyze_csharp(rel_path: &str, content: &str) -> FileAnalysis {
                 && callee != "Console"
                 && callee != "WriteLine"
                 && callee != "Write"
-            {
-                if !method_calls.contains(&callee.to_string()) {
+                && !method_calls.contains(&callee.to_string()) {
                     method_calls.push(callee.to_string());
                     calls.push(RawCall {
                         caller: node_id.clone(),
@@ -4173,7 +4144,6 @@ pub fn analyze_csharp(rel_path: &str, content: &str) -> FileAnalysis {
                         order_label: format!("Appel {}", callee),
                     });
                 }
-            }
         }
 
         let kind = if is_endpoint {

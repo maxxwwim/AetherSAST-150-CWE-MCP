@@ -6,7 +6,7 @@
 
 # 🪐 AetherScope / AetherSAST (v2.5.1)
 
-### **Real-Time Static Application Security Testing (215+ Rules & Zero-Day Detectors) • SSA Taint Dataflow • Reachable SCA • BLAKE3 Cryptographic Governance • Ultra Path Guard Confinement Jail • WebGL 2 Spatial Cockpit • Native Model Context Protocol (MCP) Server**
+### **Real-Time Static Application Security Testing (222 Native Rules + 24 Semgrep = 246 Rules) • SSA Taint Dataflow • Reachable SCA • BLAKE3 AST Cache (5.6x) & Cryptographic Governance • Ultra Path Guard & SecretGuard • WebGL 2 Spatial Cockpit & Full-Screen IDE • Native MCP Server**
 
 <p align="right">
   <b>English 🇬🇧</b> | <a href="./README.fr.md">Français 🇫🇷 (Version originale)</a>
@@ -16,7 +16,7 @@
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
 [![M8ven Score](https://m8ven.ai/badge/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7)](https://m8ven.ai/mcp/maxxwwim-aetherscope-sast-150-cwe-blake3-serveur-mcp-visualiseur-de-co-j4mhm7?s=readme)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
-[![SAST Linter](https://img.shields.io/badge/SAST-215_Active_Rules-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
+[![SAST Linter](https://img.shields.io/badge/SAST-222_Native_%2B_24_Semgrep-ef4444?style=for-the-badge&logo=securityscorecard)](./CWE_CATALOG.md)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
 [![License: Non-Commercial](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-blue?style=for-the-badge)](./LICENSE)
@@ -27,18 +27,18 @@
 
 ## ⚡ Executive Summary
 
-**AetherScope / AetherSAST** is an industrial-grade static application security testing (SAST), architectural intelligence engine, and WebGL 2 spatial cockpit built in 100% native Rust 2021. It combines real-time multi-language code analysis (<50ms per edit), cryptographic BLAKE3 governance contracts, inter-procedural SSA taint tracking, reachable dependency scanning (SCA), and a native Model Context Protocol (MCP) server for autonomous AI coding agents.
+**AetherScope / AetherSAST** is an industrial-grade static application security testing (SAST), architectural intelligence engine, WebGL 2 spatial cockpit, and integrated multi-tab IDE built in 100% native Rust 2021. It combines real-time multi-language code analysis (<50ms per edit, with a persistent BLAKE3 AST cache for 5.6x faster rescans), cryptographic BLAKE3 governance contracts, inter-procedural SSA taint tracking, reachable dependency scanning (SCA), secret isolation (`SecretGuard`/`SecretMasker`), and a native Model Context Protocol (MCP) server for autonomous AI coding agents.
 
 ```
 +---------------------------------------------------------------------------------------------------+
 |                                 🪐 AETHERSCOPE / AETHERSAST v2.5.1                                |
 +---------------------------------+---------------------------------+-------------------------------+
 |    🛡️ ADVANCED SAST & SCA       |    🏛️ ARCHITECTURAL CONTRACTS   |    🤖 AI AGENT ORCHESTRATION  |
-|  - 215 Active Security Rules    |  - EARS Syntax Requirements     |  - Native stdio MCP Server    |
+|  - 222 Native + 24 Semgrep Rules|  - EARS Syntax Requirements     |  - Native stdio MCP Server    |
 |  - 28 Novel AETHER-* Detectors  |  - BLAKE3 Cryptographic Locks   |  - 10 Combined Tools          |
-|  - SSA Dataflow Taint Tracking  |  - Folder & File Line Budgets   |  - Real-Time Patch Firewall   |
-|  - Reachable Dependency SCA     |  - Orange / Red Visual Status   |  - Ultra Path Guard Confinement|
-|  - SARIF 2.1.0 CI/CD Exporter   |  - Zero Architectural Drift     |  - Zero-Shell Secret Immunity |
+|  - --plugins & Taint/Window DSL |  - Folder & File Line Budgets   |  - Real-Time Patch Firewall   |
+|  - SSA Dataflow & Reachable SCA |  - Orange / Red Visual Status   |  - Ultra Path Guard + Secrets |
+|  - SARIF 2.1.0 CI/CD Exporter   |  - Integrated Multi-Tab IDE     |  - BLAKE3 AST Cache (5.6x)    |
 +---------------------------------+---------------------------------+-------------------------------+
 ```
 
@@ -46,7 +46,7 @@
 
 ## 🛡️ 1. Real-Time SAST Engine & Security Intelligence
 
-The core analysis engine in [`crates/security-linter`](./crates/security-linter/README.md) evaluates **215 active security rules** across 35 vulnerability families, combining 220 native rule definitions with 24 Semgrep OWASP/CWE community rules (244 total rule base). Audits execute in parallel across 11 programming languages, completing in under 50 milliseconds upon every file modification.
+The core analysis engine in [`crates/security-linter`](./crates/security-linter/README.md) evaluates **222 native security rules** across 35 vulnerability families (including 28 non-CWE `AETHER-*` detectors) alongside **24 embedded Semgrep OWASP/CWE community rules** (**246 total rules**). Audits execute in parallel across 11 programming languages with a persistent **BLAKE3 AST cache (`5.6x` speedup)**, completing incremental checks in under 50 milliseconds upon every file modification.
 
 ### Key Capabilities
 
@@ -130,8 +130,8 @@ Add this configuration to your Claude Desktop, Cursor, or Gemini agent settings:
 {
   "mcpServers": {
     "aetherscope": {
-      "command": "c:\\Users\\1234\\Desktop\\Projets\\aether-engine\\target\\debug\\aetherscope-mcp.exe",
-      "args": ["--port", "3030", "--path", "c:\\Users\\1234\\Desktop\\Projets\\aether-engine"]
+      "command": "C:\\path\\to\\aether-engine\\target\\release\\aetherscope-mcp.exe",
+      "args": ["--port", "3030", "--path", "C:\\path\\to\\your-project"]
     }
   }
 }
@@ -139,13 +139,15 @@ Add this configuration to your Claude Desktop, Cursor, or Gemini agent settings:
 
 ---
 
-## 🌌 4. Spatial WebGL 2 Cockpit & Dual-Vision Mode
+## 🌌 4. Spatial WebGL 2 Cockpit, Dual-Vision Mode & Full-Screen IDE
 
-The desktop interface (`crates/desktop-shell`) hosts an ultra-responsive spatial engineering cockpit built with **Svelte 5 Runes** (`$state`), Tailwind CSS v4, and Vite 8:
+The desktop interface (`crates/desktop-shell`) hosts an ultra-responsive spatial engineering cockpit and integrated multi-tab IDE built with **Svelte 5 Runes** (`$state`), Tailwind CSS v4, and Vite 8:
 
-- **120 FPS Instanced SDF Shader Rendering**: Custom WebGL 2 shaders render over 100,000 symbol nodes with organic 12-lobed cellular membranes, directional lasers, and halo depth buffers.
+- **120 FPS Instanced SDF Shader Rendering**: Custom WebGL 2 shaders render over 100,000 symbol nodes with organic 12-lobed cellular membranes, directional call/import chevrons, relation badges, sleek CWE pills, and luminous micro-star endpoints.
 - **Infinite Dezoom Engine**: Zoom floor lowered to `0.00005` with vertex shader subpixel clamping (`screen_r >= 2.0px`), guaranteeing large codebases gleam like celestial star charts without disappearing.
 - **Off-Thread Physics Simulation**: Dedicated Web Worker (`physics.worker.js`) executing Coulomb electrostatic repulsion and Hooke spring forces over zero-copy `Transferable Float32Array` buffers.
+- **Dedicated Full-Screen Multi-Tab IDE**: Switch seamlessly to IDE mode with AST symbol hierarchy navigation, auto-open file at function on 3D bubble click, cosmic cluster-synchronized file-tree colors, integrated Doc/EARS/Source sidebars, resizable splitters, collapsible sidebars, Zen mode, and atomic file saving (`/api/save_file`).
+- **Live AI (<5m) Left Dock & Workspace Explorer**: Real-time multi-agent activity dock with automatic 5-minute inactivity pruning plus built-in workspace filesystem explorer (`/api/fs/list`).
 - **Dual-Vision Mode**: Instantly switch between **Code AST Architecture** and **Obsidian Knowledge Graph** (<kbd>Alt</kbd>+<kbd>1</kbd> / <kbd>Alt</kbd>+<kbd>2</kbd>).
 - **4 Mathematical Layouts**:
   - `Z-1`: Fermat Spiral Galaxy layout.
@@ -173,8 +175,8 @@ AetherScope is structured as a 7-crate Rust 2021 workspace adhering to clean hex
                                                                 v
 +---------------------------------------------------------------------------------------------------+
 | desktop-shell (crates/desktop-shell)                                                              |
-|   - Native Tao/Wry Window (WebView2)        - Axum REST Server (Port 3030, LocalGuard)            |
-|   - Svelte 5 + WebGL 2 Single-File Bundle   - Network Surface Probers & Benchmark Harness         |
+|   - Native Tao/Wry Window (WebView2)        - Axum REST Server (Port 3030, 40 Routes, LocalGuard) |
+|   - Svelte 5 + WebGL 2 + Full-Screen IDE    - Network Surface Probers & Benchmark Harness         |
 +---------------------------------------------------------------------------------------------------+
                                                                 |
                                                                 v
@@ -182,13 +184,13 @@ AetherScope is structured as a 7-crate Rust 2021 workspace adhering to clean hex
 | Application & Action Layers                                                                       |
 |   - obsidian-vault: PathGuard Jail (CWE-22), 4-Stage Project Classifier, Wikilink AST Parser      |
 |   - ai-file-bridge: Zero-Shell FileWatcher (<50ms), PatchVerifier Firewall, TaskManager           |
-|   - ast-scanner:    Rayon Polyglot AST Extractor (11 Languages), BLAKE3 Hashing, Taint Extraction |
+|   - ast-scanner:    Rayon Polyglot AST Extractor (11 Langs), BLAKE3 AST Cache (5.6x), SecretGuard |
 +---------------------------------------------------------------------------------------------------+
                                                                 |
                                                                 v
 +---------------------------------------------------------------------------------------------------+
 | Domain & Utility Layers                                                                           |
-|   - security-linter: 215 Active Rules, 28 AETHER-* Zero-Days, Lexer Masking, SCA, SARIF 2.1.0     |
+|   - security-linter: 222 Native + 24 Semgrep Rules, 28 AETHER-* Zero-Days, SecretGuard, SCA, SARIF|
 |   - arch-templates:  Multi-Stack Scaffolder (Rust/Python/Node/Web3) & Pre-Signed EARS Contracts   |
 |   - core-graph:      Pure Graph Domain, Z-1 to Z-4 Layouts, Reverse BFS, SSA Dataflow Taint       |
 +---------------------------------------------------------------------------------------------------+
@@ -225,8 +227,8 @@ cargo run -p desktop-shell --bin aether-engine -- -p .
 # Headless SAST audit exporting SARIF 2.1.0 for CI/CD
 cargo run -p desktop-shell --bin aether-engine -- --audit-only --format sarif -o results.sarif
 
-# Headless audit enforcing a failure gate on CRITICAL vulnerabilities
-cargo run -p desktop-shell --bin aether-engine -- --audit-only --fail-on CRITICAL
+# Headless audit with explicit plugin packs/profiles & CRITICAL failure gate
+cargo run -p desktop-shell --bin aether-engine -- --audit-only --plugins all --fail-on CRITICAL
 
 # Run standalone offline Software Composition Analysis (SCA)
 cargo run -p desktop-shell --bin aether-engine -- --sca-only --offline-sca
@@ -244,31 +246,34 @@ cargo run -p desktop-shell --bin aetherscope-mcp -- --port 3030 --path .
 #### 3. `aether-plugin-tool` (Declarative SAST Plugin Manager)
 ```powershell
 # Unpack embedded Semgrep community bundle into .aether/plugins/
-cargo run -p security-linter --bin aether-plugin-tool -- init-bundle
+cargo run -p security-linter --bin aether-plugin-tool -- init-bundle .aether/plugins
 
 # Translate Semgrep YAML rule into native Rust regex plugin
-cargo run -p security-linter --bin aether-plugin-tool -- import-semgrep -i rule.yaml -o .aether/plugins/
+cargo run -p security-linter --bin aether-plugin-tool -- import-semgrep --input rule.yaml --output .aether/plugins/imported
 
 # Run unit tests on all loaded YAML plugins
 cargo run -p security-linter --bin aether-plugin-tool -- test .aether/plugins/
 ```
 
-### Local Axum REST API Summary (Port 3030)
-The embedded HTTP server binds exclusively to `127.0.0.1:3030` and is protected by `LocalGuard` against DNS rebinding and cross-site requests. Key endpoints include:
-- `GET /`: Serves the compiled Svelte 5 + WebGL 2 Cockpit.
-- `GET /api/graph`: Returns the current `AetherGraph` topology.
-- `POST /api/contracts/update`: Updates folder budgets or per-file limits and re-seals `aether.lock.toml`.
-- `GET /api/git/status`: Live git dirty files, additions, and deletions.
+### Local Axum REST API Summary (40 Routes — Port 3030)
+The embedded HTTP server binds exclusively to `127.0.0.1:3030` and is protected by `LocalGuard` (anti-DNS-rebinding/CSRF), `PathGuard` (CWE-22 confinement), and `SecretGuard` (sensitive file blocking). Key endpoints include:
+- `GET /`: Serves the compiled Svelte 5 + WebGL 2 Cockpit & IDE.
+- `GET /api/graph` & `GET /api/graph/version`: Slimmed `AetherGraph` topology and atomic version counter.
+- `GET /api/files`, `GET /api/file_content`, `POST /api/save_file`, `GET /api/fs/list`: Confined IDE file listing, lazy content loading, atomic file saving, and workspace browsing.
+- `POST /api/contracts/update` & `POST /api/contracts/sign`: Updates folder/file line budgets and re-seals `aether.lock.toml` with BLAKE3.
+- `GET /api/git/status`: Live Git dirty files and security status correlation.
+- `GET /api/raw_file`: Whitelisted binary media/doc streaming for Markdown & Obsidian embeds.
+- `GET / POST /api/bounty/scope`: Bug Bounty scope recommendations and persistence.
 - `POST /api/surface_scan`: Network attack surface audit and SSL/TLS analysis.
-- `POST /api/view_mode`: Toggles between `'code'` and `'vault'` visualization modes.
+- `POST /api/view_mode`: Toggles between `'code'`, `'vault'`, and `'ide'` modes.
 
 ---
 
 ## 📄 7. License & Documentation Index
 
 - **License**: Licensed under the [PolyForm Noncommercial License 1.0.0](./LICENSE).
-- **Changelog**: Comprehensive milestone history from v2.0.0 through v2.4.0 in [CHANGELOG.md](./CHANGELOG.md).
-- **Vulnerability Catalog**: Complete breakdown of the 215 active security rules in [CWE_CATALOG.md](./CWE_CATALOG.md).
-- **Test Infrastructure**: Multi-tier testing specifications in [TEST_INFRA.md](./TEST_INFRA.md) and [TEST_READY.md](./TEST_READY.md).
-- **AI Directives**: System prompts and copilot protocol in [AETHER_AI_RULES.md](./AETHER_AI_RULES.md).
+- **Changelog**: Comprehensive milestone history from v2.0.0 through v2.5.1+ in [CHANGELOG.md](./CHANGELOG.md).
+- **Vulnerability Catalog**: Complete breakdown of the 222 native rules (+ 24 Semgrep community rules) in [CWE_CATALOG.md](./CWE_CATALOG.md) and [`cwe/`](./cwe/README.md).
+- **Performance Benchmark**: Automated throughput and memory metrics in [BENCHMARK.md](./BENCHMARK.md).
+- **AI Directives**: System prompts, 10-tool MCP workflow, and SecretGuard protocol in [AETHER_AI_RULES.md](./AETHER_AI_RULES.md).
 - **French Edition**: Original French reference documentation in [README.fr.md](./README.fr.md).

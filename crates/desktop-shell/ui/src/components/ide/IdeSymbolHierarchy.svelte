@@ -28,7 +28,7 @@
       if (!n.file_path) return false;
       const norm = n.file_path.replace(/\\/g, '/');
       // Exclude generic File container nodes unless it is the only node
-      const isFileNode = n.is_file || n.kind === 1 || n.id.startsWith('file::');
+      const isFileNode = n.is_file || String(n.kind) === '1' || n.kind === 'File' || n.kind === 'file' || n.id.startsWith('file::');
       return norm === activeFile && !isFileNode;
     });
 

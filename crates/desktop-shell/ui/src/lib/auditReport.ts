@@ -1,5 +1,6 @@
 import type { CockpitState } from '../state/graphState.svelte';
 import type { CveAnomalyRecord, SymbolBubble } from '../types/graph';
+import { getAetherGraphStyles, renderAetherBubbleGraphHtml } from './auditGraphHtml';
 
 export interface AuditSummary {
   projectName: string;
@@ -259,6 +260,7 @@ export function generateAuditHtml(cockpitState: CockpitState): string {
   const violations = cockpitState.allViolations || [];
   const hotspots = cockpitState.hotspotNodes || [];
   const orphans = cockpitState.orphanNodes || [];
+  const aetherGraphHtml = renderAetherBubbleGraphHtml(cockpitState);
 
   const gradeColor = {
     A: '#10b981',
@@ -439,6 +441,7 @@ export function generateAuditHtml(cockpitState: CockpitState): string {
       .badge-med { background: #fef9c3 !important; color: #a16207 !important; }
       .remediation { color: #065f46 !important; }
     }
+    ${getAetherGraphStyles()}
   </${tStyle}>
 </${tHead}>
 <${tBody}>
@@ -446,7 +449,7 @@ export function generateAuditHtml(cockpitState: CockpitState): string {
     <header>
       <div>
         <div class="brand"><span>🪐</span> AetherScope Security Audit</div>
-        <p class="muted" style="margin-top: 4px;">Cible : <code>${escapeHtml(summary.projectPath)}</code> · Scan : ${escapeHtml(summary.timestamp)}</p>
+        <p class="muted" style="margin-top: 4px;">Cible : <code>${escapeHtml(summary.projectPath.replace(/^\\\\\?\\/, ''))}</code> · Scan : ${escapeHtml(summary.timestamp)}</p>
       </div>
       <div class="score-badge">
         <div>
@@ -456,6 +459,8 @@ export function generateAuditHtml(cockpitState: CockpitState): string {
         <div class="score-circle">${summary.securityGrade}</div>
       </div>
     </header>
+
+    ${aetherGraphHtml}
 
     <div class="grid">
       <div class="stat-card">

@@ -8,15 +8,15 @@ security_rules:
   no_raw_sql: true
   no_env_access: true
 ---
-# 🔍 ast-scanner — Parallel Polyglot AST Extractor & BLAKE3 Fingerprinting (v2.4.0)
+# 🔍 ast-scanner — Parallel Polyglot AST Extractor & BLAKE3 AST Cache (v2.5.1)
 
-High-speed Rayon-parallel polyglot AST extractor supporting 11 programming languages (Rust, PHP, Zig, C#, Java, TypeScript/JavaScript, Python, C/C++, Solidity/Move/Cairo, Luau, and Markdown). Extracts AST symbols, computes per-file cryptographic BLAKE3 hashes (`file_blake3_hash`), resolves hierarchical directory contracts, extracts inter-procedural taint flows, and projects affiliation edges into `core-graph`.
+High-speed Rayon-parallel polyglot AST extractor supporting 11 programming languages (Rust, PHP, Zig, C#, Java, TypeScript/JavaScript, Python, C/C++, Solidity/Move/Cairo, Luau, and Markdown). Features a persistent BLAKE3-keyed incremental AST cache (`5.6x` scan speedup), `SecretGuard` exclusion of sensitive files (`.env*`, private keys, credentials), per-file cryptographic BLAKE3 hashing (`file_blake3_hash`), `--plugins` selection, hierarchical directory contract resolution, inter-procedural taint extraction, and affiliation edge projection into `core-graph`.
 
 ## 📦 Component Inventory
 
 | File / Subsystem | Description & Architectural Responsibility |
 | :--- | :--- |
-| `src/scanner.rs` | `ProjectScanner`: parallel AST parsing via Rayon, compiled regex caching (`OnceLock`), file BLAKE3 digest calculation (`file_blake3_hash`), contract resolution (`find_contract_for_file`), and `AffiliationEdge` projection. |
+| `src/scanner.rs` | `ProjectScanner`: parallel AST parsing via Rayon, persistent BLAKE3 AST cache, compiled regex caching (`OnceLock`), `SecretGuard` path filtering, per-file BLAKE3 digest calculation (`file_blake3_hash`), contract resolution (`find_contract_for_file`), and `AffiliationEdge` projection. |
 | `src/taint_extractor.rs` | Inter-procedural taint extractor discovering untrusted sources, propagators, and dangerous sinks for SAST dataflow analysis. |
 | `src/lib.rs` | Public crate root exposing AST scanning and contract resolution interfaces. |
 

@@ -8,7 +8,7 @@ security_rules:
   no_raw_sql: true
   no_env_access: true
 ---
-# 🏗️ arch-templates — Multi-Stack Scaffolding & Architecture Topology Hub (v2.4.0)
+# 🏗️ arch-templates — Multi-Stack Scaffolding & Architecture Topology Hub (v2.5.1)
 
 Automated scaffolding engine for standardized 11-folder project structures. Generates pre-signed BLAKE3 EARS contract `README.md` files and `AETHER_AI_RULES.md` governance specifications for Pure Rust, Python (`uv`), Node/TypeScript (`pnpm`), and Hybrid Web3/MMO development stacks.
 

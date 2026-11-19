@@ -1,11 +1,11 @@
 # 🛡️ Catalogue des Règles CWE & Zero-Day Patterns par Famille
 
-> Détail complet des 185+ règles du moteur SAST AetherScope, classées par famille (incluant **15 règles Zig** et **20 règles C# / .NET**).  
-> Vue d'ensemble et tableau récapitulatif : [`CWE_CATALOG.md`](../CWE_CATALOG.md) · Retour au [README principal](../README.md).
+> Détail des règles du moteur SAST AetherScope (**222 règles natives** dont **28 détecteurs `AETHER-*`**, **26 règles PHP**, **15 règles Zig**, **20 règles C# / .NET**, complétées par **24 règles Semgrep OWASP/CWE** embarquées = **246 règles au total**).  
+> Vue d'ensemble et tableau récapitulatif complet : [`CWE_CATALOG.md`](../CWE_CATALOG.md) · Retour au [README principal](../README.md).
 
 ---
 
-### 📋 Catalogue des 185+ Zero-Day Patterns & CWE Rules par Famille
+### 📋 Catalogue des Règles CWE & Zero-Day Patterns par Famille
 
 
 

@@ -103,7 +103,7 @@ impl OsvCache {
         };
 
         let json = serde_json::to_string_pretty(&entry)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         fs::write(&cache_file, json)
     }
 }

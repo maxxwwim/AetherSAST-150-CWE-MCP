@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
   import { api } from '../lib/api';
-  import { Settings, ShieldAlert, Cpu, FolderTree, Sparkles, Radar, X, Check, RotateCw } from 'lucide-svelte';
+  import { Settings, ShieldAlert, Cpu, FolderTree, Sparkles, Radar, X, Check, RotateCw } from '@lucide/svelte';
 
   let exclusionsText = $state(cockpitState.settings.exclusions.join('\n'));
   let cveFilter = $state('');

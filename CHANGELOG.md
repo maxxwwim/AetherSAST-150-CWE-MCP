@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Dedicated Full-Screen Multi-Tab IDE (`IdeView`, `IdeEditor`, `IdeFileTree`, `IdeSymbolHierarchy`, `IdeDocSidebar`)**: Full-screen IDE mode with multi-tab editing, atomic file saves (`/api/save_file`, `/api/files`), auto-open file at function on 3D bubble click, synchronized cosmic cluster file-tree colors, integrated Doc/EARS/Source sidebars, resizable splitters, collapsible sidebars, and Zen mode.
+- **Persistent BLAKE3 AST Cache & `--plugins` DSL**: BLAKE3-keyed incremental AST cache delivering **5.6x** faster rescans, CLI `--plugins` pack/profile selection, enriched declarative taint/window plugin DSL, and slimmed `/api/graph` columnar payloads.
+- **Cockpit Visual & Ergonomics Upgrades**: Sleek CWE pills, live AI (<5m) left dock, workspace file-system explorer (`/api/fs/list`), visible call/import links with directional chevrons and relation badges, luminous micro-star edge endpoints, and dynamic cellular membrane sync in N2/N3 layouts.
+
+### Changed
+- **Codebase Cleanup & Static Hygiene**: Removed dead Rust functions/constants (`analyze_file`, `record_offline_ai_telemetry`, `SwitchViewModeRequest`, `init_project_structure`, `pick_folder_dialog`, `pick_file_dialog`, `MODERN_INDEX_HTML`, and unreachable `if false` probe block), resolved all Clippy errors/warnings across the 7-crate workspace, unified UI icons on `@lucide/svelte` (dropping duplicate `lucide-svelte`), removed unused Vite starter assets and `portal.ts`, and aligned all documentation & BLAKE3 seals.
+
+### Fixed
+- **UI Type-Safety & Runtime Bugs (`svelte-check`: 35 -> 0 errors)**: Fixed `HeaderDeck` agent target focusing (`selectSymbol(hit.id, true)`), `InspectorDrawer` `api.updateTask` argument mismatch, `AiChatDrawer` AI trail badge field (`step.agentName`), `TasksModal` null guard, `IdeSymbolHierarchy` kind check, and `demoGraph.ts` schema drift.
+- **`AETHER_AI_RULES.md` Generator**: Persisted Section 6 (`SecretGuard`/`SecretMasker`) and the 10-tool MCP catalog directly in `crates/ai-file-bridge/src/audit_writer.rs` so regeneration no longer drops secret-isolation directives.
+
+---
+
 ## [2.5.1] - 2026-11-16
 
 ### Security (Secret Isolation Against AI Agents)
@@ -107,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.2.2] - 2026-11-10
 
 ### Added
-- GitHub-grade Markdown rendering engine with Mermaid diagram support and live Git diff viewing (`GitDiffModal.svelte`).
+- GitHub-grade Markdown rendering engine with Mermaid diagram support and live Git status inspection.
 - `/api/raw_file` streaming endpoint for raw binary media assets (PNG, SVG, WebP, PDF).
 - Comprehensive English documentation with bidirectional links to French reference archives.
 

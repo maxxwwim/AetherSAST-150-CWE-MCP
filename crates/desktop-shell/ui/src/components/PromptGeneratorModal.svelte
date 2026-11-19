@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
   import { api } from '../lib/api';
-  import { Sparkles, Copy, Check, X, Terminal, FileCode2, PlugZap } from 'lucide-svelte';
+  import { Sparkles, Copy, Check, X, Terminal, FileCode2, PlugZap } from '@lucide/svelte';
 
   let taskMode = $state<'refactor' | 'security' | 'tests' | 'docs' | 'audit'>('refactor');
   let targetKind = $state<'symbol' | 'folder'>('symbol');

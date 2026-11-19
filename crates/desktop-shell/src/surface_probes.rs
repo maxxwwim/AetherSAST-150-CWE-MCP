@@ -252,14 +252,10 @@ pub(crate) async fn send_http_probe(
             method, path, host_hdr, origin_line
         );
 
-        if timeout(Duration::from_millis(700), stream.write_all(req_str.as_bytes()))
+        timeout(Duration::from_millis(700), stream.write_all(req_str.as_bytes()))
             .await
             .ok()
-            .and_then(|r| r.ok())
-            .is_none()
-        {
-            return None;
-        }
+            .and_then(|r| r.ok())?;
 
         let mut full_buf = Vec::with_capacity(65536);
         let mut chunk = [0u8; 32768];
@@ -1282,54 +1278,6 @@ pub(crate) fn parse_html_architecture_and_forms(
         forms.extend(spa_forms);
     }
 
-    // 4. DÃ©couverte des Inputs autonomes (SPA / WebGL / React sans balise <form> englobante)
-    if false && forms.is_empty() && lower_body.contains("<input") {
-        let mut spa_inputs = Vec::new();
-        let mut ipos = 0usize;
-        while let Some(irel) = lower_body.get(ipos..).and_then(|s| s.find("<input")) {
-            let istart = ipos + irel;
-            if let Some(iend_rel) = lower_body.get(istart..).and_then(|s| s.find('>')) {
-                let itag = body.get(istart..=istart + iend_rel).unwrap_or("");
-                let iname = extract_attr(itag, "id")
-                    .or_else(|| extract_attr(itag, "name"))
-                    .or_else(|| extract_attr(itag, "placeholder"))
-                    .unwrap_or_else(|| "spa_input".to_string());
-                let itype = extract_attr(itag, "type").unwrap_or_else(|| "text".to_string());
-                if spa_inputs.len() < 25 {
-                    spa_inputs.push(DiscoveredInput {
-                        name: iname,
-                        input_type: itype.clone(),
-                        tag: "input (SPA)".to_string(),
-                        required: false,
-                        classification: if itype == "checkbox" {
-                            "ðŸŽ›ï¸ Toggle / Option UI".to_string()
-                        } else {
-                            "âš¡ Champ SPA / API".to_string()
-                        },
-                    });
-                }
-                ipos = istart + iend_rel + 1;
-            } else {
-                break;
-            }
-        }
-        if !spa_inputs.is_empty() {
-            forms.push(DiscoveredForm {
-                index: 1,
-                id_or_name: "Interface SPA / ContrÃ´les Dynamiques (fetch/XHR)".to_string(),
-                method: "POST / FETCH".to_string(),
-                action: "/api/*".to_string(),
-                enctype: Some("application/json".to_string()),
-                has_csrf_token: true,
-                has_password_field: false,
-                has_file_upload: false,
-                inputs: spa_inputs,
-                security_posture: "PASS".to_string(),
-                security_notes: vec!["Application SPA : les entrÃ©es sont transmises en JSON via fetch() vers les routes /api/*.".to_string()],
-            });
-        }
-    }
-
     // 5. Extraction des liens <a href="...">, <script src="..."> et routes fetch('/api/...')
     let mut external_scripts = Vec::new();
     let mut spos = 0usize;
@@ -1369,8 +1317,8 @@ pub(crate) fn parse_html_architecture_and_forms(
         if let Some(aend_rel) = lower_body.get(astart..).and_then(|s| s.find('>')) {
             let atag = body.get(astart..=astart + aend_rel).unwrap_or("");
             if let Some(href) = extract_attr(atag, "href") {
-                if (href.starts_with('/') || href.starts_with("http")) && !href.starts_with("//") && routes.len() < 30 {
-                    if !routes.iter().any(|r| r.path == href) {
+                if (href.starts_with('/') || href.starts_with("http")) && !href.starts_with("//") && routes.len() < 30
+                    && !routes.iter().any(|r| r.path == href) {
                         routes.push(DiscoveredRoute {
                             path: href,
                             method: "GET".to_string(),
@@ -1378,7 +1326,6 @@ pub(crate) fn parse_html_architecture_and_forms(
                             status: None,
                         });
                     }
-                }
             }
             apos = astart + aend_rel + 1;
         } else {
@@ -2040,10 +1987,9 @@ pub(crate) async fn inspect_web_files_and_directories(
             let mut matched_inputs = Vec::new();
             for jk in &all_json_keys {
                 let jk_low = jk.to_lowercase();
-                if (route_seg.len() >= 3 && (jk_low.contains(&route_seg) || route_seg.contains(&jk_low)))
-                    || matched_inputs.len() < 4
-                {
-                    if !matched_inputs.iter().any(|i: &DiscoveredInput| &i.name == jk) && matched_inputs.len() < 6 {
+                if ((route_seg.len() >= 3 && (jk_low.contains(&route_seg) || route_seg.contains(&jk_low)))
+                    || matched_inputs.len() < 4)
+                    && !matched_inputs.iter().any(|i: &DiscoveredInput| &i.name == jk) && matched_inputs.len() < 6 {
                         let (classification, _, _, _) = classify_html_input(jk, "json");
                         matched_inputs.push(DiscoveredInput {
                             name: jk.clone(),
@@ -2053,7 +1999,6 @@ pub(crate) async fn inspect_web_files_and_directories(
                             classification,
                         });
                     }
-                }
             }
             let next_idx = disc.forms.len() + 1;
             disc.forms.push(DiscoveredForm {
@@ -2215,12 +2160,11 @@ pub(crate) async fn probe_sensitive_artifacts(
                         confirmed_exposed = true;
                         redacted_preview = Some("Page de tÃ©lÃ©mÃ©trie Apache `mod_status` accessible publiquement".to_string());
                     }
-                } else if path == "/openapi.json" || path == "/swagger.json" {
-                    if (lower_body.contains("\"openapi\"") || lower_body.contains("\"swagger\"")) && lower_body.contains("\"paths\"") {
+                } else if (path == "/openapi.json" || path == "/swagger.json")
+                    && (lower_body.contains("\"openapi\"") || lower_body.contains("\"swagger\"")) && lower_body.contains("\"paths\"") {
                         confirmed_exposed = true;
                         redacted_preview = Some("SchÃ©ma JSON OpenAPI / Swagger public dÃ©tectÃ©".to_string());
                     }
-                }
             }
 
             if confirmed_exposed && risk != "INFO" {

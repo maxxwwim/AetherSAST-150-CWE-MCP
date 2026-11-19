@@ -194,15 +194,11 @@ fn mask_impl(src: &str, lang: Lang, mask_strings: bool) -> String {
                 j += 1;
             }
             if !prev_ident && j < n && ch[j] == '"' {
-                for k in i..=j {
-                    out.push(ch[k]);
-                }
+                out.extend(&ch[i..=j]);
                 i = j + 1;
                 while i < n {
                     if ch[i] == '"' && (0..hashes).all(|h| i + 1 + h < n && ch[i + 1 + h] == '#') {
-                        for k in 0..=hashes {
-                            out.push(ch[i + k]);
-                        }
+                        out.extend(&ch[i..=i + hashes]);
                         i += hashes + 1;
                         break;
                     }

@@ -69,7 +69,7 @@ pub fn execute_track_dataflow(dfg: &DataflowGraph) -> Vec<TaintFlowTrace> {
                     let mut sanitizer_name_found = None;
 
                     // Determine sanitizer name candidate
-                    let candidate_name = edge.sanitizer_name.as_deref().or_else(|| match &edge.step_kind {
+                    let candidate_name = edge.sanitizer_name.as_deref().or(match &edge.step_kind {
                         TaintStepKind::SanitizerCall { sanitizer_name, .. } => Some(sanitizer_name.as_str()),
                         _ => None,
                     });

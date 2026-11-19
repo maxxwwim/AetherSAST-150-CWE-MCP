@@ -22,7 +22,7 @@ pub fn compute_all_layouts(nodes: &mut [SymbolBubble]) {
     }
 }
 
-/// 1. Z-1 : Obsidian Galaxy (Clusters nébuleux arborescents mass-aware)
+/// Z-1 : Obsidian Galaxy (Clusters nébuleux arborescents mass-aware).
 /// Structure les dossiers selon l'arborescence réelle des fichiers sur disque,
 /// garantit un espacement proportionnel à la masse des amas et élimine l'empilement au cœur.
 pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
@@ -220,7 +220,7 @@ pub fn compute_system_layout(nodes: &mut [SymbolBubble]) {
         for (idx, &n_idx) in indices.iter().enumerate() {
             let col = idx % sub_cols;
             let row = idx / sub_cols;
-            let total_rows = (count + sub_cols - 1) / sub_cols;
+            let total_rows = count.div_ceil(sub_cols);
 
             let x = base_x + (col as f64 - (sub_cols - 1) as f64 / 2.0) * 95.0;
             let y = (row as f64 - total_rows as f64 / 2.0) * 105.0;
@@ -246,7 +246,7 @@ pub fn compute_flow_layout(nodes: &mut [SymbolBubble]) {
             for (idx, &n_idx) in indices.iter().enumerate() {
                 let col = idx % sub_cols;
                 let row = idx / sub_cols;
-                let total_rows = (count + sub_cols - 1) / sub_cols;
+                let total_rows = count.div_ceil(sub_cols);
 
                 let x = stage_x + (col as f64 - (sub_cols - 1) as f64 / 2.0) * 90.0;
                 let y = (row as f64 - total_rows as f64 / 2.0) * 100.0;
@@ -267,12 +267,12 @@ pub fn compute_classes_layout(nodes: &mut [SymbolBubble]) {
     let spacing_x = 380.0;
     let spacing_y = 210.0;
 
-    for idx in 0..total_nodes {
+    for (idx, node) in nodes.iter_mut().enumerate() {
         let r = idx / cols;
         let c = idx % cols;
         let x = (c as f64 - cols as f64 / 2.0) * spacing_x;
         let y = (r as f64 - (total_nodes / cols) as f64 / 2.0) * spacing_y;
 
-        nodes[idx].layouts.classes = Some(Point2D::new(x.round(), y.round()));
+        node.layouts.classes = Some(Point2D::new(x.round(), y.round()));
     }
 }

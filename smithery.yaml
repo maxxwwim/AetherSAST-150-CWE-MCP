@@ -1,8 +1,8 @@
 # Smithery MCP Server Specification
 # https://smithery.ai/docs/config#smitheryyaml
-version: "2.2.2"
+version: "2.5.1"
 name: "aetherscope-mcp"
-description: "Moteur MCP d'intelligence architecturale & Pare-Feu IA temps réel (< 50ms, 150+ CWEs, Visualiseur 3D WebGL2 & Obsidian Vault)."
+description: "Moteur MCP d'intelligence architecturale & Pare-Feu IA temps réel (< 50ms, 222+ règles SAST/CWE & AETHER-*, SecretGuard, BLAKE3, Visualiseur 3D WebGL 2, IDE & Obsidian Vault)."
 
 startCommand:
   type: "stdio"

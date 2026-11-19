@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/aether-engine
-          key: ${{ runner.os }}-aether-engine-v2.1.0
+          key: ${{ runner.os }}-aether-engine-v2.5.1
 
       - name: Install Rust toolchain
         if: steps.cache-aetherscope.outputs.cache-hit != 'true'

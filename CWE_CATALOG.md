@@ -1,6 +1,6 @@
-# 🪐 AETHER-ENGINE — CATALOGUE OFFICIEL DES 200+ RÈGLES CWE, PATTERNS ZERO-DAY & BACKDOORS AETHER-*
-> **Moteur SAST Spatial AetherScope V2**  
-> **Total des règles actives intégrées :** `215 règles d'audit profondes`  
+# 🪐 AETHER-ENGINE — CATALOGUE OFFICIEL DES 222+ RÈGLES SAST/CWE, PATTERNS ZERO-DAY & BACKDOORS AETHER-*
+> **Moteur SAST Spatial AetherScope V2 (v2.5.1)**  
+> **Total des règles intégrées :** `222 règles natives` (dont `28 détecteurs hors-CWE AETHER-*`) + `24 règles Semgrep OWASP/CWE communautaires` = **`246 règles au total`**  
 > **Technologies auditées :** PHP (WordPress / API), Zig (Systems / C-ABI / SIMD), C# (.NET / ASP.NET Core / EF Core), Rust (Memory Unsafe / LLVM), C++ (Réseau / Protocoles), Node.js / TypeScript, Python, Java, Smart Contracts (Solidity / Move / ZK).
 
 Ce catalogue recense l'ensemble des règles statiques, vérifications de contrats EARS et détecteurs de vulnérabilités embarqués dans le moteur AetherScope V2.
@@ -8,7 +8,7 @@ Ce catalogue recense l'ensemble des règles statiques, vérifications de contrat
 ## 📊 Sommaire des Catégories
 
 - [Web3 / Crypto (34 règles)](#web3--crypto)
-- [PHP / Web Security (25 règles)](#php--web-security)
+- [PHP / Web Security (26 règles)](#php--web-security)
 - [C# / .NET Security (20 règles)](#c--net-security)
 - [SAST / Injection (17 règles)](#sast--injection)
 - [Zig / Systems & Memory Safety (15 règles)](#zig--systems--memory-safety)
@@ -86,7 +86,7 @@ Ce catalogue recense l'ensemble des règles statiques, vérifications de contrat
 
 ---
 
-## 🛡️ PHP / Web Security (25 règles)
+## 🛡️ PHP / Web Security (26 règles)
 
 | Sévérité | Règle / Identifiant | CWE / CVE | Intitulé & Risque Technique | Description & Mécanisme de Détection |
 | :--- | :--- | :--- | :--- | :--- |

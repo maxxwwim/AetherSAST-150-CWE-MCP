@@ -8,24 +8,26 @@ security_rules:
   no_raw_sql: true
   no_env_access: true
 ---
-# 🎨 desktop-shell-ui — Cockpit Spatial Svelte 5 Runes & WebGL 2 (v2.4.0)
+# 🎨 desktop-shell-ui — Cockpit Spatial Svelte 5 Runes, WebGL 2 & IDE Intégré (v2.5.1)
 
-Interface utilisateur réactive du cockpit **AetherScope v2.4.0**, construite avec **Svelte 5 Runes (`$state`, `$derived`, `$effect`)**, **TypeScript**, **Tailwind CSS v4** et **Vite 8 (`vite-plugin-singlefile`)**. Compilée en un bundle HTML autonome unique (`../dist/index.html`) embarqué dans `aether-engine.exe`.
+Interface utilisateur réactive du cockpit **AetherScope v2.5.1**, construite avec **Svelte 5 Runes (`$state`, `$derived`, `$effect`)**, **TypeScript**, **Tailwind CSS v4** et **Vite 8 (`vite-plugin-singlefile`)**. Compilée en un bundle HTML autonome unique (`../dist/index.html`) embarqué dans `aether-engine.exe`.
 
 ## 📦 Contenu
 
 | Dossier / Fichier | Rôle |
 | :--- | :--- |
-| `src/App.svelte` | Orchestrateur racine, raccourcis clavier globaux et montage des tiroirs/modales |
-| `src/state/graphState.svelte.ts` | Store réactif Svelte 5 Runes (`CockpitState`), filtres, télémétrie Git et contrats BLAKE3 |
-| `src/engine/engine.ts` | Moteur de rendu hybride WebGL 2 instancié 120 FPS + Canvas 2D vectoriel (bulles, halos oranges/rouges, lasers) |
-| `src/engine/physics.worker.ts` | Simulation physique off-thread (répulsion de Coulomb, ressorts de Hooke, membranes à 12 lobes) |
-| `src/lib/api.ts` | Client REST typé (`AetherAPI`) incluant `/api/contracts/update`, `/api/contracts/sign` et `/api/git/status` |
+| `src/App.svelte` | Orchestrateur racine, raccourcis clavier globaux, bascule Cockpit/IDE et montage des tiroirs/modales |
+| `src/state/graphState.svelte.ts` | Store réactif Svelte 5 Runes (`CockpitState`), onglets IDE, filtres, télémétrie IA (<5m) et contrats BLAKE3 |
+| `src/engine/engine.ts` | Moteur de rendu hybride WebGL 2 instancié 120 FPS + Canvas 2D vectoriel (bulles, chevrons directionnels, pilules CWE, halos) |
+| `src/engine/physics.worker.js` | Simulation physique off-thread (répulsion de Coulomb, ressorts de Hooke, membranes cellulaires à 12 lobes) |
+| `src/lib/api.ts` | Client REST typé (`AetherApiClient`) pour l'API locale (contrats BLAKE3, Git, fichiers IDE, télémétrie IA, tasks, bounty scope) |
+| `src/lib/graphCodec.ts` | Décodeur compact colonnaire pour graphes massifs (`/api/graph` allégé) |
+| `src/components/HeaderDeck.svelte` | Barre de contrôle supérieure, onglets Vue Code / Vault / IDE, menus outils, recherche profonde et dock agents IA |
+| `src/components/ide/` | IDE plein écran multi-onglets (`IdeView.svelte`, `IdeEditor.svelte`, `IdeFileTree.svelte` coloré selon le graphe 3D, `IdeSymbolHierarchy.svelte`, `IdeDocSidebar.svelte`) avec splitters redimensionnables et mode Zen |
 | `src/components/InspectorDrawer.svelte` | Inspecteur 4 onglets + Éditeur de contrat BLAKE3 en direct (fichier `file_max_lines` & dossier `max_lines_per_file`) |
 | `src/components/DocReaderDrawer.svelte` | Lecteur/Éditeur Markdown GitHub-grade, diagrammes Mermaid, coloration syntaxique et sceau BLAKE3 |
 | `src/components/SynthesisHud.svelte` | Tiroir de synthèse architecturale (filtres de couches, alertes SAST rouges et budgets de lignes oranges) |
 | `src/components/CanvasTooltip.svelte` | Infobulle spatiale temps réel avec statut de contrat BLAKE3 et budgets de lignes |
-| `src/components/GitDiffModal.svelte` | Visualiseur Git Diff côte-à-côte et unifié |
 
 ## 🛡️ Règles EARS
 

@@ -9,7 +9,7 @@ security_rules:
   no_env_access: true
   deterministic_only: true
 ---
-# 🪐 core-graph — Domain Graph Models, Spatial Layouts & SSA Dataflow (v2.4.0)
+# 🪐 core-graph — Domain Graph Models, Spatial Layouts & SSA Dataflow (v2.5.1)
 
 Pure invariant domain core of AetherScope V2. Defines core graph topologies (`AetherGraph`, `SymbolBubble`, `AffiliationEdge`, `CveAnomalyRecord`), per-file BLAKE3 contract metadata, 4 geometric spatial layout engines (Z-1 to Z-4), reverse BFS reachability analysis, and Static Single Assignment (SSA) dataflow taint modeling.
 

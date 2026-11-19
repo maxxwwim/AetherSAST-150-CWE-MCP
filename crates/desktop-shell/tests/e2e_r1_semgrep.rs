@@ -257,7 +257,7 @@ fn test_f2_tier1_unpack_community_bundle_offline_directory_structure() {
 
     // Test that PluginEngine successfully loads the unpacked plugin
     let mut engine = PluginEngine::new();
-    let loaded_count = engine.load_from_directory(&temp_dir.path.join(".aether").join("plugins")).expect("Load plugins");
+    let loaded_count = engine.load_from_directory(temp_dir.path.join(".aether").join("plugins")).expect("Load plugins");
     assert_eq!(loaded_count, 1, "PluginEngine must load exactly 1 plugin");
     let rules_count = engine.plugins.iter().map(|p| p.rules.len()).sum::<usize>();
     assert_eq!(rules_count, 1, "PluginEngine must register exactly 1 rule");

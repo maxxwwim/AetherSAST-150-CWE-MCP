@@ -814,12 +814,12 @@
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 truncate">
                         <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {step.color || '#a855f7'}"></span>
-                        {#if step.author}
+                        {#if step.agentName}
                           <span
                             class="px-1.5 py-0.2 rounded text-[9px] font-semibold truncate"
                             style="background-color: {step.color || '#a855f7'}22; color: {step.color || '#a855f7'}; border: 1px solid {step.color || '#a855f7'}44;"
                           >
-                            🤖 {step.author}
+                            🤖 {step.agentName}
                           </span>
                         {/if}
                         <span class="font-mono font-bold text-white text-[10.5px] truncate">📍 {step.target}</span>

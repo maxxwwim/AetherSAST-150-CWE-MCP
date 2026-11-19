@@ -7,7 +7,7 @@
 //! - Tier 2: Boundary & Corner Cases (empty, dot, separators, depth 32/33, 10MB limits, unicode)
 //! - Tier 3: Cross-Feature Interactions (create then read, save then stream, symlinks, concurrency)
 //! - Tier 4: Real-World Adversarial Attack Scenarios (traversal, UNC, drive letters, null bytes,
-//!           symlink escapes, sensitive files, extension bypass)
+//!   symlink escapes, sensitive files, extension bypass)
 
 #[path = "../src/api_routes.rs"]
 mod api_routes;

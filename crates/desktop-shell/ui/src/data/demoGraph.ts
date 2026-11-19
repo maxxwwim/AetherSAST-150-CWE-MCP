@@ -36,6 +36,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -250,
       y: -120,
+      z: 0,
+      cluster_id: 'core_engine',
     },
     {
       id: 'sym-core-2',
@@ -55,6 +57,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -180,
       y: -240,
+      z: 0,
+      cluster_id: 'core_engine',
     },
     {
       id: 'sym-core-3',
@@ -74,6 +78,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -360,
       y: -190,
+      z: 0,
+      cluster_id: 'core_engine',
     },
     {
       id: 'sym-core-4',
@@ -100,10 +106,13 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
           file_path: 'crates/core/src/contracts.rs',
           line_number: 80,
           description: 'Dépassement du contrat de taille de fichier : 520 lignes (budget: 500).',
+          remediation: 'Découper le fichier en sous-modules atomiques ou ajuster file_max_lines via /api/contracts/update.',
         },
       ],
       x: -310,
       y: -20,
+      z: 0,
+      cluster_id: 'core_engine',
     },
     {
       id: 'sym-core-5',
@@ -123,6 +132,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -160,
       y: -40,
+      z: 0,
+      cluster_id: 'core_engine',
     },
 
     // Security SAST Module
@@ -148,6 +159,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       git_status: 'modified',
       x: 80,
       y: -220,
+      z: 0,
+      cluster_id: 'security_sast',
     },
     {
       id: 'sym-sec-2',
@@ -168,6 +181,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       git_status: 'modified',
       x: 190,
       y: -140,
+      z: 0,
+      cluster_id: 'security_sast',
     },
     {
       id: 'sym-sec-3',
@@ -195,10 +210,13 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
           file_path: 'crates/security-linter/src/rules/cwe_89.rs',
           line_number: 48,
           description: 'Concaténation directe dans la clause WHERE sans cast entier ni binding de paramètre.',
+          remediation: 'Utiliser une requête préparée paramétrée (PDO::prepare / sqlx::query!).',
         },
       ],
       x: 280,
       y: -250,
+      z: 0,
+      cluster_id: 'security_sast',
     },
     {
       id: 'sym-sec-4',
@@ -226,10 +244,13 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
           file_path: 'crates/security-linter/src/rules/cwe_78.rs',
           line_number: 40,
           description: 'Appel direct à shell_exec() avec variable non assainie provenant d\'une requête HTTP.',
+          remediation: 'Bannir shell_exec() ou échapper strictement chaque argument avec escapeshellarg().',
         },
       ],
       x: 260,
       y: -70,
+      z: 0,
+      cluster_id: 'security_sast',
     },
     {
       id: 'sym-sec-5',
@@ -249,6 +270,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: 130,
       y: -50,
+      z: 0,
+      cluster_id: 'security_sast',
     },
     {
       id: 'sym-sec-6',
@@ -276,10 +299,13 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
           file_path: 'crates/security-linter/src/poc_verifier.rs',
           line_number: 82,
           description: 'Sortie directe dans la réponse HTML sans encodage UTF-8 ni échappement entités.',
+          remediation: 'Échapper toute sortie HTML avec htmlspecialchars(..., ENT_QUOTES, "UTF-8") ou textContent.',
         },
       ],
       x: 350,
       y: -160,
+      z: 0,
+      cluster_id: 'security_sast',
     },
 
     // Cockpit UI Module
@@ -304,6 +330,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -120,
       y: 190,
+      z: 0,
+      cluster_id: 'cockpit_ui',
     },
     {
       id: 'sym-ui-2',
@@ -321,9 +349,11 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       methods: [],
       attributes: [],
       is_orphan: false,
-      git_status: 'staged',
+      git_status: 'modified',
       x: -240,
       y: 140,
+      z: 0,
+      cluster_id: 'cockpit_ui',
     },
     {
       id: 'sym-ui-3',
@@ -343,6 +373,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -40,
       y: 130,
+      z: 0,
+      cluster_id: 'cockpit_ui',
     },
     {
       id: 'sym-ui-4',
@@ -362,6 +394,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -190,
       y: 280,
+      z: 0,
+      cluster_id: 'cockpit_ui',
     },
     {
       id: 'sym-ui-5',
@@ -381,6 +415,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -60,
       y: 270,
+      z: 0,
+      cluster_id: 'cockpit_ui',
     },
     {
       id: 'sym-ui-6',
@@ -400,6 +436,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: 30,
       y: 220,
+      z: 0,
+      cluster_id: 'cockpit_ui',
     },
 
     // AI Swarm Module
@@ -421,6 +459,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: 160,
       y: 110,
+      z: 0,
+      cluster_id: 'ai_swarm',
     },
     {
       id: 'sym-ai-2',
@@ -440,6 +480,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: 250,
       y: 40,
+      z: 0,
+      cluster_id: 'ai_swarm',
     },
     {
       id: 'sym-ai-3',
@@ -459,6 +501,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: 290,
       y: 150,
+      z: 0,
+      cluster_id: 'ai_swarm',
     },
     {
       id: 'sym-ai-4',
@@ -478,6 +522,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: 210,
       y: 200,
+      z: 0,
+      cluster_id: 'ai_swarm',
     },
 
     // API & Network
@@ -499,6 +545,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: 50,
       y: 40,
+      z: 0,
+      cluster_id: 'api_network',
     },
     {
       id: 'sym-net-2',
@@ -518,6 +566,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       is_orphan: false,
       x: -30,
       y: -20,
+      z: 0,
+      cluster_id: 'api_network',
     },
     {
       id: 'sym-net-3',
@@ -538,6 +588,8 @@ export const DEMO_AETHER_GRAPH: AetherGraph = {
       git_status: 'modified',
       x: -70,
       y: 50,
+      z: 0,
+      cluster_id: 'api_network',
     },
   ],
   edges: [
@@ -636,32 +688,33 @@ export const DEMO_TASKS: TaskItem[] = [
 ];
 
 export const DEMO_GIT_STATUS: GitStatusResponse = {
+  is_git_repo: true,
   branch: 'main',
-  is_clean: false,
-  dirty_count: 3,
-  cwe_violation_count: 2,
+  clean: false,
+  modified_count: 2,
+  untracked_count: 0,
+  staged_count: 1,
+  deleted_count: 0,
+  security_alert_count: 0,
   files: [
     {
       path: 'crates/security-linter/src/php_rules.rs',
       status: 'modified',
-      additions: 42,
-      deletions: 12,
+      has_security_violation: false,
       cwe_count: 0,
       ears_violation: false,
     },
     {
       path: 'crates/ast-scanner/src/taint_extractor.rs',
       status: 'modified',
-      additions: 28,
-      deletions: 4,
+      has_security_violation: false,
       cwe_count: 0,
       ears_violation: false,
     },
     {
       path: 'crates/desktop-shell/ui/src/engine/palette.ts',
       status: 'staged',
-      additions: 15,
-      deletions: 2,
+      has_security_violation: false,
       cwe_count: 0,
       ears_violation: false,
     },
@@ -669,7 +722,40 @@ export const DEMO_GIT_STATUS: GitStatusResponse = {
 };
 
 export const DEMO_ACTIVE_AGENTS = [
-  { id: 'agent-1', name: 'Gemini Architect', color: '#38bdf8', current_action: 'Analyzing Ast Graph...', current_target: 'aether_core::Engine', x: -250, y: -120 },
-  { id: 'agent-2', name: 'Claude Security Auditor', color: '#f43f5e', current_action: 'Auditing Taint Flows...', current_target: 'ast_scanner::TaintExtractor', x: 190, y: -140 },
-  { id: 'agent-3', name: 'Antigravity Sweeper', color: '#10b981', current_action: 'Validating Line Budget...', current_target: 'aether_core::LineBudgetGuard', x: -310, y: -20 },
+  {
+    agentId: 'agent-1',
+    agentName: 'Gemini Architect',
+    color: '#38bdf8',
+    action: 'Analyzing AST Graph...',
+    target: 'aether_core::Engine',
+    details: 'Inspecting core graph topology',
+    timestamp: Math.floor(Date.now() / 1000),
+    nodeId: 'sym-core-1',
+    targetX: -250,
+    targetY: -120,
+  },
+  {
+    agentId: 'agent-2',
+    agentName: 'Claude Security Auditor',
+    color: '#f43f5e',
+    action: 'Auditing Taint Flows...',
+    target: 'ast_scanner::TaintExtractor',
+    details: 'Tracing SSA source-to-sink paths',
+    timestamp: Math.floor(Date.now() / 1000),
+    nodeId: 'sym-sec-2',
+    targetX: 190,
+    targetY: -140,
+  },
+  {
+    agentId: 'agent-3',
+    agentName: 'Antigravity Sweeper',
+    color: '#10b981',
+    action: 'Validating Line Budget...',
+    target: 'aether_core::LineBudgetGuard',
+    details: 'Verifying BLAKE3 EARS contracts',
+    timestamp: Math.floor(Date.now() / 1000),
+    nodeId: 'sym-core-3',
+    targetX: -310,
+    targetY: -20,
+  },
 ];

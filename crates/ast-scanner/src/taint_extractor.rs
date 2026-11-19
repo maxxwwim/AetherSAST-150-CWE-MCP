@@ -485,6 +485,7 @@ impl TaintExtractor {
     }
 
     /// Detects sink calls on a line and registers TaintSink records
+    #[allow(clippy::too_many_arguments)]
     fn detect_sinks_on_line(
         trimmed: &str,
         line_num: usize,

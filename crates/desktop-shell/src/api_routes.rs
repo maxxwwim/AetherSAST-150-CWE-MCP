@@ -776,62 +776,6 @@ pub fn clear_ai_telemetry_cache(project_root: &Path) {
     let _ = std::fs::remove_file(path);
 }
 
-#[allow(dead_code)]
-pub fn record_offline_ai_telemetry(project_root: &Path, mut event: AiTelemetryEvent) {
-    let mut cache = load_ai_telemetry_cache(project_root);
-    let now_ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    if event.timestamp == 0 {
-        event.timestamp = now_ts;
-    }
-    let agent_key = event
-        .agent_id
-        .clone()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "primary-agent".to_string());
-    event.agent_id = Some(agent_key.clone());
-
-    let existing_color = cache
-        .agents
-        .iter()
-        .find(|a| a.agent_id.as_deref() == Some(agent_key.as_str()))
-        .and_then(|a| a.color.clone());
-    let resolved_color = assign_agent_color(
-        &agent_key,
-        event.agent_name.as_deref(),
-        event.color.as_deref().or(existing_color.as_deref()),
-    );
-    event.color = Some(resolved_color);
-
-    if let Some(pos) = cache.agents.iter().position(|a| a.agent_id.as_deref() == Some(agent_key.as_str())) {
-        if event.agent_name.is_none() {
-            event.agent_name = cache.agents[pos].agent_name.clone();
-        }
-        cache.agents[pos] = event.clone();
-    } else {
-        cache.agents.push(event.clone());
-    }
-    cache.agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-    let is_dup = cache.history.first().map(|last| {
-        last.agent_id == event.agent_id
-            && last.target == event.target
-            && last.action == event.action
-            && event.timestamp.saturating_sub(last.timestamp) <= 1
-    }).unwrap_or(false);
-
-    if !is_dup {
-        cache.history.insert(0, event.clone());
-        if cache.history.len() > 250 {
-            cache.history.truncate(250);
-        }
-    }
-    cache.telemetry = Some(event);
-    save_ai_telemetry_cache(project_root, &cache);
-}
-
 #[derive(Deserialize)]
 pub struct DeleteTaskApiRequest {
     pub task_id: String,
@@ -889,9 +833,6 @@ pub struct ViewModeRequest {
     pub mode: String, // "code" | "vault" (or "notes")
 }
 
-#[allow(dead_code)]
-pub type SwitchViewModeRequest = ViewModeRequest;
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectStatusResponse {
     pub status: String,
@@ -945,8 +886,10 @@ pub struct AppState {
     pub show_file_titles: RwLock<Option<bool>>,
     pub low_memory_mode: RwLock<Option<bool>>,
     /// Cache des octets JSON du graphe pour l'UI (clé : version, nb noeuds, nb arêtes).
+    #[allow(clippy::type_complexity)]
     pub ui_graph_cache: RwLock<Option<(u64, usize, usize, std::sync::Arc<Vec<u8>>)>>,
     /// Cache court de `git status` (évite de relancer git toutes les 2 s sur 16k fichiers).
+    #[allow(clippy::type_complexity)]
     pub git_raw_cache: std::sync::Mutex<Option<(std::time::Instant, Option<(String, Option<String>)>)>>,
 
     // === Obsidian Vault & Dual-Vision Vision Mode Extensions (M2) ===
@@ -1053,7 +996,7 @@ impl AppState {
         agents.insert(agent_key, event.clone());
 
         let mut agents_vec: Vec<AiTelemetryEvent> = agents.values().cloned().collect();
-        agents_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        agents_vec.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
         drop(agents);
 
         let mut history = self.telemetry_history.write().await;
@@ -1573,7 +1516,7 @@ pub fn discover_candidate_projects(workspace_root: &Path) -> Vec<ProjectItem> {
         }
     }
 
-    candidates.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    candidates.sort_by_key(|a| a.name.to_lowercase());
     candidates
 }
 
@@ -1797,11 +1740,6 @@ pub fn update_contract_rules(
     ))
 }
 
-#[allow(dead_code)]
-pub fn init_project_structure(base: &Path, stack_str: &str) -> Vec<String> {
-    init_project_structure_with_topology(base, stack_str, None)
-}
-
 pub fn init_project_structure_with_topology(
     base: &Path,
     stack_str: &str,
@@ -1872,16 +1810,16 @@ pub fn init_project_structure_with_topology(
 
     let structure = vec![
         ("contracts", format!("---\nid: contracts\nlayer: contracts\nmax_lines_per_file: 200\nallowed_imports: []\nforbidden_imports: [\"client::*\", \"server::*\"]\n---\n# 📜 Contrats Globaux & Interfaces Partagées\n\n> **Stack :** {}\n> **Rôle :** {}\n\n## 🛡️ Règles EARS\n- WHEN client issues API request THE SYSTEM SHALL validate schema.\n- WHEN server emits response THE SYSTEM SHALL guarantee type safety.\n", stack_title, stack_contract_note)),
-        ("client", format!("---\nid: client\nlayer: ui\nmax_lines_per_file: 300\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"server::domain::*\", \"data-nodes::*\"]\n---\n# 💻 Couche Client (Interface & Présentation)\n\n> Rendu graphique, formulaires («Form») et gestion d'état local.\n\n- WHEN user interacts with view THE SYSTEM SHALL update reactive local state.\n")),
-        ("client/ui", format!("---\nid: client-ui\nlayer: ui\nmax_lines_per_file: 250\nallowed_imports: [\"contracts::*\", \"client/state::*\"]\nforbidden_imports: [\"server::*\"]\n---\n# 🎨 Composants UI & Formulaires\n\nWHEN user submits form THE SYSTEM SHALL trigger client validation.\n")),
-        ("client/state", format!("---\nid: client-state\nlayer: ui\nmax_lines_per_file: 200\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"server::domain::*\"]\n---\n# 🧠 Gestion d'État Client\n\nStockage réactif local et synchronisation des sessions.\n")),
-        ("server", format!("---\nid: server\nlayer: domain\nmax_lines_per_file: 300\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"client::*\"]\nsecurity_rules:\n  no_raw_sql: true\n  no_env_access: true\n---\n# ⚡ Cœur Métier & API Serveur\n\n> Couche dissociable pouvant tourner en local ou sur serveur dédié.\n")),
-        ("server/domain", format!("---\nid: server-domain\nlayer: domain\nmax_lines_per_file: 200\nallowed_imports: []\nforbidden_imports: [\"server/api::*\", \"client::*\", \"data-nodes::*\"]\nsecurity_rules:\n  deterministic_only: true\n---\n# 🏛️ Logique Métier Pure (Domain)\n\n100% pur, zéro dépendance I/O externe. Règles fondamentales immuables.\n\n- WHEN domain rule is evaluated THE SYSTEM SHALL execute deterministically without I/O.\n")),
-        ("server/application", format!("---\nid: server-app\nlayer: action\nmax_lines_per_file: 250\nallowed_imports: [\"server/domain::*\", \"contracts::*\"]\nforbidden_imports: [\"client::*\"]\n---\n# ⚙️ Orchestration & Cas d'Usage\n\nServices applicatifs coordonnant le domaine et les adaptateurs.\n")),
-        ("server/api", format!("---\nid: server-api\nlayer: action\nmax_lines_per_file: 250\nallowed_imports: [\"server/application::*\", \"contracts::*\"]\nforbidden_imports: [\"server/domain::*\"]\n---\n# 🌐 Entrées API & Contrôleurs RPC/WebSocket\n\nWHEN network packet received THE SYSTEM SHALL route through contracts schema.\n")),
+        ("client", "---\nid: client\nlayer: ui\nmax_lines_per_file: 300\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"server::domain::*\", \"data-nodes::*\"]\n---\n# 💻 Couche Client (Interface & Présentation)\n\n> Rendu graphique, formulaires («Form») et gestion d'état local.\n\n- WHEN user interacts with view THE SYSTEM SHALL update reactive local state.\n".to_string()),
+        ("client/ui", "---\nid: client-ui\nlayer: ui\nmax_lines_per_file: 250\nallowed_imports: [\"contracts::*\", \"client/state::*\"]\nforbidden_imports: [\"server::*\"]\n---\n# 🎨 Composants UI & Formulaires\n\nWHEN user submits form THE SYSTEM SHALL trigger client validation.\n".to_string()),
+        ("client/state", "---\nid: client-state\nlayer: ui\nmax_lines_per_file: 200\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"server::domain::*\"]\n---\n# 🧠 Gestion d'État Client\n\nStockage réactif local et synchronisation des sessions.\n".to_string()),
+        ("server", "---\nid: server\nlayer: domain\nmax_lines_per_file: 300\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"client::*\"]\nsecurity_rules:\n  no_raw_sql: true\n  no_env_access: true\n---\n# ⚡ Cœur Métier & API Serveur\n\n> Couche dissociable pouvant tourner en local ou sur serveur dédié.\n".to_string()),
+        ("server/domain", "---\nid: server-domain\nlayer: domain\nmax_lines_per_file: 200\nallowed_imports: []\nforbidden_imports: [\"server/api::*\", \"client::*\", \"data-nodes::*\"]\nsecurity_rules:\n  deterministic_only: true\n---\n# 🏛️ Logique Métier Pure (Domain)\n\n100% pur, zéro dépendance I/O externe. Règles fondamentales immuables.\n\n- WHEN domain rule is evaluated THE SYSTEM SHALL execute deterministically without I/O.\n".to_string()),
+        ("server/application", "---\nid: server-app\nlayer: action\nmax_lines_per_file: 250\nallowed_imports: [\"server/domain::*\", \"contracts::*\"]\nforbidden_imports: [\"client::*\"]\n---\n# ⚙️ Orchestration & Cas d'Usage\n\nServices applicatifs coordonnant le domaine et les adaptateurs.\n".to_string()),
+        ("server/api", "---\nid: server-api\nlayer: action\nmax_lines_per_file: 250\nallowed_imports: [\"server/application::*\", \"contracts::*\"]\nforbidden_imports: [\"server/domain::*\"]\n---\n# 🌐 Entrées API & Contrôleurs RPC/WebSocket\n\nWHEN network packet received THE SYSTEM SHALL route through contracts schema.\n".to_string()),
         ("data-nodes", format!("---\nid: data-nodes\nlayer: database\nmax_lines_per_file: 300\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"client::*\"]\n---\n# 🗄️ Services & Nœuds de Données Dissociables\n\n> **Découplage :** {}\n", stack_db_note)),
-        ("data-nodes/db-primary", format!("---\nid: db-primary\nlayer: database\nmax_lines_per_file: 250\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"client::*\"]\n---\n# 💾 Adaptateur Base de Données Primaire\n\nMigrations, modèles relationnels et persistance.\n")),
-        ("data-nodes/cache-worker", format!("---\nid: cache-worker\nlayer: utility\nmax_lines_per_file: 200\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"client::*\"]\n---\n# ⚡ Cache & Tâches en Arrière-Plan\n\nFiles d'attente (Redis/MQ) et workers asynchrones isolables.\n")),
+        ("data-nodes/db-primary", "---\nid: db-primary\nlayer: database\nmax_lines_per_file: 250\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"client::*\"]\n---\n# 💾 Adaptateur Base de Données Primaire\n\nMigrations, modèles relationnels et persistance.\n".to_string()),
+        ("data-nodes/cache-worker", "---\nid: cache-worker\nlayer: utility\nmax_lines_per_file: 200\nallowed_imports: [\"contracts::*\"]\nforbidden_imports: [\"client::*\"]\n---\n# ⚡ Cache & Tâches en Arrière-Plan\n\nFiles d'attente (Redis/MQ) et workers asynchrones isolables.\n".to_string()),
     ];
 
     let mut created = Vec::new();
@@ -2614,11 +2552,6 @@ pub fn list_directory_entries(requested: Option<&str>, fallback_root: &Path) -> 
     }
 }
 
-#[allow(dead_code)]
-pub fn pick_folder_dialog(title: &str) -> Option<PathBuf> {
-    pick_folder_dialog_in(title, None)
-}
-
 pub fn pick_folder_dialog_in(title: &str, initial_dir: Option<&Path>) -> Option<PathBuf> {
     // 1. Essai avec rfd dans un thread OS neuf (COM STA garanti propre sur Windows,
     //    sans pollution MTA du pool tokio, et sans réouvrir un second dialogue si l'utilisateur annule).
@@ -2661,42 +2594,6 @@ pub fn pick_folder_dialog_in(title: &str, initial_dir: Option<&Path>) -> Option<
             if output.status.success() {
                 let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !path_str.is_empty() && Path::new(&path_str).is_dir() {
-                    return Some(PathBuf::from(path_str));
-                }
-            }
-        }
-    }
-    None
-}
-
-#[allow(dead_code)]
-pub fn pick_file_dialog(title: &str) -> Option<PathBuf> {
-    let title_owned = title.to_string();
-    let rfd_res = std::thread::spawn(move || {
-        rfd::FileDialog::new().set_title(&title_owned).pick_file()
-    })
-    .join();
-
-    if let Ok(file_opt) = rfd_res {
-        return file_opt;
-    }
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let safe_title = title.replace('\'', "''");
-        let ps_cmd = format!(
-            r#"Add-Type -AssemblyName System.Windows.Forms; $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = '{}'; if ($f.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {{ Write-Output $f.FileName }}; $owner.Dispose()"#,
-            safe_title
-        );
-        let mut cmd = std::process::Command::new("powershell");
-        cmd.args(["-NoProfile", "-STA", "-Command", &ps_cmd]);
-        cmd.creation_flags(0x08000000);
-
-        if let Ok(output) = cmd.output() {
-            if output.status.success() {
-                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path_str.is_empty() && Path::new(&path_str).is_file() {
                     return Some(PathBuf::from(path_str));
                 }
             }
@@ -2897,13 +2794,11 @@ pub fn parse_git_status_porcelain(
                         max_severity = Some("CRITICAL".to_string());
                     } else if sev == "HIGH" && max_severity.as_deref() != Some("CRITICAL") {
                         max_severity = Some("HIGH".to_string());
-                    } else if (sev == "MEDIUM" || sev == "WARNING")
-                        && (max_severity.is_none()
-                            || max_severity.as_deref() == Some("LOW")
-                            || max_severity.as_deref() == Some("INFO"))
+                    } else if max_severity.is_none()
+                        || ((sev == "MEDIUM" || sev == "WARNING")
+                            && (max_severity.as_deref() == Some("LOW")
+                                || max_severity.as_deref() == Some("INFO")))
                     {
-                        max_severity = Some(sev);
-                    } else if max_severity.is_none() {
                         max_severity = Some(sev);
                     }
                 }

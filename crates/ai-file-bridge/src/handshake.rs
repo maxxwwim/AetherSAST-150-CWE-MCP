@@ -12,10 +12,14 @@ impl HandshakePacker {
         dependencies: &[String],
         contract: Option<&ReadmeContract>,
     ) -> String {
-        let mut in_cat = CategorizedLiaisons::default();
-        in_cat.internal_calls = callers.to_vec();
-        let mut out_cat = CategorizedLiaisons::default();
-        out_cat.internal_calls = dependencies.to_vec();
+        let in_cat = CategorizedLiaisons {
+            internal_calls: callers.to_vec(),
+            ..Default::default()
+        };
+        let out_cat = CategorizedLiaisons {
+            internal_calls: dependencies.to_vec(),
+            ..Default::default()
+        };
         Self::build_categorized_prompt(action_type, symbol, &in_cat, &out_cat, contract)
     }
 

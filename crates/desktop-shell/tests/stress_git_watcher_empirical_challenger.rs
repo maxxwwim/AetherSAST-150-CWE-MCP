@@ -401,8 +401,8 @@ fn test_watcher_file_removal_captured_and_routes_to_rescan() {
     assert!(has_md_deleted, "Deletion of notes_removed.md must be detected by watcher");
 
     // Verify router classification in main.rs:805-806
-    let has_md_changes = changed.iter().any(|p| p.extension().map_or(false, |ext| ext == "md"));
-    let has_code_changes = changed.iter().any(|p| p.extension().map_or(false, |ext| ext != "md"));
+    let has_md_changes = changed.iter().any(|p| p.extension().is_some_and(|ext| ext == "md"));
+    let has_code_changes = changed.iter().any(|p| p.extension().is_some_and(|ext| ext != "md"));
 
     assert!(has_code_changes, "Code file deletion must flag has_code_changes = true to trigger re-scan");
     assert!(has_md_changes, "Markdown deletion must flag has_md_changes = true to trigger vault re-scan");

@@ -10,7 +10,7 @@
     RefreshCw,
     Save,
     Clock,
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
   import type { TaskItem } from '../types/graph';
 
   let filterStatus = $state<'all' | 'pending' | 'in_progress' | 'blocked' | 'done' | 'cancelled'>('all');
@@ -426,7 +426,7 @@
                 <div class="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onclick={() => toggleTaskComplete(selectedTask)}
+                    onclick={() => selectedTask && toggleTaskComplete(selectedTask)}
                     class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors {selectedTask.status === 'done' ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40' : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'}"
                     title={selectedTask.status === 'done' ? 'Réouvrir la tâche' : 'Marquer comme terminée à 100%'}
                   >

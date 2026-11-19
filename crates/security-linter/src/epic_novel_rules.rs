@@ -328,8 +328,8 @@ impl EpicNovelRules {
     // Helpers de portée (Brace-tracked)
     // -------------------------------------------------------------------------
 
-    fn collect_brace_scopes<'a>(
-        lines: &[&'a str],
+    fn collect_brace_scopes(
+        lines: &[&str],
         header_pred: impl Fn(&str) -> bool,
     ) -> Vec<(usize, usize)> {
         let mut scopes = Vec::new();
@@ -651,7 +651,7 @@ impl EpicNovelRules {
                     continue;
                 };
                 let var = Self::extract_let_ident(t);
-                let zeroed_before = var.as_deref().map_or(false, |v| {
+                let zeroed_before = var.as_deref().is_some_and(|v| {
                     lines[idx + 1..=next_await].iter().any(|l| {
                         l.contains(&format!("drop({})", v))
                             || l.contains(&format!("{}.zeroize()", v))
@@ -812,8 +812,7 @@ impl EpicNovelRules {
     fn find_direct_yield_in_php_fn(lines: &[&str], start: usize, end: usize) -> Option<usize> {
         let mut depth: isize = 0;
         let mut nested_fn_base: Option<isize> = None;
-        for idx in start..=end {
-            let line = lines[idx];
+        for (idx, &line) in lines.iter().enumerate().take(end + 1).skip(start) {
             if idx > start && nested_fn_base.is_none() && line.contains("function ") {
                 nested_fn_base = Some(depth);
             }
@@ -1283,7 +1282,7 @@ impl EpicNovelRules {
     ) -> bool {
         let fns = ["register_shutdown_function(", "set_error_handler(", "set_exception_handler("];
         fns.iter().any(|f| {
-            Self::extract_call_arg(line, f, arg_idx).map_or(false, |arg| {
+            Self::extract_call_arg(line, f, arg_idx).is_some_and(|arg| {
                 taint_or_obf.iter().any(|p| arg.contains(p))
                     || tainted_vars.iter().any(|v| Self::contains_php_var(&arg, v))
             })
@@ -1298,7 +1297,7 @@ impl EpicNovelRules {
         let arg0_fns = ["call_user_func(", "call_user_func_array(", "array_map("];
         let arg1_fns = ["array_filter(", "usort(", "uasort(", "uksort(", "preg_replace_callback("];
         let check_arg = |fn_name: &str, idx: usize| -> bool {
-            Self::extract_call_arg(line, fn_name, idx).map_or(false, |arg| {
+            Self::extract_call_arg(line, fn_name, idx).is_some_and(|arg| {
                 taint_or_obf.iter().any(|p| arg.contains(p))
                     || tainted_vars.iter().any(|v| Self::contains_php_var(&arg, v))
             })
@@ -1309,9 +1308,9 @@ impl EpicNovelRules {
     fn has_superglobal_or_varvar_invocation(line: &str, tainted_vars: &[String]) -> bool {
         let supers = ["$_GET[", "$_POST[", "$_COOKIE[", "$_REQUEST[", "$_SERVER["];
         let direct_super_call = supers.iter().any(|s| {
-            line.find(s).map_or(false, |pos| {
+            line.find(s).is_some_and(|pos| {
                 let tail = &line[pos + s.len()..];
-                tail.find(']').map_or(false, |rb| tail[rb + 1..].trim_start().starts_with('('))
+                tail.find(']').is_some_and(|rb| tail[rb + 1..].trim_start().starts_with('('))
             })
         });
         let varvar_call = line.contains("$$") && line.contains('(');
@@ -1363,7 +1362,7 @@ impl EpicNovelRules {
 
             let cdef_hit = (t.contains("FFI::cdef(") || t.contains("FFI::load(") || t.contains("FFI::scope("))
                 && (dangerous_syms.iter().any(|s| lower_win.contains(s))
-                    || Self::extract_call_arg(t, "FFI::cdef(", 0).map_or(false, |a| {
+                    || Self::extract_call_arg(t, "FFI::cdef(", 0).is_some_and(|a| {
                         taint_or_dec.iter().any(|p| a.contains(p)) || a.starts_with('$')
                     }));
             let cast_hit = t.contains("FFI::cast(") && (t.contains("(*)") || t.contains("void("));
@@ -1426,10 +1425,10 @@ impl EpicNovelRules {
             let win = lines[idx..(idx + 2).min(lines.len())].join(" ");
 
             let ob_hit = Self::extract_call_arg(t, "ob_start(", 0)
-                .map_or(false, |a| Self::is_dynamic_or_tainted_expr(&a, &markers, &tainted_vars));
+                .is_some_and(|a| Self::is_dynamic_or_tainted_expr(&a, &markers, &tainted_vars));
 
             let mb_eval_hit = ["mb_ereg_replace(", "mb_eregi_replace("].iter().any(|f| {
-                Self::extract_call_arg(t, f, 3).map_or(false, |opt| {
+                Self::extract_call_arg(t, f, 3).is_some_and(|opt| {
                     (opt.contains('\'') || opt.contains('"')) && opt.contains('e')
                         || opt.starts_with('$')
                 })
@@ -1437,18 +1436,18 @@ impl EpicNovelRules {
 
             let sqlite_udf_hit = ["->sqliteCreateFunction(", "->createFunction("].iter().any(|f| {
                 Self::extract_call_arg(t, f, 1)
-                    .map_or(false, |cb| Self::is_dynamic_or_tainted_expr(&cb, &markers, &tainted_vars))
+                    .is_some_and(|cb| Self::is_dynamic_or_tainted_expr(&cb, &markers, &tainted_vars))
             });
 
             let pcntl_hit = ["pcntl_exec(", "expect_popen("].iter().any(|f| {
                 Self::extract_call_arg(t, f, 0)
-                    .map_or(false, |cmd| Self::is_dynamic_or_tainted_expr(&cmd, &markers, &tainted_vars))
+                    .is_some_and(|cmd| Self::is_dynamic_or_tainted_expr(&cmd, &markers, &tainted_vars))
             });
 
             let yaml_hit = !decode_php_disabled
                 && ["yaml_parse(", "yaml_parse_file("].iter().any(|f| {
                     !win.contains("callbacks")
-                        && Self::extract_call_arg(t, f, 0).map_or(false, |src| {
+                        && Self::extract_call_arg(t, f, 0).is_some_and(|src| {
                             markers.iter().any(|m| src.contains(m))
                                 || tainted_vars.iter().any(|v| Self::contains_php_var(&src, v))
                         })
@@ -1515,7 +1514,7 @@ impl EpicNovelRules {
 
             let ini_set_hit = t.contains("ini_set(")
                 && (t.contains("auto_prepend_file") || t.contains("auto_append_file") || t.contains("opcache.preload"))
-                && Self::extract_call_arg(t, "ini_set(", 1).map_or(false, |v| {
+                && Self::extract_call_arg(t, "ini_set(", 1).is_some_and(|v| {
                     v.contains('$') || taint_src.iter().any(|s| v.contains(s))
                 });
 
@@ -1523,9 +1522,9 @@ impl EpicNovelRules {
                 && t.contains("include_path")
                 && !t.contains("__DIR__")
                 && Self::extract_call_arg(t, "ini_set(", 1)
-                    .map_or(false, |v| taint_src.iter().any(|s| v.contains(s)) || v.starts_with('$'));
+                    .is_some_and(|v| taint_src.iter().any(|s| v.contains(s)) || v.starts_with('$'));
 
-            let opcache_hit = Self::extract_call_arg(t, "opcache_compile_file(", 0).map_or(false, |p| {
+            let opcache_hit = Self::extract_call_arg(t, "opcache_compile_file(", 0).is_some_and(|p| {
                 p.contains('$') || taint_src.iter().any(|s| p.contains(s))
             });
 
@@ -1782,6 +1781,7 @@ impl EpicNovelRules {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_rule(
         out: &mut Vec<LinterViolation>,
         file_path: &str,

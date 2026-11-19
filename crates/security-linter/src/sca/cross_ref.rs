@@ -182,14 +182,13 @@ pub fn cross_reference_reachability(graph: &mut AetherGraph, report: &mut ScaRep
 
         for node in &graph.nodes {
             for anom in &node.metadata.cve_anomalies {
-                if anom.cve_id == vuln.cve_id || anom.rule_id == format!("SCA-{}", vuln.advisory_id) {
-                    if anom.is_reachable {
+                if (anom.cve_id == vuln.cve_id || anom.rule_id == format!("SCA-{}", vuln.advisory_id))
+                    && anom.is_reachable {
                         is_reachable = true;
                         if exploit_path.is_empty() || anom.exploit_path.len() < exploit_path.len() {
                             exploit_path = anom.exploit_path.clone();
                         }
                     }
-                }
             }
         }
 

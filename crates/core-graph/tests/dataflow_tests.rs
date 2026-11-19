@@ -52,8 +52,8 @@ fn test_synthetic_direct_intra_procedural_unsanitized() {
     assert_eq!(traces.len(), 1, "Should find 1 propagation trace");
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, false, "Flow is un-sanitized");
-    assert_eq!(trace.is_vulnerable, true, "Sink is vulnerable");
+    assert!(!trace.is_sanitized, "Flow is un-sanitized");
+    assert!(trace.is_vulnerable, "Sink is vulnerable");
     assert_eq!(trace.steps.len(), 1, "Should have 1 step");
 
     // Verify exact variable identifier propagation trace
@@ -112,8 +112,8 @@ fn test_synthetic_direct_intra_procedural_sanitized_neutralized() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, true, "Flow MUST be marked sanitized");
-    assert_eq!(trace.is_vulnerable, false, "Flow MUST NOT be vulnerable");
+    assert!(trace.is_sanitized, "Flow MUST be marked sanitized");
+    assert!(!trace.is_vulnerable, "Flow MUST NOT be vulnerable");
     assert!(trace.applied_sanitizers.contains(&"clean_sql".to_string()));
 
     // Crucial Acceptance Criterion: NO active vulnerability alert at Sink level!
@@ -187,7 +187,7 @@ fn test_sanitizers_per_cwe_catalog() {
                 "Sanitizer '{}' for '{}' should have neutralized the taint",
                 san_name, cwe
             );
-            assert_eq!(trace.is_vulnerable, false);
+            assert!(!trace.is_vulnerable);
             assert_eq!(dfg.active_vulnerabilities().len(), 0);
         } else {
             assert!(
@@ -195,7 +195,7 @@ fn test_sanitizers_per_cwe_catalog() {
                 "Sanitizer '{}' should NOT neutralize unrelated CWE '{}'",
                 san_name, cwe
             );
-            assert_eq!(trace.is_vulnerable, true);
+            assert!(trace.is_vulnerable);
             assert_eq!(dfg.active_vulnerabilities().len(), 1);
         }
     }
@@ -268,8 +268,8 @@ fn test_synthetic_inter_procedural_multi_hop_unsanitized() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, false);
-    assert_eq!(trace.is_vulnerable, true);
+    assert!(!trace.is_sanitized);
+    assert!(trace.is_vulnerable);
     assert_eq!(trace.steps.len(), 3);
 
     // Exact variable identifier propagation trace
@@ -367,8 +367,8 @@ fn test_synthetic_inter_procedural_multi_hop_sanitized_neutralized() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, true, "Should be neutralized by intermediate clean_sql");
-    assert_eq!(trace.is_vulnerable, false);
+    assert!(trace.is_sanitized, "Should be neutralized by intermediate clean_sql");
+    assert!(!trace.is_vulnerable);
     assert_eq!(trace.steps.len(), 4);
     assert!(trace.applied_sanitizers.contains(&"clean_sql".to_string()));
 
@@ -420,12 +420,12 @@ fn test_ssa_version_reassignment_disambiguation() {
     assert_eq!(traces.len(), 2);
 
     let trace_sink1 = traces.iter().find(|t| t.sink.rule_id == "SINK_X0").expect("trace sink1");
-    assert_eq!(trace_sink1.is_sanitized, false, "Sink1 consumes $x#0 directly without sanitization");
-    assert_eq!(trace_sink1.is_vulnerable, true);
+    assert!(!trace_sink1.is_sanitized, "Sink1 consumes $x#0 directly without sanitization");
+    assert!(trace_sink1.is_vulnerable);
 
     let trace_sink2 = traces.iter().find(|t| t.sink.rule_id == "SINK_X1").expect("trace sink2");
-    assert_eq!(trace_sink2.is_sanitized, true, "Sink2 consumes sanitized $x#1");
-    assert_eq!(trace_sink2.is_vulnerable, false);
+    assert!(trace_sink2.is_sanitized, "Sink2 consumes sanitized $x#1");
+    assert!(!trace_sink2.is_vulnerable);
 
     // Active vulnerabilities must contain ONLY sink1
     let active = dfg.active_vulnerabilities();
@@ -489,8 +489,8 @@ fn test_inter_procedural_return_value_propagation() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, false);
-    assert_eq!(trace.is_vulnerable, true);
+    assert!(!trace.is_sanitized);
+    assert!(trace.is_vulnerable);
     assert_eq!(
         trace.traversed_variables(),
         vec!["$raw#0", "$in#0", "$out#0", "$res#0"]
@@ -554,8 +554,8 @@ fn test_inter_procedural_return_value_sanitized() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, true, "Return value passed through intval must be sanitized");
-    assert_eq!(trace.is_vulnerable, false);
+    assert!(trace.is_sanitized, "Return value passed through intval must be sanitized");
+    assert!(!trace.is_vulnerable);
     assert_eq!(dfg.active_vulnerabilities().len(), 0);
 }
 
@@ -619,8 +619,8 @@ fn test_phi_branching_conservative_taint() {
 
     let trace = &traces[0];
     // Conservative analysis: because un-sanitized else branch can reach sink, flow is VULNERABLE!
-    assert_eq!(trace.is_vulnerable, true);
-    assert_eq!(trace.is_sanitized, false);
+    assert!(trace.is_vulnerable);
+    assert!(!trace.is_sanitized);
     assert_eq!(dfg.active_vulnerabilities().len(), 1);
 }
 
@@ -667,8 +667,8 @@ fn test_custom_sanitizer_rule_extension() {
 
     let traces = dfg.track_dataflow();
     assert_eq!(traces.len(), 1);
-    assert_eq!(traces[0].is_sanitized, true);
-    assert_eq!(traces[0].is_vulnerable, false);
+    assert!(traces[0].is_sanitized);
+    assert!(!traces[0].is_vulnerable);
     assert_eq!(dfg.active_vulnerabilities().len(), 0);
 }
 
@@ -724,12 +724,12 @@ fn test_aether_graph_compute_dataflow_taint_integration() {
     // Case 1: Unsanitized flow
     let traces = graph.compute_dataflow_taint(&[]);
     assert_eq!(traces.len(), 1);
-    assert_eq!(traces[0].is_sanitized, false);
+    assert!(!traces[0].is_sanitized);
 
     let anom = &graph.nodes[0].metadata.cve_anomalies[0];
     assert!(anom.taint_trace.is_some());
-    assert_eq!(anom.is_reachable, true, "Unsanitized flow makes anomaly reachable");
-    assert_eq!(graph.nodes[0].has_security_violation, true);
+    assert!(anom.is_reachable, "Unsanitized flow makes anomaly reachable");
+    assert!(graph.nodes[0].has_security_violation);
 
     // Case 2: Now neutralize with sanitizer
     let mut sanitized_dfg = DataflowGraph::new();
@@ -762,11 +762,11 @@ fn test_aether_graph_compute_dataflow_taint_integration() {
 
     let san_traces = graph.compute_dataflow_taint(&[]);
     assert_eq!(san_traces.len(), 1);
-    assert_eq!(san_traces[0].is_sanitized, true);
+    assert!(san_traces[0].is_sanitized);
 
     let neutralized_anom = &graph.nodes[0].metadata.cve_anomalies[0];
-    assert_eq!(neutralized_anom.is_reachable, false, "Sanitized flow neutralizes anomaly reachability");
-    assert_eq!(graph.nodes[0].has_security_violation, false, "Node violation cleared when all anomalies neutralized");
+    assert!(!neutralized_anom.is_reachable, "Sanitized flow neutralizes anomaly reachability");
+    assert!(!graph.nodes[0].has_security_violation, "Node violation cleared when all anomalies neutralized");
 }
 
 #[test]
@@ -793,7 +793,7 @@ fn test_track_dataflow_api_standalone() {
 
     let traces = track_dataflow(&graph, &sources, &sinks, &sanitizers);
     assert_eq!(traces.len(), 1);
-    assert_eq!(traces[0].is_vulnerable, true);
-    assert_eq!(traces[0].is_sanitized, false);
+    assert!(traces[0].is_vulnerable);
+    assert!(!traces[0].is_sanitized);
 }
 mod taint_dsl_tests;

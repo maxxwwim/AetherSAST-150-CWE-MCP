@@ -279,8 +279,7 @@
     if (!targetName) return;
     const hit = cockpitState.resolveTargetNode(targetName);
     if (hit) {
-      cockpitState.selectSymbol(hit);
-      cockpitState.focusTargetNode = hit;
+      cockpitState.selectSymbol(hit.id, true);
     }
     openMenu = null;
   }

@@ -158,11 +158,9 @@ impl FileWatcherBridge {
                             "c", "h", "java", "sol", "php", "zig", "cs", "json", "toml", "yaml", "yml",
                         ]
                         .contains(&ext.as_str())
-                        {
-                            if !changed.contains(&path) {
+                            && !changed.contains(&path) {
                                 changed.push(path);
                             }
-                        }
                     }
                 }
             }

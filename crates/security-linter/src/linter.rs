@@ -1342,7 +1342,7 @@ impl SecurityLinter {
             || norm_path.starts_with("interface")
             || norm_path.ends_with("interface.sol")
             || norm_path.ends_with(".d.ts")
-            || (file_name.starts_with('I') && file_name.chars().nth(1).map_or(false, |c| c.is_uppercase()) && (norm_path.ends_with(".sol") || norm_path.ends_with(".java")))
+            || (file_name.starts_with('I') && file_name.chars().nth(1).is_some_and(|c| c.is_uppercase()) && (norm_path.ends_with(".sol") || norm_path.ends_with(".java")))
             || norm_path.contains("/types/")
             || (norm_path.ends_with(".sol") && content.contains("interface ") && !content.contains("contract "))
             || (norm_path.ends_with(".java") && content.contains("interface "));
@@ -1618,7 +1618,7 @@ impl SecurityLinter {
                     .find("burn_gas")
                     .or_else(|| trimmed.find("pay_gas"))
                     .or_else(|| trimmed.find("prepay_gas"))
-                    .map_or(false, |g_pos| alloc_pos.map_or(false, |a_pos| g_pos < a_pos));
+                    .is_some_and(|g_pos| alloc_pos.is_some_and(|a_pos| g_pos < a_pos));
                 let is_wasm_host_logic = (norm_path.contains("vm-runner") || norm_path.contains("logic") || norm_path.contains("host"))
                     && !norm_path.contains("compiler_daemon")
                     && !norm_path.contains("prepare")

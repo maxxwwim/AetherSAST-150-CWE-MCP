@@ -81,10 +81,14 @@ impl AuditWriter {
         dependencies: &[String],
         contract: Option<&ReadmeContract>,
     ) -> std::io::Result<()> {
-        let mut in_cat = core_graph::edge::CategorizedLiaisons::default();
-        in_cat.internal_calls = callers.to_vec();
-        let mut out_cat = core_graph::edge::CategorizedLiaisons::default();
-        out_cat.internal_calls = dependencies.to_vec();
+        let in_cat = core_graph::edge::CategorizedLiaisons {
+            internal_calls: callers.to_vec(),
+            ..Default::default()
+        };
+        let out_cat = core_graph::edge::CategorizedLiaisons {
+            internal_calls: dependencies.to_vec(),
+            ..Default::default()
+        };
         Self::write_active_target_categorized(project_root, symbol, &in_cat, &out_cat, contract)
     }
 
@@ -281,7 +285,7 @@ Le graphe 3D WebGL 2 tourne en continu sur le port `{}` et audite chaque modific
 ---
 
 ## ⚡ 1. WORKFLOW MCP COMBINÉ EN 3 APPELS (ZÉRO COMMANDES REDONDANTES)
-Les commandes MCP d'AetherScope ont été **fusionnées et réduites à 8 outils combinés** pour minimiser les appels d'outils :
+Les commandes MCP d'AetherScope sont **consolidées en 10 outils combinés** pour minimiser les appels d'outils :
 
 1. **Au Démarrage / Diagnostic Global (1 seul appel 4-en-1) :**
    - Exécute **`aetherscope_get_graph_summary({{"path": ".", "rescan": false, "include_tasks": true}})`**
@@ -294,36 +298,37 @@ Les commandes MCP d'AetherScope ont été **fusionnées et réduites à 8 outils
 
 3. **Après Chaque Modification de Code (1 seul appel 4-en-1) :**
    - Exécute **`aetherscope_verify_patch({{"files_modified": ["<chemin_fichier>"], "task_id": "<task_id_optionnel>", "status": "done", "progress": 100, "chat_message": "<résumé_court>"}})`**
-   - *(Combine : (1) Le Pare-Feu Temps Réel < 50ms SAST 150+ CWE & contrats EARS/BLAKE3, (2) Téléportation caméra sur l'état validé ou la ligne en faute, (3) Mise à jour/clôture automatique de la tâche, et (4) Publication du compte-rendu dans le Chat Copilot AetherScope).*
+   - *(Combine : (1) Le Pare-Feu Temps Réel < 50ms SAST 222+ règles CWE/AETHER-* & contrats EARS/BLAKE3, (2) Téléportation caméra sur l'état validé ou la ligne en faute, (3) Mise à jour/clôture automatique de la tâche, et (4) Publication du compte-rendu dans le Chat Copilot AetherScope).*
    - Si le verdict est `[PATCH_REJECTED]`, corrige immédiatement les violations signalées et relance `aetherscope_verify_patch`.
 
 ---
 
-## 🛠️ 2. RÉFÉRENTIEL DES 8 COMMANDES MCP COMBINÉES (`aetherscope_*`)
+## 🛠️ 2. RÉFÉRENTIEL DES 10 COMMANDES MCP COMBINÉES (`aetherscope_*`)
 Spécifie toujours les paramètres exacts lors de tes appels MCP :
 
 1. **`aetherscope_get_graph_summary(path?, rescan?, include_tasks?, severity?)`** *(4-en-1)*
-   - Vue globale de l'architecture, dossiers, violations CWE filtrables par `severity` (`"critical"`, `"high"`, `"all"`), tâches actives (`include_tasks: true` par défaut) et réanalyse AST (`rescan: true` remplace `scan_project`).
+   - Vue globale de l'architecture, dossiers, violations CWE filtrables par `severity` (`"critical"`, `"high"`, `"all"`), tâches actives (`include_tasks: true` par défaut) et réanalyse AST (`rescan: true`).
 2. **`aetherscope_get_active_target(symbol_id, action?, details?, trace_direction?, max_depth?, path?)`** *(3-en-1)*
    - Aligne la caméra 3D (`action`: `"Inspection"` | `"Analyse"` | `"Refactoring"` | `"Correction CVE"`), extrait le contrat EARS & Handshake XML, et trace le flux MVC amont/aval (`trace_direction`: `"both"` par défaut, `"upstream"`, `"downstream"`, ou `"none"`).
 3. **`aetherscope_search_symbols(query?, layer?, kind?, stereotype?, has_violation?, cwe_id?, severity?, file_pattern?, limit?, path?)`** *(2-en-1)*
    - Combine la recherche multi-critères dans l'AST (`layer`: `"ui"` | `"action"` | `"domain"` | `"database"`, `kind`, `stereotype`) ET l'audit détaillé des violations SAST/CWE (`cwe_id`, `severity`, `file_pattern`) avec patrons de remédiation.
-4. **`aetherscope_manage_tasks(action, task_id?, title?, kind?, target_symbol?, target_file?, priority?, status?, progress?, progress_note?, initial_readme?, full_readme?, status_filter?)`** *(3-en-1)*
-   - Gère tout le cycle de vie des tâches dans `.aether/tasks/` via `action`:
-     - `"list"` : liste les tâches (`status_filter`: `"active"` | `"all"` | `"done"`).
-     - `"create"` : crée une tâche (`title`, `kind`: `"function"` | `"security_fix"` | `"arch_refactor"` | `"research"` | `"test"`, `target_symbol`, `priority`) et téléporte la caméra 3D.
-     - `"update"` : met à jour une tâche (`task_id`, `status`: `"in_progress"` | `"done"` | `"blocked"`, `progress`: `0..100`, `progress_note`).
-5. **`aetherscope_verify_patch(files_modified, task_id?, status?, progress?, progress_note?, chat_message?)`** *(4-en-1)*
-   - Pare-Feu IA Temps Réel (< 50 ms) : vérifie les fichiers modifiés (`files_modified: ["..."]`), valide les 150+ règles CWE, l'atteignabilité Source-to-Sink et les contrats `README.md` (imports interdits, max lignes, BLAKE3). Si `[PATCH_APPROVED]`, met à jour `task_id` et envoie `chat_message` dans le HUD.
-6. **`aetherscope_chat(action?, text?, thought?, target_symbol?)`** *(2-en-1)*
+4. **`aetherscope_switch_view_mode(mode, path?)`**
+   - Permute instantanément la visualisation 3D du cockpit entre `"code"` (topologie AST) et `"vault"` (graphe de connaissances Obsidian).
+5. **`aetherscope_manage_tasks(action, task_id?, title?, kind?, target_symbol?, target_file?, priority?, status?, progress?, progress_note?, initial_readme?, full_readme?, status_filter?)`** *(4-en-1)*
+   - Gère tout le cycle de vie des tâches dans `.aether/tasks/` via `action`: `"list"`, `"create"`, `"update"` ou `"delete"`.
+6. **`aetherscope_verify_patch(files_modified, task_id?, status?, progress?, progress_note?, chat_message?)`** *(4-en-1)*
+   - Pare-Feu IA Temps Réel (< 50 ms) : vérifie les fichiers modifiés (`files_modified: ["..."]`), valide les 222+ règles CWE/AETHER-*, l'atteignabilité Source-to-Sink, la protection `SecretGuard` et les contrats `README.md` (imports interdits, max lignes, BLAKE3). Si `[PATCH_APPROVED]`, met à jour `task_id` et envoie `chat_message` dans le HUD.
+7. **`aetherscope_chat(action?, text?, thought?, target_symbol?)`** *(2-en-1)*
    - `action: "send"` (défaut si `text` fourni) : affiche un debrief Markdown dans le Chat Copilot d'AetherScope et centre la caméra sur `target_symbol`.
    - `action: "history"` : récupère l'historique des échanges du cockpit.
-7. **`aetherscope_manage_plugins(action, target_path?, plugins_dir?, path?, plugin_name?, rule_id?, cwe_id?, name?, severity?, description?, remediation?, file_extensions?, ...)`** *(4-en-1)*
+8. **`aetherscope_manage_plugins(action, target_path?, plugins_dir?, path?, plugin_name?, rule_id?, cwe_id?, name?, severity?, description?, remediation?, file_extensions?, ...)`** *(4-en-1)*
    - Gère les plugins déclaratifs YAML dans `.aether/plugins/` via `action`: `"list"` (inventaire), `"test"` (exécution des tests unitaires embarqués), `"scan"` (audit sur `target_path`), ou `"upsert"` (création/mise à jour certifiée d'une règle CWE).
-8. **`aetherscope_teleport_camera(target, action, details)`**
+9. **`aetherscope_teleport_camera(target, action, details)`**
    - Déplacement rapide de la caméra 3D WebGL et mise à jour du fil d'Ariane stellaire sans recharger le contrat complet.
+10. **`aetherscope_scan_project(path?)`**
+    - Déclenche un rescan AST/SAST parallèle complet du projet cible et rafraîchit le graphe.
 
-*(Note : les anciens noms d'outils unitaires restent supportés en alias rétrocompatibles par le serveur MCP, mais privilégie toujours les 8 commandes combinées ci-dessus).*
+*(Note : les anciens noms d'outils unitaires restent supportés en alias rétrocompatibles par le serveur MCP, mais privilégie toujours les 10 commandes combinées ci-dessus).*
 
 ---
 
@@ -352,6 +357,17 @@ Spécifie toujours les paramètres exacts lors de tes appels MCP :
 - **Règle d'Atomicité (< 35 lignes) :** Découpe le code en fonctions atomiques pures de moins de 35 lignes maximum (particulièrement dans `domain/`).
 - **Preuve de Lecture [AETHER_ACK] :** Démarre tes propositions techniques par :
   `[AETHER_ACK: cible=<symbole>, couche=<layer>, mcp=aetherscope_get_active_target->aetherscope_verify_patch]`
+
+---
+
+## 🛡️ 6. SÉCURISATION ABSOLUE DES SECRETS & VARIABLES D'ENVIRONNEMENT (`.env`)
+1. **Interdiction Formelle d'Accès aux Secrets :**
+   - L'IA ne doit JAMAIS tenter de lire, modifier, indexer, créer ou exposer un fichier contenant des secrets (`.env`, `.env.*`, `*.env`, `.envrc`, `.secrets`, `credentials`, `id_rsa`, `.pem`, `.key`, `service-account.json`, etc.).
+   - Le pare-feu `SecretGuard` d'AetherScope bloque tout accès MCP (`aetherscope_get_active_target`, `aetherscope_verify_patch`, API endpoints) ciblant un fichier sensible avec une violation critique immédiate (`PROHIBITED_SECRET_FILE_MODIFICATION` / CWE-538).
+2. **Masquage Automatique Résiduel (`SecretMasker`) :**
+   - Toutes les clés API (OpenAI/Anthropic/Gemini, GitHub, AWS, Stripe, Slack), jetons JWT, URIs de base de données et clés privées PEM sont automatiquement caviardés `[REDACTED]` dans les réponses MCP, les flux AST et le chat.
+3. **Gouvernance :**
+   - Aucun secret ne doit être committé ni injecté dans les contrats `README.md`. L'accès aux configurations de production est strictement cloisonné.
 "#,
             project_name, p_str, stack_title, stack_arch, server_port, server_port, stack_contracts
         )

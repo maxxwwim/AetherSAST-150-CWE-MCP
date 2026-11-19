@@ -4,15 +4,15 @@
 //!
 //! Validates:
 //! - R1: Automatic project detection (`PureObsidianVault`, `PureCode`, `Mixed`) on synthetic fixtures
-//!       and dynamic availability of both views (`code` and `vault`).
+//!   and dynamic availability of both views (`code` and `vault`).
 //! - R2: Complete Obsidian Markdown parsing (`[[note]]`, `[[note|label]]`, `[[note#heading]]`,
-//!       `![[embed]]`, `#tag`, YAML frontmatter, backlinks), `core-graph` mapping, and strict
-//!       path confinement (`PathGuard`, `TargetJail`).
+//!   `![[embed]]`, `#tag`, YAML frontmatter, backlinks), `core-graph` mapping, and strict
+//!   path confinement (`PathGuard`, `TargetJail`).
 //! - R3: Axum API (`/api/project/status`, `POST /api/view_mode`), MCP tools, Cockpit WebGL2
-//!       dynamic switcher (`#view-mode-toggle`, `switchProjectViewMode`), and dual-mode
-//!       standalone HTML viewer bundle.
+//!   dynamic switcher (`#view-mode-toggle`, `switchProjectViewMode`), and dual-mode
+//!   standalone HTML viewer bundle.
 //! - R4: Synthetic fixtures (`fixture_pure_obsidian_vault`, `fixture_pure_code_project`,
-//!       `fixture_mixed_code_vault`) and full end-to-end integration.
+//!   `fixture_mixed_code_vault`) and full end-to-end integration.
 
 #[path = "../src/api_routes.rs"]
 mod api_routes;

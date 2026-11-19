@@ -29,7 +29,7 @@ use tao::{
 use wry::WebViewBuilder;
 
 #[derive(Parser, Debug, Clone)]
-#[command(author, version, about = "AetherScope V2.4 - Autonomous Graph Engine & AI Guardrail Bridge", long_about = None)]
+#[command(author, version, about = "AetherScope V2 - Autonomous Graph Engine, SAST & AI Guardrail Bridge", long_about = None)]
 pub struct Args {
     #[arg(short, long, default_value = ".")]
     pub path: String,
@@ -326,7 +326,7 @@ async fn run_sca_only_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> 
     let project_root = if clean.is_empty() || clean == "." {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     } else {
-        fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
+        fs::canonicalize(clean).unwrap_or_else(|_| PathBuf::from(&clean))
     };
 
     println!("ðŸ“¦ [SCA] Scanning dependencies in `{}` (offline: {})...", project_root.display(), args.offline_sca);
@@ -400,7 +400,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let project_root = if clean.is_empty() || clean == "." {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     } else {
-        fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
+        fs::canonicalize(clean).unwrap_or_else(|_| PathBuf::from(&clean))
     };
 
     AuditWriter::ensure_master_rules_file(&project_root)?;
@@ -504,7 +504,7 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         let mut failed_violations = Vec::new();
 
         for a in &all_anomalies {
-            if a.taint_trace.as_ref().map_or(false, |t| t.is_sanitized) {
+            if a.taint_trace.as_ref().is_some_and(|t| t.is_sanitized) {
                 continue;
             }
             let sev = a.severity.trim().to_uppercase();
@@ -608,10 +608,13 @@ fn apply_settings_filters_to_graph(
 
     let is_violation_allowed = |rule_str: &str, cve_str: &str| -> bool {
         if let Some(ref allowed_set) = allowed_set_opt {
-            if !rule_str.is_empty() && rule_str != "RULE_MAX_LINES" && !allowed_set.contains(rule_str) {
-                if !(rule_str == "BLAKE3_TAMPERED" && !allowed_set.is_empty()) {
-                    return false;
-                }
+            let exempt_blake3 = rule_str == "BLAKE3_TAMPERED" && !allowed_set.is_empty();
+            if !rule_str.is_empty()
+                && rule_str != "RULE_MAX_LINES"
+                && !allowed_set.contains(rule_str)
+                && !exempt_blake3
+            {
+                return false;
             }
         }
         let rule_up = rule_str.to_uppercase();
@@ -1057,21 +1060,19 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         last_change_time = None;
 
                         let current_mode = watcher_state.get_active_view_mode().await;
-                        let has_md_changes = files_to_process.iter().any(|p| p.extension().map_or(false, |ext| ext == "md"));
-                        let has_code_changes = files_to_process.iter().any(|p| p.extension().map_or(false, |ext| ext != "md"));
+                        let has_md_changes = files_to_process.iter().any(|p| p.extension().is_some_and(|ext| ext == "md"));
+                        let has_code_changes = files_to_process.iter().any(|p| p.extension().is_some_and(|ext| ext != "md"));
 
                         // Refresh vault graph if md changed or in vault mode
                         if has_md_changes || current_mode == "vault" {
                             let scan_root = current_root.clone();
-                            if let Ok(updated_vault) = tokio::task::spawn_blocking(move || {
+                            if let Ok(Ok(v_graph)) = tokio::task::spawn_blocking(move || {
                                 obsidian_vault::scan_obsidian_vault(&scan_root)
                             }).await {
-                                if let Ok(v_graph) = updated_vault {
-                                    *watcher_state.vault_graph.write().await = Some(v_graph.clone());
-                                    if current_mode == "vault" {
-                                        *watcher_state.graph.write().await = v_graph;
-                                        watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                                    }
+                                *watcher_state.vault_graph.write().await = Some(v_graph.clone());
+                                if current_mode == "vault" {
+                                    *watcher_state.graph.write().await = v_graph;
+                                    watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                                 }
                             }
                         }
@@ -1425,7 +1426,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         let mut path = if clean.is_empty() || clean == "." {
                             state.project_root.read().await.clone()
                         } else {
-                            fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
+                            fs::canonicalize(clean).unwrap_or_else(|_| PathBuf::from(&clean))
                         };
 
                         if !path.exists() {
@@ -1467,7 +1468,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         let mut path = if clean.is_empty() || clean == "." {
                             state.project_root.read().await.clone()
                         } else {
-                            fs::canonicalize(&clean).unwrap_or_else(|_| PathBuf::from(&clean))
+                            fs::canonicalize(clean).unwrap_or_else(|_| PathBuf::from(&clean))
                         };
 
                         if !path.exists() {
@@ -1971,9 +1972,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                                         if trimmed.starts_with("#[") || trimmed.starts_with("#![") || trimmed == "]" || (trimmed.starts_with('@') && !trimmed.starts_with("@param") && !trimmed.starts_with("@return")) {
                                             continue;
                                         }
-                                        if trimmed.starts_with("///") || trimmed.starts_with("//!") {
-                                            collected.push(trimmed.trim_start_matches('/').trim().to_string());
-                                        } else if trimmed.starts_with("//") {
+                                        if trimmed.starts_with("//") {
                                             collected.push(trimmed.trim_start_matches('/').trim().to_string());
                                         } else if trimmed.starts_with('#') {
                                             collected.push(trimmed.trim_start_matches('#').trim().to_string());
@@ -2078,7 +2077,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let mut agents_map = state.active_agents.write().await;
                     agents_map.retain(|_, ag| is_agent_ping_fresh(ag.timestamp, now_secs));
                     let mut agents: Vec<AiTelemetryEvent> = agents_map.values().cloned().collect();
-                    agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+                    agents.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
                     drop(agents_map);
 
                     let fresh_telemetry = {
@@ -2898,12 +2897,12 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         .unwrap_or_else(|| catalogue.iter().map(|r| r.rule_id.clone()).collect());
                     let ignored_cwes = state.ignored_cwes.read().await.clone();
                     let ui_settings = state.saved_ui_settings.read().await.clone();
-                    let show_alerts = state.show_alerts.read().await.clone();
-                    let show_cwe_bubbles = state.show_cwe_bubbles.read().await.clone();
-                    let show_cwe_titles = state.show_cwe_titles.read().await.clone();
-                    let show_folder_titles = state.show_folder_titles.read().await.clone();
-                    let show_file_titles = state.show_file_titles.read().await.clone();
-                    let low_memory_mode = state.low_memory_mode.read().await.clone();
+                    let show_alerts = *state.show_alerts.read().await;
+                    let show_cwe_bubbles = *state.show_cwe_bubbles.read().await;
+                    let show_cwe_titles = *state.show_cwe_titles.read().await;
+                    let show_folder_titles = *state.show_folder_titles.read().await;
+                    let show_file_titles = *state.show_file_titles.read().await;
+                    let low_memory_mode = *state.low_memory_mode.read().await;
                     axum::Json(SettingsPayload {
                         exclusions,
                         active_cve_rules: Some(active_rules),

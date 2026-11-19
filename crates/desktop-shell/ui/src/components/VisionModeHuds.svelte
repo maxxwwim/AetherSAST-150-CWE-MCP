@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
-  import { Eye, Flame, Ghost, X, Camera, Sparkles, Layers } from 'lucide-svelte';
+  import { Eye, Flame, Ghost, X, Camera, Sparkles, Layers } from '@lucide/svelte';
 
   const xrayStats = $derived.by(() => {
     const active = cockpitState.activeSymbol;

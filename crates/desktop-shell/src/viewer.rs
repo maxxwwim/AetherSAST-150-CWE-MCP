@@ -4,8 +4,6 @@ use serde::Serialize;
 
 pub const PHYSICS_WORKER_JS: &str = include_str!("../ui/src/engine/physics.worker.js");
 pub const DIST_INDEX_HTML: &str = include_str!("../dist/index.html");
-#[allow(dead_code)]
-pub const MODERN_INDEX_HTML: &str = DIST_INDEX_HTML;
 
 /// Dual-vision graph container serialized for offline standalone bundles.
 #[derive(Debug, Clone, Serialize)]

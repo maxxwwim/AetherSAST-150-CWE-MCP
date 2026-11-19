@@ -109,7 +109,7 @@ pub fn parse_cargo_lock_content(content: &str, manifest_path: &str) -> Result<Ve
         if let (Some(name), Some(version)) = (name_opt, ver_opt) {
             let is_registry = src_opt
                 .as_deref()
-                .map_or(false, |s| s.starts_with("registry+") || s.starts_with("git+"));
+                .is_some_and(|s| s.starts_with("registry+") || s.starts_with("git+"));
             if is_registry {
                 out.push(ScaDependency {
                     name: name.clone(),

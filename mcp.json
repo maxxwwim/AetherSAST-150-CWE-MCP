@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/mcp-server.json",
   "name": "aetherscope-mcp",
-  "version": "2.1.0",
-  "description": "Serveur MCP AetherScope V2.1 - Visualiseur 3D, SAST 150+ CWE Blake3, Télémétrie, Pare-feu IA verify_patch et Orchestrateur de Tâches",
+  "version": "2.5.1",
+  "description": "Serveur MCP AetherScope V2.5 - Visualiseur 3D WebGL 2, SAST 222+ règles CWE & AETHER-* (246 avec Semgrep), SSA Taint, Reachable SCA, SecretGuard, BLAKE3 et Pare-feu IA verify_patch",
   "capabilities": {
     "tools": true,
     "resources": true,

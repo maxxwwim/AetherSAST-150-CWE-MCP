@@ -197,7 +197,7 @@ pub fn resolve_mcp_agent_identity(arguments: &Value) -> (String, String, String)
 
     let arg_name = opt_str_arg(arguments, "agent_name")
         .or_else(|| opt_str_arg(arguments, "name"))
-        .or_else(|| arg_id);
+        .or(arg_id);
 
     let arg_color = opt_str_arg(arguments, "color");
 
@@ -859,7 +859,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let req_path = opt_str_arg(&arguments, "path").unwrap_or(default_path);
                     let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
 
-                    if let Some(ref sym) = target_symbol.as_ref().or(target_file.as_ref()) {
+                    if let Some(sym) = target_symbol.as_ref().or(target_file.as_ref()) {
                         if !sym.trim().is_empty() {
                             let _ = emit_mcp_telemetry(server_port, req_path, sym, "Création Tâche", &title, &arguments).await;
                         }
@@ -930,7 +930,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     if task_id.trim().is_empty() {
                         (json!([{ "type": "text", "text": "âš ï¸ Erreur: 'task_id' requis pour la mise Ã  jour." }]), true)
                     } else {
-                        if let Some(ref sym) = target_symbol.as_ref().or(target_file.as_ref()) {
+                        if let Some(sym) = target_symbol.as_ref().or(target_file.as_ref()) {
                             if !sym.trim().is_empty() {
                                 let _ = emit_mcp_telemetry(
                                     server_port,

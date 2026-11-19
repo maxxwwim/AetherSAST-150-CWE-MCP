@@ -312,7 +312,7 @@ pub fn benchmark_project_with_plugins(
     let chunk_size = if loaded_files.is_empty() {
         1
     } else {
-        (loaded_files.len() + num_threads - 1) / num_threads
+        loaded_files.len().div_ceil(num_threads)
     };
 
     let has_plugin_rules = plugin_engine.total_rules_count() > 0;

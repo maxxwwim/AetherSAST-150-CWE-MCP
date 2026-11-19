@@ -96,8 +96,8 @@ fn test_challenger_exact_variable_identifier_propagation_trace() {
     assert_eq!(traces.len(), 1, "Exactly one trace expected");
 
     let trace = &traces[0];
-    assert_eq!(trace.is_vulnerable, true, "Unsanitized flow MUST be vulnerable");
-    assert_eq!(trace.is_sanitized, false, "Unsanitized flow MUST NOT be marked sanitized");
+    assert!(trace.is_vulnerable, "Unsanitized flow MUST be vulnerable");
+    assert!(!trace.is_sanitized, "Unsanitized flow MUST NOT be marked sanitized");
     assert_eq!(trace.steps.len(), 4, "Must have exactly 4 steps");
 
     // EMPIRICAL ASSERTION 1: Exact variable identifiers in order
@@ -166,8 +166,8 @@ fn test_challenger_sanitizer_neutralization_intval() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, true, "intval MUST neutralize CWE-89 taint");
-    assert_eq!(trace.is_vulnerable, false, "Neutralized flow MUST NOT be vulnerable");
+    assert!(trace.is_sanitized, "intval MUST neutralize CWE-89 taint");
+    assert!(!trace.is_vulnerable, "Neutralized flow MUST NOT be vulnerable");
     assert!(trace.applied_sanitizers.contains(&"intval".to_string()));
 
     // EMPIRICAL ASSERTION: 0 vulnerability alerts at Sink!
@@ -213,8 +213,8 @@ fn test_challenger_sanitizer_neutralization_clean_sql() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, true);
-    assert_eq!(trace.is_vulnerable, false);
+    assert!(trace.is_sanitized);
+    assert!(!trace.is_vulnerable);
     assert!(trace.applied_sanitizers.contains(&"clean_sql".to_string()));
 
     let active = dfg.active_vulnerabilities();
@@ -259,8 +259,8 @@ fn test_challenger_sanitizer_neutralization_dompurify() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, true, "DOMPurify.sanitize MUST neutralize CWE-79 taint");
-    assert_eq!(trace.is_vulnerable, false);
+    assert!(trace.is_sanitized, "DOMPurify.sanitize MUST neutralize CWE-79 taint");
+    assert!(!trace.is_vulnerable);
     assert!(trace.applied_sanitizers.contains(&"DOMPurify.sanitize".to_string()));
 
     let active = dfg.active_vulnerabilities();
@@ -305,8 +305,8 @@ fn test_challenger_sanitizer_neutralization_escapeshellarg() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, true, "escapeshellarg MUST neutralize CWE-78 taint");
-    assert_eq!(trace.is_vulnerable, false);
+    assert!(trace.is_sanitized, "escapeshellarg MUST neutralize CWE-78 taint");
+    assert!(!trace.is_vulnerable);
     assert!(trace.applied_sanitizers.contains(&"escapeshellarg".to_string()));
 
     let active = dfg.active_vulnerabilities();
@@ -353,8 +353,8 @@ fn test_challenger_mismatched_cwe_sanitizer_does_not_neutralize() {
     assert_eq!(traces.len(), 1);
 
     let trace = &traces[0];
-    assert_eq!(trace.is_sanitized, false, "escapeshellarg MUST NOT sanitize a SQL injection sink!");
-    assert_eq!(trace.is_vulnerable, true);
+    assert!(!trace.is_sanitized, "escapeshellarg MUST NOT sanitize a SQL injection sink!");
+    assert!(trace.is_vulnerable);
 
     let active = dfg.active_vulnerabilities();
     assert_eq!(active.len(), 1, "Alert MUST be emitted when sanitizer does not match sink CWE");
@@ -474,8 +474,8 @@ fn test_challenger_nested_multi_sanitizer_chain() {
     assert_eq!(traces.len(), 1);
     let trace = &traces[0];
 
-    assert_eq!(trace.is_sanitized, true);
-    assert_eq!(trace.is_vulnerable, false);
+    assert!(trace.is_sanitized);
+    assert!(!trace.is_vulnerable);
     assert!(trace.applied_sanitizers.contains(&"clean_sql".to_string()));
     assert!(trace.applied_sanitizers.contains(&"intval".to_string()));
 
@@ -503,5 +503,5 @@ fn test_challenger_cyclic_dataflow_termination() {
     // Verify termination without infinite loop
     let traces = dfg.track_dataflow();
     assert_eq!(traces.len(), 1);
-    assert_eq!(traces[0].is_vulnerable, true);
+    assert!(traces[0].is_vulnerable);
 }

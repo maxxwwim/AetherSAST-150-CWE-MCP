@@ -290,6 +290,7 @@ Le patch peut être appliqué et commité en toute sécurité.\n",
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_violation(file: &str, line: usize, rule: &str, cve: &str, sev: &str, msg: String, data: Option<&str>, ty: Option<&str>, remed: &str) -> LinterViolation {
     LinterViolation {
         file_path: file.to_string(), line_number: line, rule_id: rule.to_string(), cve_id: cve.to_string(),

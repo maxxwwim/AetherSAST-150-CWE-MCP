@@ -54,7 +54,7 @@ impl ScaEngine {
     ) -> Result<ScaReport, Box<dyn std::error::Error>> {
         let root = project_root.as_ref();
         let deps = scan_project_lockfiles(root)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         let cache = OsvCache::default_for_project(root);
         let mut report = ScaReport {

@@ -332,12 +332,12 @@ impl SanitizerRule {
             }
             SanitizerMatchKind::RegexPattern => {
                 let pat = &self.name;
-                if pat.starts_with('*') && pat.ends_with('*') && pat.len() >= 2 {
-                    expr.contains(&pat[1..pat.len() - 1])
-                } else if pat.starts_with('*') {
-                    callee.ends_with(&pat[1..]) || expr.ends_with(&pat[1..])
-                } else if pat.ends_with('*') {
-                    callee.starts_with(&pat[..pat.len() - 1]) || expr.starts_with(&pat[..pat.len() - 1])
+                if let Some(mid) = pat.strip_prefix('*').and_then(|s| s.strip_suffix('*')) {
+                    expr.contains(mid)
+                } else if let Some(suf) = pat.strip_prefix('*') {
+                    callee.ends_with(suf) || expr.ends_with(suf)
+                } else if let Some(pre) = pat.strip_suffix('*') {
+                    callee.starts_with(pre) || expr.starts_with(pre)
                 } else {
                     callee == pat || expr == pat
                 }

@@ -8,15 +8,15 @@ security_rules:
   no_raw_sql: true
   no_env_access: true
 ---
-# 🛡️ security-linter — Real-Time SAST Engine, 215 Active Rules & BLAKE3 Contracts (v2.4.0)
+# 🛡️ security-linter — Real-Time SAST Engine, 222+ Rules, SecretGuard & BLAKE3 Contracts (v2.5.1)
 
-High-performance Static Application Security Testing (SAST) engine evaluating 215 active rules (220 native definitions + 24 Semgrep OWASP/CWE community rules = 244 total) across 35 vulnerability families. Features dual-pass lexical comment/string masking, specialized language security suites (PHP 8.x, Zig, C#/.NET 8+, Rust/LLVM, DeFi/Smart Contracts, ZK-SNARKs), 28 novel non-CWE zero-day detectors (`AETHER-*`), SARIF 2.1.0 exporter, Semgrep YAML plugin importer, Reachable SCA engine, and the `aether-plugin-tool` CLI.
+High-performance Static Application Security Testing (SAST) engine evaluating **222 native rules** (including 28 non-CWE `AETHER-*` zero-day detectors) + **24 embedded Semgrep OWASP/CWE community rules** (**246 total rules**) across 35 vulnerability families. Features dual-pass lexical comment/string masking, specialized language security suites (PHP 8.x, Zig, C#/.NET 8+, Rust/LLVM, DeFi/Smart Contracts, ZK-SNARKs), declarative YAML plugins (`--plugins` & enriched taint/window DSL), `SecretGuard`/`SecretMasker` secret isolation, SARIF 2.1.0 exporter, Semgrep YAML plugin importer, Reachable SCA engine, and the `aether-plugin-tool` CLI.
 
 ## 📦 Component Inventory
 
 | File / Subsystem | Description & Architectural Responsibility |
 | :--- | :--- |
-| `src/linter.rs` | Central `SecurityLinter` orchestrator, rule registry (220 native rules), file eligibility filtering, and violation aggregation. |
+| `src/linter.rs` | Central `SecurityLinter` orchestrator, rule registry (222 native rules), file eligibility filtering, plugin selection (`audit_file_selected`), and violation aggregation. |
 | `src/contract.rs` | Architecture contract parser: YAML frontmatter (`max_lines_per_file`, `file_max_lines`), EARS clause extraction, and BLAKE3 verification. |
 | `src/lexer.rs` | Dual-pass comment and string literal masking engine eliminating false positives while preserving exact byte and line coordinates. |
 | `src/rules.rs` | Web3 & DeFi security suite: oracle spot manipulation, flash loans, reentrancy, and ERC-4337 paymaster griefing. |
@@ -25,7 +25,9 @@ High-performance Static Application Security Testing (SAST) engine evaluating 21
 | `src/zig_rules.rs` | 15 Zig systems rules: use-after-free, unhandled error unions, `@ptrCast` alignment, SIMD unaligned OOB, and C-interop safety. |
 | `src/csharp_rules.rs` | 20 C# / .NET 8+ rules: `BinaryFormatter` deserialization, SQLi, command injection, path traversal, XXE, ReDoS, and unsafe `stackalloc`. |
 | `src/epic_novel_rules.rs` | 28 exclusive non-CWE zero-day detectors (`AETHER-*`): Trojan Source unicode, compiler soundness flaws, async TLS bleed, and stealth backdoors. |
-| `src/plugin.rs` | Declarative plugin engine executing external YAML security rules from `.aether/plugins/`. |
+| `src/plugin.rs` | Declarative plugin engine (`PluginEngine`, `PluginSelection`) executing external YAML security rules with enriched taint/window DSL from `.aether/plugins/`. |
+| `src/secret_guard.rs` | Sensitive-file path detector (`SecretGuard`) blocking AI/HTTP access to `.env*`, private keys, certificates, credentials, and service accounts. |
+| `src/secret_masker.rs` | In-memory secret redactor (`SecretMasker`) masking API keys (OpenAI/Anthropic/Gemini, GitHub, AWS, Stripe, Slack), JWTs, DB URIs, and PEM blocks. |
 | `src/semgrep_importer.rs` | Bidirectional converter translating Semgrep/Nuclei YAML rules into native compiled Rust regular expressions. |
 | `src/sarif.rs` | OASIS-compliant SARIF v2.1.0 JSON serializer for GitHub Code Scanning and automated CI/CD security gates. |
 | `src/sanitizer_catalog.rs` | Catalog of established sanitizers neutralizing taint flows across injection and traversal categories. |

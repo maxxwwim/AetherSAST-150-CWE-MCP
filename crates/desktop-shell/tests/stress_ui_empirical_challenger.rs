@@ -234,8 +234,8 @@ fn test_defect_oracle_r1_callout_bracket_pulse_collision() {
 fn test_defect_oracle_r1_badge_file_node_overlap_on_short_edges() {
     let zoom: f64 = 1.0;
     let badge_font_size: f64 = 11.0;
-    let sub_font_size: f64 = (badge_font_size * 0.88).max(8.0).min(11.0); // 9.68
-    let pad_y: f64 = (4.0 / zoom.max(0.5)).max(3.0).min(6.0); // 4.0
+    let sub_font_size: f64 = (badge_font_size * 0.88).clamp(8.0, 11.0); // 9.68
+    let pad_y: f64 = (4.0 / zoom.max(0.5)).clamp(3.0, 6.0); // 4.0
     let line_spacing: f64 = (3.0 / zoom.max(0.5)).max(2.0); // 3.0
     let badge_h = badge_font_size + sub_font_size + line_spacing + pad_y * 2.0; // 31.68
 
@@ -266,7 +266,7 @@ fn test_defect_oracle_r1_badge_file_node_overlap_on_short_edges() {
 fn test_defect_oracle_r1_font_size_ballooning_and_vanishing() {
     // Case A: Zoom = 0.05
     let z_out: f64 = 0.05;
-    let world_font_out = (11.0 / z_out).min(13.0).max(9.0); // 13.0
+    let world_font_out = (11.0 / z_out).clamp(9.0, 13.0); // 13.0
     let screen_font_out = world_font_out * z_out; // 13.0 * 0.05 = 0.65 screen px
 
     println!(
@@ -281,7 +281,7 @@ fn test_defect_oracle_r1_font_size_ballooning_and_vanishing() {
 
     // Case B: Zoom = 5.0
     let z_in: f64 = 5.0;
-    let world_font_in = (11.0 / z_in).min(13.0).max(9.0); // 9.0
+    let world_font_in = (11.0 / z_in).clamp(9.0, 13.0); // 9.0
     let screen_font_in = world_font_in * z_in; // 9.0 * 5.0 = 45.0 screen px
 
     println!(

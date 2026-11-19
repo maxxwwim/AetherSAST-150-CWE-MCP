@@ -77,11 +77,10 @@ impl SanitizerCatalog {
         let rules = Self::rules_for_cwe(cwe);
         let mut detected = Vec::new();
         for rule in rules {
-            if rule.matches(snippet, cwe) || snippet.contains(&rule.name) {
-                if !detected.contains(&rule.name) {
+            if (rule.matches(snippet, cwe) || snippet.contains(&rule.name))
+                && !detected.contains(&rule.name) {
                     detected.push(rule.name.clone());
                 }
-            }
         }
         detected
     }

@@ -476,7 +476,7 @@
     const progress = status === 'done' ? 100 : status === 'in_progress' ? 50 : 0;
     try {
       const readme = task.full_readme || task.readme || task.readme_summary || '';
-      await api.updateTask(task.id, status, progress, readme, {
+      await api.updateTask(task.id, status, progress, `Statut mis à jour : ${status}`, readme, {
         agent_id: task.agent_id,
         agent_name: task.agent_name,
         color: task.color,
