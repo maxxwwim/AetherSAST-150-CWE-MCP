@@ -731,8 +731,22 @@ impl PluginEngine {
 
         for path in entries {
             if path.is_dir() {
+                if path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|n| n.eq_ignore_ascii_case("visuals"))
+                {
+                    continue;
+                }
                 self.scan_and_load_dir(&path, count)?;
             } else if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                if path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|n| n.eq_ignore_ascii_case("visual-plugin"))
+                {
+                    continue;
+                }
                 let ext_lower = ext.to_ascii_lowercase();
                 if ext_lower == "yaml" || ext_lower == "yml" || ext_lower == "json" {
                     if let Ok(content) = fs::read_to_string(&path) {

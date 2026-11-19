@@ -298,6 +298,20 @@ if (file_exists($_GET['avatar_path'])) {
 }
 `,
     },
+    {
+      label: '🌊 Taint SSA : Flux Source → Variable → Sink vs Sanitizer',
+      filePath: 'src/api/taint_flow.rs',
+      code: `pub fn handle_search(req: &HttpRequest) {
+    // 1. Source Taint SSA (http_req_query : req.query) -> Sink SQL (raw_sql_exec : db.execute)
+    let raw_filter = req.query("filter");
+    let query_stmt = raw_filter;
+    db.execute(query_stmt);
+
+    // 2. Flux neutralisé par Sanitizer (strict_allowlist_guard : bind_param) -> 0 alerte !
+    let safe_stmt = bind_param(raw_filter);
+    db.execute(safe_stmt);
+}`,
+    },
   ];
 
   let playgroundFilePath = $state(PLAYGROUND_SAMPLES[0].filePath);
@@ -405,25 +419,25 @@ if (file_exists($_GET['avatar_path'])) {
     {
       label: '💎 Anneau Cristallin Pulsé',
       code: `void aetherNodeSurface(in NodeCtx ctx, out vec3 rgb, out float alpha) {
-  float d = ctx.dist;
+  float d = ctx.r;
   if (d > 1.0) { rgb = vec3(0.0); alpha = 0.0; return; }
   float core = smoothstep(0.75, 0.1, d);
   float rim = smoothstep(0.12, 0.0, abs(d - 0.72));
-  float pulse = 0.5 + 0.5 * sin(ctx.time * 3.0 + ctx.seed * 6.28);
-  rgb = ctx.baseColor * (0.55 + 0.65 * core) + ctx.baseColor * rim * (1.1 + 0.5 * pulse);
-  alpha = (core * 0.85 + rim * 0.95) * ctx.alpha;
+  float pulse = 0.5 + 0.5 * sin(ctx.time * 3.0 + ctx.phase);
+  rgb = ctx.color.rgb * (0.55 + 0.65 * core) + ctx.color.rgb * rim * (1.1 + 0.5 * pulse);
+  alpha = clamp(core * 0.85 + rim * 0.95, 0.0, 1.0);
 }`,
     },
     {
       label: '📟 Puce Hex-Core Néon',
       code: `void aetherNodeSurface(in NodeCtx ctx, out vec3 rgb, out float alpha) {
-  vec2 p = abs(ctx.localPos);
+  vec2 p = abs(ctx.uv);
   float hex = max(p.x * 0.866025 + p.y * 0.5, p.y);
   if (hex > 0.92) { rgb = vec3(0.0); alpha = 0.0; return; }
   float border = smoothstep(0.08, 0.0, abs(hex - 0.76));
   float fill = smoothstep(0.78, 0.2, hex);
-  rgb = ctx.baseColor * (0.35 * fill + 1.45 * border);
-  alpha = clamp(fill * 0.75 + border, 0.0, 1.0) * ctx.alpha;
+  rgb = ctx.color.rgb * (0.35 * fill + 1.45 * border);
+  alpha = clamp(fill * 0.75 + border, 0.0, 1.0);
 }`,
     },
   ];
@@ -463,6 +477,17 @@ if (file_exists($_GET['avatar_path'])) {
       isOfflineFallback = true;
       syncDemoInventory();
     } finally {
+      const list = inventory?.plugins ?? demoPluginsList;
+      if (list.length > 0) {
+        const current = list.find((p) => p.name === taintPluginName || p.folder_alias === taintPluginName);
+        const preferred =
+          current ||
+          list.find((p) => (p.taint_sources_count || 0) + (p.taint_sinks_count || 0) > 0) ||
+          list[0];
+        if (preferred) {
+          selectPluginForTaint(preferred.name);
+        }
+      }
       isLoading = false;
     }
   }
@@ -1157,13 +1182,17 @@ if (file_exists($_GET['avatar_path'])) {
 
   function addTaintSanitizer() {
     const pats = splitList(newSanPatterns);
+    const cwes = splitList(newSanCwes);
     if (!newSanName.trim() || pats.length === 0) return;
     taintSanitizers = [
       ...taintSanitizers.filter((n) => n.name !== newSanName.trim()),
       {
         name: newSanName.trim(),
         patterns: pats,
-        neutralizes_cwes: splitList(newSanCwes),
+        target_cwes: cwes.length > 0 ? cwes : ['*'],
+        neutralizes_cwes: cwes.length > 0 ? cwes : ['*'],
+        match_kind: 'ExactName',
+        neutralizes_all: cwes.includes('*'),
       },
     ];
     newSanName = '';
@@ -1177,59 +1206,92 @@ if (file_exists($_GET['avatar_path'])) {
     const targetName = taintPluginName.trim() || 'custom-taint-pack';
     const list = inventory?.plugins ?? demoPluginsList;
     const existing = list.find((p) => p.name === targetName || p.folder_alias === targetName);
-    const seedRule = existing?.rules?.[0];
+
+    const normalizedSanitizers = taintSanitizers.map((san) => {
+      const cwes = san.target_cwes || san.neutralizes_cwes || ['*'];
+      const pats = san.patterns && san.patterns.length > 0 ? san.patterns : [san.name];
+      return {
+        name: san.name,
+        target_cwes: cwes,
+        neutralizes_cwes: cwes,
+        patterns: pats,
+        match_kind: san.match_kind || 'ExactName',
+        language: san.language ?? null,
+        neutralizes_all: Boolean(san.neutralizes_all || cwes.includes('*')),
+      };
+    });
 
     busyAction = 'save-taint';
     statusMsg = null;
     try {
-      if (!isOfflineFallback && seedRule) {
+      if (!isOfflineFallback) {
         const res = await api.upsertPluginRule({
-          plugin_name: existing.folder_alias || existing.name,
-          rule_id: seedRule.id,
-          cwe_id: seedRule.cwe_id,
-          name: seedRule.name,
-          severity: seedRule.severity,
-          description: seedRule.description,
-          remediation: seedRule.remediation,
-          file_extensions: seedRule.file_extensions,
-          match_mode: seedRule.match_mode === 'whole_file' ? 'whole_file' : 'line_by_line',
-          regex_patterns: seedRule.regex_patterns,
-          must_contain: seedRule.must_contain,
-          must_not_contain: seedRule.must_not_contain,
-          check_literals: seedRule.check_literals,
-          not_preceded_within_lines: seedRule.not_preceded_within_lines,
-          in_path_matching: seedRule.in_path_matching,
-          not_in_path_matching: seedRule.not_in_path_matching,
-          ast_scope: seedRule.ast_scope,
+          plugin_name: existing?.folder_alias || existing?.name || targetName,
+          rule_id: '',
+          cwe_id: '',
+          name: '',
+          severity: 'HIGH',
+          description: '',
+          remediation: '',
+          file_extensions: [],
           taint_sources: taintSources,
           taint_sinks: taintSinks,
-          sanitizers: taintSanitizers,
+          sanitizers: normalizedSanitizers,
         });
         if (res?.inventory) inventory = res.inventory;
+        selectPluginForTaint(existing?.name || targetName);
         await refreshLiveGraph();
         statusMsg = {
           kind: 'ok',
-          text: `Pipeline Taint SSA sauvegardé dans "${targetName}" (${taintSources.length} sources, ${taintSinks.length} sinks, ${taintSanitizers.length} sanitizers).`,
+          text: `Pipeline Taint SSA sauvegardé dans "${targetName}" (${taintSources.length} sources, ${taintSinks.length} sinks, ${normalizedSanitizers.length} sanitizers).`,
         };
       } else {
+        let matched = false;
         demoPluginsList = demoPluginsList.map((p) => {
           if (p.name === targetName || p.folder_alias === targetName) {
+            matched = true;
             return {
               ...p,
               taint_sources: structuredClone(taintSources),
               taint_sinks: structuredClone(taintSinks),
-              sanitizers: structuredClone(taintSanitizers),
+              sanitizers: structuredClone(normalizedSanitizers),
               taint_sources_count: taintSources.length,
               taint_sinks_count: taintSinks.length,
-              sanitizers_count: taintSanitizers.length,
+              sanitizers_count: normalizedSanitizers.length,
             };
           }
           return p;
         });
+        if (!matched) {
+          const slug = targetName.toLowerCase().replace(/[^a-z0-9_-]/g, '-') || 'custom-taint-pack';
+          demoPluginsList = [
+            {
+              name: slug,
+              rel_path: `${slug}/plugin.yaml`,
+              folder_alias: slug,
+              version: '1.0.0',
+              author: 'AetherScope Taint SSA Studio',
+              description: `Pack Taint Dataflow SSA (${taintSources.length}S/${taintSinks.length}K/${normalizedSanitizers.length}N)`,
+              enabled: true,
+              profile: 'taint',
+              tags: ['taint', 'ssa'],
+              rules_count: 0,
+              test_cases_count: 0,
+              taint_sources_count: taintSources.length,
+              taint_sinks_count: taintSinks.length,
+              sanitizers_count: normalizedSanitizers.length,
+              rules: [],
+              taint_sources: structuredClone(taintSources),
+              taint_sinks: structuredClone(taintSinks),
+              sanitizers: structuredClone(normalizedSanitizers),
+            },
+            ...demoPluginsList,
+          ];
+        }
         syncDemoInventory();
         statusMsg = {
           kind: 'ok',
-          text: `Pipeline Taint SSA mis à jour pour "${targetName}" (${taintSources.length}S / ${taintSinks.length}K / ${taintSanitizers.length}N).`,
+          text: `Pipeline Taint SSA mis à jour pour "${targetName}" (${taintSources.length}S / ${taintSinks.length}K / ${normalizedSanitizers.length}N).`,
         };
       }
     } catch (e: any) {
@@ -2201,7 +2263,7 @@ if (file_exists($_GET['avatar_path'])) {
                       <div class="min-w-0">
                         <div class="flex items-center gap-1.5 flex-wrap">
                           <span class="text-[11px] font-mono font-bold text-white">{src.name}</span>
-                          <span class="px-1 py-0.2 rounded text-[9px] font-mono bg-sky-500/20 text-sky-300">{src.source_kind}</span>
+                          <span class="px-1 py-0.2 rounded text-[9px] font-mono bg-sky-500/20 text-sky-300">{typeof src.source_kind === 'object' ? src.source_kind?.Custom || 'Custom' : src.source_kind}</span>
                           <span class="px-1 py-0.2 rounded text-[9px] font-mono bg-rose-500/20 text-rose-300">{src.cwe}</span>
                         </div>
                         <div class="text-[10px] font-mono text-slate-400 truncate mt-0.5">{(src.patterns || []).join(', ')}</div>
@@ -2219,6 +2281,7 @@ if (file_exists($_GET['avatar_path'])) {
                       <option value="HttpQueryParam">HttpQueryParam</option>
                       <option value="HttpBodyParam">HttpBodyParam</option>
                       <option value="HttpHeader">HttpHeader</option>
+                      <option value="HttpCookie">HttpCookie</option>
                       <option value="WebSocketPayload">WebSocketPayload</option>
                       <option value="FileSystemRead">FileSystemRead</option>
                       <option value="DatabaseRead">DatabaseRead</option>
@@ -2244,7 +2307,7 @@ if (file_exists($_GET['avatar_path'])) {
                       <div class="min-w-0">
                         <div class="flex items-center gap-1.5 flex-wrap">
                           <span class="text-[11px] font-mono font-bold text-white">{sink.name}</span>
-                          <span class="px-1 py-0.2 rounded text-[9px] font-mono bg-rose-500/20 text-rose-300">{sink.sink_kind}</span>
+                          <span class="px-1 py-0.2 rounded text-[9px] font-mono bg-rose-500/20 text-rose-300">{typeof sink.sink_kind === 'object' ? sink.sink_kind?.Custom || 'Custom' : sink.sink_kind}</span>
                           <span class="px-1 py-0.2 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300">{sink.cwe}</span>
                         </div>
                         <div class="text-[10px] font-mono text-slate-400 truncate mt-0.5">{(sink.patterns || []).join(', ')}</div>
@@ -2289,8 +2352,8 @@ if (file_exists($_GET['avatar_path'])) {
                     <div class="p-2 rounded bg-black/50 border border-white/10 flex items-start justify-between gap-2">
                       <div class="min-w-0">
                         <div class="text-[11px] font-mono font-bold text-white">{san.name}</div>
-                        <div class="text-[10px] font-mono text-emerald-300 truncate">Neutralise: {(san.neutralizes_cwes || []).join(', ')}</div>
-                        <div class="text-[10px] font-mono text-slate-400 truncate">{(san.patterns || []).join(', ')}</div>
+                        <div class="text-[10px] font-mono text-emerald-300 truncate">Neutralise: {(san.target_cwes || san.neutralizes_cwes || []).join(', ')}</div>
+                        <div class="text-[10px] font-mono text-slate-400 truncate">{(san.patterns && san.patterns.length > 0 ? san.patterns : [san.name]).join(', ')}</div>
                       </div>
                       <button type="button" onclick={() => removeTaintSanitizer(san.name)} class="text-slate-500 hover:text-rose-400 cursor-pointer">
                         <Trash2 class="w-3.5 h-3.5" />

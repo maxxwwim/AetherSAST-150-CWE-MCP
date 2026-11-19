@@ -238,7 +238,9 @@ export const INITIAL_DEMO_PLUGINS: PluginEntryInfo[] = [
       {
         name: 'strict_allowlist_guard',
         patterns: ['sanitize_arg', 'PathGuard::validate', 'htmlspecialchars', 'bind_param'],
+        target_cwes: ['CWE-78', 'CWE-88', 'CWE-89', 'CWE-22', 'CWE-79'],
         neutralizes_cwes: ['CWE-78', 'CWE-88', 'CWE-89', 'CWE-22', 'CWE-79'],
+        match_kind: 'ExactName',
       },
     ],
   },
@@ -538,6 +540,241 @@ export function evaluatePluginRulesInBrowser(
         }
       });
     }
+
+    // 2. Evaluate Declarative SSA Taint Dataflow Rules (taint_sources -> taint_sinks vs sanitizers)
+    const sources = plugin.taint_sources || [];
+    const sinks = plugin.taint_sinks || [];
+    const sanitizers = plugin.sanitizers || [];
+
+    if (sources.length > 0 && sinks.length > 0) {
+      interface TaintVarState {
+        name: string;
+        version: number;
+        sourceName: string;
+        sourceCwe: string;
+        sourceLine: number;
+        trace: string[];
+        sanitizedCwes: Set<string>;
+        sanitizedAll: boolean;
+      }
+
+      const taintedVars = new Map<string, TaintVarState>();
+      const varVersions = new Map<string, number>();
+
+      const nextVer = (vName: string): number => {
+        const cur = varVersions.get(vName);
+        const nxt = cur === undefined ? 0 : cur + 1;
+        varVersions.set(vName, nxt);
+        return nxt;
+      };
+
+      const cweMatchesClient = (ruleCwe: string, sinkCwe: string): boolean => {
+        const r = (ruleCwe || '*').trim().toUpperCase();
+        const s = (sinkCwe || '*').trim().toUpperCase();
+        if (!r || r === '*' || !s || s === '*') return true;
+        return r === s || r.includes(s) || s.includes(r);
+      };
+
+      const matchesAnyPattern = (pats: string[] | undefined, fallbackName: string, text: string): boolean => {
+        const list = pats && pats.length > 0 ? pats : fallbackName ? [fallbackName] : [];
+        return list.some((p) => {
+          const clean = (p || '').trim();
+          if (!clean) return false;
+          if (!clean.includes('*')) return text.includes(clean);
+          return clean
+            .split('*')
+            .filter(Boolean)
+            .every((seg) => text.includes(seg));
+        });
+      };
+
+      lines.forEach((lineText, idx) => {
+        const trimmed = lineText.trim();
+        if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('/*')) {
+          return;
+        }
+        const detectedScope = detectLineAstScope(lines, idx, filePath);
+
+        // A. Function declaration parameters matching a FunctionArgument taint_source
+        const fnParamMatch = trimmed.match(/(?:fn|def|function)\s+[A-Za-z0-9_]+\s*\(([^)]*)\)/);
+        if (fnParamMatch) {
+          const rawParams = fnParamMatch[1];
+          for (const src of sources) {
+            if (matchesAnyPattern(src.patterns, src.name, rawParams)) {
+              for (const tok of rawParams.split(',')) {
+                const pName = tok
+                  .trim()
+                  .replace(/^mut\s+/, '')
+                  .split(/[:=]/)[0]
+                  .trim()
+                  .replace(/^\$/, '');
+                if (pName && matchesAnyPattern(src.patterns, src.name, tok)) {
+                  const ver = nextVer(pName);
+                  taintedVars.set(pName, {
+                    name: pName,
+                    version: ver,
+                    sourceName: src.name,
+                    sourceCwe: src.cwe || '*',
+                    sourceLine: idx + 1,
+                    trace: [`${pName}#${ver} (L${idx + 1}: ${src.name})`],
+                    sanitizedCwes: new Set(),
+                    sanitizedAll: false,
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        // B. Variable assignment (SSA def-use & sanitizer tracking)
+        const assignMatch = trimmed.match(/^(?:(?:let|const|var)\s+(?:mut\s+)?)?(\$?[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/);
+        if (assignMatch) {
+          const lhsRaw = assignMatch[1].replace(/^\$/, '');
+          const rhs = assignMatch[2];
+
+          // Direct taint source on RHS
+          let matchedSrc: any = null;
+          for (const src of sources) {
+            if (matchesAnyPattern(src.patterns, src.name, rhs)) {
+              matchedSrc = src;
+              break;
+            }
+          }
+
+          // Or propagated from an existing tainted variable in RHS
+          let parentTaint: TaintVarState | null = null;
+          for (const [vName, tState] of taintedVars.entries()) {
+            const idRx = new RegExp(`\\b${vName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+            if (idRx.test(rhs)) {
+              parentTaint = tState;
+              break;
+            }
+          }
+
+          if (matchedSrc || parentTaint) {
+            const ver = nextVer(lhsRaw);
+            const sanitizedCwes = new Set<string>(parentTaint ? Array.from(parentTaint.sanitizedCwes) : []);
+            let sanitizedAll = parentTaint ? parentTaint.sanitizedAll : false;
+            const stepNotes: string[] = [];
+
+            // Check if RHS applies any configured sanitizer
+            for (const san of sanitizers) {
+              if (matchesAnyPattern(san.patterns, san.name, rhs)) {
+                const cwes: string[] = san.target_cwes || san.neutralizes_cwes || [];
+                if (san.neutralizes_all || cwes.includes('*')) {
+                  sanitizedAll = true;
+                }
+                for (const c of cwes) {
+                  sanitizedCwes.add(c.trim().toUpperCase());
+                }
+                stepNotes.push(`sanitized:${san.name}`);
+              }
+            }
+
+            const prevTrace = parentTaint
+              ? [...parentTaint.trace]
+              : [`${lhsRaw}#${ver} (L${idx + 1}: ${matchedSrc.name})`];
+            if (parentTaint) {
+              prevTrace.push(
+                `${lhsRaw}#${ver} (L${idx + 1}${stepNotes.length ? ' ' + stepNotes.join(',') : ''})`
+              );
+            } else if (stepNotes.length) {
+              prevTrace.push(`${lhsRaw}#${ver} (${stepNotes.join(',')})`);
+            }
+
+            taintedVars.set(lhsRaw, {
+              name: lhsRaw,
+              version: ver,
+              sourceName: matchedSrc ? matchedSrc.name : parentTaint!.sourceName,
+              sourceCwe: matchedSrc ? matchedSrc.cwe || '*' : parentTaint!.sourceCwe,
+              sourceLine: matchedSrc ? idx + 1 : parentTaint!.sourceLine,
+              trace: prevTrace,
+              sanitizedCwes,
+              sanitizedAll,
+            });
+          }
+        }
+
+        // C. Check if line invokes a Taint Sink
+        for (const sink of sinks) {
+          if (!matchesAnyPattern(sink.patterns, sink.name, trimmed)) continue;
+
+          // Either a tainted SSA variable is passed to the sink, or an inline taint_source appears directly inside the sink call
+          let hitTaint: TaintVarState | null = null;
+          for (const [vName, tState] of taintedVars.entries()) {
+            const idRx = new RegExp(`\\b${vName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+            if (idRx.test(trimmed)) {
+              hitTaint = tState;
+              break;
+            }
+          }
+
+          let inlineSrc: any = null;
+          if (!hitTaint) {
+            for (const src of sources) {
+              if (matchesAnyPattern(src.patterns, src.name, trimmed)) {
+                inlineSrc = src;
+                break;
+              }
+            }
+          }
+
+          if (!hitTaint && !inlineSrc) continue;
+
+          const sinkCwe = sink.cwe || 'CWE-78';
+          const srcCwe = hitTaint ? hitTaint.sourceCwe : inlineSrc.cwe || '*';
+          if (srcCwe !== 'CWE-20' && !cweMatchesClient(srcCwe, sinkCwe)) {
+            continue;
+          }
+
+          // Check inline or accumulated sanitization for sinkCwe
+          let isSanitized = false;
+          if (hitTaint) {
+            if (hitTaint.sanitizedAll) isSanitized = true;
+            for (const c of hitTaint.sanitizedCwes) {
+              if (cweMatchesClient(c, sinkCwe)) {
+                isSanitized = true;
+                break;
+              }
+            }
+          }
+          if (!isSanitized) {
+            for (const san of sanitizers) {
+              if (matchesAnyPattern(san.patterns, san.name, trimmed)) {
+                const cwes: string[] = san.target_cwes || san.neutralizes_cwes || [];
+                if (san.neutralizes_all || cwes.some((c) => cweMatchesClient(c, sinkCwe))) {
+                  isSanitized = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (isSanitized) continue;
+
+          const ruleId = sink.rule_id || sink.name || 'TAINT-SSA-SINK';
+          const alreadyOnLine = findings.some((f) => f.rule_id === ruleId && f.line_number === idx + 1);
+          if (!alreadyOnLine) {
+            const flowPath = hitTaint
+              ? `${hitTaint.trace.join(' → ')} → Sink:${sink.name} (L${idx + 1})`
+              : `Source:${inlineSrc.name} (L${idx + 1}) → Sink:${sink.name} (L${idx + 1})`;
+            findings.push({
+              rule_id: ruleId,
+              plugin_name: `${plugin.name} [Taint SSA]`,
+              cwe_id: `${sinkCwe} / TAINT-DATAFLOW-SSA`,
+              severity: sink.severity || 'CRITICAL',
+              line_number: idx + 1,
+              line_snippet: `${trimmed}\n// 🌊 Trace SSA : ${flowPath}`,
+              ast_scope_detected: detectedScope,
+              description:
+                sink.description ||
+                `Flux Taint SSA non assaini depuis "${hitTaint ? hitTaint.sourceName : inlineSrc.name}" vers le puits critique "${sink.name}".`,
+              remediation: `Appliquer un sanitizer neutralisant ${sinkCwe} avant d'appeler ${sink.name}.`,
+            });
+          }
+        }
+      });
+    }
   }
 
   return findings;
@@ -567,29 +804,42 @@ export function serializePluginToYaml(plugin: PluginEntryInfo): string {
   if (plugin.taint_sources.length > 0) {
     lines.push('taint_sources:');
     for (const s of plugin.taint_sources) {
+      const sk =
+        typeof s.source_kind === 'object' && s.source_kind !== null
+          ? s.source_kind.Custom || 'Custom'
+          : s.source_kind || 'Custom';
       lines.push(`  - name: "${s.name}"`);
-      lines.push(`    source_kind: "${s.source_kind || 'Custom'}"`);
+      lines.push(`    source_kind: "${sk}"`);
       lines.push(`    cwe: "${s.cwe || 'CWE-20'}"`);
       lines.push(`    patterns: [${(s.patterns || []).map((p: string) => `"${p}"`).join(', ')}]`);
+      if (s.description) lines.push(`    description: "${String(s.description).replace(/"/g, '\\"')}"`);
     }
   }
   if (plugin.taint_sinks.length > 0) {
     lines.push('taint_sinks:');
     for (const k of plugin.taint_sinks) {
+      const kk =
+        typeof k.sink_kind === 'object' && k.sink_kind !== null
+          ? k.sink_kind.Custom || 'Custom'
+          : k.sink_kind || 'Custom';
       lines.push(`  - name: "${k.name}"`);
       lines.push(`    rule_id: "${k.rule_id || k.name}"`);
-      lines.push(`    sink_kind: "${k.sink_kind || 'Custom'}"`);
+      lines.push(`    sink_kind: "${kk}"`);
       lines.push(`    cwe: "${k.cwe || 'CWE-78'}"`);
       lines.push(`    severity: "${k.severity || 'CRITICAL'}"`);
       lines.push(`    patterns: [${(k.patterns || []).map((p: string) => `"${p}"`).join(', ')}]`);
+      if (k.description) lines.push(`    description: "${String(k.description).replace(/"/g, '\\"')}"`);
     }
   }
   if (plugin.sanitizers.length > 0) {
     lines.push('sanitizers:');
     for (const n of plugin.sanitizers) {
+      const cwes = n.target_cwes || n.neutralizes_cwes || [];
+      const pats = n.patterns && n.patterns.length > 0 ? n.patterns : [n.name];
       lines.push(`  - name: "${n.name}"`);
-      lines.push(`    patterns: [${(n.patterns || []).map((p: string) => `"${p}"`).join(', ')}]`);
-      lines.push(`    neutralizes_cwes: [${(n.neutralizes_cwes || []).map((c: string) => `"${c}"`).join(', ')}]`);
+      lines.push(`    target_cwes: [${cwes.map((c: string) => `"${c}"`).join(', ')}]`);
+      lines.push(`    patterns: [${pats.map((p: string) => `"${p}"`).join(', ')}]`);
+      lines.push(`    match_kind: "${n.match_kind || 'ExactName'}"`);
     }
   }
 

@@ -3,6 +3,43 @@ version: "1.0.0"
 author: "AetherScope Security Lab"
 description: "Détecte les 5 pépites d'injections de code et de fichiers : Argument Smuggling POSIX (CWE-88), Import ESM Fileless data:/Wasm .cwasm (CWE-94), ZipSlip 2.0 Symlink Chain (CWE-59), Empoisonnement LD_PRELOAD/NODE_OPTIONS (CWE-426) et Wrappers PHP phar:///php://filter (CWE-98)."
 enabled: true
+profile: "strict"
+tags: ["injection", "rce", "posix", "esm", "php"]
+
+taint_sources:
+  - name: "http_req_query"
+    source_kind: "HttpQueryParam"
+    cwe: "CWE-20"
+    patterns: ["req.query", "$_GET", "Query("]
+    description: "Paramètre HTTP Query externe non fiable"
+  - name: "cli_repo_url_arg"
+    source_kind: "FunctionArgument"
+    cwe: "CWE-88"
+    patterns: ["repo_url", "user_arg", "untrusted_input"]
+    description: "Argument fonction externe transmis à un sous-processus"
+
+taint_sinks:
+  - name: "posix_command_spawn"
+    rule_id: "TAINT-SINK-POSIX-CMD"
+    sink_kind: "CommandExecution"
+    cwe: "CWE-78"
+    severity: "CRITICAL"
+    patterns: ["Command::new", "child_process.exec", "os.system"]
+    description: "Exécution de processus système atteinte par une source non assainie"
+  - name: "raw_sql_exec"
+    rule_id: "TAINT-SINK-RAW-SQL"
+    sink_kind: "SqlExecution"
+    cwe: "CWE-89"
+    severity: "CRITICAL"
+    patterns: ["db.execute", "cursor.execute", "PDO::query"]
+    description: "Exécution SQL directe atteinte par un flux de taint"
+
+sanitizers:
+  - name: "strict_allowlist_guard"
+    target_cwes: ["CWE-78", "CWE-88", "CWE-89", "CWE-22", "CWE-79"]
+    patterns: ["sanitize_arg", "PathGuard::validate", "htmlspecialchars", "bind_param"]
+    match_kind: "ExactName"
+    neutralizes_all: false
 
 rules:
   - id: "PLUGIN-INJ-POSIX-FLAG-SMUGGLING"

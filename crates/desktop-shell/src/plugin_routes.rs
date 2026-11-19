@@ -110,7 +110,9 @@ pub struct UpsertPluginRuleRequest {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub plugin_description: Option<String>,
+    #[serde(default)]
     pub rule_id: String,
+    #[serde(default)]
     pub cwe_id: String,
     #[serde(default)]
     pub name: String,
@@ -303,8 +305,20 @@ fn collect_plugin_files(dir: &Path, out: &mut Vec<PathBuf>) {
         entries.sort();
         for p in entries {
             if p.is_dir() {
+                if p.file_name()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|n| n.eq_ignore_ascii_case("visuals"))
+                {
+                    continue;
+                }
                 collect_plugin_files(&p, out);
             } else if p.is_file() && is_allowed_plugin_extension(&p) {
+                if p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|n| n.eq_ignore_ascii_case("visual-plugin"))
+                {
+                    continue;
+                }
                 out.push(p);
             }
         }
@@ -705,29 +719,41 @@ pub async fn upsert_plugin_rule_handler(
             Json(json!({ "status": "error", "message": msg })),
         )
     })?;
-    if req.rule_id.trim().is_empty() || req.cwe_id.trim().is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "status": "error", "message": "rule_id and cwe_id are required" })),
-        ));
-    }
-    if req.file_extensions.is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "status": "error", "message": "At least one file_extension is required (e.g. .rs, .ts, .py)" })),
-        ));
-    }
+    let has_taint_payload =
+        req.taint_sources.is_some() || req.taint_sinks.is_some() || req.sanitizers.is_some();
+    let is_taint_only = req.rule_id.trim().is_empty() && has_taint_payload;
 
-    // Regex validation is performed on the constructed PluginRule via security_linter::PluginRule::validate_regexes().
+    if !is_taint_only {
+        if req.rule_id.trim().is_empty() || req.cwe_id.trim().is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "status": "error", "message": "rule_id and cwe_id are required" })),
+            ));
+        }
+        if req.file_extensions.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "status": "error", "message": "At least one file_extension is required (e.g. .rs, .ts, .py)" })),
+            ));
+        }
+    }
 
     let p_root = state.project_root.read().await.clone();
     let plugins_dir = p_root.join(".aether").join("plugins");
-    let target_dir = push_normal_rel_path(&plugins_dir, &slug).map_err(|msg| {
+    let primary_dir = push_normal_rel_path(&plugins_dir, &slug).map_err(|msg| {
         (
             StatusCode::BAD_REQUEST,
             Json(json!({ "status": "error", "message": msg })),
         )
     })?;
+    let imported_candidate = plugins_dir.join("imported").join(&slug);
+    let target_dir = if !primary_dir.join("plugin.yaml").is_file()
+        && imported_candidate.join("plugin.yaml").is_file()
+    {
+        imported_candidate
+    } else {
+        primary_dir
+    };
     let yaml_path = target_dir.join("plugin.yaml");
 
     let mut manifest = if yaml_path.is_file() {
@@ -775,59 +801,66 @@ pub async fn upsert_plugin_rule_handler(
         manifest.sanitizers = sans;
     }
 
-    let match_mode = match req.match_mode.as_deref() {
-        Some("whole_file") => MatchMode::WholeFile,
-        _ => MatchMode::LineByLine,
-    };
+    let mut saved_rule_id = String::from("TAINT-SSA-CONFIG");
+    if !is_taint_only {
+        let match_mode = match req.match_mode.as_deref() {
+            Some("whole_file") => MatchMode::WholeFile,
+            _ => MatchMode::LineByLine,
+        };
 
-    let ast_scope = req
-        .ast_scope
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+        let ast_scope = req
+            .ast_scope
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
 
-    let new_rule = PluginRule {
-        id: req.rule_id.trim().to_string(),
-        cwe_id: req.cwe_id.trim().to_string(),
-        name: if req.name.trim().is_empty() {
-            req.rule_id.trim().to_string()
+        let mut new_rule = PluginRule {
+            id: req.rule_id.trim().to_string(),
+            cwe_id: req.cwe_id.trim().to_string(),
+            name: if req.name.trim().is_empty() {
+                req.rule_id.trim().to_string()
+            } else {
+                req.name.trim().to_string()
+            },
+            category: req
+                .category
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "Custom / Security".to_string()),
+            severity: req.severity.trim().to_ascii_uppercase(),
+            description: req.description,
+            remediation: req.remediation,
+            file_extensions: req.file_extensions,
+            match_mode,
+            conditions: RuleConditions {
+                must_contain: req.must_contain,
+                must_not_contain: req.must_not_contain,
+                regex_patterns: req.regex_patterns,
+                forbidden_tokens: req.forbidden_tokens,
+                check_literals: req.check_literals,
+                not_preceded_within_lines: req.not_preceded_within_lines,
+                in_path_matching: req.in_path_matching,
+                not_in_path_matching: req.not_in_path_matching,
+                ast_scope,
+                ..Default::default()
+            },
+            test_cases: req.test_cases,
+        };
+
+        if let Err(msg) = new_rule.validate_regexes() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "status": "error", "message": msg })),
+            ));
+        }
+
+        saved_rule_id = new_rule.id.clone();
+        if let Some(pos) = manifest.rules.iter().position(|r| r.id == new_rule.id) {
+            if new_rule.test_cases.is_empty() && !manifest.rules[pos].test_cases.is_empty() {
+                new_rule.test_cases = manifest.rules[pos].test_cases.clone();
+            }
+            manifest.rules[pos] = new_rule;
         } else {
-            req.name.trim().to_string()
-        },
-        category: req
-            .category
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "Custom / Security".to_string()),
-        severity: req.severity.trim().to_ascii_uppercase(),
-        description: req.description,
-        remediation: req.remediation,
-        file_extensions: req.file_extensions,
-        match_mode,
-        conditions: RuleConditions {
-            must_contain: req.must_contain,
-            must_not_contain: req.must_not_contain,
-            regex_patterns: req.regex_patterns,
-            forbidden_tokens: req.forbidden_tokens,
-            check_literals: req.check_literals,
-            not_preceded_within_lines: req.not_preceded_within_lines,
-            in_path_matching: req.in_path_matching,
-            not_in_path_matching: req.not_in_path_matching,
-            ast_scope,
-            ..Default::default()
-        },
-        test_cases: req.test_cases,
-    };
-
-    if let Err(msg) = new_rule.validate_regexes() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "status": "error", "message": msg })),
-        ));
-    }
-
-    if let Some(pos) = manifest.rules.iter().position(|r| r.id == new_rule.id) {
-        manifest.rules[pos] = new_rule.clone();
-    } else {
-        manifest.rules.push(new_rule.clone());
+            manifest.rules.push(new_rule);
+        }
     }
 
     // Certify embedded test cases before writing to disk.
@@ -876,7 +909,7 @@ pub async fn upsert_plugin_rule_handler(
     Ok(Json(json!({
         "status": "ok",
         "plugin": slug,
-        "rule_id": new_rule.id,
+        "rule_id": saved_rule_id,
         "tests_passed": report.passed,
         "total_nodes": total_nodes,
         "total_edges": total_edges,
@@ -1259,5 +1292,101 @@ rules:
         .await
         .expect("delete should succeed");
         assert_eq!(del_res.0["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn test_taint_ssa_configurator_coherence_and_visual_dir_isolation() {
+        use obsidian_vault::DetectedProjectType;
+
+        let dir = tempdir().unwrap();
+        // Create a visual plugin under .aether/plugins/visuals/neon-test/visual-plugin.yaml
+        let vis_dir = dir
+            .path()
+            .join(".aether")
+            .join("plugins")
+            .join("visuals")
+            .join("neon-test");
+        fs::create_dir_all(&vis_dir).unwrap();
+        fs::write(
+            vis_dir.join("visual-plugin.yaml"),
+            "schema_version: 1\nid: neon-test\nname: Neon Test\nversion: '1.0.0'\nenabled: true\n",
+        )
+        .unwrap();
+
+        let state = Arc::new(AppState::new(
+            core_graph::graph::AetherGraph::new("test"),
+            dir.path().to_path_buf(),
+            DetectedProjectType::PureCode,
+            "code".to_string(),
+            None,
+            None,
+            None,
+        ));
+
+        // 1. Visual plugin must NOT leak into SAST plugins inventory
+        let inv0 = build_plugins_inventory(dir.path());
+        assert_eq!(inv0.total_plugins, 0);
+
+        // 2. Deserialize a UI Configurateur Taint Dataflow SSA payload (with EnvironmentVar, Deserialization, CodeEval, Custom, and Sanitizer patterns + neutralizes_cwes)
+        let ui_taint_payload: UpsertPluginRuleRequest = serde_json::from_value(json!({
+            "plugin_name": "majestic-taint-ssa",
+            "rule_id": "",
+            "cwe_id": "",
+            "taint_sources": [
+                {
+                    "name": "env_input",
+                    "source_kind": "EnvironmentVar",
+                    "cwe": "CWE-78",
+                    "patterns": ["std::env::var", "process.env"]
+                },
+                {
+                    "name": "custom_bus",
+                    "source_kind": "Custom",
+                    "cwe": "CWE-502",
+                    "patterns": ["bus.recv("]
+                }
+            ],
+            "taint_sinks": [
+                {
+                    "name": "deser_sink",
+                    "rule_id": "TAINT-DESER-001",
+                    "sink_kind": "Deserialization",
+                    "cwe": "CWE-502",
+                    "severity": "CRITICAL",
+                    "patterns": ["pickle.loads", "bincode::deserialize"]
+                },
+                {
+                    "name": "eval_sink",
+                    "rule_id": "TAINT-EVAL-001",
+                    "sink_kind": "CodeEval",
+                    "cwe": "CWE-94",
+                    "severity": "CRITICAL",
+                    "patterns": ["eval("]
+                }
+            ],
+            "sanitizers": [
+                {
+                    "name": "strict_guard",
+                    "patterns": ["PathGuard::validate", "verify_schema"],
+                    "neutralizes_cwes": ["CWE-502", "CWE-78"]
+                }
+            ]
+        }))
+        .expect("UI Taint SSA payload must deserialize without 422 error");
+
+        let res = upsert_plugin_rule_handler(State(state.clone()), Json(ui_taint_payload))
+            .await
+            .expect("taint-only upsert must succeed");
+        assert_eq!(res.0["status"], "ok");
+        assert_eq!(res.0["inventory"]["total_plugins"], 1);
+        assert_eq!(res.0["inventory"]["total_taint_sources"], 2);
+        assert_eq!(res.0["inventory"]["total_taint_sinks"], 2);
+        assert_eq!(res.0["inventory"]["total_sanitizers"], 1);
+
+        // Verify the saved sanitizer matches by pattern and CWE
+        let inv1 = build_plugins_inventory(dir.path());
+        let san = &inv1.plugins[0].sanitizers[0];
+        assert!(san.matches("verify_schema(payload)", "CWE-502"));
+        assert!(!san.matches("verify_schema(payload)", "CWE-89"));
     }
 }

@@ -1491,9 +1491,24 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         let plug_dir = resolve_plugins_dir(&p_buf, plugins_sub);
                         let mut found_path: Option<PathBuf> = None;
                         if plug_dir.is_dir() {
-                            for entry in walkdir::WalkDir::new(&plug_dir).into_iter().filter_map(|e| e.ok()) {
+                            for entry in walkdir::WalkDir::new(&plug_dir)
+                                .into_iter()
+                                .filter_entry(|e| {
+                                    !e.path()
+                                        .file_name()
+                                        .and_then(|s| s.to_str())
+                                        .is_some_and(|n| n.eq_ignore_ascii_case("visuals"))
+                                })
+                                .filter_map(|e| e.ok())
+                            {
                                 let p = entry.path();
-                                if p.is_file() && p.extension().and_then(|s| s.to_str()).map(|e| matches!(e.to_ascii_lowercase().as_str(), "yaml" | "yml" | "json")).unwrap_or(false) {
+                                if p.is_file()
+                                    && !p
+                                        .file_stem()
+                                        .and_then(|s| s.to_str())
+                                        .is_some_and(|n| n.eq_ignore_ascii_case("visual-plugin"))
+                                    && p.extension().and_then(|s| s.to_str()).map(|e| matches!(e.to_ascii_lowercase().as_str(), "yaml" | "yml" | "json")).unwrap_or(false)
+                                {
                                     if let Ok(content) = std::fs::read_to_string(p) {
                                         if let Ok(m) = serde_yaml::from_str::<security_linter::plugin::PluginManifest>(&content) {
                                             let folder_match = p.parent().and_then(|d| d.file_name()).and_then(|s| s.to_str()).map(|s| s.eq_ignore_ascii_case(plugin_name)).unwrap_or(false);
@@ -1733,10 +1748,14 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         if let Err(regex_err) = new_rule.validate_regexes() {
                             (json!([{ "type": "text", "text": format!("Regex invalide : {}", regex_err) }]), true)
                         } else {
+                            let mut rule_to_save = new_rule;
                             if let Some(pos) = manifest.rules.iter().position(|r| r.id == rule_id) {
-                                manifest.rules[pos] = new_rule;
+                                if rule_to_save.test_cases.is_empty() && !manifest.rules[pos].test_cases.is_empty() {
+                                    rule_to_save.test_cases = manifest.rules[pos].test_cases.clone();
+                                }
+                                manifest.rules[pos] = rule_to_save;
                             } else {
-                                manifest.rules.push(new_rule);
+                                manifest.rules.push(rule_to_save);
                             }
 
                             let mut test_engine = security_linter::plugin::PluginEngine::new();

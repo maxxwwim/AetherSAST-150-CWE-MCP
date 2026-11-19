@@ -23,26 +23,100 @@ impl SsaVar {
 }
 
 /// Category/Kind of untrusted input source.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, Hash)]
 pub enum SourceKind {
-    #[serde(alias = "http_query_param")]
     HttpQueryParam,
-    #[serde(alias = "http_body_param")]
     HttpBodyParam,
-    #[serde(alias = "http_header")]
     HttpHeader,
-    #[serde(alias = "http_cookie")]
     HttpCookie,
-    #[serde(alias = "websocket_payload")]
     WebSocketPayload,
-    #[serde(alias = "file_system_read")]
     FileSystemRead,
-    #[serde(alias = "database_read")]
     DatabaseRead,
-    #[serde(alias = "function_argument")]
+    EnvironmentVar,
     FunctionArgument,
-    #[serde(alias = "custom")]
     Custom(String),
+}
+
+impl SourceKind {
+    fn from_label(s: &str) -> Self {
+        match s.trim() {
+            "HttpQueryParam" | "http_query_param" => SourceKind::HttpQueryParam,
+            "HttpBodyParam" | "http_body_param" => SourceKind::HttpBodyParam,
+            "HttpHeader" | "http_header" => SourceKind::HttpHeader,
+            "HttpCookie" | "http_cookie" => SourceKind::HttpCookie,
+            "WebSocketPayload" | "websocket_payload" => SourceKind::WebSocketPayload,
+            "FileSystemRead" | "file_system_read" => SourceKind::FileSystemRead,
+            "DatabaseRead" | "database_read" => SourceKind::DatabaseRead,
+            "EnvironmentVar" | "environment_var" | "env_var" => SourceKind::EnvironmentVar,
+            "FunctionArgument" | "function_argument" => SourceKind::FunctionArgument,
+            "Custom" => SourceKind::Custom("Custom".to_string()),
+            "custom" => SourceKind::Custom("custom".to_string()),
+            other => SourceKind::Custom(other.to_string()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SourceKindVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SourceKindVisitor {
+            type Value = SourceKind;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a SourceKind string, map, or YAML tagged enum")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(SourceKind::from_label(v))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(SourceKind::from_label(&v))
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                if let Some((k, v)) = map.next_entry::<String, String>()? {
+                    if k.eq_ignore_ascii_case("custom") {
+                        Ok(SourceKind::Custom(v))
+                    } else {
+                        Ok(SourceKind::Custom(format!("{k}:{v}")))
+                    }
+                } else {
+                    Ok(SourceKind::default())
+                }
+            }
+
+            fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::EnumAccess<'de>,
+            {
+                use serde::de::VariantAccess;
+                let (tag, variant) = data.variant::<String>()?;
+                if tag.eq_ignore_ascii_case("custom") {
+                    let val = variant.newtype_variant::<String>()?;
+                    Ok(SourceKind::Custom(val))
+                } else {
+                    let _ = variant.unit_variant();
+                    Ok(SourceKind::from_label(&tag))
+                }
+            }
+        }
+
+        deserializer.deserialize_any(SourceKindVisitor)
+    }
 }
 
 impl Default for SourceKind {
@@ -57,7 +131,8 @@ impl std::fmt::Display for SourceKind {
             Self::HttpQueryParam => "HTTP Query Parameter", Self::HttpBodyParam => "HTTP Body Parameter",
             Self::HttpHeader => "HTTP Header", Self::HttpCookie => "HTTP Cookie",
             Self::WebSocketPayload => "WebSocket Payload", Self::FileSystemRead => "File System Read",
-            Self::DatabaseRead => "Database Read", Self::FunctionArgument => "Function Argument",
+            Self::DatabaseRead => "Database Read", Self::EnvironmentVar => "Environment Variable",
+            Self::FunctionArgument => "Function Argument",
             Self::Custom(s) => return write!(f, "Custom ({s})"),
         };
         write!(f, "{s}")
@@ -90,22 +165,98 @@ impl TaintSource {
 }
 
 /// Category/Kind of critical security sink.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, Hash)]
 pub enum SinkKind {
-    #[serde(alias = "sql_execution")]
     SqlExecution,
-    #[serde(alias = "command_execution")]
     CommandExecution,
-    #[serde(alias = "html_render")]
     HtmlRender,
-    #[serde(alias = "file_access")]
     FileAccess,
-    #[serde(alias = "ssrf_network_request")]
     SsrfNetworkRequest,
-    #[serde(alias = "ldap_query")]
+    Deserialization,
+    CodeEval,
     LdapQuery,
-    #[serde(alias = "custom")]
     Custom(String),
+}
+
+impl SinkKind {
+    fn from_label(s: &str) -> Self {
+        match s.trim() {
+            "SqlExecution" | "sql_execution" => SinkKind::SqlExecution,
+            "CommandExecution" | "command_execution" => SinkKind::CommandExecution,
+            "HtmlRender" | "html_render" => SinkKind::HtmlRender,
+            "FileAccess" | "file_access" => SinkKind::FileAccess,
+            "SsrfNetworkRequest" | "ssrf_network_request" => SinkKind::SsrfNetworkRequest,
+            "Deserialization" | "deserialization" => SinkKind::Deserialization,
+            "CodeEval" | "code_eval" => SinkKind::CodeEval,
+            "LdapQuery" | "ldap_query" => SinkKind::LdapQuery,
+            "Custom" => SinkKind::Custom("Custom".to_string()),
+            "custom" => SinkKind::Custom("custom".to_string()),
+            other => SinkKind::Custom(other.to_string()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SinkKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SinkKindVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SinkKindVisitor {
+            type Value = SinkKind;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a SinkKind string, map, or YAML tagged enum")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(SinkKind::from_label(v))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(SinkKind::from_label(&v))
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                if let Some((k, v)) = map.next_entry::<String, String>()? {
+                    if k.eq_ignore_ascii_case("custom") {
+                        Ok(SinkKind::Custom(v))
+                    } else {
+                        Ok(SinkKind::Custom(format!("{k}:{v}")))
+                    }
+                } else {
+                    Ok(SinkKind::default())
+                }
+            }
+
+            fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::EnumAccess<'de>,
+            {
+                use serde::de::VariantAccess;
+                let (tag, variant) = data.variant::<String>()?;
+                if tag.eq_ignore_ascii_case("custom") {
+                    let val = variant.newtype_variant::<String>()?;
+                    Ok(SinkKind::Custom(val))
+                } else {
+                    let _ = variant.unit_variant();
+                    Ok(SinkKind::from_label(&tag))
+                }
+            }
+        }
+
+        deserializer.deserialize_any(SinkKindVisitor)
+    }
 }
 
 impl Default for SinkKind {
@@ -119,7 +270,10 @@ impl std::fmt::Display for SinkKind {
         let s = match self {
             Self::SqlExecution => "SQL Execution", Self::CommandExecution => "Command Execution",
             Self::HtmlRender => "HTML Render (XSS)", Self::FileAccess => "File Access (Path Traversal)",
-            Self::SsrfNetworkRequest => "SSRF Network Request", Self::LdapQuery => "LDAP Query",
+            Self::SsrfNetworkRequest => "SSRF Network Request",
+            Self::Deserialization => "Insecure Deserialization",
+            Self::CodeEval => "Dynamic Code Evaluation",
+            Self::LdapQuery => "LDAP Query",
             Self::Custom(s) => return write!(f, "Custom ({s})"),
         };
         write!(f, "{s}")
@@ -278,8 +432,10 @@ pub enum SanitizerMatchKind {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct SanitizerRule {
     pub name: String,
-    #[serde(default)]
+    #[serde(default, alias = "neutralizes_cwes")]
     pub target_cwes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub patterns: Vec<String>,
     #[serde(default)]
     pub match_kind: SanitizerMatchKind,
     #[serde(default)]
@@ -290,11 +446,16 @@ pub struct SanitizerRule {
 
 impl SanitizerRule {
     pub fn new(name: impl Into<String>, target_cwes: Vec<String>, match_kind: SanitizerMatchKind) -> Self {
-        Self { name: name.into(), target_cwes, match_kind, language: None, neutralizes_all: false }
+        Self { name: name.into(), target_cwes, patterns: Vec::new(), match_kind, language: None, neutralizes_all: false }
     }
 
     pub fn new_all(name: impl Into<String>, match_kind: SanitizerMatchKind) -> Self {
-        Self { name: name.into(), target_cwes: vec!["*".to_string()], match_kind, language: None, neutralizes_all: true }
+        Self { name: name.into(), target_cwes: vec!["*".to_string()], patterns: Vec::new(), match_kind, language: None, neutralizes_all: true }
+    }
+
+    pub fn with_patterns(mut self, patterns: Vec<String>) -> Self {
+        self.patterns = patterns;
+        self
     }
 
     pub fn with_language(mut self, lang: impl Into<String>) -> Self {
@@ -310,6 +471,35 @@ impl SanitizerRule {
         self.matches_language(lang_or_path) && self.matches(func_or_expr, sink_cwe)
     }
 
+    fn matches_token_by_kind(token: &str, expr: &str, callee: &str, kind: &SanitizerMatchKind) -> bool {
+        if token.is_empty() {
+            return false;
+        }
+        match kind {
+            SanitizerMatchKind::ExactName => {
+                expr == token
+                    || callee == token
+                    || callee.ends_with(&format!("::{token}"))
+                    || callee.ends_with(&format!(".{token}"))
+                    || callee.ends_with(&format!("->{token}"))
+            }
+            SanitizerMatchKind::MethodCall | SanitizerMatchKind::TypeCast => {
+                expr == token || expr.contains(token)
+            }
+            SanitizerMatchKind::RegexPattern => {
+                if let Some(mid) = token.strip_prefix('*').and_then(|s| s.strip_suffix('*')) {
+                    expr.contains(mid)
+                } else if let Some(suf) = token.strip_prefix('*') {
+                    callee.ends_with(suf) || expr.ends_with(suf)
+                } else if let Some(pre) = token.strip_suffix('*') {
+                    callee.starts_with(pre) || expr.starts_with(pre)
+                } else {
+                    callee == token || expr == token
+                }
+            }
+        }
+    }
+
     pub fn matches(&self, func_or_expr: &str, sink_cwe: &str) -> bool {
         let is_cwe_match = self.neutralizes_all
             || self
@@ -319,30 +509,15 @@ impl SanitizerRule {
         if !is_cwe_match { return false; }
         let expr = func_or_expr.trim();
         let callee = expr.split('(').next().unwrap_or(expr).trim();
-        match self.match_kind {
-            SanitizerMatchKind::ExactName => {
-                expr == self.name
-                    || callee == self.name
-                    || callee.ends_with(&format!("::{}", self.name))
-                    || callee.ends_with(&format!(".{}", self.name))
-                    || callee.ends_with(&format!("->{}", self.name))
-            }
-            SanitizerMatchKind::MethodCall | SanitizerMatchKind::TypeCast => {
-                expr == self.name || expr.contains(&self.name)
-            }
-            SanitizerMatchKind::RegexPattern => {
-                let pat = &self.name;
-                if let Some(mid) = pat.strip_prefix('*').and_then(|s| s.strip_suffix('*')) {
-                    expr.contains(mid)
-                } else if let Some(suf) = pat.strip_prefix('*') {
-                    callee.ends_with(suf) || expr.ends_with(suf)
-                } else if let Some(pre) = pat.strip_suffix('*') {
-                    callee.starts_with(pre) || expr.starts_with(pre)
-                } else {
-                    callee == pat || expr == pat
-                }
-            }
+        if Self::matches_token_by_kind(&self.name, expr, callee, &self.match_kind) {
+            return true;
         }
+        self.patterns.iter().any(|pat| {
+            let p = pat.trim();
+            !p.is_empty()
+                && (Self::matches_token_by_kind(p, expr, callee, &self.match_kind)
+                    || pattern_matches_line(p, expr))
+        })
     }
 
     pub fn default_catalog() -> Vec<SanitizerRule> {
