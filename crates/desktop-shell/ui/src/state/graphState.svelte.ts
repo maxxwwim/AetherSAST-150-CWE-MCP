@@ -2,6 +2,16 @@ import type { AetherGraph, AffiliationEdge, SymbolBubble, TaskItem, CveAnomalyRe
 import { playSpatialTone } from '../lib/sound';
 import { api } from '../lib/api';
 import { decodeCompactGraph } from '../lib/graphCodec';
+import { BUILTIN_VISUAL_PLUGINS, type VisualPluginPack } from '../engine/visualPlugins';
+
+const VISUAL_PLUGIN_STORAGE_KEY = 'aetherscope_active_visual_plugin_v1';
+function loadSavedVisualPluginId(): string {
+  try {
+    return localStorage.getItem(VISUAL_PLUGIN_STORAGE_KEY) || 'obsidian-nebula';
+  } catch {
+    return 'obsidian-nebula';
+  }
+}
 
 export function isLinesExceededAnomaly(a?: Partial<CveAnomalyRecord> | null): boolean {
   if (!a) return false;
@@ -384,6 +394,88 @@ export class CockpitState {
   pendingImportFile = $state<{ fileName: string; content: string } | null>(null);
   isIgnoredCweModalOpen = $state(false);
   isPluginsModalOpen = $state(false);
+  pluginsModalTab = $state<'plugins' | 'create' | 'taint' | 'playground' | 'semgrep' | 'visuals'>('plugins');
+  openPluginsModal(tab: 'plugins' | 'create' | 'taint' | 'playground' | 'semgrep' | 'visuals' = 'plugins') {
+    this.pluginsModalTab = tab;
+    this.isPluginsModalOpen = true;
+  }
+
+  // WebGL 2 Visual Plugins State (M1 + M2)
+  activeVisualPluginId = $state<string>(loadSavedVisualPluginId());
+  customVisualPlugins = $state<VisualPluginPack[]>([]);
+  visualPluginsVersion = $state<number>(0);
+  visualPluginError = $state<string | null>(null);
+
+  get allVisualPlugins(): VisualPluginPack[] {
+    const customIds = new Set(this.customVisualPlugins.map((p) => p.id));
+    const merged: VisualPluginPack[] = BUILTIN_VISUAL_PLUGINS.filter((b) => !customIds.has(b.id));
+    for (const c of this.customVisualPlugins) {
+      merged.push(c);
+    }
+    return merged;
+  }
+
+  get activeVisualPluginPack(): VisualPluginPack {
+    return (
+      this.allVisualPlugins.find((p) => p.id === this.activeVisualPluginId) ||
+      BUILTIN_VISUAL_PLUGINS[0]
+    );
+  }
+
+  applyVisualPluginPack(pack: VisualPluginPack | null, persist = true): { ok: boolean; error?: string } {
+    const target = pack || BUILTIN_VISUAL_PLUGINS[0];
+    this.visualPluginError = null;
+    if (this.engine && typeof this.engine.applyVisualPlugin === 'function') {
+      const res = this.engine.applyVisualPlugin(target);
+      if (!res.ok) {
+        this.visualPluginError = res.error || 'Erreur de compilation WebGL';
+        return res;
+      }
+    }
+    this.activeVisualPluginId = target.id;
+    if (persist) {
+      try {
+        localStorage.setItem(VISUAL_PLUGIN_STORAGE_KEY, target.id);
+      } catch {
+        // ignore storage errors
+      }
+      if (this.liveConnected) {
+        api.activateVisualPlugin(target.id).then((r) => {
+          if (typeof r?.visual_version === 'number') {
+            this.visualPluginsVersion = r.visual_version;
+          }
+        }).catch(() => {});
+      }
+    }
+    return { ok: true };
+  }
+
+  selectVisualPlugin(id: string, persist = true): { ok: boolean; error?: string } {
+    const found = this.allVisualPlugins.find((p) => p.id === id) || BUILTIN_VISUAL_PLUGINS[0];
+    return this.applyVisualPluginPack(found, persist);
+  }
+
+  async loadVisualPlugins(applyServerActive = false): Promise<void> {
+    try {
+      const inv = await api.getVisualPlugins();
+      if (inv && Array.isArray(inv.plugins)) {
+        this.customVisualPlugins = inv.plugins;
+        if (typeof inv.visual_version === 'number') {
+          this.visualPluginsVersion = inv.visual_version;
+        }
+        const targetId =
+          applyServerActive && inv.active_visual_plugin
+            ? inv.active_visual_plugin
+            : this.activeVisualPluginId;
+        const found = this.allVisualPlugins.find((p) => p.id === targetId) || BUILTIN_VISUAL_PLUGINS[0];
+        this.applyVisualPluginPack(found, false);
+      }
+    } catch {
+      // Standalone offline demo: keep built-in packs and apply saved theme
+      this.applyVisualPluginPack(this.activeVisualPluginPack, false);
+    }
+  }
+
   isChatOpen = $state(false);
   isMcpModalOpen = $state(false);
   showRadar = $state(loadSavedRadar());

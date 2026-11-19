@@ -1,4 +1,13 @@
 import type { AetherGraph, TaskItem } from '../types/graph';
+import type { VisualPluginPack } from '../engine/visualPlugins';
+
+export interface VisualPluginsInventoryResponse {
+  status: string;
+  visuals_dir: string;
+  active_visual_plugin: string;
+  visual_version: number;
+  plugins: VisualPluginPack[];
+}
 
 export interface PluginRuleSummary {
   id: string;
@@ -436,7 +445,7 @@ export class AetherApiClient {
     return res.json();
   }
 
-  async getGraphVersion(): Promise<{ version: number }> {
+  async getGraphVersion(): Promise<{ version: number; visual_version?: number }> {
     const res = await fetch(`${this.baseUrl}/api/graph/version`);
     return res.json();
   }
@@ -651,6 +660,9 @@ export class AetherApiClient {
     not_in_path_matching?: string[];
     ast_scope?: string | null;
     test_cases?: { name: string; file_name: string; code: string; should_trigger: boolean }[];
+    taint_sources?: any[];
+    taint_sinks?: any[];
+    sanitizers?: any[];
   }): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/plugins/upsert`, {
       method: 'POST',
@@ -676,6 +688,66 @@ export class AetherApiClient {
     const data = await res.json().catch(() => null);
     if (!res.ok || data?.status === 'error') {
       throw new Error(data?.message || `Erreur suppression plugin HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async getVisualPlugins(): Promise<VisualPluginsInventoryResponse> {
+    const res = await fetch(`${this.baseUrl}/api/visual_plugins`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) {
+      throw new Error(data?.message || `Erreur lecture plugins visuels HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async activateVisualPlugin(id: string): Promise<{ status: string; active_visual_plugin: string; visual_version: number }> {
+    const res = await fetch(`${this.baseUrl}/api/visual_plugins/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur activation thème WebGL HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async upsertVisualPlugin(payload: {
+    id: string;
+    name: string;
+    version?: string;
+    author?: string;
+    description?: string;
+    palette: VisualPluginPack['palette'];
+    overlay: VisualPluginPack['overlay'];
+    uniforms: Record<string, number>;
+    backdrop_glsl?: string | null;
+    node_sdf_glsl?: string | null;
+    activate?: boolean;
+  }): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/visual_plugins/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur sauvegarde plugin visuel HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async deleteVisualPlugin(id: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/visual_plugins/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur suppression plugin visuel HTTP ${res.status}`);
     }
     return data;
   }

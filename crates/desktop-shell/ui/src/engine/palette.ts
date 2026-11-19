@@ -2,6 +2,8 @@
 // AETHERSCOPE V2 — ARCHITECTURAL COLOR PALETTES & LAYER MAPPING (palette.ts)
 // =========================================================================
 
+import { hexToRgba, type VisualPaletteConfig } from './visualPlugins';
+
 export interface RgbaColor {
   r: number;
   g: number;
@@ -9,7 +11,7 @@ export interface RgbaColor {
   a: number;
 }
 
-const LAYER_COLORS: Record<string, RgbaColor> = {
+const DEFAULT_LAYER_COLORS: Record<string, RgbaColor> = {
   ui: { r: 0.22, g: 0.74, b: 0.97, a: 1.0 },        // #38bdf8 Sky Blue
   action: { r: 0.66, g: 0.33, b: 0.97, a: 1.0 },    // #a855f7 Purple
   domain: { r: 0.06, g: 0.73, b: 0.51, a: 1.0 },    // #10b981 Emerald
@@ -20,19 +22,51 @@ const LAYER_COLORS: Record<string, RgbaColor> = {
   default: { r: 0.58, g: 0.64, b: 0.72, a: 1.0 }   // #94a3b8 Neutral
 };
 
-export const SEVERITY_COLORS: Record<string, RgbaColor> = {
+const DEFAULT_SEVERITY_COLORS: Record<string, RgbaColor> = {
   CRITICAL: { r: 0.96, g: 0.26, b: 0.21, a: 1.0 }, // #f44336 Bright Red
   HIGH: { r: 1.00, g: 0.42, b: 0.00, a: 1.0 },     // #ff6b00 Orange
   MEDIUM: { r: 1.00, g: 0.76, b: 0.03, a: 1.0 },   // #ffc107 Yellow
   LOW: { r: 0.29, g: 0.69, b: 0.31, a: 1.0 }       // #4caf50 Green
 };
 
-export const CONTRACT_WARNING_COLOR: RgbaColor = { r: 0.98, g: 0.72, b: 0.15, a: 1.0 }; // #fbbf24 Warm Amber Gold
+const DEFAULT_CONTRACT_WARNING_COLOR: RgbaColor = { r: 0.98, g: 0.72, b: 0.15, a: 1.0 }; // #fbbf24 Warm Amber Gold
+
+let activeLayerColors: Record<string, RgbaColor> = { ...DEFAULT_LAYER_COLORS };
+export const SEVERITY_COLORS: Record<string, RgbaColor> = { ...DEFAULT_SEVERITY_COLORS };
+export const CONTRACT_WARNING_COLOR: RgbaColor = { ...DEFAULT_CONTRACT_WARNING_COLOR };
+
+export function applyPaletteOverride(palette?: VisualPaletteConfig | null) {
+  activeLayerColors = { ...DEFAULT_LAYER_COLORS };
+  Object.assign(SEVERITY_COLORS, DEFAULT_SEVERITY_COLORS);
+  Object.assign(CONTRACT_WARNING_COLOR, DEFAULT_CONTRACT_WARNING_COLOR);
+
+  if (palette?.layers) {
+    for (const [k, hex] of Object.entries(palette.layers)) {
+      const parsed = hexToRgba(hex);
+      if (parsed) activeLayerColors[k.toLowerCase()] = parsed;
+    }
+  }
+  if (palette?.severities) {
+    for (const [k, hex] of Object.entries(palette.severities)) {
+      const parsed = hexToRgba(hex);
+      if (parsed) SEVERITY_COLORS[k.toUpperCase()] = parsed;
+    }
+  }
+  if (palette?.contract_warning) {
+    const parsed = hexToRgba(palette.contract_warning);
+    if (parsed) Object.assign(CONTRACT_WARNING_COLOR, parsed);
+  }
+  folderColorCache.clear();
+}
+
+export function resetPaletteOverride() {
+  applyPaletteOverride(null);
+}
 
 export function getLayerRgba(layer?: string): RgbaColor {
-  if (!layer) return LAYER_COLORS.default;
+  if (!layer) return activeLayerColors.default;
   const key = layer.toLowerCase();
-  return LAYER_COLORS[key] || LAYER_COLORS.default;
+  return activeLayerColors[key] || activeLayerColors.default;
 }
 
 const BRANCH_HUES: Record<string, number> = {

@@ -8,6 +8,7 @@ mod mcp;
 mod plugin_routes;
 mod surface_scanner;
 mod viewer;
+mod visual_plugin_routes;
 
 use api_routes::*;
 use ai_file_bridge::{AuditWriter, FileWatcherBridge, HandshakePacker};
@@ -1079,8 +1080,24 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         last_change_time = None;
 
                         let current_mode = watcher_state.get_active_view_mode().await;
+                        let is_visual_plugin_file = |p: &std::path::Path| -> bool {
+                            let s = p.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+                            s.contains(".aether/plugins/visuals/")
+                                || p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("glsl"))
+                        };
+                        let has_visual_changes = files_to_process.iter().any(|p| is_visual_plugin_file(p));
+                        if has_visual_changes {
+                            watcher_state
+                                .visual_plugins_version
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        }
                         let has_md_changes = files_to_process.iter().any(|p| p.extension().is_some_and(|ext| ext == "md"));
-                        let has_code_changes = files_to_process.iter().any(|p| p.extension().is_some_and(|ext| ext != "md"));
+                        let has_code_changes = files_to_process
+                            .iter()
+                            .any(|p| !is_visual_plugin_file(p) && p.extension().is_some_and(|ext| ext != "md"));
+                        if has_visual_changes && !has_md_changes && !has_code_changes {
+                            continue;
+                        }
 
                         // Refresh vault graph if md changed or in vault mode
                         if has_md_changes || current_mode == "vault" {
@@ -1558,7 +1575,8 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 let state = state_graph_version.clone();
                 async move {
                     let v = state.graph_version.load(std::sync::atomic::Ordering::SeqCst);
-                    axum::Json(serde_json::json!({ "version": v }))
+                    let vv = state.visual_plugins_version.load(std::sync::atomic::Ordering::SeqCst);
+                    axum::Json(serde_json::json!({ "version": v, "visual_version": vv }))
                 }
             }),
         )
@@ -2930,6 +2948,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     let show_folder_titles = *state.show_folder_titles.read().await;
                     let show_file_titles = *state.show_file_titles.read().await;
                     let low_memory_mode = *state.low_memory_mode.read().await;
+                    let active_visual_plugin = state.active_visual_plugin.read().await.clone();
                     axum::Json(SettingsPayload {
                         exclusions,
                         active_cve_rules: Some(active_rules),
@@ -2942,6 +2961,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         show_folder_titles,
                         show_file_titles,
                         low_memory_mode,
+                        active_visual_plugin,
                         ui_settings,
                         rescan: None,
                     })
@@ -2999,6 +3019,10 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         let mut g = state.low_memory_mode.write().await;
                         *g = Some(v);
                     }
+                    if let Some(ref vp) = payload.active_visual_plugin {
+                        let mut g = state.active_visual_plugin.write().await;
+                        *g = Some(vp.clone());
+                    }
 
                     // Persist the merged settings so partial POSTs (e.g. ignore CWE) never wipe UI display toggles
                     let merged_exclusions = state.custom_exclusions.read().await.clone();
@@ -3016,6 +3040,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         show_folder_titles: *state.show_folder_titles.read().await,
                         show_file_titles: *state.show_file_titles.read().await,
                         low_memory_mode: *state.low_memory_mode.read().await,
+                        active_visual_plugin: state.active_visual_plugin.read().await.clone(),
                         ui_settings: state.saved_ui_settings.read().await.clone(),
                         rescan: None,
                     };
@@ -3108,6 +3133,10 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                 .route("/api/plugins/import_semgrep", axum::routing::post(plugin_routes::import_semgrep_handler))
                 .route("/api/plugins/upsert", axum::routing::post(plugin_routes::upsert_plugin_rule_handler))
                 .route("/api/plugins/delete", axum::routing::post(plugin_routes::delete_plugin_handler))
+                .route("/api/visual_plugins", axum::routing::get(visual_plugin_routes::get_visual_plugins_handler))
+                .route("/api/visual_plugins/activate", axum::routing::post(visual_plugin_routes::activate_visual_plugin_handler))
+                .route("/api/visual_plugins/upsert", axum::routing::post(visual_plugin_routes::upsert_visual_plugin_handler))
+                .route("/api/visual_plugins/delete", axum::routing::post(visual_plugin_routes::delete_visual_plugin_handler))
                 .with_state(shared_state.clone()),
         )
         .route(

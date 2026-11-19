@@ -16,8 +16,9 @@ Top-level presentation and orchestrator crate. Builds two primary binaries: `aet
 
 | File / Subsystem | Description & Architectural Responsibility |
 | :--- | :--- |
-| `src/main.rs` | Main CLI entrypoint (`clap`, including `--plugins`, `--audit-only`, `--sca`, `--benchmark`), Axum HTTP server on `127.0.0.1:3030` (47 routes), `PathGuard`/`SecretGuard` guards, and native Tao/Wry desktop window. |
+| `src/main.rs` | Main CLI entrypoint (`clap`, including `--plugins`, `--audit-only`, `--sca`, `--benchmark`), Axum HTTP server on `127.0.0.1:3030` (51 routes), `PathGuard`/`SecretGuard` guards, and native Tao/Wry desktop window. |
 | `src/plugin_routes.rs` | `PathGuard`-confined REST API for declarative YAML/JSON SAST & Taint plugins (`/api/plugins`, `/toggle`, `/test`, `/init_bundle`, `/import_semgrep`, `/upsert`, `/delete`) with live rescan & unit-test certification. |
+| `src/visual_plugin_routes.rs` | `PathGuard`-confined REST API for WebGL 2 visual theme packs & GLSL ES 3.00 shader hooks (`/api/visual_plugins`, `/activate`, `/upsert`, `/delete`) with static anti-DoS GLSL validation and live `.glsl` hot-reload. |
 | `src/mcp_main.rs` | Dedicated binary `aetherscope-mcp` executing the JSON-RPC 2.0 stdio server loop, auto-spawning Axum backend if offline. |
 | `src/mcp.rs` | Model Context Protocol engine: multi-agent swarm telemetry, 12-color badge assignment, `SecretGuard`/`SecretMasker` redaction, and stdio JSON-RPC request handling. |
 | `src/mcp_catalog.rs` | Catalog exposing 10 consolidated MCP tools, 5 resources (`aether://*`), and 5 engineering prompts. |

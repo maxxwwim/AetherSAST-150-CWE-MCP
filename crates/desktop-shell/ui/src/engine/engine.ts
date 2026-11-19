@@ -4,13 +4,31 @@
 // =========================================================================
 
 import {
+  INSTANCE_FLOATS,
   initShaderPipeline,
   initBackdropPipeline,
+  swapNodeShader,
+  swapBackdropShader,
   type ShaderPipeline,
   type BackdropPipeline
 } from './shaders';
+import {
+  resolveThemeColorsArray,
+  resolveUniformParamsVec4,
+  type VisualPluginPack,
+  type MembraneStyle,
+  type EdgeStyle
+} from './visualPlugins';
 import { PhysicsController, type FolderClusterEntry } from './physics';
-import { getLayerRgba, getFolderColor, formatFolderLabel, SEVERITY_COLORS, CONTRACT_WARNING_COLOR, type RgbaColor } from './palette';
+import {
+  getLayerRgba,
+  getFolderColor,
+  formatFolderLabel,
+  applyPaletteOverride,
+  SEVERITY_COLORS,
+  CONTRACT_WARNING_COLOR,
+  type RgbaColor
+} from './palette';
 import { normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly, formatCweShortId, type CockpitState } from '../state/graphState.svelte';
 import { playSpatialTone } from '../lib/sound';
 import type { SymbolBubble, CveAnomalyRecord } from '../types/graph';
@@ -94,6 +112,16 @@ export class AetherEngine {
   private fileAnomaliesByPath = new Map<string, CveAnomalyRecord[]>();
   private agentSmoothPositions = new Map<string, { x: number; y: number }>();
 
+  // Visual Plugin Runtime State (M1 + M2)
+  private themeColors: Float32Array = resolveThemeColorsArray();
+  private uniformParams: [number, number, number, number] = [1.0, 1.0, 1.0, 1.0];
+  private membraneStyle: MembraneStyle = 'organic_12lobe';
+  private edgeStyle: EdgeStyle = 'bezier';
+  private edgePulseSpeed = 1.0;
+  private membraneBreathAmp = 1.0;
+  private slowShaderMs = 0;
+  private contextLostHandler: ((e: Event) => void) | null = null;
+
   // Mouse interaction state
   private isDragging = false;
   private isDraggingNode = false;
@@ -128,15 +156,74 @@ export class AetherEngine {
     this.pipeline = initShaderPipeline(this.gl);
     this.physics = new PhysicsController();
 
+    this.contextLostHandler = (e: Event) => {
+      e.preventDefault();
+      this.state.visualPluginError = 'Contexte WebGL interrompu par le GPU — repli de sécurité activé.';
+    };
+    this.canvas.addEventListener('webglcontextlost', this.contextLostHandler);
+
     this.setupPhysicsListener();
     this.handleResize();
     this.setupMouseEvents();
 
     this.state.engine = this;
 
+    // Apply currently selected visual plugin pack immediately if non-default
+    const initialPack = this.state.activeVisualPluginPack;
+    if (initialPack && initialPack.id !== 'obsidian-nebula') {
+      this.applyVisualPlugin(initialPack);
+    }
+
     if (this.state.graph.nodes.length > 0) {
       this.syncGraphToEngine();
     }
+  }
+
+  /**
+   * Applies a VisualPluginPack atomically (palette, overlay geometry, uniforms & GLSL hot-swap).
+   * If a custom GLSL shader fails compilation, the previous WebGLProgram remains intact.
+   */
+  public applyVisualPlugin(pack: VisualPluginPack | null): { ok: boolean; error?: string } {
+    this.slowShaderMs = 0;
+    const isDefault = !pack || pack.id === 'obsidian-nebula';
+
+    const bgRes = swapBackdropShader(this.gl, this.backdropPipeline, isDefault ? null : pack?.backdrop_glsl);
+    if (!bgRes.ok) {
+      return { ok: false, error: `backdrop.glsl : ${bgRes.error}` };
+    }
+    const nodeRes = swapNodeShader(this.gl, this.pipeline, isDefault ? null : pack?.node_sdf_glsl);
+    if (!nodeRes.ok) {
+      return { ok: false, error: `node_sdf.glsl : ${nodeRes.error}` };
+    }
+
+    this.themeColors = resolveThemeColorsArray(pack?.palette?.background);
+    this.uniformParams = resolveUniformParamsVec4(pack?.uniforms);
+    applyPaletteOverride(isDefault ? null : pack?.palette);
+
+    const mStyle = pack?.overlay?.membrane_style;
+    this.membraneStyle =
+      mStyle === 'hex_hull' || mStyle === 'rect_blueprint' || mStyle === 'none' || mStyle === 'organic_12lobe'
+        ? mStyle
+        : 'organic_12lobe';
+
+    const eStyle = pack?.overlay?.edge_style;
+    this.edgeStyle =
+      eStyle === 'straight' || eStyle === 'orthogonal_pcb' || eStyle === 'bezier'
+        ? eStyle
+        : 'bezier';
+
+    this.edgePulseSpeed =
+      typeof pack?.overlay?.edge_pulse_speed === 'number' && Number.isFinite(pack.overlay.edge_pulse_speed)
+        ? Math.max(0.1, Math.min(5.0, pack.overlay.edge_pulse_speed))
+        : 1.0;
+
+    this.membraneBreathAmp =
+      typeof pack?.overlay?.membrane_breath_amp === 'number' && Number.isFinite(pack.overlay.membrane_breath_amp)
+        ? Math.max(0.0, Math.min(2.5, pack.overlay.membrane_breath_amp))
+        : 1.0;
+
+    this.refreshVisionColors(true);
+    return { ok: true };
   }
 
   private setupPhysicsListener() {
@@ -148,9 +235,9 @@ export class AetherEngine {
         nodes[i].x = positions[i * 2];
         nodes[i].y = positions[i * 2 + 1];
 
-        if (this.instanceData.length >= (i + 1) * 10) {
-          this.instanceData[i * 10 + 0] = nodes[i].x;
-          this.instanceData[i * 10 + 1] = nodes[i].y;
+        if (this.instanceData.length >= (i + 1) * INSTANCE_FLOATS) {
+          this.instanceData[i * INSTANCE_FLOATS + 0] = nodes[i].x;
+          this.instanceData[i * INSTANCE_FLOATS + 1] = nodes[i].y;
         }
       }
 
@@ -269,11 +356,11 @@ export class AetherEngine {
 
   public updateGitAndEditHighlights() {
     const nodes = this.state.graph.nodes;
-    if (!nodes || this.instanceData.length < nodes.length * 10) return;
+    if (!nodes || this.instanceData.length < nodes.length * INSTANCE_FLOATS) return;
 
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
-      const offset = i * 10;
+      const offset = i * INSTANCE_FLOATS;
       if (typeof n.birth_time === 'number') {
         this.instanceData[offset + 8] = n.birth_time;
       }
@@ -289,7 +376,7 @@ export class AetherEngine {
     this.nodeMap.clear();
     this.clusters.clear();
 
-    const floatCount = nodes.length * 10;
+    const floatCount = nodes.length * INSTANCE_FLOATS;
     if (this.instanceData.length !== floatCount) {
       this.instanceData = new Float32Array(floatCount);
     }
@@ -304,7 +391,7 @@ export class AetherEngine {
       }
       this.nodeMap.set(n.id, n);
 
-      const offset = i * 10;
+      const offset = i * INSTANCE_FLOATS;
       const { shaderType, baseRadius } = this.classifyNode(n);
 
       this.instanceData[offset + 0] = n.x;
@@ -313,6 +400,8 @@ export class AetherEngine {
       this.instanceData[offset + 7] = shaderType;
       this.instanceData[offset + 8] = n.birth_time;
       this.instanceData[offset + 9] = this.getNodeGitShaderVal(n);
+      this.instanceData[offset + 10] = 0.0;
+      this.instanceData[offset + 11] = 0.0;
     }
 
     this.rebuildAnomalyIndex(nodes);
@@ -431,7 +520,7 @@ export class AetherEngine {
 
   public refreshVisionColors(upload = true) {
     const nodes = this.state.graph.nodes;
-    if (!nodes || this.instanceData.length < nodes.length * 10) return;
+    if (!nodes || this.instanceData.length < nodes.length * INSTANCE_FLOATS) return;
 
     const filterChanged = this.lastFilterVersion !== this.state.filterVersion;
     const mode = this.state.visionMode;
@@ -464,7 +553,7 @@ export class AetherEngine {
 
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
-      const offset = i * 10;
+      const offset = i * INSTANCE_FLOATS;
       const { baseRadius, isFunction } = this.classifyNode(n);
       const folder = n.cluster_id || n.folder || 'root';
       let col: RgbaColor = lod <= 2 ? getFolderColor(folder) : getLayerRgba(n.layer);
@@ -541,12 +630,20 @@ export class AetherEngine {
         gitStatusVal = 0.0;
       }
 
+      // Normalized GPU plugin metrics: metric0 = complexity/degree [0..1], metric1 = security/focus heat [0..1]
+      const deg = (n.in_degree || 0) + (n.out_degree || 0);
+      const cc = n.cyclomatic_complexity || 1;
+      const metric0 = Math.max(0.0, Math.min(1.0, Math.max(cc / 24.0, deg / 28.0)));
+      const metric1 = isSecurityAlert ? 1.0 : isFocus ? 0.85 : isLinesAlert ? 0.5 : 0.0;
+
       this.instanceData[offset + 2] = r;
       this.instanceData[offset + 3] = col.r;
       this.instanceData[offset + 4] = col.g;
       this.instanceData[offset + 5] = col.b;
       this.instanceData[offset + 6] = alpha;
       this.instanceData[offset + 9] = gitStatusVal;
+      this.instanceData[offset + 10] = metric0;
+      this.instanceData[offset + 11] = metric1;
     }
 
     if (upload) {
@@ -1024,16 +1121,43 @@ export class AetherEngine {
 
   private render(now: number, dt = 16.6) {
     const { gl, pipeline, backdropPipeline } = this;
+    const nodes = this.state.graph.nodes;
 
-    // 0. Cosmic Space, Ethereal Nebula & Parallax Stellar Starfield Backdrop
-    gl.clearColor(0.018, 0.024, 0.048, 1.0);
+    // GPU FPS Watchdog: if a custom GLSL plugin causes sustained <25 FPS on normal graphs, auto-fallback to native shaders
+    if ((pipeline.isCustom || backdropPipeline.isCustom) && (!nodes || nodes.length < 25000)) {
+      if (dt > 40) {
+        this.slowShaderMs += dt;
+        if (this.slowShaderMs >= 2800) {
+          swapBackdropShader(gl, backdropPipeline, null);
+          swapNodeShader(gl, pipeline, null);
+          this.slowShaderMs = 0;
+          this.state.visualPluginError =
+            'Watchdog FPS : shader GLSL custom trop lent (<25 FPS soutenu) — repli automatique sur les shaders natifs.';
+        }
+      } else {
+        this.slowShaderMs = Math.max(0, this.slowShaderMs - dt * 0.5);
+      }
+    }
+
+    // 0. Backdrop WebGL 2 Pass (Native Nebula or Custom Visual Plugin GLSL)
+    gl.clearColor(this.themeColors[0], this.themeColors[1], this.themeColors[2], 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.disable(gl.BLEND);
     gl.useProgram(backdropPipeline.program);
-    gl.uniform2f(backdropPipeline.uniforms.uRes, this.gl.drawingBufferWidth, this.gl.drawingBufferHeight);
-    gl.uniform2f(backdropPipeline.uniforms.uCam, this.camera.x, this.camera.y);
-    gl.uniform1f(backdropPipeline.uniforms.uZoom, this.camera.zoom);
-    gl.uniform1f(backdropPipeline.uniforms.uTime, now);
+    if (backdropPipeline.uniforms.uRes) gl.uniform2f(backdropPipeline.uniforms.uRes, this.gl.drawingBufferWidth, this.gl.drawingBufferHeight);
+    if (backdropPipeline.uniforms.uCam) gl.uniform2f(backdropPipeline.uniforms.uCam, this.camera.x, this.camera.y);
+    if (backdropPipeline.uniforms.uZoom) gl.uniform1f(backdropPipeline.uniforms.uZoom, this.camera.zoom);
+    if (backdropPipeline.uniforms.uTime) gl.uniform1f(backdropPipeline.uniforms.uTime, now);
+    if (backdropPipeline.uniforms.uThemeColors) gl.uniform3fv(backdropPipeline.uniforms.uThemeColors, this.themeColors);
+    if (backdropPipeline.uniforms.uParams) {
+      gl.uniform4f(
+        backdropPipeline.uniforms.uParams,
+        this.uniformParams[0],
+        this.uniformParams[1],
+        this.uniformParams[2],
+        this.uniformParams[3]
+      );
+    }
     gl.bindVertexArray(backdropPipeline.vao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);
@@ -1043,12 +1167,21 @@ export class AetherEngine {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
     gl.useProgram(pipeline.program);
-    gl.uniform2f(pipeline.uniforms.uRes, this.logicalWidth, this.logicalHeight);
-    gl.uniform2f(pipeline.uniforms.uCam, this.camera.x, this.camera.y);
-    gl.uniform1f(pipeline.uniforms.uZoom, this.camera.zoom);
-    gl.uniform1f(pipeline.uniforms.uTime, now);
+    if (pipeline.uniforms.uRes) gl.uniform2f(pipeline.uniforms.uRes, this.logicalWidth, this.logicalHeight);
+    if (pipeline.uniforms.uCam) gl.uniform2f(pipeline.uniforms.uCam, this.camera.x, this.camera.y);
+    if (pipeline.uniforms.uZoom) gl.uniform1f(pipeline.uniforms.uZoom, this.camera.zoom);
+    if (pipeline.uniforms.uTime) gl.uniform1f(pipeline.uniforms.uTime, now);
+    if (pipeline.uniforms.uThemeColors) gl.uniform3fv(pipeline.uniforms.uThemeColors, this.themeColors);
+    if (pipeline.uniforms.uParams) {
+      gl.uniform4f(
+        pipeline.uniforms.uParams,
+        this.uniformParams[0],
+        this.uniformParams[1],
+        this.uniformParams[2],
+        this.uniformParams[3]
+      );
+    }
 
-    const nodes = this.state.graph.nodes;
     if (nodes && nodes.length > 0) {
       gl.bindVertexArray(pipeline.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nodes.length);
@@ -1917,20 +2050,51 @@ export class AetherEngine {
     breathPhase: number,
     phaseShift: number
   ): number {
+    if (this.membraneStyle === 'hex_hull') {
+      const r = radius * (1.0 + 0.012 * this.membraneBreathAmp * Math.sin(breathPhase + phaseShift));
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+        const px = cx + Math.cos(a) * r;
+        const py = cy + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      return cy - r;
+    }
+
+    if (this.membraneStyle === 'rect_blueprint') {
+      const r = radius * 0.96;
+      const chamfer = Math.min(18, r * 0.18);
+      const x0 = cx - r;
+      const y0 = cy - r;
+      const x1 = cx + r;
+      const y1 = cy + r;
+      ctx.beginPath();
+      ctx.moveTo(x0 + chamfer, y0);
+      ctx.lineTo(x1 - chamfer, y0);
+      ctx.lineTo(x1, y0 + chamfer);
+      ctx.lineTo(x1, y1 - chamfer);
+      ctx.lineTo(x1 - chamfer, y1);
+      ctx.lineTo(x0 + chamfer, y1);
+      ctx.lineTo(x0, y1 - chamfer);
+      ctx.lineTo(x0, y0 + chamfer);
+      ctx.closePath();
+      return y0;
+    }
+
     const ptsX = new Float32Array(12);
     const ptsY = new Float32Array(12);
+    const amp = this.membraneBreathAmp;
 
     // Respiration cellulaire ultra-fluide & ondulation amiboïde continue (C∞ sur le cercle fermé)
-    // 1. Respiration volumétrique globale douce et apaisée (inspiration/expiration harmonieuse)
-    const globalBreath = 1.0 + 0.022 * Math.sin(breathPhase + phaseShift);
+    const globalBreath = 1.0 + 0.022 * amp * Math.sin(breathPhase + phaseShift);
 
     for (let i = 0; i < 12; i++) {
       const prof = lobeProfile && lobeProfile[i] ? lobeProfile[i] : 1.0;
-      // 2. Ondulation amiboïde de surface continue sans saut de phase abrupt
-      // Mode 2 : Dérive ovoïde continue rotative le long des 12 secteurs (2*pi*i/6 = pi*i/3)
-      const waveMode2 = 0.014 * Math.sin(breathPhase * 0.72 + (i * Math.PI) / 3 + phaseShift);
-      // Mode 3 : Micro-ondulation péristaltique douce fermée (3*pi*i/6 = pi*i/2)
-      const waveMode3 = 0.006 * Math.cos(breathPhase * 0.44 - (i * Math.PI) / 2 - phaseShift * 0.5);
+      const waveMode2 = 0.014 * amp * Math.sin(breathPhase * 0.72 + (i * Math.PI) / 3 + phaseShift);
+      const waveMode3 = 0.006 * amp * Math.cos(breathPhase * 0.44 - (i * Math.PI) / 2 - phaseShift * 0.5);
 
       const harmonic = globalBreath + waveMode2 + waveMode3;
       const r = radius * prof * harmonic;
@@ -2062,7 +2226,7 @@ export class AetherEngine {
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
     this.folderPillBounds = [];
     this.syncLiveClusterEnvelopes();
-    if (!this.state.settings.showFolderMembranes || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
+    if (!this.state.settings.showFolderMembranes || this.membraneStyle === 'none' || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
 
     ctx.save();
     // Horloge respiratoire maîtresse apaisée, ultra-fluide et douce (~9.6s par cycle)
@@ -2544,11 +2708,39 @@ export class AetherEngine {
       else { hasCalls = true; }
 
       targetPath.moveTo(p1.x, p1.y);
-      if (isCurved && cx !== null && cy !== null) {
+      if (this.edgeStyle === 'orthogonal_pcb') {
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+        if (adx >= ady) {
+          const diag = Math.min(ady, adx * 0.45);
+          const sx = dx >= 0 ? 1 : -1;
+          const sy = dy >= 0 ? 1 : -1;
+          const elbowX = p1.x + sx * (adx - diag) * 0.5;
+          targetPath.lineTo(elbowX, p1.y);
+          targetPath.lineTo(elbowX + sx * diag, p1.y + sy * diag);
+          targetPath.lineTo(p2.x, p2.y);
+        } else {
+          const diag = Math.min(adx, ady * 0.45);
+          const sx = dx >= 0 ? 1 : -1;
+          const sy = dy >= 0 ? 1 : -1;
+          const elbowY = p1.y + sy * (ady - diag) * 0.5;
+          targetPath.lineTo(p1.x, elbowY);
+          targetPath.lineTo(p1.x + sx * diag, elbowY + sy * diag);
+          targetPath.lineTo(p2.x, p2.y);
+        }
+        if (pulseParticles.length < 28 && (isXray || pipe || i % 9 === 0)) {
+          const u = ((now * 0.00028 * this.edgePulseSpeed + i * 0.17) % 1 + 1) % 1;
+          pulseParticles.push({
+            x: p1.x + dx * u,
+            y: p1.y + dy * u,
+            color: isWarnEdge ? '#fb923c' : isViolEdge ? '#f87171' : rel === 'realtime' ? '#34d399' : rel === 'queries' ? '#c084fc' : rel === 'imports' ? '#fbbf24' : '#38bdf8',
+          });
+        }
+      } else if (this.edgeStyle === 'bezier' && isCurved && cx !== null && cy !== null) {
         targetPath.quadraticCurveTo(cx, cy, p2.x, p2.y);
 
         if (pulseParticles.length < 28 && (isXray || pipe || i % 9 === 0)) {
-          const u = ((now * 0.00028 + i * 0.17) % 1 + 1) % 1;
+          const u = ((now * 0.00028 * this.edgePulseSpeed + i * 0.17) % 1 + 1) % 1;
           const inv = 1 - u;
           pulseParticles.push({
             x: inv * inv * p1.x + 2 * inv * u * cx + u * u * p2.x,
@@ -2692,7 +2884,27 @@ export class AetherEngine {
         if (meta.dashed) ctx.setLineDash([5, 4]);
         ctx.beginPath();
         ctx.moveTo(fe.p1.x, fe.p1.y);
-        if (fe.cx !== null && fe.cy !== null) {
+        if (this.edgeStyle === 'orthogonal_pcb') {
+          const fdx = fe.p2.x - fe.p1.x;
+          const fdy = fe.p2.y - fe.p1.y;
+          const adx = Math.abs(fdx);
+          const ady = Math.abs(fdy);
+          const sx = fdx >= 0 ? 1 : -1;
+          const sy = fdy >= 0 ? 1 : -1;
+          if (adx >= ady) {
+            const diag = Math.min(ady, adx * 0.45);
+            const ex = fe.p1.x + sx * (adx - diag) * 0.5;
+            ctx.lineTo(ex, fe.p1.y);
+            ctx.lineTo(ex + sx * diag, fe.p1.y + sy * diag);
+            ctx.lineTo(fe.p2.x, fe.p2.y);
+          } else {
+            const diag = Math.min(adx, ady * 0.45);
+            const ey = fe.p1.y + sy * (ady - diag) * 0.5;
+            ctx.lineTo(fe.p1.x, ey);
+            ctx.lineTo(fe.p1.x + sx * diag, ey + sy * diag);
+            ctx.lineTo(fe.p2.x, fe.p2.y);
+          }
+        } else if (this.edgeStyle === 'bezier' && fe.cx !== null && fe.cy !== null) {
           ctx.quadraticCurveTo(fe.cx, fe.cy, fe.p2.x, fe.p2.y);
         } else {
           ctx.lineTo(fe.p2.x, fe.p2.y);
@@ -2902,6 +3114,10 @@ export class AetherEngine {
       this.dprMediaQuery.removeEventListener('change', this.dprListener);
       this.dprMediaQuery = null;
       this.dprListener = null;
+    }
+    if (this.contextLostHandler) {
+      this.canvas.removeEventListener('webglcontextlost', this.contextLostHandler);
+      this.contextLostHandler = null;
     }
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);

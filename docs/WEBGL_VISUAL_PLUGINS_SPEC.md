@@ -1,6 +1,6 @@
 # 🌌 AetherScope — Spécification d’Architecture : Plugins Visuels WebGL 2
 
-> **Statut** : Design Spec v1.0 (`v2.5.1+`)  
+> **Statut** : **M1 + M2 Implémentés** (`v2.5.1+`) · M3 (`VisionLens` DSL + Post-Process FBO) en roadmap  
 > **Objectif** : Permettre de personnaliser et d’étendre le rendu WebGL 2, les palettes, les modes de vision et la physique du graphe spatial AetherScope via des packs déclaratifs + shaders GLSL ES 3.00 sandboxés dans `.aether/plugins/visuals/<pack>/`, sans compromettre les 120 FPS ni la sécurité zéro-shell (`PathGuard`, CSP, zéro `eval()`).
 
 ---

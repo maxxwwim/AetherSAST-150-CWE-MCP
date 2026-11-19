@@ -60,6 +60,8 @@ pub struct SettingsPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub low_memory_mode: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_visual_plugin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_settings: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rescan: Option<bool>,
@@ -885,6 +887,8 @@ pub struct AppState {
     pub show_folder_titles: RwLock<Option<bool>>,
     pub show_file_titles: RwLock<Option<bool>>,
     pub low_memory_mode: RwLock<Option<bool>>,
+    pub active_visual_plugin: RwLock<Option<String>>,
+    pub visual_plugins_version: std::sync::atomic::AtomicU64,
     /// Cache des octets JSON du graphe pour l'UI (clé : version, nb noeuds, nb arêtes).
     #[allow(clippy::type_complexity)]
     pub ui_graph_cache: RwLock<Option<(u64, usize, usize, std::sync::Arc<Vec<u8>>)>>,
@@ -924,6 +928,9 @@ impl AppState {
         let show_folder_titles = saved_settings.as_ref().and_then(|s| s.show_folder_titles);
         let show_file_titles = saved_settings.as_ref().and_then(|s| s.show_file_titles);
         let low_memory_mode = saved_settings.as_ref().and_then(|s| s.low_memory_mode);
+        let active_visual_plugin = saved_settings
+            .as_ref()
+            .and_then(|s| s.active_visual_plugin.clone());
 
         let mut initial_agents = std::collections::HashMap::new();
         for ag in cached.agents {
@@ -948,6 +955,8 @@ impl AppState {
             show_folder_titles: RwLock::new(show_folder_titles),
             show_file_titles: RwLock::new(show_file_titles),
             low_memory_mode: RwLock::new(low_memory_mode),
+            active_visual_plugin: RwLock::new(active_visual_plugin),
+            visual_plugins_version: std::sync::atomic::AtomicU64::new(1),
             ui_graph_cache: RwLock::new(None),
             git_raw_cache: std::sync::Mutex::new(None),
             project_type: RwLock::new(project_type),

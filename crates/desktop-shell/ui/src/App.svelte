@@ -137,6 +137,9 @@
       case 'b':
         cockpitState.isBountyModalOpen = !cockpitState.isBountyModalOpen;
         break;
+      case 'g':
+        cockpitState.isPluginsModalOpen = !cockpitState.isPluginsModalOpen;
+        break;
       case 'u':
         cockpitState.isSurfaceScannerOpen = !cockpitState.isSurfaceScannerOpen;
         break;
@@ -233,8 +236,10 @@
           cockpitState.filterVersion += 1;
         }
         await cockpitState.fetchGitStatus().catch(() => {});
+        await cockpitState.loadVisualPlugins(true).catch(() => {});
       } catch {
-        // standalone offline mode
+        // standalone offline mode — apply locally saved built-in WebGL theme
+        cockpitState.applyVisualPluginPack(cockpitState.activeVisualPluginPack, false);
       }
     })();
 
@@ -261,6 +266,15 @@
           ]);
         } else if (typeof res?.version === 'number' && cockpitState.graphVersion === 0) {
           cockpitState.graphVersion = res.version;
+        }
+        // Live hot-reload of WebGL visual plugins (.aether/plugins/visuals/*.glsl / *.yaml)
+        if (typeof res?.visual_version === 'number') {
+          if (cockpitState.visualPluginsVersion > 0 && res.visual_version !== cockpitState.visualPluginsVersion) {
+            cockpitState.visualPluginsVersion = res.visual_version;
+            await cockpitState.loadVisualPlugins(false);
+          } else if (cockpitState.visualPluginsVersion === 0) {
+            cockpitState.visualPluginsVersion = res.visual_version;
+          }
         }
       } catch {
         cockpitState.liveConnected = false;

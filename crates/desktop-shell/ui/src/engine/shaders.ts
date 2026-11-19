@@ -1,16 +1,26 @@
 // =========================================================================
 // AETHERSCOPE V2 — WEBGL 2 SHADER PIPELINE (shaders.ts)
-// 120 FPS Instanced SDF Celestial Renderer (Stars, Planets, Crystals, Pulsars)
+// 120 FPS Instanced SDF Celestial Renderer + Atomic Visual Plugin Hot-Swap
 // =========================================================================
 
+import {
+  assembleBackdropFs,
+  assembleNodeFs,
+  validateGlslHookClient,
+} from './visualPlugins';
+
+export const INSTANCE_FLOATS = 12;
+
 export const vsSource = `#version 300 es
-  in vec2 a_quad_pos;
-  in vec2 a_node_pos;
-  in float a_radius;
-  in vec4 a_color;
-  in float a_is_file;
-  in float a_birth_time;
-  in float a_git_status;
+  layout(location = 0) in vec2 a_quad_pos;
+  layout(location = 1) in vec2 a_node_pos;
+  layout(location = 2) in float a_radius;
+  layout(location = 3) in vec4 a_color;
+  layout(location = 4) in float a_is_file;
+  layout(location = 5) in float a_birth_time;
+  layout(location = 6) in float a_git_status;
+  layout(location = 7) in float a_metric0;
+  layout(location = 8) in float a_metric1;
 
   uniform vec2 u_resolution;
   uniform vec2 u_camera_pos;
@@ -25,6 +35,8 @@ export const vsSource = `#version 300 es
   out float v_time;
   out float v_phase;
   out float v_git_status;
+  out float v_metric0;
+  out float v_metric1;
 
   void main() {
     v_uv = a_quad_pos;
@@ -32,6 +44,8 @@ export const vsSource = `#version 300 es
     v_is_file = a_is_file;
     v_time = u_time;
     v_git_status = a_git_status;
+    v_metric0 = a_metric0;
+    v_metric1 = a_metric1;
     // Constant per-instance phase (never depends on a_node_pos so moving nodes never strobe or jitter!)
     v_phase = fract(sin(float(gl_InstanceID) * 12.9898 + 78.233) * 43758.5453) * 6.283185;
 
@@ -85,6 +99,11 @@ export const fsSource = `#version 300 es
   in float v_time;
   in float v_phase;
   in float v_git_status;
+  in float v_metric0;
+  in float v_metric1;
+
+  uniform vec3 u_theme_colors[4];
+  uniform vec4 u_params;
 
   out vec4 fragColor;
 
@@ -152,19 +171,18 @@ export const fsSource = `#version 300 es
     }
 
     // Outer & Inner Bioluminescent Edit / Git Diff Illumination (calm steady glow)
-    // 1.0: Modif Code (#facc15), 2.0: New File (#34d399), 3.0: Violation (#ef4444), 4.0: Text/Doc (#22d3ee), 5.0: New Folder (#c084fc)
     if (v_git_status > 0.5) {
-      vec3 halo_col = vec3(0.98, 0.80, 0.08); // 1.0: Modified code (amber/yellow #facc15)
+      vec3 halo_col = vec3(0.98, 0.80, 0.08);
       float pulse = 0.88 + 0.12 * sin(v_time * 0.00075 + v_phase);
 
       if (v_git_status > 1.5 && v_git_status < 2.5) {
-        halo_col = vec3(0.18, 0.92, 0.52); // 2.0: New file / Untracked (emerald green #34d399)
+        halo_col = vec3(0.18, 0.92, 0.52);
       } else if (v_git_status >= 2.5 && v_git_status < 3.5) {
-        halo_col = vec3(0.98, 0.22, 0.22); // 3.0: Violation (crimson red #ef4444)
+        halo_col = vec3(0.98, 0.22, 0.22);
       } else if (v_git_status >= 3.5 && v_git_status < 4.5) {
-        halo_col = vec3(0.13, 0.85, 0.96); // 4.0: Text / Doc / Config edit (cyan #22d3ee)
+        halo_col = vec3(0.13, 0.85, 0.96);
       } else if (v_git_status >= 4.5) {
-        halo_col = vec3(0.76, 0.52, 0.99); // 5.0: New Folder / Module structure (violet #c084fc)
+        halo_col = vec3(0.76, 0.52, 0.99);
       }
 
       float inner_boost = (1.0 - smoothstep(0.0, 0.62, r_org)) * 0.34 * pulse;
@@ -182,43 +200,96 @@ export const fsSource = `#version 300 es
   }
 `;
 
+export interface NodeShaderUniforms {
+  uRes: WebGLUniformLocation | null;
+  uCam: WebGLUniformLocation | null;
+  uZoom: WebGLUniformLocation | null;
+  uTime: WebGLUniformLocation | null;
+  uThemeColors: WebGLUniformLocation | null;
+  uParams: WebGLUniformLocation | null;
+}
+
 export interface ShaderPipeline {
   program: WebGLProgram;
   vao: WebGLVertexArrayObject;
   quadVbo: WebGLBuffer;
   instanceVbo: WebGLBuffer;
-  uniforms: {
-    uRes: WebGLUniformLocation;
-    uCam: WebGLUniformLocation;
-    uZoom: WebGLUniformLocation;
-    uTime: WebGLUniformLocation;
+  uniforms: NodeShaderUniforms;
+  isCustom: boolean;
+}
+
+function formatGlslError(rawLog: string, lineOffset: number): string {
+  if (!rawLog) return 'Erreur de compilation GLSL inconnue';
+  if (lineOffset <= 0) return rawLog.trim();
+  return rawLog
+    .trim()
+    .replace(/ERROR:\s*(\d+):(\d+):/g, (_m, col, line) => {
+      const adjusted = Math.max(1, parseInt(line, 10) - lineOffset);
+      return `Ligne ${adjusted} (col ${col}):`;
+    });
+}
+
+function buildProgram(
+  gl: WebGL2RenderingContext,
+  vertexSrc: string,
+  fragmentSrc: string,
+  fragLineOffset = 0
+): WebGLProgram {
+  const compile = (type: number, src: string, offset: number): WebGLShader => {
+    const s = gl.createShader(type);
+    if (!s) throw new Error('Failed to create WebGLShader');
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      const err = gl.getShaderInfoLog(s) || 'Compile failed';
+      gl.deleteShader(s);
+      throw new Error(formatGlslError(err, offset));
+    }
+    return s;
+  };
+
+  const vs = compile(gl.VERTEX_SHADER, vertexSrc, 0);
+  let fs: WebGLShader;
+  try {
+    fs = compile(gl.FRAGMENT_SHADER, fragmentSrc, fragLineOffset);
+  } catch (e) {
+    gl.deleteShader(vs);
+    throw e;
+  }
+
+  const program = gl.createProgram();
+  if (!program) {
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    throw new Error('Failed to create WebGLProgram');
+  }
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const err = gl.getProgramInfoLog(program) || 'Link failed';
+    gl.deleteProgram(program);
+    throw new Error(`Link error: ${err}`);
+  }
+  return program;
+}
+
+function queryNodeUniforms(gl: WebGL2RenderingContext, program: WebGLProgram): NodeShaderUniforms {
+  return {
+    uRes: gl.getUniformLocation(program, 'u_resolution'),
+    uCam: gl.getUniformLocation(program, 'u_camera_pos'),
+    uZoom: gl.getUniformLocation(program, 'u_zoom'),
+    uTime: gl.getUniformLocation(program, 'u_time'),
+    uThemeColors: gl.getUniformLocation(program, 'u_theme_colors[0]'),
+    uParams: gl.getUniformLocation(program, 'u_params'),
   };
 }
 
 export function initShaderPipeline(gl: WebGL2RenderingContext): ShaderPipeline {
-  function compileShader(type: number, src: string): WebGLShader {
-    const s = gl.createShader(type);
-    if (!s) throw new Error('Failed to create shader');
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      const err = gl.getShaderInfoLog(s);
-      gl.deleteShader(s);
-      throw new Error(`Shader compile error: ${err}`);
-    }
-    return s;
-  }
-
-  const program = gl.createProgram();
-  if (!program) throw new Error('Failed to create WebGL program');
-  gl.attachShader(program, compileShader(gl.VERTEX_SHADER, vsSource));
-  gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, fsSource));
-  gl.linkProgram(program);
-
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const err = gl.getProgramInfoLog(program);
-    throw new Error(`Program link error: ${err}`);
-  }
+  const program = buildProgram(gl, vsSource, fsSource, 0);
 
   // Quad geometry (4 vertices)
   const quadVbo = gl.createBuffer();
@@ -226,7 +297,7 @@ export function initShaderPipeline(gl: WebGL2RenderingContext): ShaderPipeline {
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 
-  // Instanced VBO
+  // Instanced VBO (12 floats per instance = 48 bytes)
   const instanceVbo = gl.createBuffer();
   if (!instanceVbo) throw new Error('Failed to create instanceVbo');
   const vao = gl.createVertexArray();
@@ -234,56 +305,91 @@ export function initShaderPipeline(gl: WebGL2RenderingContext): ShaderPipeline {
   gl.bindVertexArray(vao);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
-  const aQuadPos = gl.getAttribLocation(program, 'a_quad_pos');
-  gl.enableVertexAttribArray(aQuadPos);
-  gl.vertexAttribPointer(aQuadPos, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, instanceVbo);
-  const stride = 10 * 4; // 10 floats per instance
-  const aNodePos = gl.getAttribLocation(program, 'a_node_pos');
-  gl.enableVertexAttribArray(aNodePos);
-  gl.vertexAttribPointer(aNodePos, 2, gl.FLOAT, false, stride, 0);
-  gl.vertexAttribDivisor(aNodePos, 1);
+  const stride = INSTANCE_FLOATS * 4;
 
-  const aRadius = gl.getAttribLocation(program, 'a_radius');
-  gl.enableVertexAttribArray(aRadius);
-  gl.vertexAttribPointer(aRadius, 1, gl.FLOAT, false, stride, 2 * 4);
-  gl.vertexAttribDivisor(aRadius, 1);
+  // location 1: a_node_pos (vec2)
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 0);
+  gl.vertexAttribDivisor(1, 1);
 
-  const aColor = gl.getAttribLocation(program, 'a_color');
-  gl.enableVertexAttribArray(aColor);
-  gl.vertexAttribPointer(aColor, 4, gl.FLOAT, false, stride, 3 * 4);
-  gl.vertexAttribDivisor(aColor, 1);
+  // location 2: a_radius (float)
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, stride, 2 * 4);
+  gl.vertexAttribDivisor(2, 1);
 
-  const aIsFile = gl.getAttribLocation(program, 'a_is_file');
-  gl.enableVertexAttribArray(aIsFile);
-  gl.vertexAttribPointer(aIsFile, 1, gl.FLOAT, false, stride, 7 * 4);
-  gl.vertexAttribDivisor(aIsFile, 1);
+  // location 3: a_color (vec4)
+  gl.enableVertexAttribArray(3);
+  gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 3 * 4);
+  gl.vertexAttribDivisor(3, 1);
 
-  const aBirthTime = gl.getAttribLocation(program, 'a_birth_time');
-  gl.enableVertexAttribArray(aBirthTime);
-  gl.vertexAttribPointer(aBirthTime, 1, gl.FLOAT, false, stride, 8 * 4);
-  gl.vertexAttribDivisor(aBirthTime, 1);
+  // location 4: a_is_file (float)
+  gl.enableVertexAttribArray(4);
+  gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 7 * 4);
+  gl.vertexAttribDivisor(4, 1);
 
-  const aGitStatus = gl.getAttribLocation(program, 'a_git_status');
-  gl.enableVertexAttribArray(aGitStatus);
-  gl.vertexAttribPointer(aGitStatus, 1, gl.FLOAT, false, stride, 9 * 4);
-  gl.vertexAttribDivisor(aGitStatus, 1);
+  // location 5: a_birth_time (float)
+  gl.enableVertexAttribArray(5);
+  gl.vertexAttribPointer(5, 1, gl.FLOAT, false, stride, 8 * 4);
+  gl.vertexAttribDivisor(5, 1);
+
+  // location 6: a_git_status (float)
+  gl.enableVertexAttribArray(6);
+  gl.vertexAttribPointer(6, 1, gl.FLOAT, false, stride, 9 * 4);
+  gl.vertexAttribDivisor(6, 1);
+
+  // location 7: a_metric0 (float)
+  gl.enableVertexAttribArray(7);
+  gl.vertexAttribPointer(7, 1, gl.FLOAT, false, stride, 10 * 4);
+  gl.vertexAttribDivisor(7, 1);
+
+  // location 8: a_metric1 (float)
+  gl.enableVertexAttribArray(8);
+  gl.vertexAttribPointer(8, 1, gl.FLOAT, false, stride, 11 * 4);
+  gl.vertexAttribDivisor(8, 1);
 
   gl.bindVertexArray(null);
-
-  const uRes = gl.getUniformLocation(program, 'u_resolution')!;
-  const uCam = gl.getUniformLocation(program, 'u_camera_pos')!;
-  const uZoom = gl.getUniformLocation(program, 'u_zoom')!;
-  const uTime = gl.getUniformLocation(program, 'u_time')!;
 
   return {
     program,
     vao,
     quadVbo,
     instanceVbo,
-    uniforms: { uRes, uCam, uZoom, uTime },
+    uniforms: queryNodeUniforms(gl, program),
+    isCustom: false,
   };
+}
+
+/**
+ * Atomically compiles and swaps the instanced node SDF shader program without touching VAO/VBO.
+ * If compilation fails, the previous program stays active and the formatted GLSL error is returned.
+ */
+export function swapNodeShader(
+  gl: WebGL2RenderingContext,
+  pipeline: ShaderPipeline,
+  customHookGlsl?: string | null
+): { ok: true } | { ok: false; error: string } {
+  const hook = customHookGlsl?.trim() || '';
+  if (hook) {
+    const validationErr = validateGlslHookClient(hook, 'aetherNodeSurface');
+    if (validationErr) return { ok: false, error: validationErr };
+  }
+
+  try {
+    const assembled = hook ? assembleNodeFs(hook) : { source: fsSource, lineOffset: 0 };
+    const nextProgram = buildProgram(gl, vsSource, assembled.source, assembled.lineOffset);
+    const oldProgram = pipeline.program;
+    pipeline.program = nextProgram;
+    pipeline.uniforms = queryNodeUniforms(gl, nextProgram);
+    pipeline.isCustom = Boolean(hook);
+    gl.deleteProgram(oldProgram);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Erreur compilation node_sdf.glsl' };
+  }
 }
 
 // =========================================================================
@@ -291,7 +397,7 @@ export function initShaderPipeline(gl: WebGL2RenderingContext): ShaderPipeline {
 // =========================================================================
 
 export const bgVsSource = `#version 300 es
-  in vec2 a_pos;
+  layout(location = 0) in vec2 a_pos;
   out vec2 v_uv;
   void main() {
     v_uv = a_pos * 0.5 + 0.5;
@@ -306,6 +412,8 @@ export const bgFsSource = `#version 300 es
   uniform vec2 u_camera_pos;
   uniform float u_zoom;
   uniform float u_time;
+  uniform vec3 u_theme_colors[4];
+  uniform vec4 u_params;
   out vec4 fragColor;
 
   float hash21(vec2 p) {
@@ -343,7 +451,6 @@ export const bgFsSource = `#version 300 es
     return v;
   }
 
-  // Delicate cosmic stardust & distant twinkling stars inside the nebula
   vec3 starLayer(vec2 uv, float scale, float density, float t, float flareThreshold) {
     vec2 gv = fract(uv * scale) - 0.5;
     vec2 id = floor(uv * scale);
@@ -384,12 +491,11 @@ export const bgFsSource = `#version 300 es
   void main() {
     float minDim = max(1.0, min(u_resolution.x, u_resolution.y));
     vec2 aspectUv = (gl_FragCoord.xy - 0.5 * u_resolution) / minDim;
-    float t = u_time * 0.001;
+    float t = u_time * 0.001 * max(0.0, u_params.w);
     vec2 camShift = u_camera_pos * 0.00032;
     float zoomParallax = 1.0 + (clamp(u_zoom, 0.0001, 12.0) - 0.65) * 0.06;
     vec2 nebUv = aspectUv / clamp(zoomParallax, 0.78, 1.4) + camShift * 0.45;
 
-    // Domain-warped cosmic nebula ("style nébuleuse")
     vec2 q = vec2(
       fbm(nebUv * 1.35 + vec2(t * 0.012, -t * 0.009)),
       fbm(nebUv * 1.35 + vec2(5.2 - t * 0.008, 1.3 + t * 0.011))
@@ -402,56 +508,58 @@ export const bgFsSource = `#version 300 es
     float ridge = smoothstep(0.35, 0.85, fbm(nebUv * 2.5 - 1.4 * r + vec2(t * 0.006)));
     float dustLane = smoothstep(0.45, 0.82, fbm(nebUv * 3.1 + 1.1 * q));
 
-    // Deep cosmic nebula palette (indigo -> teal/cyan -> violet/magenta wisps)
-    vec3 cosmos = vec3(0.016, 0.020, 0.044);
-    vec3 nebCyan = vec3(0.045, 0.19, 0.31);
-    vec3 nebViolet = vec3(0.18, 0.065, 0.30);
-    vec3 nebRose = vec3(0.24, 0.065, 0.19);
+    vec3 cosmos = u_theme_colors[0];
+    vec3 nebCyan = u_theme_colors[1];
+    vec3 nebViolet = u_theme_colors[2];
+    vec3 nebRose = u_theme_colors[3];
 
     cosmos += nebCyan * smoothstep(0.28, 0.82, f) * 0.58;
     cosmos += nebViolet * smoothstep(0.22, 0.86, length(q) * 0.72) * 0.52;
     cosmos += nebRose * pow(ridge, 1.8) * 0.42;
     cosmos *= (1.0 - dustLane * 0.38);
 
-    // Soft distant stars veiled subtly behind/within the nebula clouds
     vec2 pUv = aspectUv / clamp(zoomParallax, 0.75, 1.5);
+    float starGain = clamp(u_params.z, 0.0, 2.0);
     vec3 stars = vec3(0.0);
-    stars += starLayer(pUv + camShift * 0.30 + vec2(t * 0.0015, 0.0), 12.0, 0.76, t, 0.996) * 0.48;
-    stars += starLayer(pUv + camShift * 0.65 + vec2(17.3, t * 0.001), 7.8, 0.83, t * 1.08, 0.988) * 0.72;
+    if (starGain > 0.01) {
+      stars += starLayer(pUv + camShift * 0.30 + vec2(t * 0.0015, 0.0), 12.0, 0.76, t, 0.996) * 0.48 * starGain;
+      stars += starLayer(pUv + camShift * 0.65 + vec2(17.3, t * 0.001), 7.8, 0.83, t * 1.08, 0.988) * 0.72 * starGain;
+    }
 
     fragColor = vec4(cosmos + stars, 1.0);
   }
 `;
 
+export interface BackdropUniforms {
+  uRes: WebGLUniformLocation | null;
+  uCam: WebGLUniformLocation | null;
+  uZoom: WebGLUniformLocation | null;
+  uTime: WebGLUniformLocation | null;
+  uThemeColors: WebGLUniformLocation | null;
+  uParams: WebGLUniformLocation | null;
+}
+
 export interface BackdropPipeline {
   program: WebGLProgram;
   vao: WebGLVertexArrayObject;
   quadVbo: WebGLBuffer;
-  uniforms: {
-    uRes: WebGLUniformLocation;
-    uCam: WebGLUniformLocation;
-    uZoom: WebGLUniformLocation;
-    uTime: WebGLUniformLocation;
+  uniforms: BackdropUniforms;
+  isCustom: boolean;
+}
+
+function queryBackdropUniforms(gl: WebGL2RenderingContext, program: WebGLProgram): BackdropUniforms {
+  return {
+    uRes: gl.getUniformLocation(program, 'u_resolution'),
+    uCam: gl.getUniformLocation(program, 'u_camera_pos'),
+    uZoom: gl.getUniformLocation(program, 'u_zoom'),
+    uTime: gl.getUniformLocation(program, 'u_time'),
+    uThemeColors: gl.getUniformLocation(program, 'u_theme_colors[0]'),
+    uParams: gl.getUniformLocation(program, 'u_params'),
   };
 }
 
 export function initBackdropPipeline(gl: WebGL2RenderingContext): BackdropPipeline {
-  const compile = (type: number, src: string): WebGLShader => {
-    const s = gl.createShader(type)!;
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      throw new Error(`Backdrop shader compile error: ${gl.getShaderInfoLog(s)}`);
-    }
-    return s;
-  };
-  const program = gl.createProgram()!;
-  gl.attachShader(program, compile(gl.VERTEX_SHADER, bgVsSource));
-  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, bgFsSource));
-  gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    throw new Error(`Backdrop program link error: ${gl.getProgramInfoLog(program)}`);
-  }
+  const program = buildProgram(gl, bgVsSource, bgFsSource, 0);
 
   const quadVbo = gl.createBuffer()!;
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
@@ -459,20 +567,43 @@ export function initBackdropPipeline(gl: WebGL2RenderingContext): BackdropPipeli
 
   const vao = gl.createVertexArray()!;
   gl.bindVertexArray(vao);
-  const aPos = gl.getAttribLocation(program, 'a_pos');
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
 
   return {
     program,
     vao,
     quadVbo,
-    uniforms: {
-      uRes: gl.getUniformLocation(program, 'u_resolution')!,
-      uCam: gl.getUniformLocation(program, 'u_camera_pos')!,
-      uZoom: gl.getUniformLocation(program, 'u_zoom')!,
-      uTime: gl.getUniformLocation(program, 'u_time')!,
-    },
+    uniforms: queryBackdropUniforms(gl, program),
+    isCustom: false,
   };
+}
+
+/**
+ * Atomically compiles and swaps the backdrop fragment shader program without touching VAO/VBO.
+ */
+export function swapBackdropShader(
+  gl: WebGL2RenderingContext,
+  pipeline: BackdropPipeline,
+  customHookGlsl?: string | null
+): { ok: true } | { ok: false; error: string } {
+  const hook = customHookGlsl?.trim() || '';
+  if (hook) {
+    const validationErr = validateGlslHookClient(hook, 'aetherBackdrop');
+    if (validationErr) return { ok: false, error: validationErr };
+  }
+
+  try {
+    const assembled = hook ? assembleBackdropFs(hook) : { source: bgFsSource, lineOffset: 0 };
+    const nextProgram = buildProgram(gl, bgVsSource, assembled.source, assembled.lineOffset);
+    const oldProgram = pipeline.program;
+    pipeline.program = nextProgram;
+    pipeline.uniforms = queryBackdropUniforms(gl, nextProgram);
+    pipeline.isCustom = Boolean(hook);
+    gl.deleteProgram(oldProgram);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Erreur compilation backdrop.glsl' };
+  }
 }

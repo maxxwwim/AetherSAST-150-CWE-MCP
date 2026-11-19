@@ -44,7 +44,8 @@
     Sun,
     Grid,
     ShieldOff,
-    Compass
+    Compass,
+    Palette
   } from '@lucide/svelte';
 
   // ---------------------------------------------------------------------------
@@ -292,7 +293,8 @@
     | { kind: 'header'; label: string; when?: () => boolean }
     | { kind: 'sep' }
     | { kind: 'path' }
-    | { kind: 'agents' };
+    | { kind: 'agents' }
+    | { kind: 'visuals' };
   type Menu = { id: string; label: string; width?: string; entries: MenuEntry[] };
 
   const menus: Menu[] = [
@@ -524,6 +526,13 @@
           active: () => cockpitState.settings.soundEnabled,
           run: () => cockpitState.toggleSound()
         },
+        { kind: 'header', label: 'Thème WebGL (Plugins Visuels)' },
+        { kind: 'visuals' },
+        {
+          kind: 'item', icon: Palette, iconClass: 'text-cyan-400',
+          label: 'Studio Visuels & Shaders GLSL…', desc: 'Créer, éditer et tester des shaders WebGL en direct',
+          run: () => cockpitState.openPluginsModal('visuals')
+        },
         { kind: 'sep' },
         {
           kind: 'item', icon: Settings, iconClass: 'text-sky-400',
@@ -559,8 +568,8 @@
         },
         {
           kind: 'item', icon: Plug, iconClass: 'text-purple-400',
-          label: 'Plugins SAST & Taint (YAML)', desc: 'Activer, tester, importer Semgrep & créer règles DSL v2',
-          run: () => (cockpitState.isPluginsModalOpen = true)
+          label: 'Centre Plugins SAST, Taint & WebGL', desc: 'Catalogue YAML, DSL v2, Taint SSA, Playground & Shaders', shortcut: 'G',
+          run: () => cockpitState.openPluginsModal('plugins')
         },
         {
           kind: 'item', icon: Radar, iconClass: 'text-cyan-400',
@@ -577,6 +586,46 @@
           kind: 'item', icon: Download, iconClass: 'text-emerald-400',
           label: 'Exporter en HTML Dark (.html)',
           run: exportAuditHtml
+        }
+      ]
+    },
+    {
+      id: 'plugins',
+      label: 'Plugins',
+      width: 'w-[22rem]',
+      entries: [
+        { kind: 'header', label: 'Centre Plugins SAST & Taint YAML' },
+        {
+          kind: 'item', icon: Plug, iconClass: 'text-purple-400',
+          label: 'Catalogue Plugins SAST & OWASP', desc: 'Activer/désactiver, éditer, exporter YAML & bundle 24 règles', shortcut: 'G',
+          run: () => cockpitState.openPluginsModal('plugins')
+        },
+        {
+          kind: 'item', icon: FilePlus2, iconClass: 'text-emerald-400',
+          label: 'Éditeur Règle DSL v2', desc: 'Créer ou éditer une règle (ast_scope, fenêtre N lignes, tests)',
+          run: () => cockpitState.openPluginsModal('create')
+        },
+        {
+          kind: 'item', icon: Workflow, iconClass: 'text-cyan-400',
+          label: 'Taint Dataflow SSA', desc: 'Sources, Sinks & Sanitizers inter-procéduraux par plugin',
+          run: () => cockpitState.openPluginsModal('taint')
+        },
+        {
+          kind: 'item', icon: Zap, iconClass: 'text-amber-400',
+          label: 'Bac à Sable (Playground Live)', desc: 'Tester vos règles SAST en temps réel sur un snippet de code',
+          run: () => cockpitState.openPluginsModal('playground')
+        },
+        {
+          kind: 'item', icon: Upload, iconClass: 'text-sky-400',
+          label: 'Importateur Semgrep (.yaml)', desc: 'Convertir un fichier ou snippet Semgrep OSS en plugin AetherScope',
+          run: () => cockpitState.openPluginsModal('semgrep')
+        },
+        { kind: 'header', label: 'Thèmes & Shaders WebGL 2 (Hot-Swap)' },
+        { kind: 'visuals' },
+        {
+          kind: 'item', icon: Palette, iconClass: 'text-cyan-400',
+          label: 'Studio Visuels & Shaders GLSL…', desc: 'Éditeur de palettes 7 couches, membranes & GLSL ES 3.00',
+          run: () => cockpitState.openPluginsModal('visuals')
         }
       ]
     },
@@ -764,6 +813,36 @@
                 {/if}
               {:else if entry.kind === 'sep'}
                 <div class="h-px bg-white/[0.08] my-1 mx-1"></div>
+              {:else if entry.kind === 'visuals'}
+                <div class="flex flex-col gap-0.5 px-1 pb-1">
+                  {#each cockpitState.allVisualPlugins as vp (vp.id)}
+                    {@const isActiveVp = cockpitState.activeVisualPluginId === vp.id}
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={isActiveVp}
+                      onclick={() => cockpitState.selectVisualPlugin(vp.id, true)}
+                      class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer {isActiveVp ? 'bg-cyan-500/15 text-white border border-cyan-400/35' : 'text-slate-200 hover:bg-white/10 border border-transparent'}"
+                    >
+                      <span class="flex items-center gap-2 min-w-0">
+                        <span class="flex items-center -space-x-1 shrink-0">
+                          {#each (vp.palette?.background || ['#04050b', '#0ea5e9', '#a855f7']).slice(0, 3) as sw}
+                            <span class="w-2.5 h-2.5 rounded-full border border-black/60" style="background-color: {sw}"></span>
+                          {/each}
+                        </span>
+                        <span class="min-w-0">
+                          <span class="block text-[11.5px] font-medium truncate">{vp.name}</span>
+                          <span class="block text-[9.5px] text-slate-400 truncate">
+                            {vp.overlay?.membrane_style || 'organic'} · {vp.overlay?.edge_style || 'bezier'}{vp.builtin ? '' : ' · custom'}
+                          </span>
+                        </span>
+                      </span>
+                      <span class="shrink-0 w-3 h-3 rounded-full border flex items-center justify-center {isActiveVp ? 'border-cyan-400' : 'border-white/20'}">
+                        {#if isActiveVp}<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>{/if}
+                      </span>
+                    </button>
+                  {/each}
+                </div>
               {:else if entry.kind === 'agents'}
                 {#if cockpitState.activeAgents.length > 0}
                   <div class="px-2 pt-1.5 pb-1 flex items-center justify-between text-[10px] text-purple-300 font-semibold uppercase tracking-wider">
@@ -985,6 +1064,21 @@
     >
       <ShieldAlert class="w-3.5 h-3.5 text-rose-400" />
       <span class="font-mono text-[11px] font-bold">{cockpitState.allViolations.length}</span>
+    </button>
+
+    <!-- Centre Plugins SAST, Taint & Studio WebGL -->
+    <button
+      onclick={() => cockpitState.openPluginsModal('plugins')}
+      class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold border transition-all shadow-xs cursor-pointer {cockpitState.isPluginsModalOpen ? 'bg-cyan-500/30 border-cyan-400 text-cyan-100 shadow-[0_0_12px_rgba(6,182,212,0.35)]' : 'bg-cyan-500/12 hover:bg-cyan-500/22 border-cyan-500/35 text-cyan-200'}"
+      title="Centre Plugins SAST, Taint SSA, Playground DSL v2 & Studio Shaders WebGL (Touche G)"
+    >
+      <Plug class="w-3.5 h-3.5 text-cyan-400" />
+      <span class="hidden xl:inline">Plugins</span>
+      <span
+        class="w-2 h-2 rounded-full border border-black/50 shrink-0"
+        style="background-color: {cockpitState.activeVisualPluginPack.palette?.background?.[1] || '#0ea5e9'}"
+        title="Thème WebGL actif : {cockpitState.activeVisualPluginPack.name}"
+      ></span>
     </button>
 
     <!-- Chat IA -->

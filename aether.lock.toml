@@ -9,6 +9,54 @@ role = "Signed contract for crates/desktop-shell/tests/fixtures/fixture_pure_cod
 remote_sync = false
 readme_blake3 = "97e04675dd5ff806f2fa8ebfaf572a3e7d28f3b72f0109ed77c4b6476c9eb6da"
 
+[galaxies."crates/security-linter"]
+path = "./crates/security-linter"
+role = "Signed contract for crates/security-linter"
+remote_sync = false
+readme_blake3 = "59e58094f5c061d6f19039567cfd8fee02cd85adc0b7ea88da5e09a314c5f670"
+
+[galaxies."crates/desktop-shell/ui"]
+path = "./crates/desktop-shell/ui"
+role = "Signed contract for crates/desktop-shell/ui"
+remote_sync = false
+readme_blake3 = "b7f9a850dd7695d3addb6b6d49b1bbdf443e18eab50f6f1133065280600c2de7"
+
+[galaxies.cwe]
+path = "./cwe"
+role = "Signed contract for cwe"
+remote_sync = false
+readme_blake3 = "62f189a0255bf87feaf8c14c2f942413e037ab63e909ddc403bdfc9a09367e60"
+
+[galaxies."crates/ast-scanner"]
+path = "./crates/ast-scanner"
+role = "Signed contract for crates/ast-scanner"
+remote_sync = false
+readme_blake3 = "75c225c857281d2b5697c414296e8af2e419e9c0d96c65e353bd92fe93451140"
+
+[galaxies.root]
+path = "."
+role = "Signed contract for root"
+remote_sync = false
+readme_blake3 = "4cd3d091d0a2fa74ac1223a4d41c845d1070a91135b14c720558ac07d15b55ca"
+
+[galaxies."crates/ai-file-bridge"]
+path = "./crates/ai-file-bridge"
+role = "Signed contract for crates/ai-file-bridge"
+remote_sync = false
+readme_blake3 = "2f2a00654e1915236cafd0ffd662d8d1275f2bb923cb5139bf06088abecd9e42"
+
+[galaxies."crates/security-linter/tests"]
+path = "./crates/security-linter/tests"
+role = "Signed contract for crates/security-linter/tests"
+remote_sync = false
+readme_blake3 = "850ef9658bc537c954fe7378550801424bd8e6a434be56c3f1ecf22e35fb0846"
+
+[galaxies."crates/desktop-shell"]
+path = "./crates/desktop-shell"
+role = "Signed contract for crates/desktop-shell"
+remote_sync = false
+readme_blake3 = "2d0216bbf328d09a15ecbaccb5791b062f5f5722b9f91677eab9e73a3f04cac3"
+
 [galaxies.crates]
 path = "./crates"
 role = "Signed contract for crates"
@@ -21,65 +69,17 @@ role = "Signed contract for crates/arch-templates"
 remote_sync = false
 readme_blake3 = "8cb6b399e9c15e05b0a55203c885203137e8ea9eba1a6aaa612a40230729ec5c"
 
-[galaxies."crates/core-graph"]
-path = "./crates/core-graph"
-role = "Signed contract for crates/core-graph"
-remote_sync = false
-readme_blake3 = "3c742885f331dd19d743f6dec53b9bcb383a15a8eae6d209d6f995e3ad12aab2"
-
 [galaxies."crates/obsidian-vault"]
 path = "./crates/obsidian-vault"
 role = "Signed contract for crates/obsidian-vault"
 remote_sync = false
 readme_blake3 = "9be7721f65197e709e8bcc5900ca7173aa4258ec948b7d8c973a447414d0cc57"
 
-[galaxies."crates/desktop-shell"]
-path = "./crates/desktop-shell"
-role = "Signed contract for crates/desktop-shell"
+[galaxies."crates/core-graph"]
+path = "./crates/core-graph"
+role = "Signed contract for crates/core-graph"
 remote_sync = false
-readme_blake3 = "90cf8044d0de7c8720cb08f533700ea03d1c921963aa3ffcb0df9c2c4e6be345"
-
-[galaxies."crates/ast-scanner"]
-path = "./crates/ast-scanner"
-role = "Signed contract for crates/ast-scanner"
-remote_sync = false
-readme_blake3 = "75c225c857281d2b5697c414296e8af2e419e9c0d96c65e353bd92fe93451140"
-
-[galaxies."crates/security-linter"]
-path = "./crates/security-linter"
-role = "Signed contract for crates/security-linter"
-remote_sync = false
-readme_blake3 = "59e58094f5c061d6f19039567cfd8fee02cd85adc0b7ea88da5e09a314c5f670"
-
-[galaxies."crates/desktop-shell/ui"]
-path = "./crates/desktop-shell/ui"
-role = "Signed contract for crates/desktop-shell/ui"
-remote_sync = false
-readme_blake3 = "a44f9acfc291ac407b8e1a8b24f2238e748eabf8348e4d977c68487782e3b06c"
-
-[galaxies.cwe]
-path = "./cwe"
-role = "Signed contract for cwe"
-remote_sync = false
-readme_blake3 = "62f189a0255bf87feaf8c14c2f942413e037ab63e909ddc403bdfc9a09367e60"
-
-[galaxies.root]
-path = "."
-role = "Signed contract for root"
-remote_sync = false
-readme_blake3 = "4cd3d091d0a2fa74ac1223a4d41c845d1070a91135b14c720558ac07d15b55ca"
-
-[galaxies."crates/security-linter/tests"]
-path = "./crates/security-linter/tests"
-role = "Signed contract for crates/security-linter/tests"
-remote_sync = false
-readme_blake3 = "850ef9658bc537c954fe7378550801424bd8e6a434be56c3f1ecf22e35fb0846"
-
-[galaxies."crates/ai-file-bridge"]
-path = "./crates/ai-file-bridge"
-role = "Signed contract for crates/ai-file-bridge"
-remote_sync = false
-readme_blake3 = "2f2a00654e1915236cafd0ffd662d8d1275f2bb923cb5139bf06088abecd9e42"
+readme_blake3 = "3c742885f331dd19d743f6dec53b9bcb383a15a8eae6d209d6f995e3ad12aab2"
 
 [guardrails]
 block_forbidden_imports = true
