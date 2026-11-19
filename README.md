@@ -148,7 +148,13 @@ The desktop interface (`crates/desktop-shell`) hosts an ultra-responsive spatial
 - **Off-Thread Physics Simulation**: Dedicated Web Worker (`physics.worker.js`) executing Coulomb electrostatic repulsion and Hooke spring forces over zero-copy `Transferable Float32Array` buffers.
 - **Dedicated Full-Screen Multi-Tab IDE**: Switch seamlessly to IDE mode with AST symbol hierarchy navigation, auto-open file at function on 3D bubble click, cosmic cluster-synchronized file-tree colors, integrated Doc/EARS/Source sidebars, resizable splitters, collapsible sidebars, Zen mode, and atomic file saving (`/api/save_file`).
 - **Live AI (<5m) Left Dock & Workspace Explorer**: Real-time multi-agent activity dock with automatic 5-minute inactivity pruning plus built-in workspace filesystem explorer (`/api/fs/list`).
-- **Cockpit SAST & Taint Plugins Manager (`PluginsModal`)**: Dedicated 3-tab UI (*Security → Plugins SAST & Taint*) backed by 7 `PathGuard`-confined `/api/plugins/*` routes to toggle YAML plugins live, deploy the 24-rule offline OWASP/CWE bundle, import Semgrep YAML, run unit tests, and author certified DSL v2 rules (`ast_scope`, `not_preceded_within_lines`, path globs, declarative taint). See also the [WebGL Visual Plugins Architecture Spec](./docs/WEBGL_VISUAL_PLUGINS_SPEC.md).
+- **6-Tab Plugin Center & WebGL 2 GLSL Visual Studio (`PluginsModal` · Hotkey <kbd>G</kbd>)**: Accessible directly from the top bar (`🔌 Plugins` button + `Plugins` menu), working both live against `.aether/plugins/` (`11` `PathGuard`-confined `/api/plugins/*` & `/api/visual_plugins/*` routes) and 100% interactively in the standalone GitHub Pages demo (`demoPlugins.ts`):
+  1. `📦 Catalogue SAST`: Toggle YAML plugins live, deploy the 24-rule offline OWASP/CWE bundle, inspect/copy/download raw `plugin.yaml`, or import `.yaml` from disk.
+  2. `🛠️ Règle DSL v2`: Edit existing rules in 1 click or create new rules with 4 presets, `ast_scope`, `not_preceded_within_lines` window guards, path globs, and inline unit-test certification.
+  3. `🌊 Taint SSA`: Visual builder for inter-procedural `taint_sources`, `taint_sinks`, and `sanitizers`.
+  4. `🧪 Bac à Sable (Playground)`: Real-time browser evaluator testing active plugins and `ast_scope` rules on live multi-language code snippets.
+  5. `🔄 Import Semgrep`: Convert Semgrep YAML files or snippets (`$VAR`, `pattern-either`, `pattern-not`) into native plugins.
+  6. `🎨 Studio WebGL`: 5 built-in WebGL 2 visual packs (*Obsidian Nebula*, *Cyber-PCB Neon*, *CAD Architect Blueprint*, *Abyssal Bioluminescence*, *Phosphor CRT*), 7-layer architectural palette & membrane/edge geometry editor, and live GLSL ES 3.00 dual shader editor (`backdrop.glsl` / `node_sdf.glsl`) with atomic 120 FPS hot-swap, anti-DoS validator, and FPS Watchdog. See the [WebGL Visual Plugins Spec](./docs/WEBGL_VISUAL_PLUGINS_SPEC.md).
 - **Dual-Vision Mode**: Instantly switch between **Code AST Architecture** and **Obsidian Knowledge Graph** (<kbd>Alt</kbd>+<kbd>1</kbd> / <kbd>Alt</kbd>+<kbd>2</kbd>).
 - **4 Mathematical Layouts**:
   - `Z-1`: Fermat Spiral Galaxy layout.
@@ -176,7 +182,7 @@ AetherScope is structured as a 7-crate Rust 2021 workspace adhering to clean hex
                                                                 v
 +---------------------------------------------------------------------------------------------------+
 | desktop-shell (crates/desktop-shell)                                                              |
-|   - Native Tao/Wry Window (WebView2)        - Axum REST Server (Port 3030, 40 Routes, LocalGuard) |
+|   - Native Tao/Wry Window (WebView2)        - Axum REST Server (Port 3030, 44 Routes, LocalGuard) |
 |   - Svelte 5 + WebGL 2 + Full-Screen IDE    - Network Surface Probers & Benchmark Harness         |
 +---------------------------------------------------------------------------------------------------+
                                                                 |
