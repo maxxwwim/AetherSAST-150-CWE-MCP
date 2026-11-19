@@ -1,5 +1,18 @@
 import type { AetherGraph, TaskItem } from '../types/graph';
 
+export interface ProjectStatusResponse {
+  status?: string;
+  project_type: 'PureCode' | 'PureObsidianVault' | 'Mixed' | string;
+  has_obsidian_dir?: boolean;
+  obsidian_dir_path?: string | null;
+  supported_views?: string[];
+  active_view_mode?: string;
+  active_view?: string;
+  code_files_count?: number;
+  markdown_files_count?: number;
+  obsidian_syntax_markers_count?: number;
+}
+
 export class AetherApiClient {
   private baseUrl: string;
 
@@ -289,6 +302,12 @@ export class AetherApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path }),
     });
+    return res.json();
+  }
+
+  async getProjectStatus(): Promise<ProjectStatusResponse> {
+    const res = await fetch(`${this.baseUrl}/api/project/status`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }
 

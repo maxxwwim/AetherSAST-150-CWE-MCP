@@ -626,7 +626,7 @@
             type="button"
             onclick={() => cockpitState.openInIde(symbol.file_path, symbol.line_number)}
             class="flex-1 flex items-center justify-center gap-1.5 py-1 px-2 rounded bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-500/40 text-indigo-300 font-medium cursor-pointer transition-colors shadow-xs"
-            title="Ouvrir directement dans l'IDE à la fonction (Alt+3)"
+            title="Ouvrir directement dans l'IDE à la fonction (Alt+2)"
           >
             <Code2 class="w-3.5 h-3.5 text-indigo-400" />
             <span>Ouvrir dans l'IDE</span>

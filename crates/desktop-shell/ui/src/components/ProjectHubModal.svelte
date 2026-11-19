@@ -283,6 +283,7 @@
       }
       const g = await api.analyzeProject(targetPath, cockpitState.settings.exclusions);
       cockpitState.setGraph(g);
+      await cockpitState.syncProjectStatus().catch(() => {});
       cockpitState.requestCameraFit();
       projectPath = targetPath;
       feedback = {
@@ -307,6 +308,7 @@
     try {
       const g = await api.analyzeProject(target, cockpitState.settings.exclusions);
       cockpitState.setGraph(g);
+      await cockpitState.syncProjectStatus().catch(() => {});
       cockpitState.requestCameraFit();
       feedback = { ok: true, text: `✅ Rescan terminé : ${g.nodes.length} nœuds · ${g.edges.length} flux` };
     } catch {
@@ -331,20 +333,11 @@
   }
 
   async function switchMode(mode: 'code' | 'vault') {
-    const norm = mode === 'vault' ? 'vault-notes' : 'code';
-    cockpitState.viewMode = norm;
-    try {
-      const g = await api.switchViewMode(norm);
-      if (g && Array.isArray(g.nodes)) {
-        cockpitState.setGraph(g);
-      } else {
-        const fetched = await api.getGraph();
-        cockpitState.setGraph(fetched);
-      }
-      cockpitState.requestCameraFit();
+    const res = await cockpitState.switchToMode(mode);
+    if (res.ok) {
       feedback = { ok: true, text: `🔄 Mode ${mode === 'code' ? 'Code Source' : 'Obsidian Vault'} activé` };
-    } catch {
-      feedback = { ok: false, text: `⚠️ Bascule locale en mode ${mode}` };
+    } else {
+      feedback = { ok: false, text: `⚠️ ${res.message || `Mode ${mode} indisponible pour ce projet.`}` };
     }
   }
 </script>
@@ -732,26 +725,39 @@
             {/if}
 
             <div class="p-3.5 rounded-xl bg-white/[0.025] border border-white/10 space-y-2">
-              <div class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Layers class="w-3.5 h-3.5 text-sky-400" />
-                <span>Mode de Graphe Dual-Vision</span>
+              <div class="text-xs font-semibold text-slate-300 flex items-center justify-between gap-1.5">
+                <span class="flex items-center gap-1.5">
+                  <Layers class="w-3.5 h-3.5 text-sky-400" />
+                  <span>Source du Graphe</span>
+                </span>
+                <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">
+                  {cockpitState.projectType}
+                </span>
               </div>
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onclick={() => switchMode('code')}
-                  class="py-2 rounded-lg border text-xs font-semibold cursor-pointer {cockpitState.viewMode === 'code' ? 'bg-sky-500/20 border-sky-400 text-sky-200' : 'bg-black/30 border-white/10 text-slate-400 hover:text-white'}"
-                >
-                  💻 Code Source & AST
-                </button>
-                <button
-                  type="button"
-                  onclick={() => switchMode('vault')}
-                  class="py-2 rounded-lg border text-xs font-semibold cursor-pointer {cockpitState.viewMode === 'vault-notes' ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200' : 'bg-black/30 border-white/10 text-slate-400 hover:text-white'}"
-                >
-                  🧠 Obsidian Vault & Notes
-                </button>
-              </div>
+              {#if cockpitState.isMixedProject}
+                <div class="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onclick={() => switchMode('code')}
+                    class="py-2 rounded-lg border text-xs font-semibold cursor-pointer {cockpitState.viewMode === 'code' ? 'bg-sky-500/20 border-sky-400 text-sky-200' : 'bg-black/30 border-white/10 text-slate-400 hover:text-white'}"
+                  >
+                    💻 Code Source & AST
+                  </button>
+                  <button
+                    type="button"
+                    onclick={() => switchMode('vault')}
+                    class="py-2 rounded-lg border text-xs font-semibold cursor-pointer {cockpitState.viewMode === 'vault-notes' ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200' : 'bg-black/30 border-white/10 text-slate-400 hover:text-white'}"
+                  >
+                    🧠 Obsidian Vault & Notes
+                  </button>
+                </div>
+              {:else}
+                <div class="py-2 px-3 rounded-lg border text-xs font-semibold {cockpitState.projectType === 'PureObsidianVault' ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200' : 'bg-sky-500/15 border-sky-400/35 text-sky-200'}">
+                  {cockpitState.projectType === 'PureObsidianVault'
+                    ? '🧠 Coffre Obsidian Vault détecté automatiquement'
+                    : '💻 Projet Code Source & AST détecté automatiquement'}
+                </div>
+              {/if}
             </div>
 
             <button

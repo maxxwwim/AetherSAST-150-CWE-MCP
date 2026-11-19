@@ -338,6 +338,9 @@ export class CockpitState {
   activeLayout = $state<'Z-1' | 'Z-2' | 'Z-3' | 'Z-4'>('Z-2');
   visionMode = $state<'standard' | 'xray' | 'heatmap' | 'deadcode'>('standard');
   viewMode = $state<'code' | 'vault-notes' | 'ide'>('code');
+  projectType = $state<'PureCode' | 'PureObsidianVault' | 'Mixed'>('PureCode');
+  supportedViews = $state<string[]>(['code']);
+  lastGraphMode = $state<'code' | 'vault-notes'>('code');
   ideActiveFile = $state<string | null>(null);
   ideTargetLine = $state<number | null>(null);
   ideCursorPosition = $state<{ line: number; ch: number } | null>(null);
@@ -388,7 +391,23 @@ export class CockpitState {
   graphVersion = $state(0);
   liveConnected = $state(false);
   isDemoMode = $state(false);
-  isVaultEnabled = $state<boolean>(true);
+  isVaultEnabled = $state<boolean>(false);
+
+  get hasCodeView(): boolean {
+    return this.projectType === 'PureCode' || this.projectType === 'Mixed';
+  }
+
+  get hasVaultView(): boolean {
+    return this.projectType === 'PureObsidianVault' || this.projectType === 'Mixed';
+  }
+
+  get isMixedProject(): boolean {
+    return this.projectType === 'Mixed';
+  }
+
+  get isGraphView(): boolean {
+    return this.viewMode !== 'ide';
+  }
   bountyOutOfScopePatterns = $state<string[]>([]);
   isScanningProject = $state(false);
   scanningTargetPath = $state('');
@@ -1764,13 +1783,171 @@ export class CockpitState {
     this.ideZenMode = !this.ideZenMode;
   }
 
+  applyProjectStatus(
+    status:
+      | {
+          project_type?: string;
+          supported_views?: string[];
+          active_view_mode?: string;
+          active_view?: string;
+          code?: unknown;
+          vault?: unknown;
+        }
+      | null
+      | undefined
+  ) {
+    if (!status) return;
+    const rawType = String(status.project_type || '').trim();
+    if (!rawType && !status.code && !status.vault) return;
+    if (rawType === 'PureObsidianVault') {
+      this.projectType = 'PureObsidianVault';
+    } else if (rawType === 'Mixed') {
+      this.projectType = 'Mixed';
+    } else if (status.code && status.vault) {
+      this.projectType = 'Mixed';
+    } else if (!status.code && status.vault) {
+      this.projectType = 'PureObsidianVault';
+    } else {
+      this.projectType = 'PureCode';
+    }
+
+    if (Array.isArray(status.supported_views) && status.supported_views.length > 0) {
+      this.supportedViews = status.supported_views;
+    } else {
+      this.supportedViews =
+        this.projectType === 'Mixed'
+          ? ['code', 'vault-notes']
+          : this.projectType === 'PureObsidianVault'
+            ? ['vault-notes']
+            : ['code'];
+    }
+    this.isVaultEnabled = this.hasVaultView;
+
+    const rawActive = String(status.active_view_mode || status.active_view || '')
+      .trim()
+      .toLowerCase();
+    if (rawActive === 'vault' || rawActive === 'vault-notes' || rawActive === 'notes') {
+      this.lastGraphMode = 'vault-notes';
+      if (this.viewMode !== 'ide') this.viewMode = 'vault-notes';
+    } else if (rawActive === 'code') {
+      this.lastGraphMode = 'code';
+      if (this.viewMode !== 'ide') this.viewMode = 'code';
+    }
+
+    // Clamp graph mode to what this project actually supports
+    if (this.projectType === 'PureObsidianVault') {
+      this.lastGraphMode = 'vault-notes';
+      if (this.viewMode === 'code') this.viewMode = 'vault-notes';
+    } else if (this.projectType === 'PureCode') {
+      this.lastGraphMode = 'code';
+      if (this.viewMode === 'vault-notes') this.viewMode = 'code';
+    }
+  }
+
+  async syncProjectStatus() {
+    if (typeof window !== 'undefined' && !this.liveConnected) {
+      const dual = (window as any).__AETHERSCOPE_DUAL_GRAPH__;
+      if (dual) {
+        this.applyProjectStatus(dual);
+        return;
+      }
+    }
+    try {
+      const status = await api.getProjectStatus();
+      this.applyProjectStatus(status);
+    } catch {
+      if (typeof window !== 'undefined') {
+        const dual = (window as any).__AETHERSCOPE_DUAL_GRAPH__;
+        if (dual) this.applyProjectStatus(dual);
+      }
+    }
+  }
+
+  resolveTargetGraphMode(): 'code' | 'vault-notes' {
+    if (this.projectType === 'PureObsidianVault') return 'vault-notes';
+    if (this.projectType === 'PureCode') return 'code';
+    return this.lastGraphMode;
+  }
+
+  async switchToMode(
+    requested: 'graph' | 'code' | 'vault' | 'vault-notes' | 'ide'
+  ): Promise<{ ok: boolean; mode: 'code' | 'vault-notes' | 'ide'; message?: string }> {
+    if (requested === 'ide') {
+      this.viewMode = 'ide';
+      api.switchViewMode('ide').catch(() => {});
+      return { ok: true, mode: 'ide' };
+    }
+
+    let target: 'code' | 'vault-notes';
+    if (requested === 'graph') {
+      target = this.resolveTargetGraphMode();
+    } else if (requested === 'vault' || requested === 'vault-notes') {
+      if (!this.hasVaultView && this.liveConnected) {
+        return {
+          ok: false,
+          mode: this.viewMode,
+          message: "Aucun graphe Obsidian Vault n'est disponible pour ce projet.",
+        };
+      }
+      target = 'vault-notes';
+    } else {
+      if (!this.hasCodeView && this.liveConnected) {
+        return {
+          ok: false,
+          mode: this.viewMode,
+          message: "Aucun graphe AST Code n'est disponible pour ce projet.",
+        };
+      }
+      target = 'code';
+    }
+
+    const switchingGraphDataset = this.lastGraphMode !== target || this.graph.nodes.length === 0;
+
+    if (!switchingGraphDataset) {
+      this.viewMode = target;
+      api.switchViewMode(target).catch(() => {});
+      return { ok: true, mode: target };
+    }
+
+    // Standalone / offline dual-graph bundle fallback
+    if (!this.liveConnected && typeof window !== 'undefined') {
+      const dual = (window as any).__AETHERSCOPE_DUAL_GRAPH__;
+      const key = target === 'vault-notes' ? 'vault' : 'code';
+      if (dual && dual[key] && Array.isArray(dual[key].nodes)) {
+        this.lastGraphMode = target;
+        this.viewMode = target;
+        this.setGraph(dual[key]);
+        this.requestCameraFit();
+        return { ok: true, mode: target };
+      }
+      return { ok: false, mode: this.viewMode, message: 'Graphe non disponible hors-ligne.' };
+    }
+
+    try {
+      const res = await api.switchViewMode(target);
+      if (res && Array.isArray(res.nodes)) {
+        this.lastGraphMode = target;
+        this.viewMode = target;
+        this.setGraph(res);
+        this.requestCameraFit();
+        return { ok: true, mode: target };
+      }
+      if (res?.status === 'error') {
+        return { ok: false, mode: this.viewMode, message: res.message || 'Mode indisponible.' };
+      }
+      this.lastGraphMode = target;
+      this.viewMode = target;
+      return { ok: true, mode: target };
+    } catch (e: any) {
+      return { ok: false, mode: this.viewMode, message: e?.message || 'Erreur bascule de vue.' };
+    }
+  }
+
   openInIde(filePath: string, targetLine?: number | null) {
     this.openFileInIde(filePath, targetLine);
     this.viewMode = 'ide';
     if (typeof window !== 'undefined') {
-      import('../lib/api')
-        .then(({ api }) => api.switchViewMode('ide'))
-        .catch(() => {});
+      api.switchViewMode('ide').catch(() => {});
     }
   }
 

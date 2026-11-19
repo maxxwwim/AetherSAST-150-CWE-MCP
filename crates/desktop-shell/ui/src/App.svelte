@@ -31,34 +31,21 @@
       return;
     }
 
-    // Alt+1, Alt+2, and Alt+3 view modes (Code AST vs Obsidian Vault Notes vs IDE)
+    // Alt+1 (Graph: Code AST / Vault adaptatif), Alt+2 (IDE, alias Alt+3), Alt+V (bascule AST/Vault si projet mixte)
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       if (e.key === '1' || e.code === 'Digit1') {
         e.preventDefault();
-        cockpitState.viewMode = 'code';
-        api.switchViewMode('code').then((g) => {
-          if (g && Array.isArray(g.nodes)) {
-            cockpitState.setGraph(g);
-            cockpitState.requestCameraFit();
-          }
-        }).catch(() => {});
+        cockpitState.switchToMode('graph');
         return;
       }
-      if (e.key === '2' || e.code === 'Digit2') {
+      if (e.key === '2' || e.code === 'Digit2' || e.key === '3' || e.code === 'Digit3') {
         e.preventDefault();
-        cockpitState.viewMode = 'vault-notes';
-        api.switchViewMode('vault-notes').then((g) => {
-          if (g && Array.isArray(g.nodes)) {
-            cockpitState.setGraph(g);
-            cockpitState.requestCameraFit();
-          }
-        }).catch(() => {});
+        cockpitState.switchToMode('ide');
         return;
       }
-      if (e.key === '3' || e.code === 'Digit3') {
+      if (e.key.toLowerCase() === 'v' && cockpitState.isMixedProject) {
         e.preventDefault();
-        cockpitState.viewMode = 'ide';
-        api.switchViewMode('ide').catch(() => {});
+        cockpitState.switchToMode(cockpitState.lastGraphMode === 'vault-notes' ? 'code' : 'vault');
         return;
       }
     }
@@ -163,9 +150,20 @@
 
   onMount(() => {
     let versionTimer: ReturnType<typeof setInterval> | null = null;
+    const handleExternalViewMode = (ev: Event) => {
+      const detail = (ev as CustomEvent<string>).detail;
+      if (detail === 'code' || detail === 'vault' || detail === 'vault-notes' || detail === 'ide') {
+        cockpitState.switchToMode(detail);
+      }
+    };
+    window.addEventListener('aether:viewmode', handleExternalViewMode);
 
     (async () => {
       // Check if data was injected via window.__AETHERSCOPE_DATA__
+      const dualInjected = (window as any).__AETHERSCOPE_DUAL_GRAPH__;
+      if (dualInjected) {
+        cockpitState.applyProjectStatus(dualInjected);
+      }
       const injected = (window as any).__AETHERSCOPE_DATA__;
       if (injected) {
         cockpitState.setGraph(injected);
@@ -189,16 +187,20 @@
         }
       }
 
-      // Sync saved CWE settings, tasks count & initial Git status from backend if online
+      // Sync saved CWE settings, tasks count, project status & initial Git status from backend if online
       try {
-        const [verRes, tasksList, settingsRes] = await Promise.allSettled([
+        const [verRes, tasksList, settingsRes, statusRes] = await Promise.allSettled([
           api.getGraphVersion(),
           api.getTasks(),
           api.getSettings(),
+          api.getProjectStatus(),
         ]);
         if (verRes.status === 'fulfilled' && typeof verRes.value?.version === 'number') {
           cockpitState.graphVersion = verRes.value.version;
           cockpitState.liveConnected = true;
+        }
+        if (statusRes.status === 'fulfilled' && statusRes.value) {
+          cockpitState.applyProjectStatus(statusRes.value);
         }
         if (tasksList.status === 'fulfilled') {
           cockpitState.tasks = tasksList.value;
@@ -252,7 +254,10 @@
           cockpitState.graphVersion = res.version;
           const updated = await api.getGraph();
           cockpitState.setGraph(updated, true);
-          await cockpitState.fetchGitStatus(true).catch(() => {});
+          await Promise.allSettled([
+            cockpitState.syncProjectStatus(),
+            cockpitState.fetchGitStatus(true),
+          ]);
         } else if (typeof res?.version === 'number' && cockpitState.graphVersion === 0) {
           cockpitState.graphVersion = res.version;
         }
@@ -288,6 +293,7 @@
 
     return () => {
       if (versionTimer) clearInterval(versionTimer);
+      window.removeEventListener('aether:viewmode', handleExternalViewMode);
     };
   });
 </script>

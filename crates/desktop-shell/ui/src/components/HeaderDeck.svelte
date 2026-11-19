@@ -150,6 +150,7 @@
       const g = await api.analyzeProject(target, cockpitState.settings.exclusions);
       if (g && Array.isArray(g.nodes)) {
         cockpitState.setGraph(g);
+        await cockpitState.syncProjectStatus().catch(() => {});
         cockpitState.requestCameraFit();
       }
     } catch (err: any) {
@@ -171,6 +172,7 @@
       if (res?.project_path) folderInput = stripWinPrefix(res.project_path);
       if (res?.graph && Array.isArray(res.graph.nodes)) {
         cockpitState.setGraph(res.graph);
+        await cockpitState.syncProjectStatus().catch(() => {});
         cockpitState.requestCameraFit();
       } else if (res?.status && res.status !== 'ok') {
         fileActionError = res.message || 'Impossible d’ouvrir le projet sélectionné.';
@@ -189,17 +191,10 @@
     cockpitState.openProjectHub('manage');
   }
 
-  async function switchViewMode(mode: 'code' | 'vault' | 'ide') {
-    const normalized = mode === 'vault' ? 'vault-notes' : mode;
-    cockpitState.viewMode = normalized;
-    try {
-      const g = await api.switchViewMode(normalized);
-      if (normalized !== 'ide' && g && Array.isArray(g.nodes)) {
-        cockpitState.setGraph(g);
-        cockpitState.requestCameraFit();
-      }
-    } catch (e) {
-      console.warn('Erreur bascule viewMode:', e);
+  async function switchViewMode(mode: 'graph' | 'code' | 'vault' | 'ide') {
+    const res = await cockpitState.switchToMode(mode);
+    if (!res.ok && res.message) {
+      console.warn('Bascule viewMode:', res.message);
     }
   }
 
@@ -273,6 +268,8 @@
     badge?: () => string | number | null;
     /** Garde le menu ouvert après le clic (pratique pour enchaîner les bascules) */
     keepOpen?: boolean;
+    /** Affiche l'entrée uniquement si la condition retourne true */
+    when?: () => boolean;
     run: () => void;
   };
   function focusAgentTarget(targetName: string) {
@@ -292,7 +289,7 @@
 
   type MenuEntry =
     | MenuItem
-    | { kind: 'header'; label: string }
+    | { kind: 'header'; label: string; when?: () => boolean }
     | { kind: 'sep' }
     | { kind: 'path' }
     | { kind: 'agents' };
@@ -357,24 +354,36 @@
       label: 'Vue',
       width: 'w-[21rem]',
       entries: [
-        { kind: 'header', label: 'Espace de travail (Tri-Vision)' },
+        { kind: 'header', label: 'Espace de travail (Graph | IDE)' },
+        {
+          kind: 'item', icon: Orbit, iconClass: 'text-sky-400', mode: 'radio',
+          label: 'Graph', desc: 'Architecture AST & Obsidian Vault adaptatif', shortcut: 'Alt+1',
+          active: () => cockpitState.isGraphView,
+          run: () => switchViewMode('graph')
+        },
+        {
+          kind: 'item', icon: Code, iconClass: 'text-indigo-400', mode: 'radio',
+          label: 'IDE', desc: 'Environnement IDE & éditeur de code', shortcut: 'Alt+2',
+          active: () => cockpitState.viewMode === 'ide',
+          run: () => switchViewMode('ide')
+        },
+        {
+          kind: 'header', label: 'Source du graphe (projet mixte)',
+          when: () => cockpitState.isMixedProject
+        },
         {
           kind: 'item', icon: Code2, iconClass: 'text-sky-400', mode: 'radio',
-          label: 'Code AST', desc: 'Architecture & AST du code', shortcut: 'Alt+1',
-          active: () => (cockpitState.viewMode as string) === 'code',
+          label: 'Code AST', desc: 'Architecture & AST du code', shortcut: 'Alt+V',
+          when: () => cockpitState.isMixedProject,
+          active: () => cockpitState.viewMode === 'code',
           run: () => switchViewMode('code')
         },
         {
           kind: 'item', icon: BookOpen, iconClass: 'text-emerald-400', mode: 'radio',
-          label: 'Vault Notes', desc: 'Graphe de notes & wikilinks Obsidian', shortcut: 'Alt+2',
-          active: () => ['vault', 'vault-notes'].includes(cockpitState.viewMode as string),
+          label: 'Vault Notes', desc: 'Graphe de notes & wikilinks Obsidian', shortcut: 'Alt+V',
+          when: () => cockpitState.isMixedProject,
+          active: () => cockpitState.viewMode === 'vault-notes',
           run: () => switchViewMode('vault')
-        },
-        {
-          kind: 'item', icon: Code, iconClass: 'text-indigo-400', mode: 'radio',
-          label: 'IDE', desc: 'Environnement IDE & éditeur de code', shortcut: 'Alt+3',
-          active: () => (cockpitState.viewMode as string) === 'ide',
-          run: () => switchViewMode('ide')
         },
         { kind: 'header', label: 'Continuum spatial (niveau de détail)' },
         {
@@ -641,16 +650,20 @@
     if (!item.keepOpen) openMenu = null;
   }
 
-  const viewTabs = [
-    { mode: 'code' as const, label: 'Code AST', icon: Code2, on: 'bg-sky-500/25 border-sky-400/40 text-sky-200', ic: 'text-sky-400', title: 'Vision 1 : Architecture & AST Code (Alt+1)' },
-    { mode: 'vault' as const, label: 'Vault', icon: BookOpen, on: 'bg-emerald-500/25 border-emerald-400/40 text-emerald-200', ic: 'text-emerald-400', title: 'Vision 2 : Graphe de Notes & Wikilinks Obsidian (Alt+2)' },
-    { mode: 'ide' as const, label: 'IDE', icon: Code, on: 'bg-indigo-500/25 border-indigo-400/40 text-indigo-200', ic: 'text-indigo-400', title: 'Vision 3 : Environnement IDE & Éditeur de Code (Alt+3)' }
-  ];
+  const isVaultGraphActive = $derived(
+    cockpitState.hasVaultView &&
+      (cockpitState.viewMode === 'vault-notes' ||
+        (cockpitState.viewMode === 'ide' && cockpitState.lastGraphMode === 'vault-notes') ||
+        cockpitState.projectType === 'PureObsidianVault')
+  );
 
-  function isViewActive(mode: 'code' | 'vault' | 'ide') {
-    const v = cockpitState.viewMode as string;
-    return mode === 'vault' ? v === 'vault' || v === 'vault-notes' : v === mode;
-  }
+  const graphTabTitle = $derived(
+    cockpitState.projectType === 'PureObsidianVault'
+      ? 'Graph : Obsidian Vault & Notes (Alt+1)'
+      : cockpitState.isMixedProject
+        ? `Graph : ${isVaultGraphActive ? 'Obsidian Vault' : 'Code AST'} — projet mixte (Alt+1 · Alt+V pour basculer)`
+        : 'Graph : Architecture & AST Code (Alt+1)'
+  );
 </script>
 
 <svelte:window onkeydown={handleWindowKeyDown} onpointerdown={handleWindowPointerDown} />
@@ -739,9 +752,11 @@
           >
             {#each menu.entries as entry, i (i)}
               {#if entry.kind === 'header'}
-                <div class="px-2 pt-2 pb-1 text-[10px] text-slate-500 font-semibold uppercase tracking-wider {i > 0 ? 'border-t border-white/[0.06] mt-1' : ''}">
-                  {entry.label}
-                </div>
+                {#if !entry.when || entry.when()}
+                  <div class="px-2 pt-2 pb-1 text-[10px] text-slate-500 font-semibold uppercase tracking-wider {i > 0 ? 'border-t border-white/[0.06] mt-1' : ''}">
+                    {entry.label}
+                  </div>
+                {/if}
               {:else if entry.kind === 'sep'}
                 <div class="h-px bg-white/[0.08] my-1 mx-1"></div>
               {:else if entry.kind === 'agents'}
@@ -815,7 +830,7 @@
                     {fileActionError}
                   </div>
                 {/if}
-              {:else}
+              {:else if !entry.when || entry.when()}
                 {@const Icon = entry.icon}
                 {@const isOn = entry.active ? entry.active() : false}
                 {@const badge = entry.badge ? entry.badge() : null}
@@ -888,18 +903,42 @@
 
   <!-- Zone D : Accès rapides (les plus utilisés, aussi présents dans les menus) -->
   <div class="flex items-center gap-1.5 shrink-0">
-    <!-- Tri-Vision : Code AST / Vault / IDE -->
+    <!-- Bi-Vision : Graph (AST / Vault adaptatif) | IDE -->
     <div class="flex items-center bg-white/[0.04] border border-white/10 rounded-md p-0.5 gap-0.5">
-      {#each viewTabs as tab (tab.mode)}
+      <button
+        type="button"
+        onclick={() => switchViewMode('graph')}
+        title={graphTabTitle}
+        class="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors cursor-pointer {cockpitState.isGraphView ? (isVaultGraphActive ? 'bg-emerald-500/25 border-emerald-400/40 text-emerald-200' : 'bg-sky-500/25 border-sky-400/40 text-sky-200') : 'border-transparent text-slate-400 hover:text-white'}"
+      >
+        {#if isVaultGraphActive}
+          <BookOpen class="w-3 h-3 text-emerald-400" />
+        {:else}
+          <Orbit class="w-3 h-3 text-sky-400" />
+        {/if}
+        <span class="hidden md:inline">Graph</span>
+      </button>
+
+      {#if cockpitState.isMixedProject && cockpitState.isGraphView}
         <button
-          onclick={() => switchViewMode(tab.mode)}
-          title={tab.title}
-          class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold border transition-colors cursor-pointer {isViewActive(tab.mode) ? tab.on : 'border-transparent text-slate-400 hover:text-white'}"
+          type="button"
+          onclick={() => switchViewMode(isVaultGraphActive ? 'code' : 'vault')}
+          title={isVaultGraphActive ? 'Projet mixte : passer au graphe Code AST (Alt+V)' : 'Projet mixte : passer au graphe Obsidian Vault (Alt+V)'}
+          class="flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border transition-colors cursor-pointer {isVaultGraphActive ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-300 hover:bg-emerald-500/25' : 'bg-sky-500/15 border-sky-400/35 text-sky-300 hover:bg-sky-500/25'}"
         >
-          <tab.icon class="w-3 h-3 {tab.ic}" />
-          <span class="hidden xl:inline">{tab.label}</span>
+          {isVaultGraphActive ? 'Vault' : 'AST'}
         </button>
-      {/each}
+      {/if}
+
+      <button
+        type="button"
+        onclick={() => switchViewMode('ide')}
+        title="Environnement IDE & Éditeur de Code (Alt+2)"
+        class="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors cursor-pointer {cockpitState.viewMode === 'ide' ? 'bg-indigo-500/25 border-indigo-400/40 text-indigo-200' : 'border-transparent text-slate-400 hover:text-white'}"
+      >
+        <Code class="w-3 h-3 text-indigo-400" />
+        <span class="hidden md:inline">IDE</span>
+      </button>
     </div>
 
     <!-- Métriques graphe -->
