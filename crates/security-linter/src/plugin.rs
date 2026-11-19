@@ -200,6 +200,19 @@ impl PluginRule {
     pub fn precompile(&self) {
         let _ = self.compiled();
     }
+
+    /// Valide la syntaxe de toutes les expressions régulières (triggers et fenêtre contextuelle).
+    pub fn validate_regexes(&self) -> Result<(), String> {
+        for pat in &self.conditions.regex_patterns {
+            Regex::new(pat).map_err(|e| format!("Invalid regex pattern '{pat}': {e}"))?;
+        }
+        if let Some(ref win) = self.conditions.not_preceded_within_lines {
+            for pat in &win.patterns {
+                Regex::new(pat).map_err(|e| format!("Invalid window regex '{pat}': {e}"))?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

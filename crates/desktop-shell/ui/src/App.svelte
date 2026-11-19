@@ -18,6 +18,7 @@
   import TasksModal from './components/TasksModal.svelte';
   import CreateFileModal from './components/CreateFileModal.svelte';
   import IgnoredCweModal from './components/IgnoredCweModal.svelte';
+  import PluginsModal from './components/PluginsModal.svelte';
   import IdeView from './components/ide/IdeView.svelte';
   import { cockpitState } from './state/graphState.svelte';
   import { api } from './lib/api';
@@ -330,6 +331,7 @@
     <TasksModal />
     <CreateFileModal />
     <IgnoredCweModal />
+    <PluginsModal />
 
     {#if cockpitState.isScanningProject}
       <div class="fixed inset-0 z-50 bg-[#050811]/80 backdrop-blur-md flex items-center justify-center pointer-events-auto">

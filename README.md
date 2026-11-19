@@ -113,7 +113,7 @@ AetherScope provides a dedicated, native **Model Context Protocol (MCP)** server
 | `aetherscope_manage_tasks` | **4-in-1**: CRUD task management (`list`, `create`, `update`, `delete`) storing structured mini-specs in `.aether/tasks/`. |
 | `aetherscope_verify_patch` | **<50ms AI Firewall**: Incremental SAST audit, contract line budget verification, and BLAKE3 integrity check on modified files. |
 | `aetherscope_chat` | Bidirectional chat bridge with Cockpit Copilot HUD, swarm roster discovery, and `<thought>` section folding. |
-| `aetherscope_manage_plugins` | Declarative YAML plugin management (`list`, `test`, `scan`, `upsert`) in `.aether/plugins/`. |
+| `aetherscope_manage_plugins` | **6-in-1**: Declarative YAML SAST & Taint DSL v2 plugin manager (`list`, `test`, `scan`, `upsert`, `toggle`, `init_bundle`) in `.aether/plugins/`. |
 | `aetherscope_teleport_camera` | High-speed 3D WebGL camera navigation with quantum laser beam and breadcrumb trails. |
 | `aetherscope_scan_project` | Standalone parallel rescan trigger refreshing the AST and graph models. |
 
@@ -148,6 +148,7 @@ The desktop interface (`crates/desktop-shell`) hosts an ultra-responsive spatial
 - **Off-Thread Physics Simulation**: Dedicated Web Worker (`physics.worker.js`) executing Coulomb electrostatic repulsion and Hooke spring forces over zero-copy `Transferable Float32Array` buffers.
 - **Dedicated Full-Screen Multi-Tab IDE**: Switch seamlessly to IDE mode with AST symbol hierarchy navigation, auto-open file at function on 3D bubble click, cosmic cluster-synchronized file-tree colors, integrated Doc/EARS/Source sidebars, resizable splitters, collapsible sidebars, Zen mode, and atomic file saving (`/api/save_file`).
 - **Live AI (<5m) Left Dock & Workspace Explorer**: Real-time multi-agent activity dock with automatic 5-minute inactivity pruning plus built-in workspace filesystem explorer (`/api/fs/list`).
+- **Cockpit SAST & Taint Plugins Manager (`PluginsModal`)**: Dedicated 3-tab UI (*Security → Plugins SAST & Taint*) backed by 7 `PathGuard`-confined `/api/plugins/*` routes to toggle YAML plugins live, deploy the 24-rule offline OWASP/CWE bundle, import Semgrep YAML, run unit tests, and author certified DSL v2 rules (`ast_scope`, `not_preceded_within_lines`, path globs, declarative taint). See also the [WebGL Visual Plugins Architecture Spec](./docs/WEBGL_VISUAL_PLUGINS_SPEC.md).
 - **Dual-Vision Mode**: Instantly switch between **Code AST Architecture** and **Obsidian Knowledge Graph** (<kbd>Alt</kbd>+<kbd>1</kbd> / <kbd>Alt</kbd>+<kbd>2</kbd>).
 - **4 Mathematical Layouts**:
   - `Z-1`: Fermat Spiral Galaxy layout.

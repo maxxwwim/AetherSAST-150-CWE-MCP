@@ -558,6 +558,11 @@
           run: () => (cockpitState.isIgnoredCweModalOpen = true)
         },
         {
+          kind: 'item', icon: Plug, iconClass: 'text-purple-400',
+          label: 'Plugins SAST & Taint (YAML)', desc: 'Activer, tester, importer Semgrep & créer règles DSL v2',
+          run: () => (cockpitState.isPluginsModalOpen = true)
+        },
+        {
           kind: 'item', icon: Radar, iconClass: 'text-cyan-400',
           label: 'Scanner de surface', desc: 'Domaine / IP : ports, requêtes HTTP, arbo HTML, flux', shortcut: 'U',
           run: () => (cockpitState.isSurfaceScannerOpen = true)

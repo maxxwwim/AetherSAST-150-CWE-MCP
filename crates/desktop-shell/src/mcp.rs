@@ -441,6 +441,8 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         "test" => "aetherscope_test_plugins",
                         "scan" => "aetherscope_scan_with_plugins",
                         "upsert" => "aetherscope_upsert_plugin_rule",
+                        "toggle" => "aetherscope_toggle_plugin",
+                        "init_bundle" => "aetherscope_init_plugin_bundle",
                         _ => "aetherscope_list_plugins",
                     }
                 }
@@ -1309,7 +1311,12 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                         "author": p.author,
                                         "description": p.description,
                                         "enabled": p.enabled,
+                                        "profile": p.profile,
+                                        "tags": p.tags,
                                         "rules_count": p.rules.len(),
+                                        "taint_sources_count": p.taint_sources.len(),
+                                        "taint_sinks_count": p.taint_sinks.len(),
+                                        "sanitizers_count": p.sanitizers.len(),
                                         "rules": p.rules.iter().map(|r| json!({
                                             "id": r.id,
                                             "cwe_id": r.cwe_id,
@@ -1317,6 +1324,10 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                             "category": r.category,
                                             "severity": r.severity,
                                             "extensions": r.file_extensions,
+                                            "ast_scope": r.conditions.ast_scope,
+                                            "in_path_matching": r.conditions.in_path_matching,
+                                            "not_in_path_matching": r.conditions.not_in_path_matching,
+                                            "has_window_guard": r.conditions.not_preceded_within_lines.is_some(),
                                             "tests_count": r.test_cases.len()
                                         })).collect::<Vec<_>>()
                                     }));
@@ -1468,11 +1479,89 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     }
                 }
 
+                "aetherscope_toggle_plugin" => {
+                    let plugin_name = arguments.get("plugin_name").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let enabled_opt = arguments.get("enabled").and_then(|v| v.as_bool());
+                    if plugin_name.contains("..") || plugin_name.contains('/') || plugin_name.contains('\\') || plugin_name.contains(':') || plugin_name.contains('\0') {
+                        (json!([{ "type": "text", "text": "[SÉCURITÉ V2 / PATH GUARD] Nom de plugin invalide (caractères de traversée interdits)." }]), true)
+                    } else if let (false, Some(enabled)) = (plugin_name.is_empty(), enabled_opt) {
+                        let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+                        let plugins_sub = arguments.get("plugins_dir").and_then(|v| v.as_str()).unwrap_or(".aether/plugins");
+                        let p_buf = resolve_project_root(req_path);
+                        let plug_dir = resolve_plugins_dir(&p_buf, plugins_sub);
+                        let mut found_path: Option<PathBuf> = None;
+                        if plug_dir.is_dir() {
+                            for entry in walkdir::WalkDir::new(&plug_dir).into_iter().filter_map(|e| e.ok()) {
+                                let p = entry.path();
+                                if p.is_file() && p.extension().and_then(|s| s.to_str()).map(|e| matches!(e.to_ascii_lowercase().as_str(), "yaml" | "yml" | "json")).unwrap_or(false) {
+                                    if let Ok(content) = std::fs::read_to_string(p) {
+                                        if let Ok(m) = serde_yaml::from_str::<security_linter::plugin::PluginManifest>(&content) {
+                                            let folder_match = p.parent().and_then(|d| d.file_name()).and_then(|s| s.to_str()).map(|s| s.eq_ignore_ascii_case(plugin_name)).unwrap_or(false);
+                                            if m.name.eq_ignore_ascii_case(plugin_name) || folder_match {
+                                                found_path = Some(p.to_path_buf());
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(target_file) = found_path {
+                            let content = std::fs::read_to_string(&target_file).unwrap_or_default();
+                            match serde_yaml::from_str::<security_linter::plugin::PluginManifest>(&content) {
+                                Ok(mut m) => {
+                                    m.enabled = enabled;
+                                    match serde_yaml::to_string(&m) {
+                                        Ok(out_yaml) => {
+                                            if let Err(e) = std::fs::write(&target_file, out_yaml) {
+                                                (json!([{ "type": "text", "text": format!("Échec écriture {}: {}", target_file.display(), e) }]), true)
+                                            } else {
+                                                let text = serde_json::to_string_pretty(&json!({
+                                                    "status": "ok",
+                                                    "plugin": m.name,
+                                                    "enabled": m.enabled,
+                                                    "file": target_file.to_string_lossy()
+                                                })).unwrap_or_default();
+                                                (json!([{ "type": "text", "text": text }]), false)
+                                            }
+                                        }
+                                        Err(e) => (json!([{ "type": "text", "text": format!("Erreur YAML: {}", e) }]), true),
+                                    }
+                                }
+                                Err(e) => (json!([{ "type": "text", "text": format!("Erreur parsing plugin: {}", e) }]), true),
+                            }
+                        } else {
+                            (json!([{ "type": "text", "text": format!("Plugin '{}' introuvable dans {}", plugin_name, plug_dir.display()) }]), true)
+                        }
+                    } else {
+                        (json!([{ "type": "text", "text": "Paramètres obligatoires manquants: plugin_name, enabled (bool)" }]), true)
+                    }
+                }
+
+                "aetherscope_init_plugin_bundle" => {
+                    let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
+                    let plugins_sub = arguments.get("plugins_dir").and_then(|v| v.as_str()).unwrap_or(".aether/plugins");
+                    let p_buf = resolve_project_root(req_path);
+                    let plug_dir = resolve_plugins_dir(&p_buf, plugins_sub);
+                    match security_linter::CommunityBundle::unpack_to_directory(&plug_dir) {
+                        Ok(out_path) => {
+                            let text = serde_json::to_string_pretty(&json!({
+                                "status": "ok",
+                                "file": out_path.to_string_lossy(),
+                                "message": "Bundle communautaire OWASP/CWE (24 règles) déployé avec succès."
+                            })).unwrap_or_default();
+                            (json!([{ "type": "text", "text": text }]), false)
+                        }
+                        Err(e) => (json!([{ "type": "text", "text": format!("Échec déploiement bundle communautaire : {}", e) }]), true),
+                    }
+                }
+
                 "aetherscope_upsert_plugin_rule" => {
-                    let plugin_name = arguments.get("plugin_name").and_then(|v| v.as_str()).unwrap_or("");
+                    let plugin_name = arguments.get("plugin_name").and_then(|v| v.as_str()).unwrap_or("").trim();
                     let rule_id = arguments.get("rule_id").and_then(|v| v.as_str()).unwrap_or("");
                     let cwe_id = arguments.get("cwe_id").and_then(|v| v.as_str()).unwrap_or("");
                     let name = arguments.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let category = arguments.get("category").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).unwrap_or("Custom / Security");
                     let severity = arguments.get("severity").and_then(|v| v.as_str()).unwrap_or("HIGH");
                     let description = arguments.get("description").and_then(|v| v.as_str()).unwrap_or("");
                     let remediation = arguments.get("remediation").and_then(|v| v.as_str()).unwrap_or("");
@@ -1481,108 +1570,169 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
                         .unwrap_or_default();
 
-                    if plugin_name.is_empty() || rule_id.is_empty() || cwe_id.is_empty() || file_extensions.is_empty() {
-                        (json!([{ "type": "text", "text": "ParamÃ¨tres obligatoires manquants: plugin_name, rule_id, cwe_id, file_extensions" }]), true)
+                    let invalid_slug = plugin_name.is_empty()
+                        || plugin_name.contains("..")
+                        || plugin_name.contains('/')
+                        || plugin_name.contains('\\')
+                        || plugin_name.contains(':')
+                        || plugin_name.contains('\0')
+                        || !plugin_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+
+                    if invalid_slug {
+                        (json!([{ "type": "text", "text": "[SÉCURITÉ V2 / PATH GUARD] 'plugin_name' invalide : utilisez uniquement lettres, chiffres, '-' et '_'." }]), true)
+                    } else if rule_id.is_empty() || cwe_id.is_empty() || file_extensions.is_empty() {
+                        (json!([{ "type": "text", "text": "Paramètres obligatoires manquants: plugin_name, rule_id, cwe_id, file_extensions" }]), true)
                     } else {
                         let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
                         let plugins_sub = arguments.get("plugins_dir").and_then(|v| v.as_str()).unwrap_or(".aether/plugins");
                         let p_buf = resolve_project_root(req_path);
-                        let plugin_dir = p_buf.join(plugins_sub).join(plugin_name);
+                        let plugins_root = resolve_plugins_dir(&p_buf, plugins_sub);
+                        let plugin_dir = plugins_root.join(plugin_name);
                         let yaml_path = plugin_dir.join("plugin.yaml");
 
-                        if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
-                            (json!([{ "type": "text", "text": format!("Impossible de crÃ©er le dossier {} : {}", plugin_dir.display(), e) }]), true)
+                        let mut manifest: security_linter::plugin::PluginManifest = if yaml_path.exists() {
+                            let content = std::fs::read_to_string(&yaml_path).unwrap_or_default();
+                            serde_yaml::from_str(&content).unwrap_or_else(|_| security_linter::plugin::PluginManifest {
+                                name: plugin_name.to_string(),
+                                version: "1.0.0".to_string(),
+                                author: Some("AI Security Agent".to_string()),
+                                description: Some(format!("Custom security plugin {}", plugin_name)),
+                                enabled: true,
+                                rules: Vec::new(),
+                                ..Default::default()
+                            })
                         } else {
-                            let mut manifest: security_linter::plugin::PluginManifest = if yaml_path.exists() {
-                                let content = std::fs::read_to_string(&yaml_path).unwrap_or_default();
-                                serde_yaml::from_str(&content).unwrap_or_else(|_| security_linter::plugin::PluginManifest {
-                                    name: plugin_name.to_string(),
-                                    version: "1.0.0".to_string(),
-                                    author: Some("AI Security Agent".to_string()),
-                                    description: Some(format!("Custom security plugin {}", plugin_name)),
-                                    enabled: true,
-                                    rules: Vec::new(),
-                                    ..Default::default()
-                                })
-                            } else {
-                                security_linter::plugin::PluginManifest {
-                                    name: plugin_name.to_string(),
-                                    version: "1.0.0".to_string(),
-                                    author: Some("AI Security Agent".to_string()),
-                                    description: Some(format!("Custom security plugin {}", plugin_name)),
-                                    enabled: true,
-                                    rules: Vec::new(),
-                                    ..Default::default()
-                                }
-                            };
+                            security_linter::plugin::PluginManifest {
+                                name: plugin_name.to_string(),
+                                version: "1.0.0".to_string(),
+                                author: Some("AI Security Agent".to_string()),
+                                description: Some(format!("Custom security plugin {}", plugin_name)),
+                                enabled: true,
+                                rules: Vec::new(),
+                                ..Default::default()
+                            }
+                        };
 
-                            let match_mode = match arguments.get("match_mode").and_then(|v| v.as_str()) {
-                                Some("whole_file") => security_linter::plugin::MatchMode::WholeFile,
-                                _ => security_linter::plugin::MatchMode::LineByLine,
-                            };
+                        if let Some(prof) = arguments.get("profile").and_then(|v| v.as_str()) {
+                            let trimmed = prof.trim();
+                            manifest.profile = if trimmed.is_empty() { None } else { Some(trimmed.to_string()) };
+                        }
+                        if let Some(tags_arr) = arguments.get("tags").and_then(|v| v.as_array()) {
+                            manifest.tags = tags_arr
+                                .iter()
+                                .filter_map(|s| s.as_str().map(|x| x.trim().to_string()))
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                        }
+                        if let Some(src_val) = arguments.get("taint_sources") {
+                            if let Ok(parsed) = serde_json::from_value::<Vec<core_graph::dataflow::TaintSourceRule>>(src_val.clone()) {
+                                manifest.taint_sources = parsed;
+                            }
+                        }
+                        if let Some(sink_val) = arguments.get("taint_sinks") {
+                            if let Ok(parsed) = serde_json::from_value::<Vec<core_graph::dataflow::TaintSinkRule>>(sink_val.clone()) {
+                                manifest.taint_sinks = parsed;
+                            }
+                        }
+                        if let Some(san_val) = arguments.get("sanitizers") {
+                            if let Ok(parsed) = serde_json::from_value::<Vec<core_graph::dataflow::SanitizerRule>>(san_val.clone()) {
+                                manifest.sanitizers = parsed;
+                            }
+                        }
 
-                            let must_contain = arguments.get("must_contain")
-                                .and_then(|v| v.as_array())
-                                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
-                                .unwrap_or_default();
+                        let match_mode = match arguments.get("match_mode").and_then(|v| v.as_str()) {
+                            Some("whole_file") => security_linter::plugin::MatchMode::WholeFile,
+                            _ => security_linter::plugin::MatchMode::LineByLine,
+                        };
 
-                            let must_not_contain = arguments.get("must_not_contain")
-                                .and_then(|v| v.as_array())
-                                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
-                                .unwrap_or_default();
+                        let must_contain = arguments.get("must_contain")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                            .unwrap_or_default();
 
-                            let regex_patterns = arguments.get("regex_patterns")
-                                .and_then(|v| v.as_array())
-                                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
-                                .unwrap_or_default();
+                        let must_not_contain = arguments.get("must_not_contain")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                            .unwrap_or_default();
 
-                            let forbidden_tokens = arguments.get("forbidden_tokens")
-                                .and_then(|v| v.as_array())
-                                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
-                                .unwrap_or_default();
+                        let regex_patterns = arguments.get("regex_patterns")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                            .unwrap_or_default();
 
-                            let check_literals = arguments.get("check_literals").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let forbidden_tokens = arguments.get("forbidden_tokens")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                            .unwrap_or_default();
 
-                            let mut test_cases = Vec::new();
-                            if let Some(tarr) = arguments.get("test_cases").and_then(|v| v.as_array()) {
-                                for t in tarr {
-                                    if let (Some(tname), Some(code), Some(fname), Some(should_trig)) = (
-                                        t.get("name").and_then(|s| s.as_str()),
-                                        t.get("code").and_then(|s| s.as_str()),
-                                        t.get("file_name").and_then(|s| s.as_str()),
-                                        t.get("should_trigger").and_then(|s| s.as_bool()),
-                                    ) {
-                                        test_cases.push(security_linter::plugin::RuleTestCase {
-                                            name: tname.to_string(),
-                                            code: code.to_string(),
-                                            file_name: fname.to_string(),
-                                            should_trigger: should_trig,
-                                        });
-                                    }
+                        let check_literals = arguments.get("check_literals").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                        let not_preceded_within_lines = arguments
+                            .get("not_preceded_within_lines")
+                            .and_then(|v| serde_json::from_value::<security_linter::plugin::PrecededWindowCondition>(v.clone()).ok());
+
+                        let in_path_matching = arguments.get("in_path_matching")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                            .unwrap_or_default();
+
+                        let not_in_path_matching = arguments.get("not_in_path_matching")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                            .unwrap_or_default();
+
+                        let ast_scope = arguments.get("ast_scope")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty());
+
+                        let mut test_cases = Vec::new();
+                        if let Some(tarr) = arguments.get("test_cases").and_then(|v| v.as_array()) {
+                            for t in tarr {
+                                if let (Some(tname), Some(code), Some(fname), Some(should_trig)) = (
+                                    t.get("name").and_then(|s| s.as_str()),
+                                    t.get("code").and_then(|s| s.as_str()),
+                                    t.get("file_name").and_then(|s| s.as_str()),
+                                    t.get("should_trigger").and_then(|s| s.as_bool()),
+                                ) {
+                                    test_cases.push(security_linter::plugin::RuleTestCase {
+                                        name: tname.to_string(),
+                                        code: code.to_string(),
+                                        file_name: fname.to_string(),
+                                        should_trigger: should_trig,
+                                    });
                                 }
                             }
+                        }
 
-                            let new_rule = security_linter::plugin::PluginRule {
-                                id: rule_id.to_string(),
-                                cwe_id: cwe_id.to_string(),
-                                name: name.to_string(),
-                                category: "Custom / Security".to_string(),
-                                severity: severity.to_string(),
-                                description: description.to_string(),
-                                remediation: remediation.to_string(),
-                                file_extensions,
-                                match_mode,
-                                conditions: security_linter::plugin::RuleConditions {
-                                    must_contain,
-                                    must_not_contain,
-                                    regex_patterns,
-                                    forbidden_tokens,
-                                    check_literals,
-                                    ..Default::default()
-                                },
-                                test_cases,
-                            };
+                        let new_rule = security_linter::plugin::PluginRule {
+                            id: rule_id.to_string(),
+                            cwe_id: cwe_id.to_string(),
+                            name: name.to_string(),
+                            category: category.to_string(),
+                            severity: severity.to_string(),
+                            description: description.to_string(),
+                            remediation: remediation.to_string(),
+                            file_extensions,
+                            match_mode,
+                            conditions: security_linter::plugin::RuleConditions {
+                                must_contain,
+                                must_not_contain,
+                                regex_patterns,
+                                forbidden_tokens,
+                                check_literals,
+                                not_preceded_within_lines,
+                                in_path_matching,
+                                not_in_path_matching,
+                                ast_scope,
+                                ..Default::default()
+                            },
+                            test_cases,
+                        };
 
+                        if let Err(regex_err) = new_rule.validate_regexes() {
+                            (json!([{ "type": "text", "text": format!("Regex invalide : {}", regex_err) }]), true)
+                        } else {
                             if let Some(pos) = manifest.rules.iter().position(|r| r.id == rule_id) {
                                 manifest.rules[pos] = new_rule;
                             } else {
@@ -1590,19 +1740,24 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             }
 
                             let mut test_engine = security_linter::plugin::PluginEngine::new();
-                            test_engine.plugins.push(manifest.clone());
+                            let mut test_manifest = manifest.clone();
+                            test_manifest.enabled = true;
+                            test_manifest.precompile_all();
+                            test_engine.plugins.push(test_manifest);
                             let report = test_engine.run_test_suite();
 
                             if report.failed > 0 {
                                 (json!([{
                                     "type": "text",
-                                    "text": format!("Validation Ã©chouÃ©e : {} test(s) unitaire(s) ont Ã©chouÃ© pour la rÃ¨gle {}. Fichier non modifiÃ©.\nErreurs : {:?}", report.failed, rule_id, report.failures)
+                                    "text": format!("Validation échouée : {} test(s) unitaire(s) ont échoué pour la règle {}. Fichier non modifié.\nErreurs : {:?}", report.failed, rule_id, report.failures)
                                 }]), true)
+                            } else if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
+                                (json!([{ "type": "text", "text": format!("Impossible de créer le dossier {} : {}", plugin_dir.display(), e) }]), true)
                             } else {
                                 match serde_yaml::to_string(&manifest) {
                                     Ok(yaml_str) => {
                                         if let Err(e) = std::fs::write(&yaml_path, yaml_str) {
-                                            (json!([{ "type": "text", "text": format!("Ã‰chec d'Ã©criture {}: {}", yaml_path.display(), e) }]), true)
+                                            (json!([{ "type": "text", "text": format!("Échec d'écriture {}: {}", yaml_path.display(), e) }]), true)
                                         } else {
                                             let text = serde_json::to_string_pretty(&json!({
                                                 "status": "ok",
@@ -1611,12 +1766,15 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                                 "file": yaml_path.to_string_lossy(),
                                                 "tests_passed": report.passed,
                                                 "total_rules": manifest.rules.len(),
-                                                "message": format!("RÃ¨gle {} sauvegardÃ©e et certifiÃ©e avec succÃ¨s !", rule_id)
+                                                "taint_sources": manifest.taint_sources.len(),
+                                                "taint_sinks": manifest.taint_sinks.len(),
+                                                "sanitizers": manifest.sanitizers.len(),
+                                                "message": format!("Règle {} sauvegardée et certifiée avec succès !", rule_id)
                                             })).unwrap_or_default();
                                             (json!([{ "type": "text", "text": text }]), false)
                                         }
                                     }
-                                    Err(e) => (json!([{ "type": "text", "text": format!("Erreur de sÃ©rialisation YAML : {}", e) }]), true),
+                                    Err(e) => (json!([{ "type": "text", "text": format!("Erreur de sérialisation YAML : {}", e) }]), true),
                                 }
                             }
                         }
@@ -2510,5 +2668,98 @@ mod tests {
         let res = r.result.expect("result");
         assert_eq!(res["isError"], true);
         assert!(res["content"][0]["text"].as_str().unwrap().contains("PATH GUARD"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manage_plugins_dsl_v2_upsert_toggle_and_path_guard() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root_str = dir.path().to_string_lossy().to_string();
+
+        // 1. Path traversal in plugin_name must be rejected
+        let bad_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(920)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_manage_plugins",
+                "arguments": {
+                    "action": "upsert",
+                    "path": root_str,
+                    "plugin_name": "../escape-pack",
+                    "rule_id": "BAD-1",
+                    "cwe_id": "CWE-22",
+                    "file_extensions": [".rs"]
+                }
+            })),
+        };
+        let bad_resp = handle_mcp_request(bad_req, 3030, &root_str).await.expect("resp");
+        let bad_res = bad_resp.result.expect("result");
+        assert_eq!(bad_res["isError"], true);
+        assert!(bad_res["content"][0]["text"].as_str().unwrap().contains("PATH GUARD"));
+
+        // 2. Upsert DSL v2 rule with ast_scope, in_path_matching, not_preceded_within_lines & profile/tags
+        let ok_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(921)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_manage_plugins",
+                "arguments": {
+                    "action": "upsert",
+                    "path": root_str,
+                    "plugin_name": "dsl-v2-guard",
+                    "profile": "strict",
+                    "tags": ["rust", "api"],
+                    "rule_id": "DSL2-EXEC-001",
+                    "cwe_id": "CWE-78",
+                    "name": "Guarded exec check",
+                    "severity": "CRITICAL",
+                    "description": "Unchecked exec_cmd call",
+                    "remediation": "Call check_perm() first",
+                    "file_extensions": [".rs"],
+                    "regex_patterns": ["exec_cmd\\s*\\("],
+                    "ast_scope": "outside_test",
+                    "in_path_matching": ["src/api/**"],
+                    "not_preceded_within_lines": { "lines": 2, "patterns": ["check_perm\\("] },
+                    "test_cases": [
+                        {
+                            "name": "vuln",
+                            "file_name": "src/api/routes.rs",
+                            "code": "pub fn run() {\n    exec_cmd();\n}",
+                            "should_trigger": true
+                        },
+                        {
+                            "name": "safe-window",
+                            "file_name": "src/api/routes.rs",
+                            "code": "pub fn run() {\n    check_perm();\n    exec_cmd();\n}",
+                            "should_trigger": false
+                        }
+                    ]
+                }
+            })),
+        };
+        let ok_resp = handle_mcp_request(ok_req, 3030, &root_str).await.expect("resp");
+        let ok_res = ok_resp.result.expect("result");
+        assert_eq!(ok_res["isError"], false, "DSL v2 upsert failed: {:?}", ok_res);
+
+        // 3. Toggle plugin OFF via MCP
+        let toggle_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(922)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "aetherscope_manage_plugins",
+                "arguments": {
+                    "action": "toggle",
+                    "path": root_str,
+                    "plugin_name": "dsl-v2-guard",
+                    "enabled": false
+                }
+            })),
+        };
+        let toggle_resp = handle_mcp_request(toggle_req, 3030, &root_str).await.expect("resp");
+        let toggle_res = toggle_resp.result.expect("result");
+        assert_eq!(toggle_res["isError"], false);
+        assert!(toggle_res["content"][0]["text"].as_str().unwrap().contains("\"enabled\": false"));
     }
 }

@@ -383,6 +383,7 @@ export class CockpitState {
   isCreateFileModalOpen = $state(false);
   pendingImportFile = $state<{ fileName: string; content: string } | null>(null);
   isIgnoredCweModalOpen = $state(false);
+  isPluginsModalOpen = $state(false);
   isChatOpen = $state(false);
   isMcpModalOpen = $state(false);
   showRadar = $state(loadSavedRadar());

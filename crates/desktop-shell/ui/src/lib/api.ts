@@ -1,5 +1,70 @@
 import type { AetherGraph, TaskItem } from '../types/graph';
 
+export interface PluginRuleSummary {
+  id: string;
+  cwe_id: string;
+  name: string;
+  category: string;
+  severity: string;
+  description: string;
+  remediation: string;
+  file_extensions: string[];
+  match_mode: string;
+  check_literals: boolean;
+  must_contain: string[];
+  must_not_contain: string[];
+  regex_patterns: string[];
+  forbidden_tokens: string[];
+  not_preceded_within_lines?: { patterns: string[]; lines: number } | null;
+  in_path_matching: string[];
+  not_in_path_matching: string[];
+  ast_scope?: string | null;
+  test_cases_count: number;
+}
+
+export interface PluginEntryInfo {
+  name: string;
+  rel_path: string;
+  folder_alias?: string | null;
+  version: string;
+  author?: string | null;
+  description?: string | null;
+  enabled: boolean;
+  profile?: string | null;
+  tags: string[];
+  rules_count: number;
+  test_cases_count: number;
+  taint_sources_count: number;
+  taint_sinks_count: number;
+  sanitizers_count: number;
+  rules: PluginRuleSummary[];
+  taint_sources: any[];
+  taint_sinks: any[];
+  sanitizers: any[];
+}
+
+export interface PluginsInventoryResponse {
+  status: string;
+  plugins_dir: string;
+  community_bundle_installed: boolean;
+  community_bundle_rules_count: number;
+  total_plugins: number;
+  enabled_plugins: number;
+  total_active_rules: number;
+  total_taint_sources: number;
+  total_taint_sinks: number;
+  total_sanitizers: number;
+  plugins: PluginEntryInfo[];
+}
+
+export interface PluginTestReportResponse {
+  status: string;
+  total_tests: number;
+  passed: number;
+  failed: number;
+  failures: string[];
+}
+
 export interface ProjectStatusResponse {
   status?: string;
   project_type: 'PureCode' | 'PureObsidianVault' | 'Mixed' | string;
@@ -501,6 +566,118 @@ export class AetherApiClient {
       body: JSON.stringify(payload),
     });
     return res.json();
+  }
+
+  async getPlugins(): Promise<PluginsInventoryResponse> {
+    const res = await fetch(`${this.baseUrl}/api/plugins`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) {
+      throw new Error(data?.message || `Erreur lecture plugins HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async togglePlugin(relPath: string, enabled: boolean): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/plugins/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rel_path: relPath, enabled }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur bascule plugin HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async testPlugins(relPath?: string): Promise<PluginTestReportResponse> {
+    const res = await fetch(`${this.baseUrl}/api/plugins/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(relPath ? { rel_path: relPath } : {}),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) {
+      throw new Error(data?.message || `Erreur tests plugins HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async initCommunityPluginBundle(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/plugins/init_bundle`, {
+      method: 'POST',
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur déploiement bundle HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async importSemgrepPlugin(pluginName: string, yamlContent: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/plugins/import_semgrep`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plugin_name: pluginName, yaml_content: yamlContent }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur import Semgrep HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async upsertPluginRule(payload: {
+    plugin_name: string;
+    profile?: string;
+    tags?: string[];
+    plugin_description?: string;
+    rule_id: string;
+    cwe_id: string;
+    name: string;
+    category?: string;
+    severity: string;
+    description: string;
+    remediation: string;
+    file_extensions: string[];
+    match_mode?: 'line_by_line' | 'whole_file';
+    must_contain?: string[];
+    must_not_contain?: string[];
+    regex_patterns?: string[];
+    forbidden_tokens?: string[];
+    check_literals?: boolean;
+    not_preceded_within_lines?: { patterns: string[]; lines: number } | null;
+    in_path_matching?: string[];
+    not_in_path_matching?: string[];
+    ast_scope?: string | null;
+    test_cases?: { name: string; file_name: string; code: string; should_trigger: boolean }[];
+  }): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/plugins/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error' || data?.status === 'failed') {
+      const detail = Array.isArray(data?.failures) && data.failures.length > 0
+        ? ` — ${data.failures.join(' | ')}`
+        : '';
+      throw new Error((data?.message || `Erreur sauvegarde règle HTTP ${res.status}`) + detail);
+    }
+    return data;
+  }
+
+  async deletePlugin(relPath: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/plugins/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rel_path: relPath }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === 'error') {
+      throw new Error(data?.message || `Erreur suppression plugin HTTP ${res.status}`);
+    }
+    return data;
   }
 }
 

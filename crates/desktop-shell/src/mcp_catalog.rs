@@ -960,7 +960,7 @@ pub(crate) async fn handle_catalog_request(
                     },
                     {
                         "name": "aetherscope_manage_plugins",
-                        "description": "[COMMANDE COMBINÃ‰E 4-EN-1] Gestion complÃ¨te des plugins de sÃ©curitÃ© YAML dans .aether/plugins : 'list' (inventaire), 'test' (exÃ©cution des tests unitaires des rÃ¨gles), 'scan' (audit d'un fichier/dossier), ou 'upsert' (crÃ©ation/mise Ã  jour et certification d'une rÃ¨gle CWE).",
+                        "description": "[COMMANDE COMBINÉE] Gestion complète des plugins SAST/Taint YAML (DSL v2) dans .aether/plugins : 'list' (inventaire), 'test' (tests unitaires), 'scan' (audit fichier/dossier), 'upsert' (création/mise à jour certifiée d'une règle DSL v2 ou taint), 'toggle' (activer/désactiver un plugin), ou 'init_bundle' (déployer les 24 règles communautaires OWASP/CWE).",
                         "readOnlyHint": false,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -970,36 +970,40 @@ pub(crate) async fn handle_catalog_request(
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "description": "OpÃ©ration plugin : 'list', 'test', 'scan', ou 'upsert'",
-                                    "enum": ["list", "test", "scan", "upsert"]
+                                    "description": "Opération plugin : 'list', 'test', 'scan', 'upsert', 'toggle', ou 'init_bundle'",
+                                    "enum": ["list", "test", "scan", "upsert", "toggle", "init_bundle"]
                                 },
                                 "target_path": {
                                     "type": "string",
-                                    "description": "Fichier ou dossier Ã  auditer (requis pour action='scan')"
+                                    "description": "Fichier ou dossier à auditer (requis pour action='scan')"
                                 },
                                 "plugins_dir": {
                                     "type": "string",
-                                    "description": "Chemin du dossier plugins (dÃ©faut: '.aether/plugins')"
+                                    "description": "Chemin du dossier plugins (défaut: '.aether/plugins')"
                                 },
                                 "path": {
                                     "type": "string",
                                     "description": "Chemin racine optionnel du projet"
                                 },
-                                "plugin_name": { "type": "string", "description": "Nom du plugin (pour action='upsert')" },
-                                "rule_id": { "type": "string", "description": "ID unique de la rÃ¨gle (pour action='upsert')" },
+                                "plugin_name": { "type": "string", "description": "Nom du plugin (pour action='upsert' ou 'toggle')" },
+                                "enabled": { "type": "boolean", "description": "Activer/désactiver le plugin (pour action='toggle')" },
+                                "profile": { "type": "string", "description": "Profil CLI optionnel du plugin ex: 'strict', 'web3' (pour action='upsert')" },
+                                "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags optionnels du plugin (pour action='upsert')" },
+                                "rule_id": { "type": "string", "description": "ID unique de la règle (pour action='upsert')" },
                                 "cwe_id": { "type": "string", "description": "Identifiant CWE (pour action='upsert')" },
-                                "name": { "type": "string", "description": "Nom court de la rÃ¨gle (pour action='upsert')" },
+                                "name": { "type": "string", "description": "Nom court de la règle (pour action='upsert')" },
+                                "category": { "type": "string", "description": "Catégorie optionnelle de la règle (pour action='upsert')" },
                                 "severity": {
                                     "type": "string",
                                     "enum": ["CRITICAL", "HIGH", "MEDIUM", "WARNING", "LOW"],
-                                    "description": "SÃ©vÃ©ritÃ© (pour action='upsert')"
+                                    "description": "Sévérité (pour action='upsert')"
                                 },
                                 "description": { "type": "string", "description": "Description de la faille (pour action='upsert')" },
-                                "remediation": { "type": "string", "description": "RemÃ©diation certifiÃ©e (pour action='upsert')" },
+                                "remediation": { "type": "string", "description": "Remédiation certifiée (pour action='upsert')" },
                                 "file_extensions": {
                                     "type": "array",
                                     "items": { "type": "string" },
-                                    "description": "Extensions ciblÃ©es ex: ['.rs', '.py', '.ts'] (pour action='upsert')"
+                                    "description": "Extensions ciblées ex: ['.rs', '.py', '.ts'] (pour action='upsert')"
                                 },
                                 "match_mode": {
                                     "type": "string",
@@ -1010,6 +1014,45 @@ pub(crate) async fn handle_catalog_request(
                                 "regex_patterns": { "type": "array", "items": { "type": "string" } },
                                 "forbidden_tokens": { "type": "array", "items": { "type": "string" } },
                                 "check_literals": { "type": "boolean" },
+                                "not_preceded_within_lines": {
+                                    "type": "object",
+                                    "description": "Fenêtrage contextuel DSL v2 : ignore l'alerte si un motif garde apparaît dans les N lignes précédentes",
+                                    "properties": {
+                                        "patterns": { "type": "array", "items": { "type": "string" } },
+                                        "lines": { "type": "integer", "minimum": 1 }
+                                    },
+                                    "required": ["patterns", "lines"]
+                                },
+                                "in_path_matching": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Globs de chemins inclus DSL v2 ex: ['src/api/**']"
+                                },
+                                "not_in_path_matching": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "description": "Globs de chemins exclus DSL v2 ex: ['**/generated/**']"
+                                },
+                                "ast_scope": {
+                                    "type": "string",
+                                    "enum": ["outside_test", "test", "async_fn", "sync_fn", "fn"],
+                                    "description": "Portée syntaxique AST requise DSL v2"
+                                },
+                                "taint_sources": {
+                                    "type": "array",
+                                    "items": { "type": "object" },
+                                    "description": "Sources déclaratives de taint SSA (TaintSourceRule)"
+                                },
+                                "taint_sinks": {
+                                    "type": "array",
+                                    "items": { "type": "object" },
+                                    "description": "Puits déclaratifs de taint SSA (TaintSinkRule)"
+                                },
+                                "sanitizers": {
+                                    "type": "array",
+                                    "items": { "type": "object" },
+                                    "description": "Sanitizers déclaratifs de taint SSA (SanitizerRule)"
+                                },
                                 "test_cases": {
                                     "type": "array",
                                     "items": {
@@ -1028,7 +1071,7 @@ pub(crate) async fn handle_catalog_request(
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Gestionnaire UnifiÃ© des Plugins CWE (List / Test / Scan / Upsert)",
+                            "title": "Gestionnaire Unifié des Plugins SAST & Taint DSL v2 (List / Test / Scan / Upsert / Toggle / Bundle)",
                             "readOnlyHint": false,
                             "destructiveHint": false,
                             "idempotentHint": true,

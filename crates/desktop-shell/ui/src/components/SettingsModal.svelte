@@ -518,6 +518,13 @@
             <div class="flex gap-1.5">
               <button
                 type="button"
+                onclick={() => { closeModal(); cockpitState.isPluginsModalOpen = true; }}
+                class="px-2 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/40 text-[10px] font-semibold text-purple-200 cursor-pointer"
+              >
+                🔌 Plugins SAST
+              </button>
+              <button
+                type="button"
                 onclick={() => toggleAllRules(true)}
                 class="px-2 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-[10px] font-semibold text-sky-300 cursor-pointer"
               >

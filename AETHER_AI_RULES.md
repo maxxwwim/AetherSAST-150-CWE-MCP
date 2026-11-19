@@ -48,8 +48,8 @@ Spécifie toujours les paramètres exacts lors de tes appels MCP :
 7. **`aetherscope_chat(action?, text?, thought?, target_symbol?)`** *(2-en-1)*
    - `action: "send"` (défaut si `text` fourni) : affiche un debrief Markdown dans le Chat Copilot d'AetherScope et centre la caméra sur `target_symbol`.
    - `action: "history"` : récupère l'historique des échanges du cockpit.
-8. **`aetherscope_manage_plugins(action, target_path?, plugins_dir?, path?, plugin_name?, rule_id?, cwe_id?, name?, severity?, description?, remediation?, file_extensions?, ...)`** *(4-en-1)*
-   - Gère les plugins déclaratifs YAML dans `.aether/plugins/` via `action`: `"list"` (inventaire), `"test"` (exécution des tests unitaires embarqués), `"scan"` (audit confiné `PathGuard` sur `target_path`), ou `"upsert"` (création/mise à jour certifiée d'une règle CWE).
+8. **`aetherscope_manage_plugins(action, target_path?, plugins_dir?, path?, plugin_name?, enabled?, profile?, tags?, rule_id?, cwe_id?, name?, severity?, description?, remediation?, file_extensions?, not_preceded_within_lines?, in_path_matching?, not_in_path_matching?, ast_scope?, taint_sources?, taint_sinks?, sanitizers?, ...)`** *(6-en-1)*
+   - Gère les plugins déclaratifs YAML (DSL v2 & Taint SSA) dans `.aether/plugins/` via `action`: `"list"` (inventaire), `"test"` (exécution des tests unitaires embarqués), `"scan"` (audit confiné `PathGuard` sur `target_path`), `"upsert"` (création/mise à jour certifiée d'une règle DSL v2/taint), `"toggle"` (activer/désactiver un plugin), ou `"init_bundle"` (déployer les 24 règles communautaires OWASP/CWE).
 9. **`aetherscope_teleport_camera(target, action, details)`**
    - Déplacement rapide de la caméra 3D WebGL et mise à jour du fil d'Ariane stellaire sans recharger le contrat complet.
 10. **`aetherscope_scan_project(path?)`**

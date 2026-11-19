@@ -5,6 +5,7 @@ mod api_routes;
 pub mod benchmark;
 mod local_guard;
 mod mcp;
+mod plugin_routes;
 mod surface_scanner;
 mod viewer;
 
@@ -294,7 +295,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
     });
 }
 
-fn extract_live_audit_from_graph(
+pub(crate) fn extract_live_audit_from_graph(
     graph: &core_graph::graph::AetherGraph,
 ) -> (Vec<security_linter::linter::LinterViolation>, usize) {
     let mut violations = Vec::new();
@@ -590,7 +591,18 @@ fn is_lines_budget_anomaly(rule_id: &str, cve_id: &str, severity: &str) -> bool 
         || (severity == "WARNING" && (rule_id.contains("LINE") || cve_id.contains("BUDGET")))
 }
 
-fn apply_settings_filters_to_graph(
+fn native_builtin_rule_ids() -> &'static std::collections::HashSet<String> {
+    static NATIVE_IDS: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
+    NATIVE_IDS.get_or_init(|| {
+        security_linter::SecurityLinter::get_supported_cve_rules()
+            .into_iter()
+            .map(|r| r.rule_id)
+            .collect()
+    })
+}
+
+pub(crate) fn apply_settings_filters_to_graph(
     graph: &mut core_graph::graph::AetherGraph,
     active_opt: Option<&[String]>,
     ignored_cwes: &[String],
@@ -605,14 +617,21 @@ fn apply_settings_filters_to_graph(
     }
     let allowed_set_opt: Option<std::collections::HashSet<&str>> = active_opt
         .map(|allowed| allowed.iter().map(|s| s.as_str()).collect());
+    let native_ids = native_builtin_rule_ids();
 
     let is_violation_allowed = |rule_str: &str, cve_str: &str| -> bool {
         if let Some(ref allowed_set) = allowed_set_opt {
             let exempt_blake3 = rule_str == "BLAKE3_TAMPERED" && !allowed_set.is_empty();
+            // Custom plugin, Semgrep, and declarative taint-sink rules are governed by their
+            // manifest `enabled` flag + `ignored_cwes`, not silently dropped by a saved native-only
+            // `active_cve_rules` list (while still honoring an explicit empty "disable all" list).
+            let is_custom_plugin_rule =
+                !rule_str.is_empty() && !native_ids.contains(rule_str) && !allowed_set.is_empty();
             if !rule_str.is_empty()
                 && rule_str != "RULE_MAX_LINES"
                 && !allowed_set.contains(rule_str)
                 && !exempt_blake3
+                && !is_custom_plugin_rule
             {
                 return false;
             }
@@ -1080,17 +1099,25 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         // Refresh code graph if code changed or in code/ide mode
                         if has_code_changes || current_mode == "code" || current_mode == "ide" {
                             let custom_excl = watcher_state.custom_exclusions.read().await.clone();
+                            let active_rules = watcher_state.active_cve_rules.read().await.clone();
+                            let ignored_cwes = watcher_state.ignored_cwes.read().await.clone();
                             let scan_root = current_root.clone();
                             let sel = watcher_state.plugin_selection.clone();
-                            if let Ok(updated_graph) = tokio::task::spawn_blocking(move || {
+                            if let Ok(mut updated_graph) = tokio::task::spawn_blocking(move || {
                                 let scanner = ProjectScanner::default().with_plugin_selection(sel);
                                 scanner.scan_project_with_exclusions(&scan_root, &custom_excl)
                             }).await {
+                                apply_settings_filters_to_graph(
+                                    &mut updated_graph,
+                                    active_rules.as_deref(),
+                                    &ignored_cwes,
+                                );
                                 let (violations, file_count) = extract_live_audit_from_graph(&updated_graph);
                                 let _ = AuditWriter::write_live_audit(&current_root, &violations, file_count);
                                 *watcher_state.code_graph.write().await = Some(updated_graph.clone());
                                 if current_mode == "code" || current_mode == "ide" {
                                     *watcher_state.graph.write().await = updated_graph;
+                                    *watcher_state.ui_graph_cache.write().await = None;
                                     watcher_state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                                 }
                             }
@@ -3072,6 +3099,17 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             }),
         )
         .route("/api/health", axum::routing::get(|| async { "{\"status\":\"ok\",\"engine\":\"aether-v2\"}" }))
+        .merge(
+            axum::Router::new()
+                .route("/api/plugins", axum::routing::get(plugin_routes::get_plugins_handler))
+                .route("/api/plugins/toggle", axum::routing::post(plugin_routes::toggle_plugin_handler))
+                .route("/api/plugins/test", axum::routing::post(plugin_routes::test_plugins_handler))
+                .route("/api/plugins/init_bundle", axum::routing::post(plugin_routes::init_bundle_handler))
+                .route("/api/plugins/import_semgrep", axum::routing::post(plugin_routes::import_semgrep_handler))
+                .route("/api/plugins/upsert", axum::routing::post(plugin_routes::upsert_plugin_rule_handler))
+                .route("/api/plugins/delete", axum::routing::post(plugin_routes::delete_plugin_handler))
+                .with_state(shared_state.clone()),
+        )
         .route(
             "/favicon.ico",
             axum::routing::get(|| async { axum::http::StatusCode::NO_CONTENT }),
