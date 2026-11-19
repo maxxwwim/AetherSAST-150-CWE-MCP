@@ -30,6 +30,8 @@ crates/**/.aether/*
 # Release Archives & Binaries
 # ==========================================
 /releases/
+*.zip
+!apps/aethercraft/control-plane/static/AetherPack.zip
 *.exe
 *.dll
 *.so

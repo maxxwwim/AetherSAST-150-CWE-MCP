@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.6.0] - 2026-11-19
 
 ### Added
+- **🌊 Configurateur Taint Dataflow SSA Inter-Procédural Certifié & Serde Robuste (`core-graph`, `desktop-shell`, `security-linter`, `PluginsModal.svelte`, `demoPlugins.ts`)**:
+  - Enrichissement exhaustif du modèle dataflow (`SourceKind`, `SinkKind` avec variantes `EnvironmentVar`, `Deserialization`, `CodeEval`, désérialiseurs Serde multi-formats string/map/tagged enum YAML).
+  - Sanitizers multi-patterns (`patterns: Vec<String>`) avec support `target_cwes` (alias `neutralizes_cwes`) et matching multi-regex.
+  - Endpoints backend `/api/plugins/taint` avec support des upserts purement taint (sans règle regex préalable) et préservation stricte des suites de tests unitaires existantes.
+  - Moteur d'évaluation Taint SSA réactif dans le Playground navigateur (`demoPlugins.ts`) pour simulation instantanée sans backend.
+  - Isolation stricte du répertoire de plugins visuels (`visuals/`) vis-à-vis du scanner de plugins SAST, éliminant tout faux positif ou désérialisation parasite.
 - **WebGL 2 Visual Plugins Engine — M1 + M2 (`visual_plugin_routes.rs`, `visualPlugins.ts`, `shaders.ts`, `engine.ts`)**: Full visual theme & GLSL ES 3.00 hot-swap plugin system!
   - **5 Built-in Visual Packs** (*Obsidian Nebula*, *Cyber-PCB Neon Blueprint*, *CAD Architect Blueprint*, *Abyssal Bioluminescence*, *Phosphor CRT Oscilloscope*) working both live and offline in the standalone demo, selectable in 1 click from *Affichage → Thème WebGL* or the new **🎨 Visuels WebGL** Studio tab in `PluginsModal`.
   - **12-Float GPU Instance Stride (`a_metric0`, `a_metric1`) & Atomic GLSL Hot-Swap**: Explicit WebGL 2 `layout(location)` bindings enable zero-VAO-rebuild shader swaps (`backdrop.glsl` / `node_sdf.glsl`) with re-indexed GLSL error reporting, `u_theme_colors[4]` + `u_params` uniforms, `hex_hull`/`rect_blueprint`/`organic_12lobe` membranes, and 45°/90° `orthogonal_pcb`/`straight`/`bezier` edge routing.

@@ -475,7 +475,7 @@ export const BUILTIN_VISUAL_PLUGINS: VisualPluginPack[] = [
     schema_version: 1,
     id: 'obsidian-nebula',
     name: 'Obsidian Nebula (Natif)',
-    version: '2.5.1',
+    version: '2.6.0',
     author: 'AetherScope Core',
     description: 'Nébuleuse cosmique native, cellules bioluminescentes 3D SDF et membranes organiques à 12 lobes.',
     enabled: true,

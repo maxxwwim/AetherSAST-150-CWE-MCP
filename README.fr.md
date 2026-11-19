@@ -9,12 +9,12 @@
   <img src="./assets/aetherscope-banner-logo.png" alt="AetherScope V2 Logo Bannière" width="100%" style="border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.4); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);" />
 </p>
 
-# 🪐 AetherScope V2 (`aether-engine` v2.5.1)
+# 🪐 AetherScope V2 (`aether-engine` v2.6.0)
 
 ### **Cockpit Spatial WebGL 2 & IDE Intégré • Linter SAST (222 Règles Natives + 24 Semgrep = 246) • Cache AST BLAKE3 (5.6x) • Ultra Path Guard & SecretGuard • Gouvernance BLAKE3 • Serveur MCP Natif**
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-WebGL_2_Cockpit_Online-06b6d4?style=for-the-badge&logo=googlechrome)](https://maxxwwim.github.io/AetherSAST-150-CWE-MCP/)
-[![Release](https://img.shields.io/badge/Release-v2.5.1_Ultra_Path_Guard_%26_Secret_Guard-f97316?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
+[![Release](https://img.shields.io/badge/Release-v2.6.0_SSA_Taint_%26_WebGL_Visual_Plugins-f97316?style=for-the-badge&logo=github)](https://github.com/maxxwwim/AetherSAST-150-CWE-MCP/releases)
 [![Rust](https://img.shields.io/badge/Rust-100%25_Native_2021-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![WebGL 2](https://img.shields.io/badge/WebGL_2-120_FPS_Instanced_SDF-38bdf8?style=for-the-badge&logo=webgl)](https://www.khronos.org/webgl/)
 [![MCP Server](https://img.shields.io/badge/MCP-JSON--RPC_2.0_Stdio-a855f7?style=for-the-badge)](https://modelcontextprotocol.io/)
@@ -615,7 +615,7 @@ Le moteur est découpé en **7 crates Rust** strictement isolés selon les princ
 
 ```text
 aether-engine/
-├── Cargo.toml                              # Workspace Cargo unifié (Edition 2021, v2.5.1)
+├── Cargo.toml                              # Workspace Cargo unifié (Edition 2021, v2.6.0)
 ├── README.md                               # Spécification officielle & documentation (English)
 ├── README.fr.md                            # Spécification officielle & documentation (Français)
 ├── AETHER_AI_RULES.md                      # Directives système injectées aux Agents IA
