@@ -4,6 +4,7 @@
 // =========================================================================
 
 import type { SymbolBubble, AffiliationEdge } from '../types/graph';
+import physicsWorkerRaw from './physics.worker.js?raw';
 
 export interface FolderClusterEntry {
   cx: number;
@@ -31,13 +32,11 @@ export class PhysicsController {
   private initWorker() {
     if (typeof Worker === 'undefined') return;
     try {
-      if (typeof window !== 'undefined' && (window as any).__PHYSICS_WORKER_CODE__) {
-        const blob = new Blob([(window as any).__PHYSICS_WORKER_CODE__], { type: 'application/javascript' });
-        this.worker = new Worker(URL.createObjectURL(blob));
-      } else {
-        // Standard Vite worker instantiation
-        this.worker = new Worker(new URL('./physics.worker.js', import.meta.url), { type: 'module' });
-      }
+      const workerCode =
+        (typeof window !== 'undefined' && (window as any).__PHYSICS_WORKER_CODE__) ||
+        physicsWorkerRaw;
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      this.worker = new Worker(URL.createObjectURL(blob));
 
       this.worker.onmessage = (e: MessageEvent) => {
         const { type, positions, clusters, isSleeping } = e.data;
