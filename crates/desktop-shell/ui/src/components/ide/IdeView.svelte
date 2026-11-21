@@ -12,9 +12,7 @@
     Columns2,
     ChevronLeft,
     ChevronRight,
-    PanelLeftOpen,
-    Maximize2,
-    Minimize2
+    PanelLeftOpen
   } from '@lucide/svelte';
 
   let sidebarMode = $state<'files' | 'symbols' | 'docs' | 'split'>('split');

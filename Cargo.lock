@@ -16,13 +16,11 @@ name = "ai-file-bridge"
 version = "2.6.0"
 dependencies = [
  "chrono",
- "colored",
  "core-graph",
  "notify",
  "security-linter",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -88,11 +86,7 @@ dependencies = [
 name = "arch-templates"
 version = "2.6.0"
 dependencies = [
- "blake3",
  "core-graph",
- "serde",
- "serde_json",
- "toml",
 ]
 
 [[package]]
@@ -646,16 +640,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
-name = "colored"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
-dependencies = [
- "lazy_static",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "combine"
 version = "4.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -717,7 +701,6 @@ name = "core-graph"
 version = "2.6.0"
 dependencies = [
  "bitflags 2.13.2",
- "rayon",
  "serde",
  "serde_json",
 ]
@@ -882,7 +865,6 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
- "colored",
  "core-graph",
  "futures-util",
  "obsidian-vault",
@@ -896,7 +878,6 @@ dependencies = [
  "tokio",
  "toml",
  "walkdir",
- "webbrowser",
  "wry",
 ]
 
@@ -1906,36 +1887,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jni"
-version = "0.22.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498"
-dependencies = [
- "cfg-if",
- "combine",
- "jni-macros",
- "jni-sys 0.4.1",
- "log",
- "simd_cesu8",
- "thiserror 2.0.21",
- "walkdir",
- "windows-link",
-]
-
-[[package]]
-name = "jni-macros"
-version = "0.22.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3"
-dependencies = [
- "proc-macro2",
- "quote",
- "rustc_version",
- "simd_cesu8",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "jni-sys"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2358,7 +2309,6 @@ dependencies = [
 name = "obsidian-vault"
 version = "2.6.0"
 dependencies = [
- "bitflags 2.13.2",
  "chrono",
  "core-graph",
  "rayon",
@@ -2998,7 +2948,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "tokio",
 ]
 
 [[package]]
@@ -3162,22 +3111,6 @@ dependencies = [
  "errno",
  "libc",
 ]
-
-[[package]]
-name = "simd_cesu8"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11031e251abf8611c80f460e19dbdeb54a66db918e49c65a7065b46ac7aec520"
-dependencies = [
- "rustc_version",
- "simdutf8",
-]
-
-[[package]]
-name = "simdutf8"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "siphasher"
@@ -3357,7 +3290,7 @@ dependencies = [
  "gdkx11-sys",
  "gtk",
  "instant",
- "jni 0.21.1",
+ "jni",
  "lazy_static",
  "libc",
  "log",
@@ -3888,22 +3821,6 @@ checksum = "88261b9deccee56594c11a3460c462c41f58d148598fe70ad77070126a68aba4"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "webbrowser"
-version = "1.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62c35be770821a214dbc362fc26908c853e776c0004294d0b10b8a6bad582f94"
-dependencies = [
- "jni 0.22.4",
- "log",
- "ndk-context",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "url",
- "web-sys",
 ]
 
 [[package]]
@@ -4464,7 +4381,7 @@ dependencies = [
  "html5ever",
  "http",
  "javascriptcore-rs",
- "jni 0.21.1",
+ "jni",
  "kuchikiki",
  "libc",
  "ndk 0.9.0",

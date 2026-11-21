@@ -5,24 +5,6 @@ use security_linter::contract::ReadmeContract;
 pub struct HandshakePacker;
 
 impl HandshakePacker {
-    pub fn build_prompt(
-        action_type: &str, // "Refactor" | "Test" | "Audit" | "Doc" | "Target"
-        symbol: &SymbolBubble,
-        callers: &[String],
-        dependencies: &[String],
-        contract: Option<&ReadmeContract>,
-    ) -> String {
-        let in_cat = CategorizedLiaisons {
-            internal_calls: callers.to_vec(),
-            ..Default::default()
-        };
-        let out_cat = CategorizedLiaisons {
-            internal_calls: dependencies.to_vec(),
-            ..Default::default()
-        };
-        Self::build_categorized_prompt(action_type, symbol, &in_cat, &out_cat, contract)
-    }
-
     pub fn build_categorized_prompt(
         action_type: &str,
         symbol: &SymbolBubble,

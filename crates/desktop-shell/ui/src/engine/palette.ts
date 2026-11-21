@@ -59,10 +59,6 @@ export function applyPaletteOverride(palette?: VisualPaletteConfig | null) {
   folderColorCache.clear();
 }
 
-export function resetPaletteOverride() {
-  applyPaletteOverride(null);
-}
-
 export function getLayerRgba(layer?: string): RgbaColor {
   if (!layer) return activeLayerColors.default;
   const key = layer.toLowerCase();

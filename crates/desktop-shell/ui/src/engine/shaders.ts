@@ -11,7 +11,7 @@ import {
 
 export const INSTANCE_FLOATS = 12;
 
-export const vsSource = `#version 300 es
+const vsSource = `#version 300 es
   layout(location = 0) in vec2 a_quad_pos;
   layout(location = 1) in vec2 a_node_pos;
   layout(location = 2) in float a_radius;
@@ -89,7 +89,7 @@ export const vsSource = `#version 300 es
   }
 `;
 
-export const fsSource = `#version 300 es
+const fsSource = `#version 300 es
   precision highp float;
   in vec2 v_uv;
   in vec4 v_color;
@@ -200,7 +200,7 @@ export const fsSource = `#version 300 es
   }
 `;
 
-export interface NodeShaderUniforms {
+interface NodeShaderUniforms {
   uRes: WebGLUniformLocation | null;
   uCam: WebGLUniformLocation | null;
   uZoom: WebGLUniformLocation | null;
@@ -396,7 +396,7 @@ export function swapNodeShader(
 // COSMIC SPACE, ETHEREAL NEBULA & PARALLAX STELLAR STARFIELD BACKDROP
 // =========================================================================
 
-export const bgVsSource = `#version 300 es
+const bgVsSource = `#version 300 es
   layout(location = 0) in vec2 a_pos;
   out vec2 v_uv;
   void main() {
@@ -405,7 +405,7 @@ export const bgVsSource = `#version 300 es
   }
 `;
 
-export const bgFsSource = `#version 300 es
+const bgFsSource = `#version 300 es
   precision highp float;
   in vec2 v_uv;
   uniform vec2 u_resolution;
@@ -530,7 +530,7 @@ export const bgFsSource = `#version 300 es
   }
 `;
 
-export interface BackdropUniforms {
+interface BackdropUniforms {
   uRes: WebGLUniformLocation | null;
   uCam: WebGLUniformLocation | null;
   uZoom: WebGLUniformLocation | null;

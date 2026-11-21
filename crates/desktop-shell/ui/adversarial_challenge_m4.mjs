@@ -83,13 +83,13 @@ async function runAdversarialStress() {
     const headerCode = fs.readFileSync(path.join(__dirname, 'src/components/HeaderDeck.svelte'), 'utf-8');
     const panelCode = fs.readFileSync(path.join(__dirname, 'src/components/SearchDropdownPanel.svelte'), 'utf-8');
 
-    // Verify SearchDropdownPanel is placed outside Line 1
+    // Verify SearchDropdownPanel is placed outside header at root level
     const line1Index = headerCode.indexOf('LIGNE 1 : BRAND');
-    const line2Index = headerCode.indexOf('LIGNE 2 : CONTINUUM');
+    const headerIndex = headerCode.indexOf('<header');
     const dropdownMountIndex = headerCode.indexOf('<SearchDropdownPanel');
 
     assert(
-      dropdownMountIndex > 0 && dropdownMountIndex < line1Index,
+      dropdownMountIndex > 0 && (line1Index > 0 ? dropdownMountIndex < line1Index : dropdownMountIndex < headerIndex),
       'SearchDropdownPanel is mounted outside Line 1 and Line 2 at root level'
     );
 

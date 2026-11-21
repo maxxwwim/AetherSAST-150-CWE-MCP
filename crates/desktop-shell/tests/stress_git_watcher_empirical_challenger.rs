@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
 //! Empirical Challenger Test Suite: Rust Backend Git Status & Watcher Debouncer
 //!
@@ -26,11 +26,10 @@ mod api_routes;
 
 use api_routes::*;
 use ai_file_bridge::FileWatcherBridge;
-use core_graph::bubble::{CveAnomalyRecord, SymbolBubble, SymbolKind};
 use core_graph::graph::AetherGraph;
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};

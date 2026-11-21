@@ -390,7 +390,7 @@ function globMatchesPath(glob: string, filePath: string): boolean {
   }
 }
 
-export function detectLineAstScope(lines: string[], lineIdx: number, filePath: string): string {
+function detectLineAstScope(lines: string[], lineIdx: number, filePath: string): string {
   const lowerPath = filePath.toLowerCase();
   const isTestFile =
     lowerPath.includes('/tests/') ||

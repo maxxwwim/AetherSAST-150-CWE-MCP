@@ -29,11 +29,6 @@ pub struct CveRuleDef {
 }
 
 impl CveRuleDef {
-    /// Retourne les extensions de fichiers associées à cette règle CWE
-    pub fn target_file_types(&self) -> &'static [&'static str] {
-        SecurityLinter::get_file_types_for_cwe(&self.rule_id)
-    }
-
     /// Détermine si un chemin de fichier correspond à la cible de cette règle CWE
     pub fn matches_file(&self, file_path: &str) -> bool {
         SecurityLinter::is_file_eligible_for_cwe(&self.rule_id, file_path)

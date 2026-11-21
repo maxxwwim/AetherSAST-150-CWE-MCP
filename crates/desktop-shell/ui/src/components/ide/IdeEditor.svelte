@@ -14,7 +14,6 @@
     Code2,
     Eye,
     Edit3,
-    FileCode,
     XCircle,
     BookOpen,
     SlidersHorizontal,
@@ -45,6 +44,12 @@
   // Target line highlight flash (active for ~2.5s on jump)
   let highlightedLine = $state<number | null>(null);
   let highlightTimer: any = null;
+  let pendingAutoSave = false;
+
+  // Go-to-line (Ctrl+G) overlay state
+  let isGotoLineOpen = $state(false);
+  let gotoLineInput = $state('');
+  let gotoInputEl = $state<HTMLInputElement | null>(null);
 
   // Editor View Mode: 'edit' (interactive textarea) or 'preview' (syntax highlighted lines)
   let editorViewMode = $state<'edit' | 'preview'>('edit');
@@ -174,7 +179,7 @@
     }
   });
 
-  // Keep active buffer content in sync with textarea
+  // Keep active buffer content in sync with textarea and save immediately on edit when Save Auto is enabled
   function handleContentInput() {
     if (loadedFile) {
       buffers[loadedFile] = {
@@ -183,10 +188,21 @@
         cursorLine,
         cursorCol
       };
+      if (cockpitState.settings.editorAutoSave && content !== savedContent) {
+        if (isSaving) {
+          pendingAutoSave = true;
+        } else {
+          void saveCurrentFile(true);
+        }
+      }
     }
   }
 
   async function switchToFile(filePath: string) {
+    pendingAutoSave = false;
+    if (cockpitState.settings.editorAutoSave && loadedFile && isDirty) {
+      await saveCurrentFile(true);
+    }
     // 1. Stash current buffer if modified or open
     if (loadedFile) {
       buffers[loadedFile] = {
@@ -376,25 +392,36 @@
     }
   }
 
-  export async function saveCurrentFile() {
-    if (!cockpitState.ideActiveFile || isSaving) return;
+  async function saveCurrentFile(isAuto = false) {
+    if (!cockpitState.ideActiveFile) return;
+    if (isSaving) {
+      if (isAuto) pendingAutoSave = true;
+      return;
+    }
+    if (isAuto && !isDirty) return;
+    const targetFile = cockpitState.ideActiveFile;
+    const contentToSave = content;
     isSaving = true;
+    pendingAutoSave = false;
     errorMessage = null;
-    successNotice = null;
+    if (!isAuto) successNotice = null;
     try {
-      const res = await api.saveFile(cockpitState.ideActiveFile, content);
+      const res = await api.saveFile(targetFile, contentToSave);
       if (res && res.status === 'ok') {
-        savedContent = content;
-        externalConflictContent = null;
-        if (loadedFile && buffers[loadedFile]) {
-          buffers[loadedFile].savedContent = content;
+        if (loadedFile === targetFile) {
+          savedContent = contentToSave;
+          externalConflictContent = null;
         }
-        successNotice = 'Enregistré sur disque';
+        if (buffers[targetFile]) {
+          buffers[targetFile].savedContent = contentToSave;
+        }
+        const msg = isAuto ? "Auto-enregistré à l'édit" : 'Enregistré sur disque (Ctrl+S)';
+        successNotice = msg;
         setTimeout(() => {
-          if (successNotice === 'Enregistré sur disque') {
+          if (successNotice === msg) {
             successNotice = null;
           }
-        }, 3000);
+        }, 2000);
       } else {
         errorMessage = res?.error || "Erreur lors de l'enregistrement";
       }
@@ -402,6 +429,10 @@
       errorMessage = e?.message || "Erreur d'écriture sur disque";
     } finally {
       isSaving = false;
+      if (pendingAutoSave && cockpitState.settings.editorAutoSave && isDirty) {
+        pendingAutoSave = false;
+        void saveCurrentFile(true);
+      }
     }
   }
 
@@ -455,11 +486,64 @@
     }
   }
 
+  async function openExternalEditor(editor: 'vscode' | 'notepad') {
+    if (!cockpitState.ideActiveFile) return;
+    const rel = cockpitState.ideActiveFile.replace(/\\/g, '/').replace(/^\//, '');
+    const lineCol = `${cursorLine}:${cursorCol}`;
+    try {
+      await api.launchCli(editor, lineCol, rel);
+      const label = editor === 'vscode' ? `VS Code (L${cursorLine})` : 'Notepad';
+      successNotice = `Ouvert dans ${label}`;
+      setTimeout(() => {
+        if (successNotice === `Ouvert dans ${label}`) successNotice = null;
+      }, 2200);
+    } catch {
+      if (editor === 'vscode') {
+        const root = (cockpitState.graph.project_path || '').replace(/^\\\\\?\\/, '').replace(/\\/g, '/').replace(/\/$/, '');
+        const fullPath = root ? `${root}/${rel}` : rel;
+        window.open(`vscode://file/${fullPath}:${lineCol}`, '_blank');
+      }
+    }
+  }
+
+  function applyLineEdit(newLines: string[], newCursorLine: number, newCursorCol = 1) {
+    content = newLines.join('\n');
+    handleContentInput();
+    tick().then(() => {
+      if (!textareaEl) return;
+      const safeL = Math.max(1, Math.min(newCursorLine, newLines.length));
+      let offset = 0;
+      for (let i = 0; i < safeL - 1; i++) {
+        offset += newLines[i].length + 1;
+      }
+      const colOffset = Math.max(0, Math.min(newCursorCol - 1, newLines[safeL - 1]?.length || 0));
+      textareaEl.selectionStart = textareaEl.selectionEnd = offset + colOffset;
+      updateCursorPosition();
+    });
+  }
+
+  function handleGlobalEditorKeydown(e: KeyboardEvent) {
+    if (cockpitState.viewMode !== 'ide' || !cockpitState.ideActiveFile) return;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      void saveCurrentFile(false);
+    } else if ((e.ctrlKey || e.metaKey) && (e.key === 'g' || e.key === 'G')) {
+      e.preventDefault();
+      isGotoLineOpen = true;
+      gotoLineInput = String(cursorLine);
+      tick().then(() => {
+        gotoInputEl?.focus();
+        gotoInputEl?.select();
+      });
+    }
+  }
+
   function handleTextareaKeydown(e: KeyboardEvent) {
     // Ctrl+S / Cmd+S: Save file
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
       e.preventDefault();
-      saveCurrentFile();
+      e.stopPropagation();
+      void saveCurrentFile(false);
       return;
     }
 
@@ -471,9 +555,123 @@
       return;
     }
 
-    // Tab key: Insert 4 spaces
+    // Ctrl+G / Cmd+G: Go to line (Notepad / VS Code)
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'g' || e.key === 'G')) {
+      e.preventDefault();
+      e.stopPropagation();
+      isGotoLineOpen = true;
+      gotoLineInput = String(cursorLine);
+      tick().then(() => {
+        gotoInputEl?.focus();
+        gotoInputEl?.select();
+      });
+      return;
+    }
+
+    // Ctrl+/ or Ctrl+: : Toggle line comment (VS Code)
+    if ((e.ctrlKey || e.metaKey) && (e.key === '/' || e.key === ':')) {
+      e.preventDefault();
+      const idx = Math.max(0, Math.min(cursorLine - 1, lines.length - 1));
+      const prefix = syntaxLanguage === 'python' || syntaxLanguage === 'toml' ? '# ' : '// ';
+      const rawPrefix = prefix.trim();
+      const cur = lines[idx] ?? '';
+      const trimmed = cur.trimStart();
+      const leadLen = cur.length - trimmed.length;
+      const nextLines = [...lines];
+      if (trimmed.startsWith(prefix)) {
+        nextLines[idx] = cur.slice(0, leadLen) + trimmed.slice(prefix.length);
+      } else if (trimmed.startsWith(rawPrefix)) {
+        nextLines[idx] = cur.slice(0, leadLen) + trimmed.slice(rawPrefix.length);
+      } else {
+        nextLines[idx] = cur.slice(0, leadLen) + prefix + trimmed;
+      }
+      applyLineEdit(nextLines, cursorLine, cursorCol);
+      return;
+    }
+
+    // Ctrl+D or Alt+Shift+ArrowDown / Alt+Shift+ArrowUp: Duplicate current line (VS Code / Notepad++)
+    if (
+      ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'd' || e.key === 'D')) ||
+      (e.altKey && e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp'))
+    ) {
+      e.preventDefault();
+      const idx = Math.max(0, Math.min(cursorLine - 1, lines.length - 1));
+      const nextLines = [...lines];
+      nextLines.splice(idx + 1, 0, lines[idx] ?? '');
+      const nextLine = e.key === 'ArrowUp' ? cursorLine : cursorLine + 1;
+      applyLineEdit(nextLines, nextLine, cursorCol);
+      return;
+    }
+
+    // Alt+ArrowUp / Alt+ArrowDown: Move current line up / down (VS Code)
+    if (e.altKey && !e.shiftKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      const idx = Math.max(0, Math.min(cursorLine - 1, lines.length - 1));
+      const targetIdx = e.key === 'ArrowUp' ? idx - 1 : idx + 1;
+      if (targetIdx >= 0 && targetIdx < lines.length) {
+        const nextLines = [...lines];
+        const tmp = nextLines[idx];
+        nextLines[idx] = nextLines[targetIdx];
+        nextLines[targetIdx] = tmp;
+        applyLineEdit(nextLines, targetIdx + 1, cursorCol);
+      }
+      return;
+    }
+
+    // Ctrl+Shift+K: Delete current line (VS Code)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      const idx = Math.max(0, Math.min(cursorLine - 1, lines.length - 1));
+      const nextLines = [...lines];
+      if (nextLines.length <= 1) {
+        nextLines[0] = '';
+      } else {
+        nextLines.splice(idx, 1);
+      }
+      applyLineEdit(nextLines, Math.min(cursorLine, nextLines.length), 1);
+      return;
+    }
+
+    // Ctrl+L: Select current line (VS Code)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+      e.preventDefault();
+      if (!textareaEl) return;
+      const idx = Math.max(0, Math.min(cursorLine - 1, lines.length - 1));
+      let startOffset = 0;
+      for (let i = 0; i < idx; i++) startOffset += lines[i].length + 1;
+      const endOffset = Math.min(content.length, startOffset + lines[idx].length + 1);
+      textareaEl.selectionStart = startOffset;
+      textareaEl.selectionEnd = endOffset;
+      return;
+    }
+
+    // Ctrl+Enter / Ctrl+Shift+Enter: Insert line below / above (VS Code)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      const idx = Math.max(0, Math.min(cursorLine - 1, lines.length - 1));
+      const indentMatch = (lines[idx] ?? '').match(/^\s*/);
+      const indent = indentMatch ? indentMatch[0] : '';
+      const nextLines = [...lines];
+      const insertAt = e.shiftKey ? idx : idx + 1;
+      nextLines.splice(insertAt, 0, indent);
+      applyLineEdit(nextLines, insertAt + 1, indent.length + 1);
+      return;
+    }
+
+    // Tab / Shift+Tab: Indent or Outdent 4 spaces
     if (e.key === 'Tab') {
       e.preventDefault();
+      if (e.shiftKey) {
+        const idx = Math.max(0, Math.min(cursorLine - 1, lines.length - 1));
+        const cur = lines[idx] ?? '';
+        const removed = cur.startsWith('    ') ? 4 : cur.match(/^ {1,3}/)?.[0].length ?? (cur.startsWith('\t') ? 1 : 0);
+        if (removed > 0) {
+          const nextLines = [...lines];
+          nextLines[idx] = cur.slice(removed);
+          applyLineEdit(nextLines, cursorLine, Math.max(1, cursorCol - removed));
+        }
+        return;
+      }
       const start = textareaEl?.selectionStart ?? 0;
       const end = textareaEl?.selectionEnd ?? 0;
       const spaces = '    ';
@@ -602,6 +800,8 @@
     }
   });
 </script>
+
+<svelte:window onkeydown={handleGlobalEditorKeydown} />
 
 <div class="w-full h-full flex flex-col bg-[#060810] text-slate-100 overflow-hidden relative">
   <!-- Multi-Tab Strip & Actions Bar -->
@@ -747,10 +947,54 @@
         </button>
       </div>
 
+      <!-- Open in VS Code / Notepad Quick Shortcuts -->
+      {#if cockpitState.ideActiveFile}
+        <button
+          type="button"
+          onclick={() => openExternalEditor('vscode')}
+          class="flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-mono bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 transition-colors cursor-pointer"
+          title="Ouvrir ce fichier à la ligne {cursorLine} dans VS Code"
+        >
+          <Code2 class="w-3 h-3 text-sky-400" />
+          <span class="hidden lg:inline">VS Code</span>
+        </button>
+        <button
+          type="button"
+          onclick={() => openExternalEditor('notepad')}
+          class="flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-mono bg-white/[0.04] hover:bg-white/10 text-slate-300 border border-white/10 transition-colors cursor-pointer"
+          title="Ouvrir ce fichier dans Notepad (Bloc-notes)"
+        >
+          <Edit3 class="w-3 h-3 text-amber-400" />
+          <span class="hidden xl:inline">Notepad</span>
+        </button>
+      {/if}
+
+      <!-- Save Mode Quick Toggle (Auto-Save à l'édit vs Ctrl+S) -->
+      <button
+        type="button"
+        onclick={() => {
+          cockpitState.settings.editorAutoSave = !cockpitState.settings.editorAutoSave;
+          cockpitState.saveLocalSettings();
+          if (cockpitState.settings.editorAutoSave && isDirty) {
+            void saveCurrentFile(true);
+          }
+        }}
+        class="flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-mono border transition-colors cursor-pointer
+          {cockpitState.settings.editorAutoSave
+            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-semibold'
+            : 'bg-white/[0.04] text-slate-400 hover:text-white border-white/10'}"
+        title={cockpitState.settings.editorAutoSave
+          ? "Mode Save Auto actif (sauvegarde directe à l'édit) — Cliquez pour passer en Manuel (Ctrl+S)"
+          : "Mode Manuel (Ctrl+S) — Cliquez pour activer Save Auto à l'édit"}
+      >
+        <span class="w-1.5 h-1.5 rounded-full {cockpitState.settings.editorAutoSave ? 'bg-emerald-400' : 'bg-slate-500'}"></span>
+        <span>{cockpitState.settings.editorAutoSave ? 'Save Auto' : 'Ctrl+S'}</span>
+      </button>
+
       <!-- Save Button -->
       <button
         type="button"
-        onclick={saveCurrentFile}
+        onclick={() => saveCurrentFile(false)}
         disabled={isSaving || !cockpitState.ideActiveFile}
         class="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer shadow-sm
           {isDirty ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.4)] animate-pulse' : 'bg-white/10 hover:bg-white/15 text-slate-200'}"
@@ -765,6 +1009,43 @@
       </button>
     </div>
   </div>
+
+  <!-- Go-To-Line Overlay Banner (Ctrl+G) -->
+  {#if isGotoLineOpen}
+    <div class="px-3 py-1.5 bg-[#0d1322] border-b border-emerald-500/30 flex items-center justify-between gap-2 text-xs shadow-md shrink-0 z-20">
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-mono text-emerald-300 font-semibold">Aller à la ligne (1–{lineCount}) :</span>
+        <input
+          bind:this={gotoInputEl}
+          type="number"
+          min="1"
+          max={lineCount}
+          bind:value={gotoLineInput}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const target = parseInt(String(gotoLineInput), 10);
+              if (!isNaN(target)) scrollToLine(target);
+              isGotoLineOpen = false;
+              textareaEl?.focus();
+            } else if (e.key === 'Escape') {
+              isGotoLineOpen = false;
+              textareaEl?.focus();
+            }
+          }}
+          class="w-24 px-2 py-0.5 rounded bg-white/[0.06] border border-white/15 text-slate-100 text-[11px] font-mono focus:outline-none focus:border-emerald-400"
+        />
+      </div>
+      <button
+        type="button"
+        onclick={() => (isGotoLineOpen = false)}
+        class="p-1 rounded text-slate-400 hover:text-white cursor-pointer"
+        title="Fermer (Échap)"
+      >
+        <X class="w-3.5 h-3.5" />
+      </button>
+    </div>
+  {/if}
 
   <!-- In-File Search Overlay Banner (Ctrl+F) -->
   {#if isSearchOpen}

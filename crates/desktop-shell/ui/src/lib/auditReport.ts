@@ -1,8 +1,7 @@
 import type { CockpitState } from '../state/graphState.svelte';
-import type { CveAnomalyRecord, SymbolBubble } from '../types/graph';
 import { getAetherGraphStyles, renderAetherBubbleGraphHtml } from './auditGraphHtml';
 
-export interface AuditSummary {
+interface AuditSummary {
   projectName: string;
   projectPath: string;
   timestamp: string;

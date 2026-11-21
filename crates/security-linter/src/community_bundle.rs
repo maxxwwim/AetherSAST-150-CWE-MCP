@@ -12,11 +12,6 @@ pub const DEFAULT_COMMUNITY_BUNDLE_NAME: &str = "community";
 pub struct CommunityBundle;
 
 impl CommunityBundle {
-    /// Returns the raw embedded Semgrep YAML string.
-    pub fn raw_yaml() -> &'static str {
-        EMBEDDED_COMMUNITY_YAML
-    }
-
     /// Converts the embedded YAML into a ready-to-run PluginManifest.
     pub fn load_embedded_manifest() -> Result<PluginManifest, Box<dyn std::error::Error>> {
         let rule_file = SemgrepImporter::parse_yaml(EMBEDDED_COMMUNITY_YAML)

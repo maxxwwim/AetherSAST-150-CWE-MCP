@@ -1109,10 +1109,6 @@ impl AppState {
         *self.project_type.read().await
     }
 
-    pub async fn get_detection_report(&self) -> Option<ProjectDetectionReport> {
-        self.detection_report.read().await.clone()
-    }
-
     pub async fn get_active_graph(&self) -> AetherGraph {
         self.graph.read().await.clone()
     }

@@ -1,5 +1,5 @@
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 PAPER_API_BASE = "https://api.papermc.io/v2"
 

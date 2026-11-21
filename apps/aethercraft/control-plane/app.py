@@ -1,7 +1,6 @@
-import os
 import uuid
 import re
-from flask import Flask, render_template, request, jsonify, session, abort, redirect
+from flask import Flask, render_template, request, jsonify, session, redirect
 from services.manifest_generator import build_server_manifest
 from services.store_service import get_store_items, get_item_by_id, process_checkout, ORDERS_HISTORY
 from services.player_service import get_leaderboards, get_player_profile

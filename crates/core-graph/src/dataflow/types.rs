@@ -453,11 +453,6 @@ impl SanitizerRule {
         Self { name: name.into(), target_cwes: vec!["*".to_string()], patterns: Vec::new(), match_kind, language: None, neutralizes_all: true }
     }
 
-    pub fn with_patterns(mut self, patterns: Vec<String>) -> Self {
-        self.patterns = patterns;
-        self
-    }
-
     pub fn with_language(mut self, lang: impl Into<String>) -> Self {
         self.language = Some(lang.into());
         self
@@ -719,11 +714,6 @@ impl TaintSourceRule {
         }
     }
 
-    pub fn with_cwe(mut self, cwe: impl Into<String>) -> Self {
-        self.cwe = cwe.into();
-        self
-    }
-
     pub fn with_language(mut self, lang: impl Into<String>) -> Self {
         self.language = Some(lang.into());
         self
@@ -808,11 +798,6 @@ impl TaintSinkRule {
             language: None,
             description: String::new(),
         }
-    }
-
-    pub fn with_cwe(mut self, cwe: impl Into<String>) -> Self {
-        self.cwe = cwe.into();
-        self
     }
 
     pub fn with_rule(mut self, rule_id: impl Into<String>, severity: impl Into<String>) -> Self {

@@ -362,11 +362,11 @@
           </div>
         </div>
 
-        <!-- 2. Performance GPU & Lazy Loading -->
+        <!-- 2. Performance GPU, Audio & Éditeur IDE -->
         <div class="p-4 rounded-xl bg-white/[0.025] border border-white/10 space-y-3">
           <div class="flex items-center gap-2 text-xs font-bold text-emerald-300 uppercase tracking-wider">
             <Cpu class="w-4 h-4" />
-            <span>2. Performance GPU, Mémoire & Audio</span>
+            <span>2. Performance GPU, Audio & Sauvegarde Éditeur (Save Auto / Ctrl+S)</span>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -401,6 +401,59 @@
                 <option value="120">120 FPS</option>
                 <option value="unlimited">Max</option>
               </select>
+            </div>
+          </div>
+
+          <!-- Mode d'enregistrement Éditeur IDE & Docs (Save Auto à l'édit vs Ctrl+S) -->
+          <div class="p-3 rounded-lg bg-sky-950/20 border border-sky-500/30 space-y-2.5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="space-y-0.5">
+                <div class="text-xs font-semibold text-sky-200 flex items-center gap-2">
+                  <span>💾 Mode d'enregistrement Éditeur IDE & Docs</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-mono {cockpitState.settings.editorAutoSave ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}">
+                    {cockpitState.settings.editorAutoSave ? "Save Auto (à l'édit)" : 'Manuel (Ctrl+S)'}
+                  </span>
+                </div>
+                <div class="text-[10.5px] text-slate-400">
+                  Choisissez entre la sauvegarde automatique directe à chaque édition ou l'enregistrement manuel via <kbd class="px-1 py-0.2 bg-white/10 rounded text-slate-200 font-mono">Ctrl+S</kbd>.
+                </div>
+              </div>
+
+              <div class="flex items-center bg-black/40 border border-white/15 rounded-lg p-0.5 text-xs font-mono shrink-0">
+                <button
+                  type="button"
+                  onclick={() => {
+                    cockpitState.settings.editorAutoSave = false;
+                    cockpitState.saveLocalSettings();
+                  }}
+                  class="px-2.5 py-1 rounded-md transition-colors cursor-pointer {!cockpitState.settings.editorAutoSave ? 'bg-amber-500 text-slate-950 font-bold shadow-xs' : 'text-slate-300 hover:text-white'}"
+                >
+                  Ctrl+S
+                </button>
+                <button
+                  type="button"
+                  onclick={() => {
+                    cockpitState.settings.editorAutoSave = true;
+                    cockpitState.saveLocalSettings();
+                  }}
+                  class="px-2.5 py-1 rounded-md transition-colors cursor-pointer {cockpitState.settings.editorAutoSave ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs' : 'text-slate-300 hover:text-white'}"
+                >
+                  Save Auto (à l'édit)
+                </button>
+              </div>
+            </div>
+
+            <!-- Raccourcis Notepad / VS Code intégrés -->
+            <div class="pt-2 border-t border-white/10 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono text-slate-400">
+              <span class="text-sky-300 font-semibold">⌨️ Raccourcis VS Code / Notepad :</span>
+              <span><kbd class="px-1 bg-white/10 rounded text-slate-200">Ctrl+S</kbd> Enregistrer</span>
+              <span><kbd class="px-1 bg-white/10 rounded text-slate-200">Ctrl+F</kbd> Rechercher</span>
+              <span><kbd class="px-1 bg-white/10 rounded text-slate-200">Ctrl+G</kbd> Aller ligne</span>
+              <span><kbd class="px-1 bg-white/10 rounded text-slate-200">Ctrl+/</kbd> Commenter</span>
+              <span><kbd class="px-1 bg-white/10 rounded text-slate-200">Ctrl+D</kbd> Dupliquer</span>
+              <span><kbd class="px-1 bg-white/10 rounded text-slate-200">Alt+↑/↓</kbd> Déplacer</span>
+              <span><kbd class="px-1 bg-white/10 rounded text-slate-200">Ctrl+Shift+K</kbd> Suppr. ligne</span>
+              <span><kbd class="px-1 bg-white/10 rounded text-slate-200">Tab / Shift+Tab</kbd> Indenter</span>
             </div>
           </div>
         </div>

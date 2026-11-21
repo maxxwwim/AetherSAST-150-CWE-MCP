@@ -61,7 +61,6 @@ pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
     };
 
     struct FolderInfo {
-        _name: String,
         sub: String,
         indices: Vec<usize>,
         radius: f64,
@@ -70,7 +69,6 @@ pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
     struct BranchInfo {
         name: String,
         folders: Vec<FolderInfo>,
-        _total_nodes: usize,
         envelope_r: f64,
     }
 
@@ -81,7 +79,6 @@ pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
         // Rayon cellulaire dynamique généreux proportionnel au nombre de symboles (espace accru classes & fonctions)
         let radius = ((n_len as f64).sqrt() * 95.0 + 90.0).clamp(150.0, 950.0);
         branch_map.entry(branch).or_default().push(FolderInfo {
-            _name: dir_name,
             sub,
             indices,
             radius,
@@ -101,7 +98,6 @@ pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
                     a.sub.cmp(&b.sub)
                 }
             });
-            let total_nodes: usize = folders.iter().map(|f| f.indices.len()).sum();
             let sum_r: f64 = folders.iter().map(|f| f.radius).sum();
             let envelope_r = if folders.len() == 1 {
                 folders[0].radius + 80.0
@@ -111,7 +107,6 @@ pub fn compute_obsidian_layout(nodes: &mut [SymbolBubble]) {
             BranchInfo {
                 name,
                 folders,
-                _total_nodes: total_nodes,
                 envelope_r,
             }
         })

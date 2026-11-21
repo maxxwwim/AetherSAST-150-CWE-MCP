@@ -15,7 +15,7 @@ export interface VisualPaletteConfig {
   contract_warning?: string;
 }
 
-export interface VisualOverlayConfig {
+interface VisualOverlayConfig {
   membrane_style?: MembraneStyle | string;
   edge_style?: EdgeStyle | string;
   edge_pulse_speed?: number;
@@ -41,7 +41,7 @@ export interface VisualPluginPack {
   validation_warnings?: string[];
 }
 
-export const MAX_GLSL_BYTES = 32 * 1024;
+const MAX_GLSL_BYTES = 32 * 1024;
 const MAX_FOR_BOUND = 128;
 
 export function hexToRgba(hex: string, alpha = 1.0): RgbaColor | null {

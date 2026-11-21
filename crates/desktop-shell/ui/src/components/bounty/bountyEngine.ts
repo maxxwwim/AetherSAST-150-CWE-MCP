@@ -5,7 +5,6 @@ import type {
   SourceKind,
   SymbolBubble,
   TaintStep,
-  TaintStepKind,
 } from '../../types/graph';
 
 export type BountyStep = 1 | 2 | 3 | 4;
@@ -126,7 +125,7 @@ export interface DataFlowNode {
   direction: 'IN' | 'CORE' | 'OUT';
 }
 
-export interface DataVarFlowEntry {
+interface DataVarFlowEntry {
   name: string;
   type: string;
   direction: 'IN' | 'TRANSIT' | 'OUT';
@@ -352,7 +351,7 @@ export function getTargetEndpoint(a: Pick<CveAnomalyRecord, 'file_path'>): strin
   return `/api/${slug}`;
 }
 
-export function formatSourceKind(kind?: SourceKind): string {
+function formatSourceKind(kind?: SourceKind): string {
   if (!kind) return 'Untrusted Input';
   if (typeof kind === 'string') {
     const map: Record<string, string> = {
@@ -370,7 +369,7 @@ export function formatSourceKind(kind?: SourceKind): string {
   return kind.Custom || 'Custom Source';
 }
 
-export function formatSinkKind(kind?: SinkKind): string {
+function formatSinkKind(kind?: SinkKind): string {
   if (!kind) return 'Critical Sink';
   if (typeof kind === 'string') {
     const map: Record<string, string> = {
@@ -386,7 +385,7 @@ export function formatSinkKind(kind?: SinkKind): string {
   return kind.Custom || 'Custom Sink';
 }
 
-export function formatTaintStepKind(step: TaintStep): { label: string; detail: string } {
+function formatTaintStepKind(step: TaintStep): { label: string; detail: string } {
   const sk = step.step_kind;
   if (sk === 'DirectAssignment') {
     return {

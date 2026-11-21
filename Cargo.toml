@@ -52,5 +52,3 @@ blake3 = "1.5"
 # Web Server & CLI
 axum = "0.7"
 clap = { version = "4.5", features = ["derive"] }
-colored = "2.1"
-webbrowser = "1.0"

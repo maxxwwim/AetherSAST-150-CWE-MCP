@@ -2,7 +2,6 @@ use core_graph::dataflow::{
     DataflowEdge, DataflowGraph, SanitizerRule, SinkKind, SourceKind, SsaVar,
     TaintRuleSet, TaintSink, TaintSource, TaintStepKind,
 };
-use core_graph::graph::AetherGraph;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -146,24 +145,6 @@ impl TaintExtractor {
         Self::link_inter_procedural(&mut dfg, &functions, &call_sites);
 
         dfg
-    }
-
-    /// Enriches an existing AetherGraph by extracting dataflow and linking it with CVE anomalies.
-    pub fn enrich_aether_graph(graph: &mut AetherGraph, custom_sanitizers: &[SanitizerRule]) {
-        let mut files = Vec::new();
-        for node in &graph.nodes {
-            if node.is_file {
-                if let Some(ref content) = node.metadata.raw_content {
-                    files.push((node.file_path.as_str(), content.as_str()));
-                }
-            }
-        }
-
-        if !files.is_empty() {
-            let dfg = Self::extract_multi(&files, custom_sanitizers);
-            graph.dataflow_graph = Some(dfg);
-            graph.compute_dataflow_taint(custom_sanitizers);
-        }
     }
 
     /// Intra-procedural scan: extracts variables, versions, assignments, sources, and sinks within functions.

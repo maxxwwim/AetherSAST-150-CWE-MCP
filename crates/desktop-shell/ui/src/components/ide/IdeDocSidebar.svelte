@@ -1,17 +1,12 @@
 <script lang="ts">
-  import { cockpitState, getNodeAlertKind } from '../../state/graphState.svelte';
+  import { cockpitState } from '../../state/graphState.svelte';
   import {
-    BookOpen,
     FileText,
     Search,
     X,
     Lock,
-    ShieldCheck,
-    ShieldAlert,
     ChevronRight,
-    Sparkles,
-    Layers,
-    FileCode2
+    Sparkles
   } from '@lucide/svelte';
 
   let docSearch = $state('');

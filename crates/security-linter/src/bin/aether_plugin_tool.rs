@@ -1,14 +1,9 @@
-pub use security_linter::lexer;
-pub use security_linter::plugin;
 use security_linter::plugin::{PluginEngine, PluginManifest, PluginRule, RuleConditions, RuleTestCase};
 use security_linter::CommunityBundle;
+use security_linter::semgrep_importer::SemgrepImporter;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-#[path = "../semgrep_importer.rs"]
-pub mod semgrep_importer;
-use semgrep_importer::SemgrepImporter;
 
 fn print_banner() {
     println!("╔═══════════════════════════════════════════════════════════════╗");

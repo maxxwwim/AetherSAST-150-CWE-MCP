@@ -7,7 +7,7 @@ pub mod manifest;
 pub mod reachability;
 
 pub use bubble::{
-    AstAttribute, AstMethod, CveAnomalyRecord, GalaxyNode, LayoutPositions, Point2D, SymbolBubble,
+    AstAttribute, AstMethod, CveAnomalyRecord, LayoutPositions, Point2D, SymbolBubble,
     SymbolKind, SymbolMetadata,
 };
 pub use dataflow::{

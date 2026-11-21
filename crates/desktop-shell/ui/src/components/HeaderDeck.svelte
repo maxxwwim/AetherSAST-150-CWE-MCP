@@ -45,7 +45,9 @@
     Grid,
     ShieldOff,
     Compass,
-    Palette
+    Palette,
+    Menu as MenuIcon,
+    ChevronDown
   } from '@lucide/svelte';
 
   // ---------------------------------------------------------------------------
@@ -65,6 +67,16 @@
   let openMenu = $state<string | null>(null);
   let lastHoverSwitchTs = 0;
   let menubarEl = $state<HTMLElement | null>(null);
+
+  // Menu responsive (écrans compacts / tablettes / fenêtres réduites)
+  let isResponsiveMenuOpen = $state(false);
+  let responsiveActiveMenuId = $state<string>('file');
+  let responsiveMenuEl = $state<HTMLElement | null>(null);
+
+  function closeAllMenus() {
+    openMenu = null;
+    isResponsiveMenuOpen = false;
+  }
 
   const activeTaskCount = $derived(
     cockpitState.tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length
@@ -210,7 +222,7 @@
 
   function openSearch() {
     isSearchDropdownOpen = true;
-    openMenu = null;
+    closeAllMenus();
   }
 
   function closeSearch() {
@@ -220,19 +232,24 @@
   function handleWindowKeyDown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
       e.preventDefault();
-      openMenu = null;
+      closeAllMenus();
       searchInputEl?.focus();
       isSearchDropdownOpen = true;
       return;
     }
-    if (e.key === 'Escape' && openMenu) {
-      openMenu = null;
+    if (e.key === 'Escape') {
+      if (openMenu || isResponsiveMenuOpen) {
+        closeAllMenus();
+      }
     }
   }
 
   function handleWindowPointerDown(e: PointerEvent) {
     if (openMenu && menubarEl && !menubarEl.contains(e.target as Node)) {
       openMenu = null;
+    }
+    if (isResponsiveMenuOpen && responsiveMenuEl && !responsiveMenuEl.contains(e.target as Node)) {
+      isResponsiveMenuOpen = false;
     }
   }
 
@@ -279,13 +296,13 @@
     if (hit) {
       cockpitState.selectSymbol(hit.id, true);
     }
-    openMenu = null;
+    closeAllMenus();
   }
 
   async function clearAgentsFromMenu() {
     await api.clearTelemetry().catch(() => {});
     cockpitState.clearAiTrail();
-    openMenu = null;
+    closeAllMenus();
   }
 
   type MenuEntry =
@@ -295,12 +312,21 @@
     | { kind: 'path' }
     | { kind: 'agents' }
     | { kind: 'visuals' };
-  type Menu = { id: string; label: string; width?: string; entries: MenuEntry[] };
+  type Menu = {
+    id: string;
+    label: string;
+    icon?: any;
+    iconClass?: string;
+    width?: string;
+    entries: MenuEntry[];
+  };
 
   const menus: Menu[] = [
     {
       id: 'file',
       label: 'Fichier',
+      icon: FolderGit2,
+      iconClass: 'text-sky-400',
       width: 'w-[22rem]',
       entries: [
         { kind: 'header', label: 'Projet & workspace' },
@@ -354,6 +380,8 @@
     {
       id: 'view',
       label: 'Vue',
+      icon: Orbit,
+      iconClass: 'text-indigo-400',
       width: 'w-[21rem]',
       entries: [
         { kind: 'header', label: 'Espace de travail (Graph | IDE)' },
@@ -454,6 +482,8 @@
     {
       id: 'display',
       label: 'Affichage',
+      icon: Layers,
+      iconClass: 'text-cyan-400',
       width: 'w-[21rem]',
       entries: [
         { kind: 'header', label: 'Graphe' },
@@ -544,6 +574,8 @@
     {
       id: 'security',
       label: 'Sécurité',
+      icon: ShieldAlert,
+      iconClass: 'text-rose-400',
       width: 'w-[21rem]',
       entries: [
         {
@@ -592,6 +624,8 @@
     {
       id: 'plugins',
       label: 'Plugins',
+      icon: Plug,
+      iconClass: 'text-purple-400',
       width: 'w-[22rem]',
       entries: [
         { kind: 'header', label: 'Centre Plugins SAST & Taint YAML' },
@@ -632,6 +666,8 @@
     {
       id: 'ai',
       label: 'IA',
+      icon: Bot,
+      iconClass: 'text-emerald-400',
       width: 'w-[22rem]',
       entries: [
         { kind: 'agents' },
@@ -657,6 +693,8 @@
     {
       id: 'tools',
       label: 'Outils',
+      icon: CheckSquare,
+      iconClass: 'text-amber-400',
       width: 'w-[21rem]',
       entries: [
         {
@@ -701,8 +739,12 @@
 
   function runItem(item: MenuItem) {
     item.run();
-    if (!item.keepOpen) openMenu = null;
+    if (!item.keepOpen) closeAllMenus();
   }
+
+  const activeResponsiveMenu = $derived(
+    menus.find((m) => m.id === responsiveActiveMenuId) || menus[0]
+  );
 
   const isVaultGraphActive = $derived(
     cockpitState.hasVaultView &&
@@ -741,6 +783,11 @@
   />
 {/if}
 
+<!-- Backdrop overlay for responsive dropdown -->
+{#if isResponsiveMenuOpen}
+  <div class="fixed inset-0 z-[68] bg-black/40 backdrop-blur-[1px]" onclick={() => (isResponsiveMenuOpen = false)} role="presentation"></div>
+{/if}
+
 <!-- ========================================================================= -->
 <!-- HEADER UNIQUE (1 ligne, h-11 / 44px) : Brand · Menus · Omnibox · Accès rapides -->
 <!-- ========================================================================= -->
@@ -775,8 +822,307 @@
     {/if}
   </div>
 
-  <!-- Zone B : Barre de menus déroulants -->
-  <nav bind:this={menubarEl} class="flex items-center gap-0.5 shrink-0" aria-label="Menu principal">
+  <!-- Snippet de rendu unifié des entrées de menu (Desktop & Responsive) -->
+  {#snippet renderMenuEntries(entries: MenuEntry[])}
+    {#each entries as entry, i (i)}
+      {#if entry.kind === 'header'}
+        {#if !entry.when || entry.when()}
+          <div class="px-2 pt-2 pb-1 text-[10px] text-slate-500 font-semibold uppercase tracking-wider {i > 0 ? 'border-t border-white/[0.06] mt-1' : ''}">
+            {entry.label}
+          </div>
+        {/if}
+      {:else if entry.kind === 'sep'}
+        <div class="h-px bg-white/[0.08] my-1 mx-1"></div>
+      {:else if entry.kind === 'visuals'}
+        <div class="flex flex-col gap-0.5 px-1 pb-1">
+          {#each cockpitState.allVisualPlugins as vp (vp.id)}
+            {@const isActiveVp = cockpitState.activeVisualPluginId === vp.id}
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={isActiveVp}
+              onclick={() => cockpitState.selectVisualPlugin(vp.id, true)}
+              class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer {isActiveVp ? 'bg-cyan-500/15 text-white border border-cyan-400/35' : 'text-slate-200 hover:bg-white/10 border border-transparent'}"
+            >
+              <span class="flex items-center gap-2 min-w-0">
+                <span class="flex items-center -space-x-1 shrink-0">
+                  {#each (vp.palette?.background || ['#04050b', '#0ea5e9', '#a855f7']).slice(0, 3) as sw}
+                    <span class="w-2.5 h-2.5 rounded-full border border-black/60" style="background-color: {sw}"></span>
+                  {/each}
+                </span>
+                <span class="min-w-0">
+                  <span class="block text-[11.5px] font-medium truncate">{vp.name}</span>
+                  <span class="block text-[9.5px] text-slate-400 truncate">
+                    {vp.overlay?.membrane_style || 'organic'} · {vp.overlay?.edge_style || 'bezier'}{vp.builtin ? '' : ' · custom'}
+                  </span>
+                </span>
+              </span>
+              <span class="shrink-0 w-3 h-3 rounded-full border flex items-center justify-center {isActiveVp ? 'border-cyan-400' : 'border-white/20'}">
+                {#if isActiveVp}<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>{/if}
+              </span>
+            </button>
+          {/each}
+        </div>
+      {:else if entry.kind === 'agents'}
+        {#if cockpitState.activeAgents.length > 0}
+          <div class="px-2 pt-1.5 pb-1 flex items-center justify-between text-[10px] text-purple-300 font-semibold uppercase tracking-wider">
+            <span class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              Agents IA actifs ({cockpitState.activeAgents.length})
+            </span>
+            <button
+              type="button"
+              onclick={clearAgentsFromMenu}
+              class="text-[9.5px] font-normal normal-case text-slate-400 hover:text-rose-300 px-1.5 py-0.5 rounded hover:bg-rose-500/10 cursor-pointer transition-colors"
+              title="Effacer la télémétrie agents"
+            >
+              Effacer
+            </button>
+          </div>
+          <div class="flex flex-col gap-0.5 mb-1 max-h-48 overflow-y-auto">
+            {#each cockpitState.activeAgents as ag (ag.agentId)}
+              <button
+                type="button"
+                role="menuitem"
+                onclick={() => focusAgentTarget(ag.target)}
+                class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left hover:bg-white/[0.07] transition-colors cursor-pointer"
+                title="{ag.agentName} • {ag.action}: {ag.details}"
+              >
+                <span class="flex items-center gap-2 min-w-0">
+                  <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {ag.color}"></span>
+                  <span class="min-w-0">
+                    <span class="block text-[11.5px] font-semibold text-slate-100 truncate">{ag.agentName}</span>
+                    {#if ag.action}
+                      <span class="block text-[9.5px] text-slate-400 truncate">{ag.action}</span>
+                    {/if}
+                  </span>
+                </span>
+                {#if ag.target}
+                  <span class="px-1.5 py-0.5 rounded bg-black/50 border border-white/10 font-mono text-[9.5px] text-sky-300 truncate max-w-[115px] shrink-0">
+                    ➔ {ag.target}
+                  </span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+          <div class="h-px bg-white/[0.08] my-1 mx-1"></div>
+        {/if}
+      {:else if entry.kind === 'path'}
+        <form
+          onsubmit={analyzeFolderFromBar}
+          class="flex items-center rounded-md bg-white/[0.04] border border-white/10 focus-within:border-sky-400/60 px-1 py-0.5 gap-1 mx-0.5 mb-1"
+          title="Chemin du dossier ou workspace actif (une URL ouvre le Scanner de surface)"
+        >
+          <input
+            type="text"
+            bind:value={folderInput}
+            placeholder="Chemin absolu ou URL..."
+            class="flex-1 min-w-0 bg-transparent border-none outline-none text-[11px] font-mono text-slate-200 placeholder:text-slate-500 px-1 py-1"
+          />
+          <button
+            type="submit"
+            disabled={isAnalyzingBar}
+            title="Lancer l'analyse AST du dossier"
+            class="flex items-center gap-1 px-2 py-1 rounded bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-200 text-[10.5px] font-semibold transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+          >
+            <RefreshCw class="w-3 h-3 {isAnalyzingBar ? 'animate-spin' : ''}" />
+            {isAnalyzingBar ? '...' : 'Analyser'}
+          </button>
+        </form>
+        {#if fileActionError}
+          <div class="mx-1 mb-1 px-2 py-1 rounded bg-rose-500/15 border border-rose-500/35 text-[10.5px] font-mono text-rose-200">
+            {fileActionError}
+          </div>
+        {/if}
+      {:else if !entry.when || entry.when()}
+        {@const Icon = entry.icon}
+        {@const isOn = entry.active ? entry.active() : false}
+        {@const badge = entry.badge ? entry.badge() : null}
+        <button
+          type="button"
+          role={entry.mode === 'toggle' ? 'menuitemcheckbox' : entry.mode === 'radio' ? 'menuitemradio' : 'menuitem'}
+          aria-checked={entry.mode ? isOn : undefined}
+          onclick={() => runItem(entry)}
+          class="group flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer {isOn && entry.mode !== 'toggle' ? 'bg-white/[0.07] text-white' : 'text-slate-200 hover:bg-white/10 hover:text-white'}"
+        >
+          <span class="w-4 flex justify-center shrink-0">
+            {#if Icon}<Icon class="w-3.5 h-3.5 {entry.iconClass ?? 'text-slate-400'}" />{:else if entry.emoji}{entry.emoji}{/if}
+          </span>
+          <span class="flex-1 min-w-0 flex flex-col">
+            <span class="text-[12px] leading-tight">{entry.label}</span>
+            {#if entry.desc}
+              <span class="text-[10.5px] leading-tight text-slate-500 group-hover:text-slate-400 truncate">{entry.desc}</span>
+            {/if}
+          </span>
+          {#if badge !== null && badge !== undefined && badge !== 0}
+            <span class="px-1.5 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-100 font-mono text-[10px] font-bold shrink-0">{badge}</span>
+          {/if}
+          {#if entry.shortcut}
+            <kbd class="shrink-0 px-1 py-0.5 text-[9.5px] font-mono rounded bg-white/[0.06] text-slate-400 border border-white/10">{entry.shortcut}</kbd>
+          {/if}
+          {#if entry.mode === 'toggle'}
+            <span class="shrink-0 w-8 text-center text-[9.5px] font-bold py-0.5 rounded {isOn ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-white/5 text-slate-500 border border-transparent'}">
+              {isOn ? 'ON' : 'OFF'}
+            </span>
+          {:else if entry.mode === 'radio'}
+            <span class="shrink-0 w-3 h-3 rounded-full border flex items-center justify-center {isOn ? 'border-sky-400' : 'border-white/20'}">
+              {#if isOn}<span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>{/if}
+            </span>
+          {/if}
+        </button>
+      {/if}
+    {/each}
+  {/snippet}
+
+  <!-- Zone B - Responsive : Menu déroulant compact pour écrans < xl (tablettes, laptops, fenêtres réduites) -->
+  <div class="relative xl:hidden shrink-0" bind:this={responsiveMenuEl}>
+    <button
+      type="button"
+      onclick={() => { isResponsiveMenuOpen = !isResponsiveMenuOpen; openMenu = null; }}
+      aria-haspopup="menu"
+      aria-expanded={isResponsiveMenuOpen}
+      class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-semibold transition-all cursor-pointer border {isResponsiveMenuOpen ? 'bg-sky-500/25 border-sky-400/50 text-white shadow-[0_0_10px_rgba(56,189,248,0.3)]' : 'bg-white/[0.06] hover:bg-white/10 border-white/10 text-slate-200'}"
+      title="Menu principal & outils"
+    >
+      <MenuIcon class="w-3.5 h-3.5 text-sky-400 shrink-0" />
+      <span class="hidden sm:inline">Menu</span>
+      {#if cockpitState.activeAgents.length > 0}
+        <span
+          class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-emerald-500/20 border border-emerald-400/45 text-emerald-300 font-mono text-[9px] font-bold"
+          title="{cockpitState.activeAgents.length} agent(s) IA actif(s)"
+        >
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          {cockpitState.activeAgents.length}
+        </span>
+      {/if}
+      <ChevronDown class="w-3 h-3 text-slate-400 transition-transform duration-200 {isResponsiveMenuOpen ? 'rotate-180 text-sky-400' : ''}" />
+    </button>
+
+    {#if isResponsiveMenuOpen}
+      <div
+        role="menu"
+        class="absolute top-full left-0 mt-1.5 w-[92vw] sm:w-[500px] md:w-[560px] max-w-[560px] max-h-[calc(100vh-64px)] overflow-hidden bg-[#090d16]/98 backdrop-blur-2xl border border-white/15 rounded-xl shadow-2xl z-[75] flex flex-col text-xs"
+      >
+        <!-- En-tête du menu responsive -->
+        <div class="px-3 py-2 border-b border-white/10 flex items-center justify-between bg-white/[0.03]">
+          <div class="flex items-center gap-2">
+            <span class="text-sky-400 text-sm">🪐</span>
+            <span class="font-bold text-white tracking-wide text-[12px]">Menu & Outils</span>
+            {#if cockpitState.isDemoMode}
+              <span class="text-[9.5px] px-1.5 py-0.2 rounded font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-400/30">
+                DÉMO
+              </span>
+            {/if}
+          </div>
+          <button
+            type="button"
+            onclick={() => (isResponsiveMenuOpen = false)}
+            class="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            title="Fermer (Échap)"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
+        <!-- Barre d'onglets catégories avec défilement horizontal fluide -->
+        <div class="flex items-center gap-1 px-2 py-1.5 border-b border-white/10 overflow-x-auto no-scrollbar bg-black/40 shrink-0">
+          {#each menus as menu (menu.id)}
+            {@const Icon = menu.icon}
+            {@const isActive = responsiveActiveMenuId === menu.id}
+            {@const badge = menu.id === 'security' && cockpitState.allViolations.length > 0
+              ? cockpitState.allViolations.length
+              : menu.id === 'ai' && cockpitState.activeAgents.length > 0
+                ? cockpitState.activeAgents.length
+                : menu.id === 'tools' && activeTaskCount > 0
+                  ? activeTaskCount
+                  : null}
+            <button
+              type="button"
+              onclick={() => (responsiveActiveMenuId = menu.id)}
+              class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer {isActive ? 'bg-sky-500/20 text-white border border-sky-400/40 shadow-xs' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'}"
+            >
+              {#if Icon}<Icon class="w-3.5 h-3.5 {menu.iconClass}" />{/if}
+              <span>{menu.label}</span>
+              {#if badge !== null}
+                <span class="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold {menu.id === 'security' ? 'bg-rose-500/30 text-rose-200 border border-rose-400/40' : menu.id === 'ai' ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40' : 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/40'}">
+                  {badge}
+                </span>
+              {/if}
+            </button>
+          {/each}
+        </div>
+
+        <!-- Contenu de la catégorie active -->
+        <div class="p-2 max-h-[52vh] overflow-y-auto flex flex-col gap-0.5">
+          {#if activeResponsiveMenu}
+            {@render renderMenuEntries(activeResponsiveMenu.entries)}
+          {/if}
+        </div>
+
+        <!-- Barre basse : Accès rapides compacts intégrés -->
+        <div class="px-3 py-2 border-t border-white/10 bg-black/50 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+          <!-- Switch Graph / IDE -->
+          <div class="flex items-center bg-white/[0.04] p-0.5 rounded-md border border-white/10">
+            <button
+              type="button"
+              onclick={() => { switchViewMode('graph'); closeAllMenus(); }}
+              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-semibold transition-colors {cockpitState.isGraphView ? 'bg-sky-500/25 text-sky-200 border border-sky-400/40' : 'text-slate-400 hover:text-white border border-transparent'}"
+            >
+              <Orbit class="w-3 h-3 text-sky-400" />
+              <span>Graph</span>
+            </button>
+            <button
+              type="button"
+              onclick={() => { switchViewMode('ide'); closeAllMenus(); }}
+              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-semibold transition-colors {cockpitState.viewMode === 'ide' ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/40' : 'text-slate-400 hover:text-white border border-transparent'}"
+            >
+              <Code class="w-3 h-3 text-indigo-400" />
+              <span>IDE</span>
+            </button>
+          </div>
+
+          <!-- Outils rapides caméra, pause, son, préférences -->
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              onclick={() => cockpitState.requestCameraFit()}
+              class="p-1.5 rounded-md hover:bg-white/10 text-slate-300 hover:text-sky-300 transition-colors cursor-pointer"
+              title="Recadrer la caméra (F)"
+            >
+              <Maximize2 class="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onclick={() => cockpitState.togglePhysicsPaused()}
+              class="p-1.5 rounded-md transition-colors cursor-pointer {cockpitState.physicsPaused ? 'bg-amber-500/25 text-amber-300' : 'hover:bg-white/10 text-slate-300 hover:text-white'}"
+              title="Pause physique (P)"
+            >
+              {#if cockpitState.physicsPaused}<Play class="w-3.5 h-3.5" />{:else}<Pause class="w-3.5 h-3.5" />{/if}
+            </button>
+            <button
+              type="button"
+              onclick={() => cockpitState.toggleSound()}
+              class="p-1.5 rounded-md transition-colors cursor-pointer {cockpitState.settings.soundEnabled ? 'text-sky-300 bg-sky-500/15' : 'text-slate-500 hover:bg-white/10'}"
+              title="Son WebAudio"
+            >
+              {#if cockpitState.settings.soundEnabled}<Volume2 class="w-3.5 h-3.5" />{:else}<VolumeX class="w-3.5 h-3.5" />{/if}
+            </button>
+            <button
+              type="button"
+              onclick={() => { cockpitState.isSettingsModalOpen = true; closeAllMenus(); }}
+              class="p-1.5 rounded-md hover:bg-white/10 text-slate-300 hover:text-sky-300 transition-colors cursor-pointer"
+              title="Préférences (S)"
+            >
+              <Settings class="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
+  </div>
+
+  <!-- Zone B - Desktop : Barre de menus classique (≥ xl) -->
+  <nav bind:this={menubarEl} class="hidden xl:flex items-center gap-0.5 shrink-0" aria-label="Menu principal">
     {#each menus as menu (menu.id)}
       <div class="relative">
         <button
@@ -804,154 +1150,7 @@
             role="menu"
             class="absolute top-full left-0 mt-1 {menu.width ?? 'w-80'} max-h-[calc(100vh-64px)] overflow-y-auto bg-[#0b0f19]/98 backdrop-blur-xl border border-white/15 rounded-lg shadow-2xl p-1.5 z-[70] flex flex-col gap-0.5 text-xs"
           >
-            {#each menu.entries as entry, i (i)}
-              {#if entry.kind === 'header'}
-                {#if !entry.when || entry.when()}
-                  <div class="px-2 pt-2 pb-1 text-[10px] text-slate-500 font-semibold uppercase tracking-wider {i > 0 ? 'border-t border-white/[0.06] mt-1' : ''}">
-                    {entry.label}
-                  </div>
-                {/if}
-              {:else if entry.kind === 'sep'}
-                <div class="h-px bg-white/[0.08] my-1 mx-1"></div>
-              {:else if entry.kind === 'visuals'}
-                <div class="flex flex-col gap-0.5 px-1 pb-1">
-                  {#each cockpitState.allVisualPlugins as vp (vp.id)}
-                    {@const isActiveVp = cockpitState.activeVisualPluginId === vp.id}
-                    <button
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={isActiveVp}
-                      onclick={() => cockpitState.selectVisualPlugin(vp.id, true)}
-                      class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer {isActiveVp ? 'bg-cyan-500/15 text-white border border-cyan-400/35' : 'text-slate-200 hover:bg-white/10 border border-transparent'}"
-                    >
-                      <span class="flex items-center gap-2 min-w-0">
-                        <span class="flex items-center -space-x-1 shrink-0">
-                          {#each (vp.palette?.background || ['#04050b', '#0ea5e9', '#a855f7']).slice(0, 3) as sw}
-                            <span class="w-2.5 h-2.5 rounded-full border border-black/60" style="background-color: {sw}"></span>
-                          {/each}
-                        </span>
-                        <span class="min-w-0">
-                          <span class="block text-[11.5px] font-medium truncate">{vp.name}</span>
-                          <span class="block text-[9.5px] text-slate-400 truncate">
-                            {vp.overlay?.membrane_style || 'organic'} · {vp.overlay?.edge_style || 'bezier'}{vp.builtin ? '' : ' · custom'}
-                          </span>
-                        </span>
-                      </span>
-                      <span class="shrink-0 w-3 h-3 rounded-full border flex items-center justify-center {isActiveVp ? 'border-cyan-400' : 'border-white/20'}">
-                        {#if isActiveVp}<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>{/if}
-                      </span>
-                    </button>
-                  {/each}
-                </div>
-              {:else if entry.kind === 'agents'}
-                {#if cockpitState.activeAgents.length > 0}
-                  <div class="px-2 pt-1.5 pb-1 flex items-center justify-between text-[10px] text-purple-300 font-semibold uppercase tracking-wider">
-                    <span class="flex items-center gap-1.5">
-                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                      Agents IA actifs ({cockpitState.activeAgents.length})
-                    </span>
-                    <button
-                      type="button"
-                      onclick={clearAgentsFromMenu}
-                      class="text-[9.5px] font-normal normal-case text-slate-400 hover:text-rose-300 px-1.5 py-0.5 rounded hover:bg-rose-500/10 cursor-pointer transition-colors"
-                      title="Effacer la télémétrie agents"
-                    >
-                      Effacer
-                    </button>
-                  </div>
-                  <div class="flex flex-col gap-0.5 mb-1 max-h-48 overflow-y-auto">
-                    {#each cockpitState.activeAgents as ag (ag.agentId)}
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onclick={() => focusAgentTarget(ag.target)}
-                        class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left hover:bg-white/[0.07] transition-colors cursor-pointer"
-                        title="{ag.agentName} • {ag.action}: {ag.details}"
-                      >
-                        <span class="flex items-center gap-2 min-w-0">
-                          <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {ag.color}"></span>
-                          <span class="min-w-0">
-                            <span class="block text-[11.5px] font-semibold text-slate-100 truncate">{ag.agentName}</span>
-                            {#if ag.action}
-                              <span class="block text-[9.5px] text-slate-400 truncate">{ag.action}</span>
-                            {/if}
-                          </span>
-                        </span>
-                        {#if ag.target}
-                          <span class="px-1.5 py-0.5 rounded bg-black/50 border border-white/10 font-mono text-[9.5px] text-sky-300 truncate max-w-[115px] shrink-0">
-                            ➔ {ag.target}
-                          </span>
-                        {/if}
-                      </button>
-                    {/each}
-                  </div>
-                  <div class="h-px bg-white/[0.08] my-1 mx-1"></div>
-                {/if}
-              {:else if entry.kind === 'path'}
-                <form
-                  onsubmit={analyzeFolderFromBar}
-                  class="flex items-center rounded-md bg-white/[0.04] border border-white/10 focus-within:border-sky-400/60 px-1 py-0.5 gap-1 mx-0.5 mb-1"
-                  title="Chemin du dossier ou workspace actif (une URL ouvre le Scanner de surface)"
-                >
-                  <input
-                    type="text"
-                    bind:value={folderInput}
-                    placeholder="Chemin absolu ou URL..."
-                    class="flex-1 min-w-0 bg-transparent border-none outline-none text-[11px] font-mono text-slate-200 placeholder:text-slate-500 px-1 py-1"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isAnalyzingBar}
-                    title="Lancer l'analyse AST du dossier"
-                    class="flex items-center gap-1 px-2 py-1 rounded bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-200 text-[10.5px] font-semibold transition-colors cursor-pointer shrink-0 disabled:opacity-50"
-                  >
-                    <RefreshCw class="w-3 h-3 {isAnalyzingBar ? 'animate-spin' : ''}" />
-                    {isAnalyzingBar ? '...' : 'Analyser'}
-                  </button>
-                </form>
-                {#if fileActionError}
-                  <div class="mx-1 mb-1 px-2 py-1 rounded bg-rose-500/15 border border-rose-500/35 text-[10.5px] font-mono text-rose-200">
-                    {fileActionError}
-                  </div>
-                {/if}
-              {:else if !entry.when || entry.when()}
-                {@const Icon = entry.icon}
-                {@const isOn = entry.active ? entry.active() : false}
-                {@const badge = entry.badge ? entry.badge() : null}
-                <button
-                  type="button"
-                  role={entry.mode === 'toggle' ? 'menuitemcheckbox' : entry.mode === 'radio' ? 'menuitemradio' : 'menuitem'}
-                  aria-checked={entry.mode ? isOn : undefined}
-                  onclick={() => runItem(entry)}
-                  class="group flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer {isOn && entry.mode !== 'toggle' ? 'bg-white/[0.07] text-white' : 'text-slate-200 hover:bg-white/10 hover:text-white'}"
-                >
-                  <span class="w-4 flex justify-center shrink-0">
-                    {#if Icon}<Icon class="w-3.5 h-3.5 {entry.iconClass ?? 'text-slate-400'}" />{:else if entry.emoji}{entry.emoji}{/if}
-                  </span>
-                  <span class="flex-1 min-w-0 flex flex-col">
-                    <span class="text-[12px] leading-tight">{entry.label}</span>
-                    {#if entry.desc}
-                      <span class="text-[10.5px] leading-tight text-slate-500 group-hover:text-slate-400 truncate">{entry.desc}</span>
-                    {/if}
-                  </span>
-                  {#if badge !== null && badge !== undefined && badge !== 0}
-                    <span class="px-1.5 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-100 font-mono text-[10px] font-bold shrink-0">{badge}</span>
-                  {/if}
-                  {#if entry.shortcut}
-                    <kbd class="shrink-0 px-1 py-0.5 text-[9.5px] font-mono rounded bg-white/[0.06] text-slate-400 border border-white/10">{entry.shortcut}</kbd>
-                  {/if}
-                  {#if entry.mode === 'toggle'}
-                    <span class="shrink-0 w-8 text-center text-[9.5px] font-bold py-0.5 rounded {isOn ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-white/5 text-slate-500 border border-transparent'}">
-                      {isOn ? 'ON' : 'OFF'}
-                    </span>
-                  {:else if entry.mode === 'radio'}
-                    <span class="shrink-0 w-3 h-3 rounded-full border flex items-center justify-center {isOn ? 'border-sky-400' : 'border-white/20'}">
-                      {#if isOn}<span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>{/if}
-                    </span>
-                  {/if}
-                </button>
-              {/if}
-            {/each}
+            {@render renderMenuEntries(menu.entries)}
           </div>
         {/if}
       </div>
@@ -1069,7 +1268,7 @@
     <!-- Centre Plugins SAST, Taint & Studio WebGL -->
     <button
       onclick={() => cockpitState.openPluginsModal('plugins')}
-      class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold border transition-all shadow-xs cursor-pointer {cockpitState.isPluginsModalOpen ? 'bg-cyan-500/30 border-cyan-400 text-cyan-100 shadow-[0_0_12px_rgba(6,182,212,0.35)]' : 'bg-cyan-500/12 hover:bg-cyan-500/22 border-cyan-500/35 text-cyan-200'}"
+      class="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold border transition-all shadow-xs cursor-pointer {cockpitState.isPluginsModalOpen ? 'bg-cyan-500/30 border-cyan-400 text-cyan-100 shadow-[0_0_12px_rgba(6,182,212,0.35)]' : 'bg-cyan-500/12 hover:bg-cyan-500/22 border-cyan-500/35 text-cyan-200'}"
       title="Centre Plugins SAST, Taint SSA, Playground DSL v2 & Studio Shaders WebGL (Touche G)"
     >
       <Plug class="w-3.5 h-3.5 text-cyan-400" />
@@ -1103,7 +1302,7 @@
     <!-- Inspecteur -->
     <button
       onclick={() => cockpitState.toggleInspector()}
-      class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-colors shadow-xs cursor-pointer {cockpitState.isInspectorOpen ? 'bg-sky-500/25 border border-sky-400 text-sky-200 shadow-[0_0_10px_rgba(56,189,248,0.3)]' : 'bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300'}"
+      class="hidden md:flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-colors shadow-xs cursor-pointer {cockpitState.isInspectorOpen ? 'bg-sky-500/25 border border-sky-400 text-sky-200 shadow-[0_0_10px_rgba(56,189,248,0.3)]' : 'bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300'}"
       title="Inspecteur Latéral (I)"
     >
       <Layers class="w-3.5 h-3.5" />
@@ -1114,7 +1313,7 @@
     <button
       type="button"
       onclick={() => cockpitState.toggleSound()}
-      class="p-1.5 rounded-md transition-colors cursor-pointer border {cockpitState.settings.soundEnabled ? 'bg-sky-500/15 hover:bg-sky-500/25 border-sky-500/35 text-sky-300' : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 text-slate-500'}"
+      class="hidden sm:flex p-1.5 rounded-md transition-colors cursor-pointer border {cockpitState.settings.soundEnabled ? 'bg-sky-500/15 hover:bg-sky-500/25 border-sky-500/35 text-sky-300' : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 text-slate-500'}"
       title={cockpitState.settings.soundEnabled ? "Couper l'audio WebAudio (Mute 1-Clic)" : "Activer l'audio WebAudio (Unmute 1-Clic)"}
     >
       {#if cockpitState.settings.soundEnabled}<Volume2 class="w-3.5 h-3.5" />{:else}<VolumeX class="w-3.5 h-3.5" />{/if}

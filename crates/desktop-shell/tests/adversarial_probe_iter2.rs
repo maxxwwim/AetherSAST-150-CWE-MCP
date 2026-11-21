@@ -1,22 +1,15 @@
-﻿#![allow(dead_code, unused_imports, unused_variables)]
+﻿#![allow(dead_code, unused_variables)]
 
 #[path = "../src/api_routes.rs"]
 mod api_routes;
 
-use ai_file_bridge::{AuditWriter, HandshakePacker};
-use api_routes::{
-    AiTargetRequest, AiTargetResponse, AppState, FileContentQuery, FileTreeItem,
-    ProjectFilesResponse, SaveFileRequest, SaveFileResponse, ViewModeError, ViewModeRequest,
-};
+use api_routes::{AiTargetRequest, AppState, FileContentQuery, SaveFileRequest};
 use core_graph::graph::AetherGraph;
 use core_graph::{SymbolBubble, SymbolKind};
 use obsidian_vault::{DetectedProjectType, PathGuard, SecurityError};
-use security_linter::contract::ReadmeContract;
 use security_linter::{SecretGuard, SecretMasker};
 use serde_json::json;
-use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::tempdir;

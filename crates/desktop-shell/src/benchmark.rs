@@ -247,6 +247,7 @@ pub fn current_utc_timestamp() -> String {
 }
 
 /// Executes the multi-phase SAST benchmark on the specified project directory.
+#[cfg(test)]
 pub fn benchmark_project(project_root: &Path) -> Result<BenchmarkMetrics, Box<dyn std::error::Error>> {
     benchmark_project_with_plugins(project_root, None)
 }
@@ -437,12 +438,6 @@ Comparaison sur un codebase standard de ~100 000 lignes de code polyglotte (Rust
         peak_rss_mb = metrics.peak_rss_mb,
         violations_count = metrics.violations_count
     )
-}
-
-/// Runs the benchmark on the designated target path, prints live metrics to stdout,
-/// and writes `BENCHMARK.md` at the project workspace root.
-pub fn run_benchmark(target_path: &str) -> Result<BenchmarkMetrics, Box<dyn std::error::Error>> {
-    run_benchmark_with_plugins(target_path, None)
 }
 
 /// Runs the benchmark with an optional `--plugins` selection spec.

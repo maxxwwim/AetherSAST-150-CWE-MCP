@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
 //! Integration Test Suite for Milestone M1: Rust Backend Watcher & Git Status API
 //!
@@ -15,7 +15,7 @@ use api_routes::*;
 use core_graph::bubble::{CveAnomalyRecord, SymbolBubble, SymbolKind};
 use core_graph::graph::AetherGraph;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

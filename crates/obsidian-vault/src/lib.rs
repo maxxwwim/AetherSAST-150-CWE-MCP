@@ -28,7 +28,7 @@ pub use parser::{
     parse_markdown, parse_wikilinks_and_transclusions,
 };
 pub use types::{
-    BacklinkRecord, DetectedProjectType, FrontmatterData, ObsidianError, ParsedMarkdownDoc,
+    DetectedProjectType, FrontmatterData, ObsidianError,
     ParsedNote, ProjectDetectionReport, TagOccurrence, TransclusionTarget, WikilinkTarget,
 };
 

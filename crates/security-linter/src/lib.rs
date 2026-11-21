@@ -8,7 +8,6 @@ pub mod linter;
 pub mod php_rules;
 pub mod plugin;
 pub mod rules;
-pub mod sanitizer_catalog;
 pub mod sarif;
 pub mod sca;
 pub mod secret_guard;
@@ -29,7 +28,6 @@ pub use plugin::{
     PrecededWindowCondition, RuleConditions, RuleTestCase,
 };
 pub use rules::AdvancedDefiRules;
-pub use sanitizer_catalog::SanitizerCatalog;
 pub use sarif::SarifReport;
 pub use sca::{ScaDependency, ScaEngine, ScaReport, ScaVulnerability};
 pub use secret_guard::SecretGuard;

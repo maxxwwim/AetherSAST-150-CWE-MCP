@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
 //! Empirical Concurrency and Endpoint Stress Test Harness for Milestone M2
 //! Agent: teamwork_challenger_obs_m2_1 (Empirical Challenger Archetype)

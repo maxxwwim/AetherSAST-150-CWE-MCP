@@ -14,7 +14,6 @@ _QUEUE_LOCK = threading.Lock()
 
 SERVERDATA_AUTH = 3
 SERVERDATA_EXECCOMMAND = 2
-SERVERDATA_AUTH_RESPONSE = 2
 SERVERDATA_RESPONSE_VALUE = 0
 
 class RconClient:
@@ -164,33 +163,3 @@ def dispatch_order_commands(username: str, commands: List[str], order_id: str) -
             "message": "Placé en file d'attente sécurisée (sera injecté dès le lancement du serveur)",
             "details": [{"command": c, "success": True, "queued": True} for c in commands]
         }
-
-def flush_pending_queue() -> int:
-    """
-    Tente de vider les commandes en attente lorsque le serveur redevient actif.
-    """
-    queue = load_pending_deliveries()
-    if not queue:
-        return 0
-
-    client = RconClient()
-    if not client.connect():
-        return 0
-
-    remaining = []
-    delivered = 0
-    for order in queue:
-        order_success = True
-        for cmd in order["commands"]:
-            ok, _ = client.command(cmd)
-            if not ok:
-                order_success = False
-                break
-        if order_success:
-            delivered += 1
-        else:
-            remaining.append(order)
-
-    client.close()
-    save_pending_deliveries(remaining)
-    return delivered

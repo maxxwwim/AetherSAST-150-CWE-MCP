@@ -472,13 +472,6 @@ impl PluginSelection {
         Ok(PluginSelection::Select(items))
     }
 
-    pub fn should_run_all_builtins(&self) -> bool {
-        matches!(
-            self,
-            PluginSelection::Default | PluginSelection::Auto | PluginSelection::All
-        )
-    }
-
     pub fn has_any_builtin_selected(&self) -> bool {
         match self {
             PluginSelection::Default | PluginSelection::Auto | PluginSelection::All => true,

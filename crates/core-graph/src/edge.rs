@@ -128,10 +128,6 @@ impl AffiliationEdge {
         }
     }
 
-    pub fn new_violation(source: String, target: String, reason: &str) -> Self {
-        Self::new_cve_violation(source, target, reason, None, None, None, None)
-    }
-
     pub fn new_cve_violation(
         source: String,
         target: String,
@@ -202,34 +198,6 @@ pub enum LiaisonCategory {
     ExternalDep,    // 🏛️ Dépendances transverses / contrats
     Documentation,  // 📖 Documentation / Markdown
     SecurityAlert,  // 🚨 Violation de contrat / CVE
-}
-
-impl LiaisonCategory {
-    pub fn icon(&self) -> &'static str {
-        match self {
-            Self::FormSubmit => "📝",
-            Self::NetworkHttp => "🌐",
-            Self::RealtimeWs => "⚡",
-            Self::DatabaseQuery => "🗄️",
-            Self::InternalCall => "📦",
-            Self::ExternalDep => "🏛️",
-            Self::Documentation => "📖",
-            Self::SecurityAlert => "🚨",
-        }
-    }
-
-    pub fn title_fr(&self) -> &'static str {
-        match self {
-            Self::FormSubmit => "Actions UI / Soumissions Formulaire",
-            Self::NetworkHttp => "Appels Réseau & Endpoints HTTP / REST",
-            Self::RealtimeWs => "Flux Temps Réel & Packets WebSocket",
-            Self::DatabaseQuery => "Persistance & Requêtes Base de Données",
-            Self::InternalCall => "Appels Internes / Fonctions",
-            Self::ExternalDep => "Dépendances Transverses & Contrats",
-            Self::Documentation => "Spécifications & Documentation",
-            Self::SecurityAlert => "Violations de Sécurité / Alertes CVE",
-        }
-    }
 }
 
 /// Structure regroupée et allégée des liaisons pour les prompts IA

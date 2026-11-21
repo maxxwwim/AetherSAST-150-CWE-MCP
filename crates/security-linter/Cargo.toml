@@ -13,9 +13,6 @@ serde_yaml.workspace = true
 blake3.workspace = true
 regex.workspace = true
 
-[dev-dependencies]
-tokio.workspace = true
-
 [[bin]]
 name = "aether-plugin-tool"
 path = "src/bin/aether_plugin_tool.rs"

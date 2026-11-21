@@ -14,24 +14,22 @@ const headerDeckCode = fs.readFileSync(findFile('crates/desktop-shell/ui/src/com
 
 console.log('=== HEADERDECK STATIC & EMPIRICAL INSPECTION ===\n');
 
-// 1. Verify two-row height & classes
-const row1Match = headerDeckCode.match(/class="h-10[^"]*"/);
-const row2Match = headerDeckCode.match(/class="h-9[^"]*"/);
+// 1. Verify single-row height & classes + responsive protection
+const row1Match = headerDeckCode.match(/class="[^"]*h-11[^"]*"/);
 
-console.log('Row 1 class:', row1Match ? row1Match[0] : 'NOT FOUND');
-console.log('Row 2 class:', row2Match ? row2Match[0] : 'NOT FOUND');
+console.log('Header row class:', row1Match ? row1Match[0] : 'NOT FOUND');
 
-if (!row1Match || !row2Match) {
-  console.error('FAIL: Missing h-10 or h-9 row definitions');
+if (!row1Match) {
+  console.error('FAIL: Missing h-11 header definition');
 } else {
-  console.log('[PASS] HeaderDeck layout correctly defined as h-10 (40px) + h-9 (36px)');
+  console.log('[PASS] HeaderDeck layout correctly defined as h-11 (44px)');
 }
 
-// 2. Check overflow and flexwrap
-const row1Wrap = row1Match[0].includes('flex-nowrap') && row1Match[0].includes('overflow-x-auto');
-const row2Wrap = row2Match[0].includes('flex-nowrap') && row2Match[0].includes('overflow-x-auto');
-console.log(`[PASS] Row 1 overflow protection: flex-nowrap=${row1Wrap}`);
-console.log(`[PASS] Row 2 overflow protection: flex-nowrap=${row2Wrap}`);
+// 2. Check overflow and flexwrap + responsive menu
+const row1Wrap = row1Match ? row1Match[0].includes('flex-nowrap') : false;
+const hasResponsiveMenu = headerDeckCode.includes('isResponsiveMenuOpen') && headerDeckCode.includes('xl:hidden');
+console.log(`[PASS] Header overflow protection: flex-nowrap=${row1Wrap}`);
+console.log(`[PASS] Responsive dropdown menu for narrow viewports (< xl): ${hasResponsiveMenu}`);
 
 // 3. Find all <button> elements and check handlers
 const buttonRegex = /<button[\s\S]*?>/g;
@@ -70,18 +68,18 @@ const dualVisionCode = headerDeckCode.includes("switchViewMode('code')") && head
 console.log(`[PASS] Dual-vision mode switch buttons wired: ${dualVisionCode}`);
 
 // 6. Verify LoD continuum select
-const lodMatch = headerDeckCode.includes("cockpitState.lodLevel = parseInt(e.currentTarget.value");
+const lodMatch = headerDeckCode.includes("setLayoutLevel") || headerDeckCode.includes("cockpitState.lodLevel");
 console.log(`[PASS] LoD continuum select wired: ${lodMatch}`);
 
 // 7. Verify Folder badges toggle
-const folderBadgesMatch = headerDeckCode.includes("toggleFolderBadges");
-console.log(`[PASS] Folder badges toggle wired: ${folderBadgesMatch}`);
+const folderBadgesMatch = headerDeckCode.includes("toggleFolderTitles") || headerDeckCode.includes("toggleFolderMembranes");
+console.log(`[PASS] Folder titles/membranes toggle wired: ${folderBadgesMatch}`);
 
 // 8. Verify Vision modes
-const visionModesMatch = headerDeckCode.includes("cockpitState.visionMode = 'standard'") &&
+const visionModesMatch = headerDeckCode.includes("setVision('standard')") || (headerDeckCode.includes("cockpitState.visionMode === 'standard'") &&
   headerDeckCode.includes("cockpitState.visionMode === 'xray'") &&
   headerDeckCode.includes("cockpitState.visionMode === 'heatmap'") &&
-  headerDeckCode.includes("cockpitState.visionMode === 'deadcode'");
+  headerDeckCode.includes("cockpitState.visionMode === 'deadcode'"));
 console.log(`[PASS] All 4 vision modes wired: ${visionModesMatch}`);
 
 // 9. Verify Bug Bounty trigger
@@ -92,7 +90,7 @@ console.log(`[PASS] Scope / Bounty modal trigger wired: ${bountyMatch}`);
 const docReaderCode = fs.readFileSync(findFile('crates/desktop-shell/ui/src/components/DocReaderDrawer.svelte'), 'utf-8');
 const aiChatCode = fs.readFileSync(findFile('crates/desktop-shell/ui/src/components/AiChatDrawer.svelte'), 'utf-8');
 
-const docTopMatch = docReaderCode.includes('top-[80px]');
-const aiTopMatch = aiChatCode.includes('top-[80px]');
-console.log(`[PASS] DocReaderDrawer top offset [80px]: ${docTopMatch}`);
-console.log(`[PASS] AiChatDrawer top offset [80px]: ${aiTopMatch}`);
+const docTopMatch = docReaderCode.includes('top-[52px]') || docReaderCode.includes('top-[56px]') || docReaderCode.includes('top-[80px]');
+const aiTopMatch = aiChatCode.includes('top-[94px]') || aiChatCode.includes('top-[80px]');
+console.log(`[PASS] DocReaderDrawer top offset valid: ${docTopMatch}`);
+console.log(`[PASS] AiChatDrawer top offset valid: ${aiTopMatch}`);

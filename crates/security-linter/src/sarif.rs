@@ -2,7 +2,7 @@
 //! OASIS Standard & GitHub Code Scanning compatible format.
 
 use core_graph::bubble::CveAnomalyRecord;
-use crate::linter::{CveRuleDef, LinterViolation, SecurityLinter};
+use crate::linter::{CveRuleDef, SecurityLinter};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -334,42 +334,6 @@ impl SarifReport {
                 results,
             }],
         }
-    }
-
-    /// Builds a full SARIF 2.1.0 report from linter violations.
-    pub fn from_violations(violations: &[LinterViolation], custom_rules: Option<&[CveRuleDef]>) -> Self {
-        Self::from_violations_with_root(violations, custom_rules, None)
-    }
-
-    /// Builds a full SARIF 2.1.0 report from linter violations with optional project root path normalization.
-    pub fn from_violations_with_root(
-        violations: &[LinterViolation],
-        custom_rules: Option<&[CveRuleDef]>,
-        project_root: Option<&Path>,
-    ) -> Self {
-        let anomalies: Vec<CveAnomalyRecord> = violations
-            .iter()
-            .map(|v| CveAnomalyRecord {
-                rule_id: v.rule_id.clone(),
-                cve_id: v.cve_id.clone(),
-                severity: v.severity.clone(),
-                line_number: v.line_number,
-                file_path: v.file_path.clone(),
-                message: v.message.clone(),
-                transmitted_data: v.transmitted_data.clone(),
-                transmitted_type: v.transmitted_type.clone(),
-                remediation: v.remediation.clone(),
-                is_reachable: false,
-                exploit_path: Vec::new(),
-                ..Default::default()
-            })
-            .collect();
-        Self::from_anomalies_with_root(&anomalies, custom_rules, project_root)
-    }
-
-    /// Serializes report to compact JSON string.
-    pub fn to_json_string(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
     }
 
     /// Serializes report to formatted pretty JSON string.

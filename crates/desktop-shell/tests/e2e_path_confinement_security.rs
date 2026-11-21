@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
 //! 4-Tier Automated Security Test Suite for Desktop-Shell CWE-22 Endpoint Hardening
 //!
@@ -12,9 +12,6 @@
 #[path = "../src/api_routes.rs"]
 mod api_routes;
 
-#[path = "../src/local_guard.rs"]
-mod local_guard;
-
 use api_routes::{
     AppState, CreateFileRequest, CreateFileResponse, SaveDocRequest, SaveDocResponse,
 };
@@ -23,10 +20,9 @@ use core_graph::graph::AetherGraph;
 use obsidian_vault::{DetectedProjectType, PathGuard, SecurityError};
 use serde_json::json;
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::tempdir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

@@ -159,7 +159,7 @@ export function getNodeAlertKind(
   return 'none';
 }
 
-export function isTextOrDocFile(path?: string, layer?: string, kind?: string): boolean {
+function isTextOrDocFile(path?: string, layer?: string, kind?: string): boolean {
   const l = String(layer || '').toLowerCase();
   const k = String(kind || '').toLowerCase();
   if (l === 'docs' || k === 'note' || k === 'doc' || k === 'markdown') return true;
@@ -191,7 +191,7 @@ export function getArchitecturalModule(folderPath?: string): string {
   return parts.slice(0, 2).join('/');
 }
 
-export interface CockpitSettings {
+interface CockpitSettings {
   maxLabelLength: number;
   hideBubbleLabelsOver20: boolean;
   clusterLabelThreshold: number;
@@ -215,9 +215,10 @@ export interface CockpitSettings {
   showFolderTitles: boolean;
   showFileTitles: boolean;
   lowMemoryMode: boolean;
+  editorAutoSave: boolean;
 }
 
-export const AI_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 300,000 ms (5 minutes)
+const AI_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 300,000 ms (5 minutes)
 
 const EMPTY_METHODS: any[] = Object.freeze([]) as unknown as any[];
 const EMPTY_ATTRIBUTES: any[] = Object.freeze([]) as unknown as any[];
@@ -247,6 +248,7 @@ const DEFAULT_SETTINGS: CockpitSettings = {
   showFolderTitles: true,
   showFileTitles: true,
   lowMemoryMode: false,
+  editorAutoSave: false,
 };
 
 function loadSavedSettings(): CockpitSettings {
@@ -740,30 +742,6 @@ export class CockpitState {
     }
     if (changed) {
       this.saveLocalAiCache();
-    }
-  }
-
-  syncTaskAgentsToTelemetry(tasks: TaskItem[]) {
-    if (!tasks || tasks.length === 0) return;
-    const taskAgents: { target: string; action: string; details: string; timestamp: number; agent_id?: string; agent_name?: string; color?: string }[] = [];
-    for (const t of tasks) {
-      if (t.status === 'done' || t.status === 'cancelled') continue;
-      const target = t.target_symbol || t.target_file;
-      if (!target) continue;
-      const agentId = t.agent_id || (t.agent_name ? t.agent_name.toLowerCase().replace(/\s+/g, '-') : t.author ? t.author.toLowerCase().replace(/\s+/g, '-') : `task-agent-${t.id}`);
-      const agentName = t.agent_name || (t.author && t.author !== 'model' ? t.author : `Agent (${t.title.slice(0, 16)})`);
-      taskAgents.push({
-        target,
-        action: `Mission: ${t.kind}`,
-        details: `${t.title} (${t.progress || 0}%)`,
-        timestamp: Date.now(),
-        agent_id: agentId,
-        agent_name: agentName,
-        color: t.color,
-      });
-    }
-    if (taskAgents.length > 0) {
-      this.recordAiTelemetry(taskAgents[0], taskAgents);
     }
   }
 

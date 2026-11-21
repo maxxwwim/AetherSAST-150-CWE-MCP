@@ -5,17 +5,12 @@
     Code2,
     Folder,
     FileCode,
-    ArrowRight,
     ShieldAlert,
     Flame,
-    Cpu,
-    Boxes,
     Workflow,
-    GitCommit,
-    Layers,
     X
   } from '@lucide/svelte';
-  import type { SymbolBubble, AffiliationEdge } from '../types/graph';
+  import type { SymbolBubble } from '../types/graph';
 
   interface Props {
     query: string;

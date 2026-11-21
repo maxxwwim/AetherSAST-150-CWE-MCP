@@ -339,11 +339,6 @@ impl ProjectScanner {
         self
     }
 
-    pub fn with_cache(mut self, enabled: bool) -> Self {
-        self.use_cache = enabled;
-        self
-    }
-
     pub fn validate_plugins<P: AsRef<Path>>(
         &self,
         root: P,

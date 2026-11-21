@@ -363,28 +363,6 @@
     }
   }
 
-  function getFileColor(ext?: string): string {
-    const lower = (ext || '').toLowerCase();
-    switch (lower) {
-      case 'rs':
-        return 'text-amber-400';
-      case 'ts':
-        return 'text-sky-400';
-      case 'js':
-        return 'text-yellow-300';
-      case 'svelte':
-        return 'text-orange-400';
-      case 'json':
-        return 'text-emerald-400';
-      case 'toml':
-        return 'text-purple-400';
-      case 'md':
-        return 'text-blue-300';
-      default:
-        return 'text-slate-400';
-    }
-  }
-
   let lastSyncedFsVer = 0;
   let lastSyncedGraphVer = 0;
   let lastSyncedProjPath = '';

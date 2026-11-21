@@ -1,5 +1,4 @@
-from typing import Dict, List, Optional
-import datetime
+from typing import Dict, List
 
 # Joueurs d'exemple pour le classement
 MOCK_PLAYERS = [

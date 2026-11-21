@@ -5,9 +5,6 @@
     Radio,
     Flame,
     Skull,
-    ShieldAlert,
-    Sparkles,
-    Grid,
     SlidersHorizontal,
     X
   } from '@lucide/svelte';

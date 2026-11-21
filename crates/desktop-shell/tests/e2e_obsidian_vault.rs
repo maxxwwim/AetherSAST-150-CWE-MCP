@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unused_variables)]
+#![allow(dead_code, unused_variables)]
 
 //! End-to-End Test Suite for AetherScope Production Obsidian Vault Mode (R1, R2, R3, R4)
 //!
@@ -24,8 +24,7 @@ use api_routes::{AppState, ViewModeError};
 use ast_scanner::scanner::ProjectScanner;
 use core_graph::edge::EdgeType;
 use obsidian_vault::{
-    detect_project_type, parse_markdown, scan_obsidian_vault, DetectedProjectType, PathGuard,
-    TargetJail,
+    detect_project_type, scan_obsidian_vault, DetectedProjectType, PathGuard, TargetJail,
 };
 use std::path::{Path, PathBuf};
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { cockpitState } from '../state/graphState.svelte';
-  import { Search, X, Code2, ShieldAlert, Layers } from '@lucide/svelte';
+  import { Search, X, Code2 } from '@lucide/svelte';
 
   let query = $state('');
   let searchInputEl = $state<HTMLInputElement | null>(null);
@@ -10,12 +10,6 @@
       setTimeout(() => searchInputEl?.focus(), 10);
     }
   });
-
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      cockpitState.isCommandPaletteOpen = false;
-    }
-  }
 
   function selectNode(id: string) {
     cockpitState.selectSymbol(id);

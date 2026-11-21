@@ -9,7 +9,6 @@
     Globe,
     Server,
     ShieldAlert,
-    FileWarning,
     BookmarkCheck,
     GitCompareArrows,
     Copy,

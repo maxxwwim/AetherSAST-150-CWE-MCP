@@ -1,7 +1,7 @@
 import type { AetherGraph, TaskItem } from '../types/graph';
 import type { VisualPluginPack } from '../engine/visualPlugins';
 
-export interface VisualPluginsInventoryResponse {
+interface VisualPluginsInventoryResponse {
   status: string;
   visuals_dir: string;
   active_visual_plugin: string;
@@ -74,7 +74,7 @@ export interface PluginTestReportResponse {
   failures: string[];
 }
 
-export interface ProjectStatusResponse {
+interface ProjectStatusResponse {
   status?: string;
   project_type: 'PureCode' | 'PureObsidianVault' | 'Mixed' | string;
   has_obsidian_dir?: boolean;
@@ -87,7 +87,7 @@ export interface ProjectStatusResponse {
   obsidian_syntax_markers_count?: number;
 }
 
-export class AetherApiClient {
+class AetherApiClient {
   private baseUrl: string;
 
   constructor(baseUrl: string = '') {

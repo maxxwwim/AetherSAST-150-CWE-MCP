@@ -2,7 +2,7 @@
 #![recursion_limit = "512"]
 
 mod api_routes;
-pub mod benchmark;
+mod benchmark;
 mod local_guard;
 mod mcp;
 mod plugin_routes;
@@ -2477,16 +2477,56 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
         .route(
             "/api/ai/launch_cli",
             axum::routing::post({
-                let _state = state_ai_cli.clone();
-                move |axum::extract::Json(req): axum::extract::Json<LaunchCliRequest>| async move {
-                    let tool = req.tool.unwrap_or_else(|| "gemini".to_string());
-                    axum::Json(serde_json::json!({
-                        "status": "ok",
-                        "message": format!("Terminal CLI {} initialisÃ©", tool),
-                        "tool": tool,
-                        "project_path": req.project_path,
-                        "prompt": req.prompt
-                    }))
+                let state = state_ai_cli.clone();
+                move |axum::extract::Json(req): axum::extract::Json<LaunchCliRequest>| {
+                    let state = state.clone();
+                    async move {
+                        let tool = req.tool.unwrap_or_else(|| "gemini".to_string());
+                        let p_root = state.project_root.read().await.clone();
+                        let rel_file = req.prompt.as_deref().unwrap_or("").trim();
+                        let resolved_target = if !rel_file.is_empty() {
+                            PathGuard::validate_client_relative_path(rel_file)
+                                .ok()
+                                .and_then(|clean_rel| {
+                                    PathGuard::new(&p_root)
+                                        .ok()
+                                        .and_then(|g| g.resolve_write_target(&clean_rel).ok())
+                                })
+                                .unwrap_or_else(|| p_root.clone())
+                        } else {
+                            p_root.clone()
+                        };
+                        let clean_target = resolved_target
+                            .to_string_lossy()
+                            .trim_start_matches(r"\\?\")
+                            .to_string();
+                        if tool.eq_ignore_ascii_case("notepad") {
+                            let _ = std::process::Command::new("notepad.exe")
+                                .arg(&clean_target)
+                                .spawn();
+                        } else if tool.eq_ignore_ascii_case("vscode") || tool.eq_ignore_ascii_case("code") {
+                            let line_suffix = req.project_path.as_deref().unwrap_or("1:1");
+                            let goto_arg = format!("{}:{}", clean_target, line_suffix);
+                            if std::process::Command::new("code.cmd")
+                                .arg("--goto")
+                                .arg(&goto_arg)
+                                .spawn()
+                                .is_err()
+                            {
+                                let _ = std::process::Command::new("code")
+                                    .arg("--goto")
+                                    .arg(&goto_arg)
+                                    .spawn();
+                            }
+                        }
+                        axum::Json(serde_json::json!({
+                            "status": "ok",
+                            "message": format!("Terminal CLI {} initialisÃ©", tool),
+                            "tool": tool,
+                            "project_path": req.project_path,
+                            "prompt": req.prompt
+                        }))
+                    }
                 }
             }),
         )

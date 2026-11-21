@@ -114,11 +114,6 @@ impl ProjectDetectionReport {
         self.supported_views.iter().any(|v| v == "vault-notes")
     }
 
-    /// Returns true if the code vision mode is supported for this project.
-    pub fn is_code_mode_available(&self) -> bool {
-        self.supported_views.iter().any(|v| v == "code")
-    }
-
     /// Returns true if the project supports dual-vision dynamic switching.
     pub fn allows_dual_vision(&self) -> bool {
         self.supported_views.len() > 1
@@ -207,11 +202,6 @@ impl TransclusionTarget {
         let lower = path.to_lowercase();
         let ext = lower.split('.').next_back().unwrap_or("");
         Self::MEDIA_EXTENSIONS.contains(&ext)
-    }
-
-    /// Returns display label if present.
-    pub fn label(&self) -> Option<&str> {
-        self.label_or_size.as_deref()
     }
 
     /// Parses dimensions formatted as "WIDTH" or "WIDTHxHEIGHT".
@@ -329,26 +319,6 @@ pub struct ParsedNote {
     pub byte_size: u64,
     /// Optional raw markdown content (retained for preview or AST caching).
     pub raw_content: Option<String>,
-}
-
-/// Type alias for `ParsedNote` providing compatibility with `ParsedMarkdownDoc`.
-pub type ParsedMarkdownDoc = ParsedNote;
-
-/// Record of an incoming backlink to a note.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct BacklinkRecord {
-    /// Path of referring note.
-    pub source_path: String,
-    /// Title of referring note.
-    pub source_title: String,
-    /// Line number where link occurs in referring note.
-    pub line: usize,
-    /// Alias/label used in the reference if any.
-    pub label: Option<String>,
-    /// Anchor targeted in the reference if any.
-    pub anchor: Option<String>,
-    /// Whether the link is an embed (`![[...]]`) or regular link (`[[...]]`).
-    pub is_transclusion: bool,
 }
 
 /// Unified error enum for Obsidian Vault operations conforming to PROJECT.md.

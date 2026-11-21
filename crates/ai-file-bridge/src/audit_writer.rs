@@ -73,25 +73,6 @@ impl AuditWriter {
         safe_write_in_root(project_root, &audit_file, &content)
     }
 
-    /// Écrit .aether/ACTIVE_TARGET.md lorsqu'une bulle est ciblée dans le cockpit WebGL
-    pub fn write_active_target(
-        project_root: &Path,
-        symbol: &SymbolBubble,
-        callers: &[String],
-        dependencies: &[String],
-        contract: Option<&ReadmeContract>,
-    ) -> std::io::Result<()> {
-        let in_cat = core_graph::edge::CategorizedLiaisons {
-            internal_calls: callers.to_vec(),
-            ..Default::default()
-        };
-        let out_cat = core_graph::edge::CategorizedLiaisons {
-            internal_calls: dependencies.to_vec(),
-            ..Default::default()
-        };
-        Self::write_active_target_categorized(project_root, symbol, &in_cat, &out_cat, contract)
-    }
-
     /// Écrit .aether/ACTIVE_TARGET.md avec les liaisons structurées par catégories légères
     pub fn write_active_target_categorized(
         project_root: &Path,

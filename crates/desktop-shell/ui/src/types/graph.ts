@@ -1,4 +1,4 @@
-export type SymbolKind =
+type SymbolKind =
   | 'Function'
   | 'Method'
   | 'Struct'
@@ -12,7 +12,7 @@ export type SymbolKind =
   | 'Form'
   | 'Other';
 
-export interface AstMethod {
+interface AstMethod {
   name: string;
   signature?: string;
   args?: string;
@@ -24,14 +24,14 @@ export interface AstMethod {
   line?: number;
 }
 
-export interface AstAttribute {
+interface AstAttribute {
   name: string;
   attr_type?: string;
   type?: string;
   visibility?: string;
 }
 
-export interface SsaVar {
+interface SsaVar {
   name: string;
   version: number;
   func_scope: string;
@@ -85,7 +85,7 @@ export type TaintStepKind =
     }
   | { Custom: string };
 
-export interface TaintSource {
+interface TaintSource {
   var: SsaVar;
   source_kind: SourceKind;
   cwe: string;
@@ -94,7 +94,7 @@ export interface TaintSource {
   description?: string;
 }
 
-export interface TaintSink {
+interface TaintSink {
   var: SsaVar;
   sink_kind: SinkKind;
   cwe: string;
@@ -117,7 +117,7 @@ export interface TaintStep {
   code_snippet?: string | null;
 }
 
-export interface TaintFlowTrace {
+interface TaintFlowTrace {
   source: TaintSource;
   sink: TaintSink;
   steps: TaintStep[];
@@ -126,7 +126,7 @@ export interface TaintFlowTrace {
   is_vulnerable: boolean;
 }
 
-export interface DataflowEdge {
+interface DataflowEdge {
   from_var: SsaVar;
   to_var: SsaVar;
   step_kind: TaintStepKind;
@@ -137,7 +137,7 @@ export interface DataflowEdge {
   code_snippet?: string | null;
 }
 
-export interface DataflowGraph {
+interface DataflowGraph {
   nodes: Record<string, SsaVar>;
   edges: DataflowEdge[];
   sources: TaintSource[];
@@ -164,7 +164,7 @@ export interface CveAnomalyRecord {
   taint_trace?: TaintFlowTrace;
 }
 
-export interface SymbolMetadata {
+interface SymbolMetadata {
   lines?: number;
   file_type?: string;
   methods?: AstMethod[];

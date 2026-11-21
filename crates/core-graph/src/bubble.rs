@@ -218,14 +218,3 @@ impl SymbolBubble {
         }
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GalaxyNode {
-    pub id: String,
-    pub name: String,
-    pub role: String,
-    pub file_count: usize,
-    pub symbol_count: usize,
-    pub center: Point2D,
-    pub is_remote: bool,
-}

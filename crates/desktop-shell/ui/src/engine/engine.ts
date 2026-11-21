@@ -43,8 +43,8 @@ for (let i = 0; i < 12; i++) {
 }
 
 // Infinite Galaxy Dezoom & Cellular Precision Zoom Bounds
-export const MIN_GALAXY_ZOOM = 0.0001;
-export const MAX_GALAXY_ZOOM = 12.0;
+const MIN_GALAXY_ZOOM = 0.0001;
+const MAX_GALAXY_ZOOM = 12.0;
 
 export class AetherEngine {
   private gl: WebGL2RenderingContext;

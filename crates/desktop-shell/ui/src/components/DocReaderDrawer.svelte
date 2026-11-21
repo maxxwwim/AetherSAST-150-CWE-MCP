@@ -6,7 +6,6 @@
     Copy,
     Check,
     X,
-    FileText,
     FolderOpen,
     RefreshCw,
     Library,
@@ -49,7 +48,12 @@
   let showToc = $state(false);
   let showDocPicker = $state(false);
   let editMode = $state(false);
+  let isEditingDoc = $derived(editMode);
   let draftDocContent = $state('');
+  let isEditingCode = $state(false);
+  let draftCodeContent = $state('');
+  let saveCodeStatus = $state('');
+  let codeAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let fullCodeView = $state(false);
 
   // Search & Copy feedback
@@ -59,7 +63,6 @@
   let copiedSnippet = $state(false);
   let copiedHash = $state(false);
   let saveDocStatus = $state('');
-  let autoSaveEnabled = $state(true);
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let mermaidRawMap = $state<Record<number, boolean>>({});
 
@@ -67,7 +70,6 @@
   let openBlake3Section = $state(true);
   let openCodeSection = $state(true);
   let openDocSection = $state(true);
-  let openRelationsSection = $state(true);
 
   // BLAKE3 Customization State
   let contractMaxLinesInput = $state(300);
@@ -439,12 +441,77 @@
   }
 
   function triggerDocAutoSave() {
-    if (!autoSaveEnabled || !editMode) return;
+    if (!cockpitState.settings.editorAutoSave || !editMode) return;
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    saveDocStatus = '⏳ Auto-save (1.5s)...';
-    autoSaveTimer = setTimeout(() => {
-      saveCurrentDoc(true);
-    }, 1500);
+    void saveCurrentDoc(true);
+  }
+
+  function handleDocTextareaKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (autoSaveTimer) clearTimeout(autoSaveTimer);
+      void saveCurrentDoc(false);
+    }
+  }
+
+  function toggleCodeEditMode() {
+    if (!isEditingCode) {
+      draftCodeContent = loadedCodeContent || (symbol?.metadata as any)?.raw_content || '';
+      isEditingCode = true;
+    } else {
+      if (codeAutoSaveTimer) clearTimeout(codeAutoSaveTimer);
+      isEditingCode = false;
+    }
+  }
+
+  async function saveCurrentCode(isAuto = false) {
+    const p = loadedCodePath || symbol?.file_path || '';
+    if (!p) return;
+    saveCodeStatus = isAuto ? 'Auto-sauvegarde...' : 'Sauvegarde...';
+    try {
+      const res = await api.saveFile(p, draftCodeContent);
+      if (res && res.status === 'ok') {
+        loadedCodeContent = draftCodeContent;
+        saveCodeStatus = isAuto ? "✓ Auto-sauvegardé à l'édit" : '✓ Enregistré (Ctrl+S)';
+        setTimeout(() => (saveCodeStatus = ''), 2500);
+      } else {
+        saveCodeStatus = res?.error || 'Erreur sauvegarde';
+      }
+    } catch (e: any) {
+      saveCodeStatus = e?.message || 'Erreur sauvegarde';
+    }
+  }
+
+  function triggerCodeAutoSave() {
+    if (!cockpitState.settings.editorAutoSave || !isEditingCode) return;
+    if (codeAutoSaveTimer) clearTimeout(codeAutoSaveTimer);
+    void saveCurrentCode(true);
+  }
+
+  async function openFileInExternalEditor(editor: 'vscode' | 'notepad', targetPath?: string, lineNum = 1) {
+    const p = (targetPath || loadedCodePath || symbol?.file_path || loadedDocPath || '').replace(/\\/g, '/').replace(/^\//, '');
+    if (!p) return;
+    try {
+      await api.launchCli(editor, `${lineNum}:1`, p);
+      saveCodeStatus = editor === 'vscode' ? '✓ Ouvert dans VS Code' : '✓ Ouvert dans Notepad';
+      setTimeout(() => (saveCodeStatus = ''), 2200);
+    } catch {
+      if (editor === 'vscode') {
+        const root = (cockpitState.graph.project_path || '').replace(/^\\\\\?\\/, '').replace(/\\/g, '/').replace(/\/$/, '');
+        const fullPath = root ? `${root}/${p}` : p;
+        window.open(`vscode://file/${fullPath}:${lineNum}:1`, '_blank');
+      }
+    }
+  }
+
+  function handleCodeTextareaKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (codeAutoSaveTimer) clearTimeout(codeAutoSaveTimer);
+      void saveCurrentCode(false);
+    }
   }
 
   async function signAllContracts() {
@@ -1124,15 +1191,45 @@
           </div>
 
           <div class="flex items-center gap-1.5 shrink-0">
-            {#if displayedCodeLines.length > 0}
+            {#if saveCodeStatus}
+              <span class="text-[9.5px] font-mono text-emerald-300 font-bold">{saveCodeStatus}</span>
+            {/if}
+            {#if displayedCodeLines.length > 0 || isEditingCode}
               <button
                 type="button"
-                onclick={() => (fullCodeView = !fullCodeView)}
-                class="px-2 py-0.5 rounded text-[9.5px] font-mono border cursor-pointer {fullCodeView ? 'bg-sky-500/25 border-sky-500/50 text-sky-200 font-bold' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'}"
-                title="Basculer entre extrait ciblé et fichier complet"
+                onclick={() => openFileInExternalEditor('vscode', loadedCodePath || symbol?.file_path, symbol?.line_number || 1)}
+                class="flex items-center gap-1 px-2 py-0.5 rounded text-[9.5px] font-mono bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-200 cursor-pointer"
+                title="Ouvrir ce fichier dans VS Code à la ligne cible"
               >
-                {fullCodeView ? 'Vue Ciblée' : 'Fichier Complet'}
+                <span>VS Code</span>
               </button>
+              <button
+                type="button"
+                onclick={() => openFileInExternalEditor('notepad', loadedCodePath || symbol?.file_path, 1)}
+                class="flex items-center gap-1 px-2 py-0.5 rounded text-[9.5px] font-mono bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 cursor-pointer"
+                title="Ouvrir ce fichier dans Notepad"
+              >
+                <span>Notepad</span>
+              </button>
+              <button
+                type="button"
+                onclick={toggleCodeEditMode}
+                class="flex items-center gap-1 px-2 py-0.5 rounded text-[9.5px] font-mono border cursor-pointer {isEditingCode ? 'bg-amber-500/25 border-amber-500/50 text-amber-200 font-bold' : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'}"
+                title="Éditer ce fichier source directement (Ctrl+S ou Save Auto)"
+              >
+                <Pencil class="w-2.5 h-2.5" />
+                <span>{isEditingCode ? 'Aperçu' : 'Éditer'}</span>
+              </button>
+              {#if !isEditingCode}
+                <button
+                  type="button"
+                  onclick={() => (fullCodeView = !fullCodeView)}
+                  class="px-2 py-0.5 rounded text-[9.5px] font-mono border cursor-pointer {fullCodeView ? 'bg-sky-500/25 border-sky-500/50 text-sky-200 font-bold' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'}"
+                  title="Basculer entre extrait ciblé et fichier complet"
+                >
+                  {fullCodeView ? 'Vue Ciblée' : 'Fichier Complet'}
+                </button>
+              {/if}
               <button
                 type="button"
                 onclick={copyCodeSnippet}
@@ -1157,6 +1254,38 @@
             <div class="p-6 text-center text-slate-400 text-xs font-mono flex items-center justify-center gap-2">
               <RefreshCw class="w-4 h-4 text-sky-400 animate-spin" />
               <span>Chargement du code source...</span>
+            </div>
+          {:else if isEditingCode}
+            <div class="p-3 space-y-2 bg-[#04060d]">
+              <textarea
+                bind:value={draftCodeContent}
+                oninput={triggerCodeAutoSave}
+                onkeydown={handleCodeTextareaKeydown}
+                spellcheck="false"
+                class="w-full h-72 p-3 rounded-xl bg-[#020409] border border-sky-500/40 font-mono text-[11px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-400 resize-y leading-relaxed shadow-inner whitespace-pre overflow-auto"
+              ></textarea>
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-3 text-[10px] font-mono text-slate-400">
+                  <span>{draftCodeContent.split('\n').length} lignes</span>
+                  <label class="flex items-center gap-1 cursor-pointer text-emerald-300">
+                    <input
+                      type="checkbox"
+                      bind:checked={cockpitState.settings.editorAutoSave}
+                      onchange={() => cockpitState.saveLocalSettings()}
+                      class="accent-emerald-400"
+                    />
+                    Save Auto (à l'édit)
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onclick={() => saveCurrentCode(false)}
+                  class="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-xs font-bold text-slate-950 cursor-pointer shadow-md transition-all"
+                  title="Enregistrer le code sur disque (Ctrl+S)"
+                >
+                  <Save class="w-3.5 h-3.5" /> Enregistrer (Ctrl+S)
+                </button>
+              </div>
             </div>
           {:else if displayedCodeLines.length > 0}
             <div class="max-h-72 overflow-x-auto overflow-y-auto p-2.5 font-mono text-[10.5px] bg-[#04060d] leading-snug">
@@ -1255,22 +1384,29 @@
               <textarea
                 bind:value={draftDocContent}
                 oninput={triggerDocAutoSave}
+                onkeydown={handleDocTextareaKeydown}
                 class="w-full h-80 p-3 rounded-xl bg-[#04060d] border border-amber-500/40 font-mono text-[11px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-400 resize-none leading-relaxed shadow-inner"
               ></textarea>
               <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-3 text-[10px] font-mono text-slate-400">
                   <span>{draftDocContent.split('\n').length} lignes</span>
                   <label class="flex items-center gap-1 cursor-pointer text-emerald-300">
-                    <input type="checkbox" bind:checked={autoSaveEnabled} class="accent-emerald-400" />
-                    Auto-Save (1.5s)
+                    <input
+                      type="checkbox"
+                      bind:checked={cockpitState.settings.editorAutoSave}
+                      onchange={() => cockpitState.saveLocalSettings()}
+                      class="accent-emerald-400"
+                    />
+                    Save Auto (à l'édit)
                   </label>
                 </div>
                 <button
                   type="button"
                   onclick={() => saveCurrentDoc(false)}
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-xs font-bold text-slate-950 cursor-pointer shadow-md transition-all"
+                  title="Enregistrer sur disque (Ctrl+S)"
                 >
-                  <Save class="w-3.5 h-3.5" /> Enregistrer sur Disque
+                  <Save class="w-3.5 h-3.5" /> Enregistrer (Ctrl+S)
                 </button>
               </div>
             </div>

@@ -41,12 +41,10 @@
     Code2,
     Download,
     Eye,
-    Layers,
     Lock,
     Radar,
     Save,
     ShieldAlert,
-    Sparkles,
     X,
   } from '@lucide/svelte';
 
