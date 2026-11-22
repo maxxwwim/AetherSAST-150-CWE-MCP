@@ -903,6 +903,13 @@ impl PluginEngine {
 
         let norm_path = ctx.file_path.replace('\\', "/");
         let norm_rel = norm_path.trim_start_matches("./").trim_start_matches('/');
+        if norm_rel.starts_with("tests/")
+            || norm_rel.contains("/tests/")
+            || norm_rel.starts_with("benches/")
+            || norm_rel.contains("/benches/")
+        {
+            return violations;
+        }
 
         let raw_lines_cell: OnceLock<Vec<&str>> = OnceLock::new();
         let masked_lines_cell: OnceLock<Vec<&str>> = OnceLock::new();

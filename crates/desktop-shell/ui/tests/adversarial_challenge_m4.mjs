@@ -16,6 +16,7 @@ import { createServer } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const uiRoot = path.resolve(__dirname, '..');
 
 // In-memory mock localStorage
 class MockLocalStorage {
@@ -68,7 +69,7 @@ async function runAdversarialStress() {
 
   // Start Vite SSR Server to load Svelte/TS modules
   const viteServer = await createServer({
-    root: __dirname,
+    root: uiRoot,
     server: { middlewareMode: true },
     appType: 'custom',
   });
@@ -80,8 +81,8 @@ async function runAdversarialStress() {
     console.log('--- Suite 1: SearchDropdownPanel Portal & Search Stress ---');
 
     // 1.1 Structural Static Analysis of HeaderDeck.svelte
-    const headerCode = fs.readFileSync(path.join(__dirname, 'src/components/HeaderDeck.svelte'), 'utf-8');
-    const panelCode = fs.readFileSync(path.join(__dirname, 'src/components/SearchDropdownPanel.svelte'), 'utf-8');
+    const headerCode = fs.readFileSync(path.join(uiRoot, 'src/components/HeaderDeck.svelte'), 'utf-8');
+    const panelCode = fs.readFileSync(path.join(uiRoot, 'src/components/SearchDropdownPanel.svelte'), 'utf-8');
 
     // Verify SearchDropdownPanel is placed outside header at root level
     const line1Index = headerCode.indexOf('LIGNE 1 : BRAND');
@@ -306,7 +307,7 @@ async function runAdversarialStress() {
     assert(cockpitState.showRadar === initialRadar, 'cockpitState.toggleRadar() restored original state');
 
     // 2.2 Dynamic Drawer Offset Calculation
-    const radarCode = fs.readFileSync(path.join(__dirname, 'src/components/RadarMinimap.svelte'), 'utf-8');
+    const radarCode = fs.readFileSync(path.join(uiRoot, 'src/components/RadarMinimap.svelte'), 'utf-8');
     assert(
       radarCode.includes('cockpitState.isChatOpen') &&
       radarCode.includes('return 420') &&
@@ -692,8 +693,8 @@ async function runAdversarialStress() {
     // SUITE 6: Line Count Budget Exceeded vs CWE Security Isolation
     // ========================================================================
     console.log('\n--- Suite 6: Line Count Budget Exceeded vs CWE Security Isolation ---');
-    const { isLinesExceededAnomaly, getNodeAlertKind } = await viteServer.ssrLoadModule('./src/state/graphState.svelte.ts');
-    const { CONTRACT_WARNING_COLOR, SEVERITY_COLORS } = await viteServer.ssrLoadModule('./src/engine/palette.ts');
+    const { isLinesExceededAnomaly, getNodeAlertKind } = await viteServer.ssrLoadModule('/src/state/graphState.svelte.ts');
+    const { CONTRACT_WARNING_COLOR, SEVERITY_COLORS } = await viteServer.ssrLoadModule('/src/engine/palette.ts');
 
     // 6.1 isLinesExceededAnomaly Classification
     assert(isLinesExceededAnomaly({ rule_id: 'RULE_MAX_LINES' }) === true, 'RULE_MAX_LINES is recognized as lines exceeded');

@@ -169,7 +169,11 @@ impl PatchVerifier {
         }
 
         // 4. Reachability Taint-Graph (R2 integration)
-        let mut active_graph = custom_graph.or_else(|| server_port.and_then(try_fetch_graph));
+        let mut active_graph = if custom_graph.is_some() || !violations.is_empty() {
+            custom_graph.or_else(|| server_port.and_then(try_fetch_graph))
+        } else {
+            None
+        };
         if let Some(ref mut g) = active_graph {
             for v in &violations {
                 if let Some(node) = g.nodes.iter_mut().find(|n| n.file_path == v.file_path) {

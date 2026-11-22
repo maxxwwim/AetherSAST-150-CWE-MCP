@@ -29,9 +29,11 @@ import {
   CONTRACT_WARNING_COLOR,
   type RgbaColor
 } from './palette';
-import { normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly, formatCweShortId, type CockpitState } from '../state/graphState.svelte';
+import { normalizeEdgeRelation, getNodeAlertKind, isLinesExceededAnomaly, type CockpitState } from '../state/graphState.svelte';
 import { playSpatialTone } from '../lib/sound';
 import type { SymbolBubble, CveAnomalyRecord } from '../types/graph';
+import { renderGitDiffBadges, renderSecurityBeacons, type BeaconsOverlayContext } from './beaconsOverlay';
+import { AgentOverlayRenderer } from './agentOverlay';
 
 // Precomputed 12-sector trigonometric tables for C1-continuous cellular membranes
 const _COS12 = new Float32Array(12);
@@ -110,7 +112,9 @@ export class AetherEngine {
   private labelBounds: { x: number; y: number; w: number; h: number }[] = [];
   private anomalyNodeIndices: number[] = [];
   private fileAnomaliesByPath = new Map<string, CveAnomalyRecord[]>();
-  private agentSmoothPositions = new Map<string, { x: number; y: number }>();
+  private agentOverlay = new AgentOverlayRenderer();
+  private clusterEnvelopeCooldown = 24;
+  private lastClusterZoom = -1;
 
   // Visual Plugin Runtime State (M1 + M2)
   private themeColors: Float32Array = resolveThemeColorsArray();
@@ -264,6 +268,7 @@ export class AetherEngine {
         }
       }
 
+      this.clusterEnvelopeCooldown = 24;
       this.uploadInstanceSubData();
     };
   }
@@ -272,7 +277,11 @@ export class AetherEngine {
     if (this.instanceData.length === 0) return;
     const { gl, pipeline } = this;
     gl.bindBuffer(gl.ARRAY_BUFFER, pipeline.instanceVbo);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.instanceData);
+    if (typeof gl.bufferSubData === 'function') {
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.instanceData);
+    } else if (typeof gl.bufferData === 'function') {
+      gl.bufferData(gl.ARRAY_BUFFER, this.instanceData, gl.DYNAMIC_DRAW);
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
@@ -407,6 +416,7 @@ export class AetherEngine {
     this.rebuildAnomalyIndex(nodes);
 
     this.seedInitialClusters(nodes);
+    this.clusterEnvelopeCooldown = 24;
     this.refreshVisionColors(false);
     if (resetCamera || !this.hasInitialCameraFit) {
       this.hasInitialCameraFit = true;
@@ -534,6 +544,7 @@ export class AetherEngine {
 
     if (filterChanged) {
       this.rebuildAnomalyIndex(nodes);
+      this.clusterEnvelopeCooldown = 24;
     }
 
     this.activeNeighbors.clear();
@@ -691,7 +702,7 @@ export class AetherEngine {
   }
 
   public resetZoom() {
-    this.camera.targetZoom = 1.0;
+    this.camera.targetZoom = 0.65;
     this.physics.wake(60);
   }
 
@@ -1196,9 +1207,32 @@ export class AetherEngine {
     this.renderMembranes(ctx, now);
     this.renderEdges(ctx, now);
     this.renderLabels(ctx);
-    this.renderGitDiffBadges(ctx, now);
-    this.renderSecurityBeacons(ctx, now);
-    this.renderAiAgentOverlay(ctx, now, dt);
+    const beaconsCtx: BeaconsOverlayContext = {
+      state: this.state,
+      zoom: this.camera.zoom,
+      logicalWidth: this.logicalWidth,
+      logicalHeight: this.logicalHeight,
+      hoveredNodeId: this.hoveredNodeId,
+      folderPillBounds: this.folderPillBounds,
+      labelBounds: this.labelBounds,
+      anomalyNodeIndices: this.anomalyNodeIndices,
+      isAnomalyIgnored: this.isAnomalyIgnored,
+      getEffectiveAnomalies: (n) => this.getEffectiveAnomalies(n),
+      worldToScreen: (wx, wy) => this.worldToScreen(wx, wy),
+      getNodeScreenRadius: (n, activeId) => this.getNodeScreenRadius(n, activeId),
+    };
+    renderGitDiffBadges(ctx, now, beaconsCtx);
+    renderSecurityBeacons(ctx, now, beaconsCtx);
+    this.agentOverlay.render(ctx, now, dt, {
+      state: this.state,
+      nodeMap: this.nodeMap,
+      zoom: this.camera.zoom,
+      logicalWidth: this.logicalWidth,
+      logicalHeight: this.logicalHeight,
+      worldToScreen: (wx, wy) => this.worldToScreen(wx, wy),
+      classifyNode: (n) => this.classifyNode(n),
+      getNodeScreenRadius: (n, activeId) => this.getNodeScreenRadius(n, activeId),
+    });
   }
 
   private captureSnapshot() {
@@ -1292,750 +1326,6 @@ export class AetherEngine {
       ctx.font = '700 10px ui-monospace, "SF Mono", Consolas, monospace';
       ctx.fillStyle = 'rgba(165, 180, 252, 0.55)';
       ctx.fillText('MATRICE UML & RELATIONS STRUCTURELLES', 16, 22);
-    }
-
-    ctx.restore();
-  }
-
-  private renderGitDiffBadges(ctx: CanvasRenderingContext2D, now: number) {
-    const nodes = this.state.graph.nodes;
-    if (!nodes || nodes.length === 0) return;
-    const gitFiles = this.state.gitStatus?.files;
-    const hasEdits = Boolean((gitFiles && gitFiles.length > 0) || (this.state.folderEdits && Object.keys(this.state.folderEdits).length > 0));
-    if (!hasEdits) return;
-
-    const disabledLayers = this.state.disabledLayers;
-    const disabledModules = this.state.disabledModules;
-    const zoom = this.camera.zoom;
-    const activeId = this.state.activeSymbol?.id || null;
-    const W = this.logicalWidth;
-    const H = this.logicalHeight;
-
-    ctx.save();
-    ctx.font = '600 9.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-
-    const placed: { x: number; y: number; w: number; h: number }[] = this.folderPillBounds.map((b) => ({
-      x: b.x - 3,
-      y: b.y - 3,
-      w: b.w + 6,
-      h: b.h + 6,
-    }));
-    const collides = (x: number, y: number, w: number, h: number) => {
-      for (const r of placed) {
-        if (x < r.x + r.w + 3 && x + w + 3 > r.x && y < r.y + r.h + 3 && y + h + 3 > r.y) return true;
-      }
-      return false;
-    };
-
-    let drawnRings = 0;
-    let drawnPills = 0;
-    const maxPills = zoom < 0.25 ? 8 : 16;
-
-    for (let i = 0; i < nodes.length && drawnRings < 64; i++) {
-      const n = nodes[i];
-      const ek = n.edit_kind || (
-        n.git_status === 'violation' ? 'violation'
-          : n.git_status === 'new_folder' ? 'new_folder'
-            : n.git_status === 'untracked' ? 'new_file'
-              : n.git_status === 'text' ? 'text'
-                : n.git_status === 'modified' ? 'modif'
-                  : 'none'
-      );
-      if (ek === 'none') continue;
-      if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
-
-      const isFocus = n.id === this.hoveredNodeId || n.id === activeId;
-      // Only show git-diff indicators on file nodes or focused/hovered symbol (prevents 60+ stacked child-symbol overlays)
-      if (!n.is_file && !isFocus) continue;
-
-      // Never draw redundant "FAILLE ÉDIT" boxes: security nodes are rendered cleanly by renderSecurityBeacons
-      if (ek === 'violation') continue;
-
-      const p = this.worldToScreen(n.x, n.y);
-      if (p.x < -60 || p.x > W + 60 || p.y < -60 || p.y > H + 60) continue;
-
-      let badgeText = '';
-      let accentHex = '#facc15';
-      let strokeColor = 'rgba(250, 204, 21, 0.72)';
-      let textColor = '#fef08a';
-
-      if (ek === 'modif') {
-        badgeText = 'MODIF';
-        accentHex = '#facc15';
-        strokeColor = 'rgba(250, 204, 21, 0.72)';
-        textColor = '#fef08a';
-      } else if (ek === 'text') {
-        badgeText = 'DOC';
-        accentHex = '#22d3ee';
-        strokeColor = 'rgba(34, 211, 238, 0.72)';
-        textColor = '#a5f3fc';
-      } else if (ek === 'new_file') {
-        badgeText = '+FICHIER';
-        accentHex = '#34d399';
-        strokeColor = 'rgba(52, 211, 153, 0.75)';
-        textColor = '#a7f3d0';
-      } else if (ek === 'new_folder') {
-        badgeText = '+DOSSIER';
-        accentHex = '#c084fc';
-        strokeColor = 'rgba(192, 132, 252, 0.75)';
-        textColor = '#e9d5ff';
-      } else {
-        continue;
-      }
-
-      const visR = this.getNodeScreenRadius(n, activeId);
-      const ringR = Math.max(5.5, Math.min(22, visR * 0.58 + 3));
-      const isRecent = Boolean(n.last_edit_ts && now - n.last_edit_ts < 15000);
-
-      // Subtle, crisp git status ring (zero heavy shadowBlur blotches)
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = isRecent || isFocus ? 1.5 : 1.05;
-      ctx.stroke();
-      drawnRings++;
-
-      if (!isFocus && !isRecent && zoom < 0.35) continue;
-      if (drawnPills >= maxPills && !isFocus) continue;
-
-      const padX = 6;
-      const dotW = 8;
-      const pillH = 16;
-      const tw = Math.ceil(ctx.measureText(badgeText).width) + padX * 2 + dotW;
-      const bx = Math.max(4, Math.min(W - tw - 4, Math.round(p.x - tw * 0.5)));
-      const by = Math.round(p.y + ringR + 5);
-
-      if (by + pillH > H - 28 || (!isFocus && collides(bx, by, tw, pillH))) continue;
-      placed.push({ x: bx, y: by, w: tw, h: pillH });
-      drawnPills++;
-
-      ctx.fillStyle = 'rgba(10, 14, 24, 0.90)';
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1.0;
-      ctx.beginPath();
-      ctx.roundRect(bx, by, tw, pillH, pillH / 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(bx + padX + 2, by + pillH / 2, 2.3, 0, Math.PI * 2);
-      ctx.fillStyle = accentHex;
-      ctx.fill();
-
-      ctx.fillStyle = textColor;
-      ctx.fillText(badgeText, bx + padX + dotW, by + pillH / 2 + 0.5);
-    }
-
-    ctx.restore();
-  }
-
-  private renderSecurityBeacons(ctx: CanvasRenderingContext2D, now: number) {
-    if (!this.state.settings.showAlerts) return;
-    const nodes = this.state.graph.nodes;
-    if (!nodes || nodes.length === 0) return;
-    const anomalyIndices = this.anomalyNodeIndices;
-    if (anomalyIndices.length === 0) return;
-
-    const disabledLayers = this.state.disabledLayers;
-    const disabledModules = this.state.disabledModules;
-    const zoom = this.camera.zoom;
-    const showTitles = this.state.settings.showCweTitles;
-    const activeId = this.state.activeSymbol?.id || null;
-    const W = this.logicalWidth;
-    const H = this.logicalHeight;
-
-    type SeverityLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LINES';
-    type Beacon = {
-      x: number;
-      y: number;
-      ringR: number;
-      sev: SeverityLevel;
-      code: string;
-      extraCount: number;
-      prio: number;
-      isFocus: boolean;
-    };
-    const beacons: Beacon[] = [];
-
-    // ---- Passe 1 : anneaux fins proportionnels à la bulle (pas de pâté rouge au dézoom)
-    ctx.save();
-    let rings = 0;
-    for (let k = 0; k < anomalyIndices.length && rings < 260; k++) {
-      const i = anomalyIndices[k];
-      const n = nodes[i];
-      if (!n) continue;
-      if (disabledLayers[n.layer || 'utility'] || disabledModules[n.folder || n.cluster_id || 'root']) continue;
-
-      const alertKind = getNodeAlertKind(n, this.isAnomalyIgnored);
-      if (alertKind === 'none') continue;
-      if (!this.state.settings.showCweBubbles && alertKind === 'security') continue;
-
-      const isFocus = n.id === this.hoveredNodeId || n.id === activeId;
-      // En vue macro/méso (zoom < 0.55), agréger par fichier évite d'empiler 30 anneaux de sous-fonctions
-      if (!n.is_file && !isFocus && zoom < 0.55) continue;
-
-      const p = this.worldToScreen(n.x, n.y);
-      if (p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) continue;
-
-      const isLinesWarn = alertKind === 'lines_exceeded';
-      const effAnom = this.getEffectiveAnomalies(n);
-      const secAnoms = effAnom.filter((a) => !isLinesExceededAnomaly(a));
-
-      let sev: SeverityLevel = isLinesWarn ? 'LINES' : 'HIGH';
-      if (!isLinesWarn) {
-        if (secAnoms.some((a) => String(a.severity || '').toUpperCase() === 'CRITICAL')) sev = 'CRITICAL';
-        else if (secAnoms.some((a) => String(a.severity || '').toUpperCase() === 'HIGH')) sev = 'HIGH';
-        else if (secAnoms.length > 0) sev = 'MEDIUM';
-        else sev = 'CRITICAL';
-      }
-
-      const visR = this.getNodeScreenRadius(n, activeId);
-      const breath = 0.5 + 0.5 * Math.sin(now * 0.0018 + i * 0.55);
-      const ringR = Math.max(5.5, Math.min(24, visR * 0.56 + 3.2)) + (isFocus ? breath * 2.0 : breath * 0.8);
-
-      const rgb =
-        sev === 'LINES' ? '245, 158, 11'
-          : sev === 'CRITICAL' ? '244, 63, 94'
-            : sev === 'HIGH' ? '251, 146, 60'
-              : '250, 204, 21';
-
-      // Aura externe très légère (ne sature plus jamais en bloc rouge opaque)
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, ringR + 3, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${rgb}, ${(isFocus ? 0.14 : 0.055).toFixed(3)})`;
-      ctx.fill();
-
-      // Anneau net
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(${rgb}, ${(isFocus ? 0.92 : 0.62 + breath * 0.18).toFixed(2)})`;
-      ctx.lineWidth = isFocus ? 1.8 : 1.15;
-      ctx.stroke();
-      rings++;
-
-      if (showTitles && (isFocus || n.is_file || zoom >= 0.55)) {
-        let code: string;
-        let extraCount = 0;
-        let prio = 0;
-        if (isLinesWarn) {
-          const maxLim = n.metadata?.max_lines_limit || 300;
-          const curLoc = n.loc || n.metadata?.lines || 0;
-          code = curLoc > 0 ? `${curLoc}/${maxLim} L` : 'Max L';
-          prio = 1;
-        } else {
-          // Prioriser la faille la plus critique et compter les CWE de sécurité réelles
-          const rankSev = (s?: string) => {
-            const u = String(s || '').toUpperCase();
-            return u === 'CRITICAL' ? 3 : u === 'HIGH' ? 2 : 1;
-          };
-          const sortedSec = [...secAnoms].sort((a, b) => rankSev(b.severity) - rankSev(a.severity));
-          const primary = sortedSec[0];
-          code = primary ? formatCweShortId(primary.cve_id, primary.rule_id) : 'CWE';
-          extraCount = Math.max(0, sortedSec.length - 1);
-          prio = sev === 'CRITICAL' ? 4 : sev === 'HIGH' ? 3 : 2;
-        }
-        if (n.is_file) prio += 0.5;
-        beacons.push({ x: p.x, y: p.y, ringR, sev, code, extraCount, prio, isFocus });
-      }
-    }
-
-    // ---- Passe 2 : pastilles CWE compactes, verre dépoli sombre, anti-collision avec dossiers + labels
-    if (beacons.length > 0) {
-      beacons.sort((a, b) => Number(b.isFocus) - Number(a.isFocus) || b.prio - a.prio || b.extraCount - a.extraCount);
-
-      const fontPx = Math.min(11.5, Math.max(9.5, 9.8 + (zoom - 0.3) * 1.4));
-      const mainFont = `700 ${fontPx.toFixed(1)}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
-      const countFont = `700 ${Math.max(8.5, fontPx - 1.2).toFixed(1)}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'left';
-
-      const pillH = Math.round(fontPx + 8);
-      const padL = 7;
-      const padR = 7;
-      const dotArea = 9;
-
-      // Pré-remplit les zones occupées par les badges de dossiers et les labels de fichiers
-      const placed: { x: number; y: number; w: number; h: number }[] = [
-        ...this.folderPillBounds.map((b) => ({ x: b.x - 2, y: b.y - 2, w: b.w + 4, h: b.h + 4 })),
-        ...this.labelBounds.map((b) => ({ x: b.x - 1, y: b.y - 1, w: b.w + 2, h: b.h + 2 })),
-      ];
-      const hit = (x: number, y: number, w: number, h: number) => {
-        for (const r of placed) {
-          if (x < r.x + r.w + 4 && x + w + 4 > r.x && y < r.y + r.h + 4 && y + h + 4 > r.y) return true;
-        }
-        return false;
-      };
-
-      const maxPills = zoom < 0.12 ? 14 : zoom < 0.35 ? 24 : 42;
-      let drawnPills = 0;
-
-      for (const b of beacons) {
-        if (drawnPills >= maxPills && !b.isFocus) break;
-
-        ctx.font = mainFont;
-        const codeW = Math.ceil(ctx.measureText(b.code).width);
-        let extraText = '';
-        let extraChipW = 0;
-        if (b.extraCount > 0) {
-          extraText = `+${b.extraCount}`;
-          ctx.font = countFont;
-          extraChipW = Math.ceil(ctx.measureText(extraText).width) + 9;
-        }
-        const tw = padL + dotArea + codeW + (extraChipW > 0 ? 5 + extraChipW : 0) + padR;
-        const baseY = Math.round(b.y - b.ringR - pillH - 6);
-        const centerBx = Math.round(b.x - tw / 2);
-
-        // Positions candidates autour de la bulle : dessus, haut-droite, haut-gauche, étage +1, droite, gauche, dessous
-        const candidates: [number, number][] = [
-          [centerBx, baseY],
-          [Math.round(b.x + b.ringR + 6), Math.round(b.y - pillH - 2)],
-          [Math.round(b.x - b.ringR - tw - 6), Math.round(b.y - pillH - 2)],
-          [centerBx, baseY - (pillH + 5)],
-          [Math.round(b.x + b.ringR + 6), Math.round(b.y - pillH / 2)],
-          [Math.round(b.x - b.ringR - tw - 6), Math.round(b.y - pillH / 2)],
-          [centerBx, Math.round(b.y + b.ringR + 6)],
-        ];
-
-        let bx = centerBx;
-        let by = baseY;
-        let ok = false;
-        for (const [cxRaw, cy] of candidates) {
-          const cx = Math.max(6, Math.min(W - tw - 6, cxRaw));
-          if (cy < 54 || cy + pillH > H - 32) continue;
-          if (!hit(cx, cy, tw, pillH)) {
-            bx = cx;
-            by = cy;
-            ok = true;
-            break;
-          }
-        }
-        if (!ok) {
-          if (!b.isFocus) continue;
-          bx = Math.max(6, Math.min(W - tw - 6, centerBx));
-          by = Math.max(54, Math.min(H - pillH - 32, baseY));
-        }
-
-        placed.push({ x: bx, y: by, w: tw, h: pillH });
-        drawnPills++;
-
-        const palette =
-          b.sev === 'LINES'
-            ? { accent: '#f59e0b', border: 'rgba(245, 158, 11, 0.72)', bg: 'rgba(18, 14, 8, 0.90)', text: '#fde68a', chipBg: 'rgba(245, 158, 11, 0.22)', chipTxt: '#fcd34d' }
-            : b.sev === 'CRITICAL'
-              ? { accent: '#f43f5e', border: 'rgba(244, 63, 94, 0.78)', bg: 'rgba(17, 10, 16, 0.92)', text: '#ffe4e6', chipBg: 'rgba(244, 63, 94, 0.24)', chipTxt: '#fda4af' }
-              : b.sev === 'HIGH'
-                ? { accent: '#fb923c', border: 'rgba(251, 146, 60, 0.78)', bg: 'rgba(18, 12, 10, 0.92)', text: '#ffedd5', chipBg: 'rgba(251, 146, 60, 0.24)', chipTxt: '#fdba74' }
-                : { accent: '#facc15', border: 'rgba(250, 204, 21, 0.72)', bg: 'rgba(17, 15, 9, 0.90)', text: '#fef9c3', chipBg: 'rgba(250, 204, 21, 0.20)', chipTxt: '#fde047' };
-
-        // Fin trait connecteur vers la bulle
-        const pillCx = bx + tw / 2;
-        const pillCy = by + pillH / 2;
-        const dx = b.x - pillCx;
-        const dy = b.y - pillCy;
-        const d = Math.hypot(dx, dy) || 1;
-        if (d > b.ringR + pillH * 0.6) {
-          const anchorX = Math.max(bx + 4, Math.min(bx + tw - 4, b.x));
-          const anchorY = by + pillH < b.y ? by + pillH : by > b.y ? by : pillCy;
-          ctx.beginPath();
-          ctx.moveTo(anchorX, anchorY);
-          ctx.lineTo(b.x - (dx / d) * b.ringR, b.y - (dy / d) * b.ringR);
-          ctx.strokeStyle = palette.border;
-          ctx.globalAlpha = 0.42;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-          ctx.globalAlpha = 1.0;
-        }
-
-        // Corps de la pastille (sombre verre dépoli, bord net 1px, zéro flou baveux)
-        ctx.fillStyle = palette.bg;
-        ctx.strokeStyle = b.isFocus ? palette.accent : palette.border;
-        ctx.lineWidth = b.isFocus ? 1.5 : 1.0;
-        ctx.beginPath();
-        ctx.roundRect(bx, by, tw, pillH, 6);
-        ctx.fill();
-        ctx.stroke();
-
-        // Point de gravité net
-        ctx.beginPath();
-        ctx.arc(bx + padL + 2.5, by + pillH / 2, 2.7, 0, Math.PI * 2);
-        ctx.fillStyle = palette.accent;
-        ctx.fill();
-
-        // Identifiant CWE clair (ex: CWE-88, PATH-008, CWE-1075)
-        ctx.font = mainFont;
-        ctx.fillStyle = palette.text;
-        ctx.fillText(b.code, bx + padL + dotArea, by + pillH / 2 + 0.5);
-
-        // Mini-badge compteur (+N) sur la droite si plusieurs failles
-        if (extraChipW > 0) {
-          const chipX = bx + padL + dotArea + codeW + 5;
-          const chipH = pillH - 5;
-          const chipY = by + 2.5;
-          ctx.fillStyle = palette.chipBg;
-          ctx.beginPath();
-          ctx.roundRect(chipX, chipY, extraChipW, chipH, 4);
-          ctx.fill();
-
-          ctx.font = countFont;
-          ctx.fillStyle = palette.chipTxt;
-          ctx.fillText(extraText, chipX + 4.5, by + pillH / 2 + 0.5);
-        }
-      }
-    }
-    ctx.restore();
-  }
-
-  private renderAiAgentOverlay(ctx: CanvasRenderingContext2D, now: number, dt = 16.6) {
-    const rawAgents = this.state.activeAgents;
-    const trails = this.state.agentTrails;
-    if (!rawAgents || rawAgents.length === 0) return;
-    // Only render agents that pinged within the last 5 minutes
-    const agents = rawAgents.filter((ag) => !this.state.isAgentInactive(ag));
-    if (agents.length === 0) return;
-
-    // Prune stale agent positions to prevent memory leaks over time
-    if (this.agentSmoothPositions.size > 40) {
-      const activeIds = new Set(agents.map((a) => a.agentId));
-      for (const k of this.agentSmoothPositions.keys()) {
-        if (!activeIds.has(k)) {
-          this.agentSmoothPositions.delete(k);
-        }
-      }
-    }
-
-    ctx.save();
-    const zoom = this.camera.zoom;
-    const safeDt = Math.min(Math.max(dt || 16.6, 1.0), 50.0);
-
-    // Palette of vibrant neon colors guaranteed to be visually distinct
-    const DISTINCT_PALETTE = [
-      '#38bdf8', // Sky Cyan
-      '#f97316', // Neon Orange
-      '#c084fc', // Cosmic Purple
-      '#34d399', // Emerald Mint
-      '#f43f5e', // Hot Coral Rose
-      '#eab308', // Solar Amber
-      '#a855f7', // Electric Violet
-      '#06b6d4', // Bright Turquoise
-      '#ec4899', // Hyper Pink
-      '#84cc16', // Toxic Lime
-      '#6366f1', // Ultra Indigo
-      '#14b8a6', // Deep Teal
-      '#fb923c', // Tangerine
-      '#e879f9', // Orchid Fuchsia
-      '#10b981', // Spring Green
-      '#3b82f6', // Cobalt Blue
-    ];
-
-    // Pre-pass: Resolve target bubble and assign unique color for each agent
-    interface ActiveAgentVisual {
-      ag: (typeof agents)[0];
-      targetNode: SymbolBubble;
-      agColor: string;
-      agNameLower: string;
-      agentCleanName: string;
-    }
-
-    const resolvedList: ActiveAgentVisual[] = [];
-    const agentsByNode = new Map<string, number>();
-    const assignedColors = new Set<string>();
-
-    for (let idx = 0; idx < agents.length; idx++) {
-      const ag = agents[idx];
-      let targetNode: SymbolBubble | undefined;
-      if (ag.nodeId) {
-        targetNode = this.nodeMap.get(ag.nodeId);
-      }
-      if (!targetNode && ag.target) {
-        targetNode = this.state.resolveTargetNode(ag.target);
-        if (targetNode) ag.nodeId = targetNode.id;
-      }
-      if (!targetNode && this.state.activeSymbol) {
-        targetNode = this.state.activeSymbol;
-      }
-      if (!targetNode) continue;
-
-      let agColor = ag.color;
-      if (!agColor || assignedColors.has(agColor)) {
-        agColor = DISTINCT_PALETTE[idx % DISTINCT_PALETTE.length];
-      }
-      assignedColors.add(agColor);
-
-      const agNameLower = (ag.agentName || ag.agentId || '').toLowerCase();
-      const agentCleanName = ag.agentName || ag.agentId || 'Agent';
-
-      resolvedList.push({ ag, targetNode, agColor, agNameLower, agentCleanName });
-      agentsByNode.set(targetNode.id, (agentsByNode.get(targetNode.id) || 0) + 1);
-    }
-
-    if (resolvedList.length === 0) {
-      ctx.restore();
-      return;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 1. RENDER INTER-BUBBLE NAVIGATION TRAJECTORIES (LIGNES D'IA)
-    // ─────────────────────────────────────────────────────────────────────────
-    if (this.state.settings.showAiLines && this.state.settings.aiTrail) {
-      for (let idx = 0; idx < resolvedList.length; idx++) {
-        const { ag, targetNode, agColor } = resolvedList[idx];
-        const agTrail = trails[ag.agentId] || [];
-
-        const validPoints: { s: { x: number; y: number }; wx: number; wy: number }[] = [];
-
-        for (const pt of agTrail) {
-          let node = pt.nodeId ? this.nodeMap.get(pt.nodeId) : null;
-          if (!node && pt.target) {
-            node = this.state.resolveTargetNode(pt.target);
-            if (node) pt.nodeId = node.id;
-          }
-          const wx = node ? node.x : pt.x;
-          const wy = node ? node.y : pt.y;
-          if (wx == null || wy == null) continue;
-          validPoints.push({ s: this.worldToScreen(wx, wy), wx, wy });
-        }
-
-        // Connect the trail directly to the current target bubble if not already the final point
-        const lastPt = validPoints[validPoints.length - 1];
-        if (!lastPt || Math.hypot(lastPt.wx - targetNode.x, lastPt.wy - targetNode.y) > 1.0) {
-          validPoints.push({
-            s: this.worldToScreen(targetNode.x, targetNode.y),
-            wx: targetNode.x,
-            wy: targetNode.y,
-          });
-        }
-
-        if (validPoints.length > 1) {
-          // Pass 1: Subtle diffused glow path
-          ctx.beginPath();
-          ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
-          for (let i = 1; i < validPoints.length; i++) {
-            ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
-          }
-          ctx.strokeStyle = agColor;
-          ctx.lineWidth = Math.max(1.5, 2.2 * Math.sqrt(zoom));
-          ctx.globalAlpha = 0.12;
-          ctx.stroke();
-
-          // Pass 2: Lightweight dashed trajectory core
-          ctx.beginPath();
-          ctx.moveTo(validPoints[0].s.x, validPoints[0].s.y);
-          for (let i = 1; i < validPoints.length; i++) {
-            ctx.lineTo(validPoints[i].s.x, validPoints[i].s.y);
-          }
-          ctx.setLineDash([6, 6]);
-          ctx.lineDashOffset = -(now * 0.015 + idx * 3);
-          ctx.strokeStyle = agColor;
-          ctx.globalAlpha = 0.48;
-          ctx.lineWidth = Math.max(1.0, 1.3 * Math.sqrt(zoom));
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          // Pass 3: Subtle waypoint dots
-          for (let i = 0; i < validPoints.length; i++) {
-            const wp = validPoints[i];
-            const isLatest = i === validPoints.length - 1;
-            const wpRadius = isLatest ? 3.2 : 2.0;
-
-            ctx.beginPath();
-            ctx.arc(wp.s.x, wp.s.y, wpRadius, 0, Math.PI * 2);
-            ctx.fillStyle = isLatest ? '#ffffff' : agColor;
-            ctx.globalAlpha = isLatest ? 0.85 : 0.45;
-            ctx.fill();
-          }
-          ctx.globalAlpha = 1.0;
-        }
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 2. RENDER MULTI-AGENT ORBITS ON THE BUBBLE SIMULTANEOUSLY
-    // ─────────────────────────────────────────────────────────────────────────
-    const nodeAgentCounter = new Map<string, number>();
-
-    // 3D inclined celestial orbit constants base:
-    const TILT_ALPHA = 0.610865;   // ~35°
-    const INCLINATION_PSI = 0.436332; // ~25°
-    const omega = 0.0018;
-
-    for (let idx = 0; idx < resolvedList.length; idx++) {
-      const { ag, targetNode, agColor, agNameLower, agentCleanName } = resolvedList[idx];
-
-      const totalOnNode = agentsByNode.get(targetNode.id) || 1;
-      const subIdx = nodeAgentCounter.get(targetNode.id) || 0;
-      nodeAgentCounter.set(targetNode.id, subIdx + 1);
-
-      // Phase spacing: uniformly distribute agents around this bubble
-      const phiAgent = (subIdx / totalOnNode) * (Math.PI * 2);
-
-      // Tiered radius per agent on the same bubble so they have distinct orbital shells
-      const { baseRadius } = this.classifyNode(targetNode);
-      const orbitR = (baseRadius * 2.5 + 24.0) + (subIdx * 14.0);
-
-      // Distinct 3D orbital plane tilt and inclination per agent on this bubble
-      const tiltAlpha = TILT_ALPHA + (subIdx * (Math.PI / Math.max(2, totalOnNode * 2)));
-      const inclinationPsi = INCLINATION_PSI + (subIdx * (Math.PI / Math.max(1, totalOnNode)));
-      const cosAlpha = Math.cos(tiltAlpha);
-      const cosPsi = Math.cos(inclinationPsi);
-      const sinPsi = Math.sin(inclinationPsi);
-
-      // Alternating orbital revolution direction and speed
-      const dir = (subIdx % 2 === 0 ? 1 : -0.85);
-      const agentOmega = omega + (subIdx * 0.0002);
-      const theta = (now * agentOmega * dir) + phiAgent;
-
-      // Smooth camera anchor position with continuous LERP (safeguarded against frame drops)
-      let smooth = this.agentSmoothPositions.get(ag.agentId);
-      if (!smooth) {
-        smooth = { x: targetNode.x, y: targetNode.y };
-        this.agentSmoothPositions.set(ag.agentId, smooth);
-      } else {
-        const lerpFactor = 1.0 - Math.exp(-14.0 * (safeDt / 1000));
-        smooth.x += (targetNode.x - smooth.x) * lerpFactor;
-        smooth.y += (targetNode.y - smooth.y) * lerpFactor;
-      }
-      const anchorX = smooth.x;
-      const anchorY = smooth.y;
-
-      // ───────────────────────────────────────────────────────────────────────
-      // A. DRAW ORBITAL TRAJECTORY RING ON THE BUBBLE (LIGNES D'IA)
-      // ───────────────────────────────────────────────────────────────────────
-      if (this.state.settings.showAiLines) {
-        ctx.beginPath();
-        const ORBIT_SAMPLES = 12; // Lightweight sampling (eliminated heavy 28-sample matrix loop)
-        for (let s = 0; s <= ORBIT_SAMPLES; s++) {
-          const a = (s / ORBIT_SAMPLES) * Math.PI * 2;
-          const xP = orbitR * Math.cos(a);
-          const yP = orbitR * Math.sin(a) * cosAlpha;
-          const xR = xP * cosPsi - yP * sinPsi;
-          const yR = xP * sinPsi + yP * cosPsi;
-          const p = this.worldToScreen(anchorX + xR, anchorY + yR);
-          if (s === 0) ctx.moveTo(p.x, p.y);
-          else ctx.lineTo(p.x, p.y);
-        }
-        ctx.strokeStyle = agColor;
-        ctx.lineWidth = Math.max(1.0, 1.4 * Math.sqrt(zoom));
-        ctx.globalAlpha = 0.35;
-        ctx.stroke();
-      }
-
-      // Current avatar 3D position in orbit
-      const xPlane = orbitR * Math.cos(theta);
-      const yPlane = orbitR * Math.sin(theta) * cosAlpha;
-      const xRot = xPlane * cosPsi - yPlane * sinPsi;
-      const yRot = xPlane * sinPsi + yPlane * cosPsi;
-
-      const xOrbWorld = anchorX + xRot;
-      const yOrbWorld = anchorY + yRot;
-
-      const pOrb = this.worldToScreen(xOrbWorld, yOrbWorld);
-      const pNode = this.worldToScreen(anchorX, anchorY);
-
-      // Screen culling
-      if (
-        pOrb.x < -140 || pOrb.x > this.logicalWidth + 140 ||
-        pOrb.y < -140 || pOrb.y > this.logicalHeight + 140
-      ) {
-        continue;
-      }
-
-      // Calculate target bubble surface intersection
-      const targetR = this.getNodeScreenRadius(targetNode, this.state.activeSymbol?.id || null);
-      const dx = pNode.x - pOrb.x;
-      const dy = pNode.y - pOrb.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const impactDist = Math.max(0, targetR * 0.45);
-      const pImpact = {
-        x: pNode.x - (dx / len) * impactDist,
-        y: pNode.y - (dy / len) * impactDist,
-      };
-
-      // ───────────────────────────────────────────────────────────────────────
-      // B. CONNECTING LASER BEAM FROM AVATAR TO BUBBLE SURFACE (LIGNES D'IA)
-      // ───────────────────────────────────────────────────────────────────────
-      if (this.state.settings.showAiLines) {
-        // Pass 1: Diffused colored glow aura
-        ctx.beginPath();
-        ctx.moveTo(pOrb.x, pOrb.y);
-        ctx.lineTo(pImpact.x, pImpact.y);
-        ctx.strokeStyle = agColor;
-        ctx.lineWidth = Math.max(1.5, 2.5 * Math.sqrt(zoom));
-        ctx.globalAlpha = 0.30;
-        ctx.stroke();
-
-        // Pass 2: Inner white laser core
-        ctx.beginPath();
-        ctx.moveTo(pOrb.x, pOrb.y);
-        ctx.lineTo(pImpact.x, pImpact.y);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.0;
-        ctx.globalAlpha = 0.85;
-        ctx.stroke();
-
-        // Pass 3: Concentric circular scanning reticle on bubble surface (fast, zero matrix rotate churn)
-        const reticleRadius = Math.max(4, Math.min(10, 5 * Math.sqrt(Math.max(0.3, zoom))));
-        ctx.beginPath();
-        ctx.arc(pImpact.x, pImpact.y, reticleRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = agColor;
-        ctx.lineWidth = 1.0;
-        ctx.globalAlpha = 0.80;
-        ctx.stroke();
-      }
-
-      // ───────────────────────────────────────────────────────────────────────
-      // C. STELLAR AVATAR ORB AT (pOrb.x, pOrb.y) (LIGHTWEIGHT, ZERO MATRIX STACK CHURN)
-      // ───────────────────────────────────────────────────────────────────────
-      // Fast lightweight vector circles (eliminated rotating accretion ellipse matrix transforms)
-      ctx.beginPath();
-      ctx.arc(pOrb.x, pOrb.y, 8, 0, Math.PI * 2);
-      ctx.fillStyle = agColor;
-      ctx.globalAlpha = 0.35;
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(pOrb.x, pOrb.y, 3.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = 0.95;
-      ctx.fill();
-
-      // ───────────────────────────────────────────────────────────────────────
-      // D. STATIC & SLEEK BILLBOARD BADGE (MASQUABLE & DISPARAÎT APRÈS 5 MIN D'INACTIVITÉ)
-      // ───────────────────────────────────────────────────────────────────────
-      const isInactive = this.state.isAgentInactive(ag);
-      if (this.state.settings.showAiNames && !isInactive && zoom >= 0.22) {
-        const agentIcon = agNameLower.includes('claude') ? '✨'
-          : agNameLower.includes('gemini') ? '⚡'
-          : agNameLower.includes('cursor') ? '🎯'
-          : agNameLower.includes('antigravity') ? '🪐'
-          : '🤖';
-        const shortName = agentCleanName.length > 14 ? agentCleanName.slice(0, 12) + '…' : agentCleanName;
-        const tagText = `${agentIcon} ${shortName}`;
-
-        ctx.font = '600 9px ui-sans-serif, system-ui, -apple-system, sans-serif';
-        const tw = ctx.measureText(tagText).width + 10;
-        const badgeH = 15;
-
-        // FIXED ANCHOR TO NODE (pNode), NOT MOVING WITH THE ORBITING CELL (pOrb)
-        const badgeX = pNode.x;
-        const badgeY = pNode.y - targetR - 8 - (subIdx * (badgeH + 3));
-
-        // Compact glassmorphic pill badge
-        ctx.fillStyle = 'rgba(10, 14, 26, 0.92)';
-        ctx.strokeStyle = agColor;
-        ctx.lineWidth = 1.0;
-        ctx.globalAlpha = 0.92;
-        ctx.beginPath();
-        ctx.roundRect(badgeX - tw * 0.5, badgeY - badgeH * 0.5, tw, badgeH, 4);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#f8fafc';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(tagText, badgeX, badgeY + 0.5);
-      }
     }
 
     ctx.restore();
@@ -2225,8 +1515,22 @@ export class AetherEngine {
 
   private renderMembranes(ctx: CanvasRenderingContext2D, now: number) {
     this.folderPillBounds = [];
-    this.syncLiveClusterEnvelopes();
-    if (!this.state.settings.showFolderMembranes || this.membraneStyle === 'none' || this.state.visionMode === 'xray' || this.clusters.size === 0) return;
+    if (!this.state.settings.showFolderMembranes || this.membraneStyle === 'none' || this.state.visionMode === 'xray') return;
+
+    if (Math.abs(this.camera.zoom - this.lastClusterZoom) > 0.004) {
+      this.lastClusterZoom = this.camera.zoom;
+      this.clusterEnvelopeCooldown = Math.max(this.clusterEnvelopeCooldown, 6);
+    }
+    if (
+      this.clusters.size === 0 ||
+      this.clusterEnvelopeCooldown > 0 ||
+      this.isDraggingNode ||
+      (!this.state.physicsPaused && !this.physics.isIdle())
+    ) {
+      if (this.clusterEnvelopeCooldown > 0) this.clusterEnvelopeCooldown--;
+      this.syncLiveClusterEnvelopes();
+    }
+    if (this.clusters.size === 0) return;
 
     ctx.save();
     // Horloge respiratoire maîtresse apaisée, ultra-fluide et douce (~9.6s par cycle)
@@ -3122,6 +2426,7 @@ export class AetherEngine {
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
     }
+    this.agentOverlay.clear();
     this.physics.destroy();
   }
 }

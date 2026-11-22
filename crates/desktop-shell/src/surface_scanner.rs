@@ -672,7 +672,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
             final_tech_stack.push(TechFingerprint {
                 name: gen.clone(),
                 category: "CMS / GÃ©nÃ©rateur".to_string(),
-                version: extract_version_token(gen),
+                version: extract_version_label(gen),
                 source: "Balise <meta name=\"generator\">".to_string(),
                 confidence: "Haute (100%)".to_string(),
             });

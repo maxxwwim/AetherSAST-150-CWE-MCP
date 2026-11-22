@@ -7,11 +7,17 @@ use std::collections::{HashMap, HashSet};
 pub fn execute_track_dataflow(dfg: &DataflowGraph) -> Vec<TaintFlowTrace> {
     let mut traces = Vec::new();
 
-    // Build adjacency map: from scoped_id -> list of edges
+    // Build adjacency map: from scoped_id -> list of edges, plus reverse adjacency for O(V+E) reachability pruning
     let mut adj: HashMap<String, Vec<&DataflowEdge>> = HashMap::new();
+    let mut rev_adj: HashMap<String, Vec<String>> = HashMap::new();
     for edge in &dfg.edges {
-        adj.entry(edge.from_var.scoped_id()).or_default().push(edge);
+        let from_id = edge.from_var.scoped_id();
+        let to_id = edge.to_var.scoped_id();
+        adj.entry(from_id.clone()).or_default().push(edge);
+        rev_adj.entry(to_id).or_default().push(from_id);
     }
+
+    let mut rev_reach_cache: HashMap<String, HashSet<String>> = HashMap::new();
 
     for source in &dfg.sources {
         for sink in &dfg.sinks {
@@ -36,20 +42,46 @@ pub fn execute_track_dataflow(dfg: &DataflowGraph) -> Vec<TaintFlowTrace> {
                 continue;
             }
 
-            // Find all simple paths via DFS with cycle detection
+            let can_reach_dst = rev_reach_cache.entry(dst_id.clone()).or_insert_with(|| {
+                let mut reached = HashSet::new();
+                let mut queue = std::collections::VecDeque::new();
+                reached.insert(dst_id.clone());
+                queue.push_back((dst_id.clone(), 0usize));
+                while let Some((cur, depth)) = queue.pop_front() {
+                    if depth >= 32 {
+                        continue;
+                    }
+                    if let Some(preds) = rev_adj.get(&cur) {
+                        for pred in preds {
+                            if reached.insert(pred.clone()) {
+                                queue.push_back((pred.clone(), depth + 1));
+                            }
+                        }
+                    }
+                }
+                reached
+            });
+
+            if !can_reach_dst.contains(&src_id) {
+                continue;
+            }
+
+            // Find simple paths via DFS with cycle detection and reverse-reachability pruning
             let mut all_paths: Vec<Vec<&DataflowEdge>> = Vec::new();
             let mut current_path: Vec<&DataflowEdge> = Vec::new();
             let mut visited_nodes: HashSet<String> = HashSet::new();
             visited_nodes.insert(src_id.clone());
 
-            find_paths_dfs(
+            find_paths_dfs_pruned(
                 &src_id,
                 &dst_id,
                 &adj,
+                can_reach_dst,
                 &mut visited_nodes,
                 &mut current_path,
                 &mut all_paths,
                 32, // maximum recursion depth to prevent infinite expansion
+                64, // maximum candidate paths per (source, sink) pair
             );
 
             if all_paths.is_empty() {
@@ -150,7 +182,7 @@ pub fn find_paths_dfs<'a>(
     all_paths: &mut Vec<Vec<&'a DataflowEdge>>,
     max_depth: usize,
 ) {
-    if current_path.len() >= max_depth {
+    if all_paths.len() >= 64 {
         return;
     }
 
@@ -159,8 +191,15 @@ pub fn find_paths_dfs<'a>(
         return;
     }
 
+    if current_path.len() >= max_depth {
+        return;
+    }
+
     if let Some(out_edges) = adj.get(current_node) {
         for edge in out_edges {
+            if all_paths.len() >= 64 {
+                break;
+            }
             let next_node = edge.to_var.scoped_id();
             if !visited.contains(&next_node) {
                 visited.insert(next_node.clone());
@@ -174,6 +213,60 @@ pub fn find_paths_dfs<'a>(
                     current_path,
                     all_paths,
                     max_depth,
+                );
+
+                current_path.pop();
+                visited.remove(&next_node);
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn find_paths_dfs_pruned<'a>(
+    current_node: &str,
+    target_node: &str,
+    adj: &HashMap<String, Vec<&'a DataflowEdge>>,
+    can_reach_dst: &HashSet<String>,
+    visited: &mut HashSet<String>,
+    current_path: &mut Vec<&'a DataflowEdge>,
+    all_paths: &mut Vec<Vec<&'a DataflowEdge>>,
+    max_depth: usize,
+    max_paths: usize,
+) {
+    if all_paths.len() >= max_paths {
+        return;
+    }
+
+    if current_node == target_node {
+        all_paths.push(current_path.clone());
+        return;
+    }
+
+    if current_path.len() >= max_depth {
+        return;
+    }
+
+    if let Some(out_edges) = adj.get(current_node) {
+        for edge in out_edges {
+            if all_paths.len() >= max_paths {
+                break;
+            }
+            let next_node = edge.to_var.scoped_id();
+            if can_reach_dst.contains(&next_node) && !visited.contains(&next_node) {
+                visited.insert(next_node.clone());
+                current_path.push(edge);
+
+                find_paths_dfs_pruned(
+                    &next_node,
+                    target_node,
+                    adj,
+                    can_reach_dst,
+                    visited,
+                    current_path,
+                    all_paths,
+                    max_depth,
+                    max_paths,
                 );
 
                 current_path.pop();

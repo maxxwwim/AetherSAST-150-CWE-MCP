@@ -1947,6 +1947,7 @@ impl EpicNovelRules {
             "TargetJail",
             "sanitize_path",
             "validate_path",
+            "validate_client_relative_path",
         ];
         let fs_markers = [
             "fs::", "File::", "OpenOptions::", "Path::new", "PathBuf::from",
@@ -1961,7 +1962,8 @@ impl EpicNovelRules {
         let slice_recv_cues = ["parts", "segments", "lines", "words", "tokens", "items", "args", "cols", "fields", "collect"];
 
         for (s, e) in fn_scopes {
-            let block: String = lines[s..=e].join("\n");
+            let scope_lines = &lines[s..=e];
+            let block: String = scope_lines.join("\n");
             let lower_block = block.to_lowercase();
             if confine_markers.iter().any(|m| block.contains(m))
                 || !fs_markers.iter().any(|m| block.contains(m))
@@ -1983,6 +1985,17 @@ impl EpicNovelRules {
                         let call_prefix = line[..pos].to_lowercase();
                         if slice_recv_cues.iter().any(|c| call_prefix.contains(c)) {
                             continue;
+                        }
+                        if let Some(recv) = Self::extract_receiver_ident(&line[..pos]) {
+                            if Self::is_vec_or_string_receiver(recv, scope_lines) {
+                                continue;
+                            }
+                            if method == ".push("
+                                && Self::is_plural_collection_ident(recv)
+                                && !Self::has_explicit_pathbuf_hint(recv, scope_lines)
+                            {
+                                continue;
+                            }
                         }
                         let has_path_recv = path_recv_cues.iter().any(|c| call_prefix.contains(c))
                             || call_prefix.contains("path::new")
@@ -2021,6 +2034,122 @@ impl EpicNovelRules {
                 }
             }
         }
+    }
+
+    fn extract_receiver_ident(prefix: &str) -> Option<&str> {
+        let trimmed = prefix.trim_end();
+        let bytes = trimmed.as_bytes();
+        let last = *bytes.last()?;
+        if !(last.is_ascii_alphanumeric() || last == b'_') {
+            return None;
+        }
+        let mut start = bytes.len();
+        while start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+            start -= 1;
+        }
+        let ident = &trimmed[start..];
+        if ident.is_empty() || ident.as_bytes()[0].is_ascii_digit() {
+            None
+        } else {
+            Some(ident)
+        }
+    }
+
+    fn is_vec_or_string_receiver(ident: &str, scope_lines: &[&str]) -> bool {
+        let let_type_cues = [
+            ": Vec<",
+            ": Vec ",
+            "= Vec::",
+            "= vec![",
+            ".collect::<Vec",
+            ": String",
+            "= String::",
+            "String::new(",
+            "String::from(",
+            "String::with_capacity(",
+            ": &[",
+            "= &[",
+        ];
+        let param_prefixes = [
+            format!("{}: Vec<", ident),
+            format!("{}:Vec<", ident),
+            format!("{}: &mut Vec<", ident),
+            format!("{}:&mut Vec<", ident),
+            format!("{}: String", ident),
+            format!("{}:String", ident),
+            format!("{}: &mut String", ident),
+            format!("{}:&mut String", ident),
+            format!("{}: &[", ident),
+            format!("{}:&[", ident),
+        ];
+        for idx in 0..scope_lines.len() {
+            let line = scope_lines[idx];
+            if !Self::has_token(line, ident) {
+                continue;
+            }
+            if param_prefixes.iter().any(|p| line.contains(p.as_str())) {
+                return true;
+            }
+            if Self::has_token(line, "let") {
+                let win2 = if idx + 1 < scope_lines.len() {
+                    format!("{} {}", line, scope_lines[idx + 1].trim_start())
+                } else {
+                    line.to_string()
+                };
+                if let_type_cues.iter().any(|c| win2.contains(c)) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn has_explicit_pathbuf_hint(ident: &str, scope_lines: &[&str]) -> bool {
+        let param_hints = [
+            format!("{}: PathBuf", ident),
+            format!("{}:PathBuf", ident),
+            format!("{}: &mut PathBuf", ident),
+            format!("{}:&mut PathBuf", ident),
+            format!("{}: &PathBuf", ident),
+            format!("{}:&PathBuf", ident),
+        ];
+        for idx in 0..scope_lines.len() {
+            let line = scope_lines[idx];
+            if !Self::has_token(line, ident) {
+                continue;
+            }
+            if param_hints.iter().any(|h| line.contains(h.as_str())) {
+                return true;
+            }
+            if Self::has_token(line, "let") {
+                let win2 = if idx + 1 < scope_lines.len() {
+                    format!("{} {}", line, scope_lines[idx + 1].trim_start())
+                } else {
+                    line.to_string()
+                };
+                if win2.contains(": PathBuf")
+                    || win2.contains(": &mut PathBuf")
+                    || win2.contains("PathBuf::")
+                    || win2.contains(".to_path_buf()")
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn is_plural_collection_ident(ident: &str) -> bool {
+        let lower = ident.to_ascii_lowercase();
+        let exact = [
+            "bases", "paths", "dirs", "roots", "dests", "bufs",
+            "uploads", "jails", "sandboxes", "files", "entries",
+        ];
+        let suffixes = [
+            "_paths", "_dirs", "_roots", "_bases", "_dests", "_bufs",
+            "_uploads", "_jails", "_sandboxes", "_files", "_entries",
+        ];
+        exact.contains(&lower.as_str()) || suffixes.iter().any(|s| lower.ends_with(s))
     }
 
     fn audit_rust_assert_unwindsafe(

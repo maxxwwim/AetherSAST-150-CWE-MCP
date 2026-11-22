@@ -1606,7 +1606,17 @@ pub(crate) fn format_attachment_details(
     out
 }
 
+#[allow(dead_code)]
 pub(crate) fn offline_active_target_fallback(project_path: &str, symbol_id: &str) -> String {
+    offline_active_target_fallback_with_trace(project_path, symbol_id, "none", 2)
+}
+
+pub(crate) fn offline_active_target_fallback_with_trace(
+    project_path: &str,
+    symbol_id: &str,
+    trace_direction: &str,
+    max_depth: usize,
+) -> String {
     if security_linter::SecretGuard::is_secret_path(symbol_id) {
         return format!("🛡️ [SÉCURITÉ V2 / SECRET GUARD] Accès interdit : Le fichier ou symbole '{}' est un fichier de secrets ou de configuration sensible (.env, clés privées, credentials). L'accès direct par l'IA est strictement bloqué.", symbol_id);
     }
@@ -1674,7 +1684,7 @@ pub(crate) fn offline_active_target_fallback(project_path: &str, symbol_id: &str
             .filter(|e| e.source == sym.id && e.relation != "contains")
             .collect();
 
-        if sym.stereotype == "«GhostNote»" || sym.symbol_type == "ghost_note" {
+        let mut base = if sym.stereotype == "«GhostNote»" || sym.symbol_type == "ghost_note" {
             format_ghost_note_details(sym, &incoming_edges)
         } else if sym.stereotype == "«Attachment»" || sym.symbol_type == "attachment" {
             format_attachment_details(sym, &incoming_edges)
@@ -1709,7 +1719,16 @@ pub(crate) fn offline_active_target_fallback(project_path: &str, symbol_id: &str
                 out_cat.total(),
                 deps_md
             )
+        };
+
+        if trace_direction != "none" {
+            let flow_text = format_trace_flow_response(&g, &sym.id, trace_direction, max_depth);
+            if !flow_text.starts_with("⚠️") && !flow_text.starts_with("âš") {
+                base.push_str("\n\n---\n");
+                base.push_str(&flow_text);
+            }
         }
+        base
     } else {
         let sym_low = symbol_id.to_lowercase();
         let suggestions: Vec<&str> = g.nodes.iter()
@@ -1725,6 +1744,61 @@ pub(crate) fn offline_active_target_fallback(project_path: &str, symbol_id: &str
     }
 }
 
+pub(crate) fn format_trace_flow_from_target_val(
+    val: &Value,
+    fallback_symbol_id: &str,
+    direction: &str,
+) -> Option<String> {
+    if direction == "none" {
+        return None;
+    }
+    let sym_name = val.get("symbol_name").and_then(|v| v.as_str()).unwrap_or(fallback_symbol_id);
+    let file_loc = val.get("file_path").and_then(|v| v.as_str()).unwrap_or("-");
+    let layer = val.get("layer").and_then(|v| v.as_str()).unwrap_or("domain");
+    let galaxy = val.get("galaxy").and_then(|v| v.as_str()).unwrap_or("core");
+
+    let dir_lower = direction.trim().to_lowercase();
+    let trace_up = dir_lower == "upstream" || dir_lower == "both" || dir_lower == "all";
+    let trace_down = dir_lower == "downstream" || dir_lower == "both" || dir_lower == "all";
+
+    let mut out = format!(
+        "# 🌊 Traçage de Flux Architectural pour `{}`\n- **Fichier :** `{}`\n- **Couche :** `{}` | **Galaxie :** `{}`\n\n",
+        sym_name, file_loc, layer, galaxy
+    );
+
+    if trace_up {
+        out.push_str("### 📥 Flux Amont (Appelants, Vues UI & Contrôleurs déclencheurs) :\n");
+        let callers = val.get("callers").and_then(|v| v.as_array());
+        if let Some(arr) = callers.filter(|a| !a.is_empty()) {
+            for c in arr.iter().take(15) {
+                if let Some(s) = c.as_str() {
+                    out.push_str(&format!("- ➔ `{}`\n", s));
+                }
+            }
+            out.push('\n');
+        } else {
+            out.push_str("*(Aucun flux amont direct détecté — point d'entrée ou racine)*\n\n");
+        }
+    }
+
+    if trace_down {
+        out.push_str("### 📤 Flux Aval (Services appelés, Modèles & Persistance DB) :\n");
+        let deps = val.get("dependencies").and_then(|v| v.as_array());
+        if let Some(arr) = deps.filter(|a| !a.is_empty()) {
+            for d in arr.iter().take(15) {
+                if let Some(s) = d.as_str() {
+                    out.push_str(&format!("- ➔ `{}`\n", s));
+                }
+            }
+            out.push('\n');
+        } else {
+            out.push_str("*(Aucun flux aval direct détecté — feuille ou logique pure)*\n\n");
+        }
+    }
+
+    Some(out)
+}
+
 pub async fn send_http_request(
     server_port: u16,
     method: &str,
@@ -1735,6 +1809,10 @@ pub async fn send_http_request(
     use std::net::{SocketAddr, TcpStream};
     use std::time::Duration;
 
+    if server_port == 0 {
+        return Err("AetherScope non connecté (port 0)".to_string());
+    }
+
     let addr: SocketAddr = format!("127.0.0.1:{}", server_port)
         .parse()
         .map_err(|e| format!("Adresse invalide: {}", e))?;
@@ -1744,7 +1822,7 @@ pub async fn send_http_request(
     let body_str = body.map(|b| serde_json::to_string(b).unwrap_or_default()).unwrap_or_default();
 
     tokio::task::spawn_blocking(move || {
-        let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(1500))
+        let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(250))
             .map_err(|e| format!("AetherScope non connectÃ© sur http://127.0.0.1:{} ({})", addr.port(), e))?;
 
         stream.set_read_timeout(Some(Duration::from_secs(45))).map_err(|e| e.to_string())?;

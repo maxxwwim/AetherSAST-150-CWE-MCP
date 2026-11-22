@@ -1,3 +1,4 @@
+pub(crate) mod lang;
 pub mod scanner;
 pub mod taint_extractor;
 

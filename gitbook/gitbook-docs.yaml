@@ -1,0 +1,27 @@
+# GitBook v2 multi-language configuration for AetherScope / aether-engine.
+# Note: `directory` paths (`./en`, `./fr`) assume GitBook Git Sync "Project directory" is set to `gitbook`.
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+site:
+  title: "AetherScope / aether-engine"
+  structure:
+    - type: section
+      key: aether-engine-docs
+      title: "Documentation"
+      path: docs
+      default: true
+      children:
+        - type: space
+          key: aether-engine-en
+          title: "English"
+          path: en
+          default: true
+          content:
+            directory: ./en
+            language: en
+        - type: space
+          key: aether-engine-fr
+          title: "Français"
+          path: fr
+          content:
+            directory: ./fr
+            language: fr

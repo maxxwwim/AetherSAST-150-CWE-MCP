@@ -349,41 +349,52 @@
 
     // Fallback version check, Git diff, tasks & AI agent telemetry (polls every 2s)
     let tickCount = 0;
+    let isPollingTick = false;
     versionTimer = setInterval(async () => {
+      if (isPollingTick) return;
       tickCount++;
       if (cockpitState.isDemoMode && !cockpitState.liveConnected) {
         if (tickCount % 10 !== 0) return;
       }
+      isPollingTick = true;
       try {
-        const res = await api.getGraphVersion();
-        await handleWatchVersionPayload(res);
-      } catch {
-        cockpitState.liveConnected = false;
-      }
-
-      // Continuous Git diff status poll
-      cockpitState.fetchGitStatus().catch(() => {});
-
-      // Continuous AI telemetry poll (only connected agents with ping < 5 min)
-      try {
-        const teleRes = await api.getTelemetry();
-        if (teleRes) {
-          cockpitState.recordAiTelemetry(teleRes.telemetry as any, teleRes.agents ?? [], teleRes.history);
-        }
-      } catch {
-        cockpitState.pruneInactiveAgents();
-      }
-
-      // Periodic tasks poll (every 4s) — tasks stay in the Tasks board and do NOT fabricate fake live AI pings
-      if (tickCount % 2 === 0) {
         try {
-          const tasks = await api.getTasks();
-          if (Array.isArray(tasks)) {
-            cockpitState.tasks = tasks;
+          const res = await api.getGraphVersion();
+          await handleWatchVersionPayload(res);
+        } catch {
+          cockpitState.liveConnected = false;
+        }
+
+        // Continuous Git diff status poll
+        cockpitState.fetchGitStatus().catch(() => {});
+
+        // Continuous AI telemetry poll (only connected agents with ping < 5 min)
+        try {
+          const teleRes = await api.getTelemetry();
+          if (teleRes) {
+            cockpitState.recordAiTelemetry(teleRes.telemetry as any, teleRes.agents ?? [], teleRes.history);
           }
         } catch {
-          // offline or quiet tasks
+          cockpitState.pruneInactiveAgents();
         }
+
+        // Periodic tasks poll (every 4s) — tasks stay in the Tasks board and do NOT fabricate fake live AI pings
+        if (tickCount % 2 === 0) {
+          try {
+            const tasks = await api.getTasks();
+            if (Array.isArray(tasks)) {
+              const sig = tasks.map((t) => `${t.id}:${t.status}:${t.progress}:${t.updated_at || ''}`).join('|');
+              const curSig = cockpitState.tasks.map((t) => `${t.id}:${t.status}:${t.progress}:${t.updated_at || ''}`).join('|');
+              if (sig !== curSig) {
+                cockpitState.tasks = tasks;
+              }
+            }
+          } catch {
+            // offline or quiet tasks
+          }
+        }
+      } finally {
+        isPollingTick = false;
       }
     }, 2000);
 

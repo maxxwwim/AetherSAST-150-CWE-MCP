@@ -371,23 +371,265 @@ export function buildDemoPluginsInventory(
   };
 }
 
-function globMatchesPath(glob: string, filePath: string): boolean {
-  const norm = filePath.replace(/\\/g, '/').replace(/^\.\//, '');
-  const g = glob.replace(/\\/g, '/').replace(/^\.\//, '');
-  const rxStr =
-    '^' +
-    g
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*\*\//g, '(?:.*/)?')
-      .replace(/\*\*/g, '.*')
-      .replace(/\*/g, '[^/]*')
-      .replace(/\?/g, '[^/]') +
-    '$';
-  try {
-    return new RegExp(rxStr, 'i').test(norm);
-  } catch {
-    return true;
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const MAX_PLUGIN_REGEX_LEN = 256;
+const MAX_PLUGIN_QUANTIFIERS = 16;
+const MAX_PLUGIN_REPEAT_BOUND = 100;
+const MAX_PLUGIN_LINE_LEN = 4096;
+
+export function isSafePluginRegexPattern(pattern: string): boolean {
+  if (!pattern || pattern.length > MAX_PLUGIN_REGEX_LEN) return false;
+
+  let inCharClass = false;
+  let quantifiers = 0;
+  let prevWasQuantifier = false;
+  let prevWasLazy = false;
+  const groupStack: { hasInnerQuantifier: boolean; hasAlternation: boolean }[] = [];
+
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+
+    if (ch === '\\') {
+      if (i + 1 >= pattern.length) return false;
+      const nextCh = pattern[i + 1];
+      // Reject backreferences (\1..\9)
+      if (!inCharClass && nextCh >= '1' && nextCh <= '9') {
+        return false;
+      }
+      i++;
+      prevWasQuantifier = false;
+      prevWasLazy = false;
+      continue;
+    }
+
+    if (inCharClass) {
+      if (ch === ']') {
+        inCharClass = false;
+        prevWasQuantifier = false;
+        prevWasLazy = false;
+      }
+      continue;
+    }
+
+    if (ch === '[') {
+      inCharClass = true;
+      prevWasQuantifier = false;
+      prevWasLazy = false;
+      continue;
+    }
+
+    if (ch === '(') {
+      groupStack.push({ hasInnerQuantifier: false, hasAlternation: false });
+      prevWasQuantifier = false;
+      prevWasLazy = false;
+      continue;
+    }
+
+    if (ch === '|') {
+      if (groupStack.length > 0) {
+        groupStack[groupStack.length - 1].hasAlternation = true;
+      }
+      prevWasQuantifier = false;
+      prevWasLazy = false;
+      continue;
+    }
+
+    if (ch === ')') {
+      if (groupStack.length === 0) return false;
+      const frame = groupStack.pop()!;
+      const nextCh = pattern[i + 1];
+      const isRepeatedGroup = nextCh === '*' || nextCh === '+' || nextCh === '{';
+      if (isRepeatedGroup && (frame.hasInnerQuantifier || frame.hasAlternation)) {
+        return false;
+      }
+      if (frame.hasInnerQuantifier && groupStack.length > 0) {
+        groupStack[groupStack.length - 1].hasInnerQuantifier = true;
+      }
+      prevWasQuantifier = false;
+      prevWasLazy = false;
+      continue;
+    }
+
+    if (ch === '*' || ch === '+') {
+      if (prevWasQuantifier) return false;
+      quantifiers++;
+      if (quantifiers > MAX_PLUGIN_QUANTIFIERS) return false;
+      if (groupStack.length > 0) {
+        groupStack[groupStack.length - 1].hasInnerQuantifier = true;
+      }
+      prevWasQuantifier = true;
+      prevWasLazy = false;
+      continue;
+    }
+
+    if (ch === '?') {
+      if (prevWasQuantifier) {
+        if (prevWasLazy) return false;
+        // Single lazy modifier after *, +, ?, or {m,n}
+        prevWasLazy = true;
+        continue;
+      }
+      quantifiers++;
+      if (quantifiers > MAX_PLUGIN_QUANTIFIERS) return false;
+      if (groupStack.length > 0) {
+        groupStack[groupStack.length - 1].hasInnerQuantifier = true;
+      }
+      prevWasQuantifier = true;
+      prevWasLazy = false;
+      continue;
+    }
+
+    if (ch === '{') {
+      const rest = pattern.slice(i);
+      const braceMatch = rest.match(/^\{(\d+)(?:,(\d*))?\}/);
+      if (braceMatch) {
+        if (prevWasQuantifier) return false;
+        const minVal = Number(braceMatch[1]);
+        const maxStr = braceMatch[2];
+        if (!Number.isFinite(minVal) || minVal > MAX_PLUGIN_REPEAT_BOUND) return false;
+        if (maxStr !== undefined && maxStr !== '') {
+          const maxVal = Number(maxStr);
+          if (!Number.isFinite(maxVal) || maxVal > MAX_PLUGIN_REPEAT_BOUND || maxVal < minVal) {
+            return false;
+          }
+        }
+        quantifiers++;
+        if (quantifiers > MAX_PLUGIN_QUANTIFIERS) return false;
+        if (groupStack.length > 0) {
+          groupStack[groupStack.length - 1].hasInnerQuantifier = true;
+        }
+        i += braceMatch[0].length - 1;
+        prevWasQuantifier = true;
+        prevWasLazy = false;
+        continue;
+      }
+    }
+
+    prevWasQuantifier = false;
+    prevWasLazy = false;
   }
+
+  return !inCharClass && groupStack.length === 0;
+}
+
+export function compileSafePluginRegExp(pattern: string): RegExp | null {
+  if (!isSafePluginRegexPattern(pattern)) return null;
+  try {
+    return new RegExp(pattern);
+  } catch {
+    return null;
+  }
+}
+
+function isIdentChar(ch: string): boolean {
+  const code = ch.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    code === 95
+  );
+}
+
+function containsWholeIdentifier(text: string, ident: string): boolean {
+  if (!ident || !text) return false;
+  const len = ident.length;
+  let idx = text.indexOf(ident);
+  while (idx !== -1) {
+    const beforeOk = idx === 0 || !isIdentChar(text[idx - 1]);
+    const afterIdx = idx + len;
+    const afterOk = afterIdx === text.length || !isIdentChar(text[afterIdx]);
+    if (beforeOk && afterOk) return true;
+    idx = text.indexOf(ident, idx + 1);
+  }
+  return false;
+}
+
+type GlobToken =
+  | { kind: 'GLOBSTAR_DIR' }
+  | { kind: 'GLOBSTAR' }
+  | { kind: 'STAR' }
+  | { kind: 'QMARK' }
+  | { kind: 'LIT'; ch: string };
+
+function globMatchesPath(glob: string, filePath: string): boolean {
+  const norm = filePath.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+  const g = glob.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+  if (!g || g.length > 256 || norm.length > 2048) return false;
+
+  const tokens: GlobToken[] = [];
+  for (let i = 0; i < g.length; i++) {
+    if (g[i] === '*' && g[i + 1] === '*') {
+      if (g[i + 2] === '/') {
+        const prev = tokens[tokens.length - 1];
+        if (!prev || prev.kind !== 'GLOBSTAR_DIR') {
+          tokens.push({ kind: 'GLOBSTAR_DIR' });
+        }
+        i += 2;
+      } else {
+        const prev = tokens[tokens.length - 1];
+        if (!prev || prev.kind !== 'GLOBSTAR') {
+          tokens.push({ kind: 'GLOBSTAR' });
+        }
+        i += 1;
+      }
+    } else if (g[i] === '*') {
+      const prev = tokens[tokens.length - 1];
+      if (!prev || (prev.kind !== 'STAR' && prev.kind !== 'GLOBSTAR')) {
+        tokens.push({ kind: 'STAR' });
+      }
+    } else if (g[i] === '?') {
+      tokens.push({ kind: 'QMARK' });
+    } else {
+      tokens.push({ kind: 'LIT', ch: g[i] });
+    }
+  }
+
+  const n = norm.length;
+  let dp = new Uint8Array(n + 1);
+  dp[0] = 1;
+
+  for (const tok of tokens) {
+    const next = new Uint8Array(n + 1);
+    if (tok.kind === 'GLOBSTAR_DIR') {
+      let seen = false;
+      for (let j = 0; j <= n; j++) {
+        if (dp[j]) {
+          next[j] = 1;
+          seen = true;
+        } else if (seen && j > 0 && norm[j - 1] === '/') {
+          next[j] = 1;
+        }
+      }
+    } else if (tok.kind === 'GLOBSTAR') {
+      let seen = false;
+      for (let j = 0; j <= n; j++) {
+        if (dp[j]) seen = true;
+        if (seen) next[j] = 1;
+      }
+    } else if (tok.kind === 'STAR') {
+      let active = false;
+      for (let j = 0; j <= n; j++) {
+        if (j > 0 && norm[j - 1] === '/') active = false;
+        if (dp[j]) active = true;
+        if (active) next[j] = 1;
+      }
+    } else if (tok.kind === 'QMARK') {
+      for (let j = 1; j <= n; j++) {
+        if (dp[j - 1] && norm[j - 1] !== '/') next[j] = 1;
+      }
+    } else {
+      for (let j = 1; j <= n; j++) {
+        if (dp[j - 1] && norm[j - 1] === tok.ch) next[j] = 1;
+      }
+    }
+    dp = next;
+  }
+
+  return dp[n] === 1;
 }
 
 function detectLineAstScope(lines: string[], lineIdx: number, filePath: string): string {
@@ -440,10 +682,48 @@ function scopeMatchesRequirement(reqScope: string | null | undefined, detected: 
  * Evaluates all active plugins (or a custom rule set) against a virtual file in the browser Playground.
  */
 export function evaluatePluginRulesInBrowser(
-  plugins: PluginEntryInfo[],
-  filePath: string,
-  code: string
+  pluginsOrFilePath: PluginEntryInfo[] | string,
+  filePathOrCode: string,
+  codeOrRules?: string | Array<PluginEntryInfo | PluginRuleInfo>
 ): PlaygroundFinding[] {
+  let plugins: PluginEntryInfo[];
+  let filePath: string;
+  let code: string;
+
+  if (typeof pluginsOrFilePath === 'string') {
+    filePath = pluginsOrFilePath;
+    code = typeof filePathOrCode === 'string' ? filePathOrCode : '';
+    const rawList = Array.isArray(codeOrRules) ? codeOrRules : [];
+    const bareRules: PluginRuleInfo[] = [];
+    plugins = [];
+    for (const item of rawList) {
+      if (item && typeof item === 'object' && 'rules' in item && Array.isArray((item as PluginEntryInfo).rules)) {
+        plugins.push(item as PluginEntryInfo);
+      } else if (item && typeof item === 'object') {
+        bareRules.push(item as PluginRuleInfo);
+      }
+    }
+    if (bareRules.length > 0) {
+      plugins.push({
+        name: 'inline-eval',
+        version: '1.0.0',
+        author: 'AetherScope',
+        description: 'Inline rule evaluation',
+        enabled: true,
+        profile: 'default',
+        tags: [],
+        rules_count: bareRules.length,
+        taint_rules_count: 0,
+        rules: bareRules,
+        taint_rules: []
+      });
+    }
+  } else {
+    plugins = Array.isArray(pluginsOrFilePath) ? pluginsOrFilePath : [];
+    filePath = typeof filePathOrCode === 'string' ? filePathOrCode : '';
+    code = typeof codeOrRules === 'string' ? codeOrRules : '';
+  }
+
   const findings: PlaygroundFinding[] = [];
   const lines = code.split('\n');
   const lowerPath = filePath.toLowerCase();
@@ -478,12 +758,18 @@ export function evaluatePluginRulesInBrowser(
 
       const compiledRxs: RegExp[] = [];
       for (const pat of rule.regex_patterns || []) {
-        try {
-          compiledRxs.push(new RegExp(pat));
-        } catch {
-          // skip invalid regex
-        }
+        const rx = compileSafePluginRegExp(pat);
+        if (rx) compiledRxs.push(rx);
       }
+
+      const winConfig = rule.not_preceded_within_lines;
+      const winCompiledPatterns =
+        winConfig && winConfig.lines > 0
+          ? winConfig.patterns.map((pat) => ({
+              pat,
+              rx: compileSafePluginRegExp(pat),
+            }))
+          : [];
 
       lines.forEach((lineText, idx) => {
         const trimmed = lineText.trim();
@@ -495,28 +781,28 @@ export function evaluatePluginRulesInBrowser(
           return;
         }
 
+        const boundedLine =
+          lineText.length > MAX_PLUGIN_LINE_LEN ? lineText.slice(0, MAX_PLUGIN_LINE_LEN) : lineText;
+
         let triggered = false;
         if (rule.forbidden_tokens?.some((tok) => lineText.includes(tok))) {
           triggered = true;
         }
-        if (!triggered && compiledRxs.some((rx) => rx.test(lineText))) {
+        if (!triggered && compiledRxs.some((rx) => rx.test(boundedLine))) {
           triggered = true;
         }
 
-        if (triggered && rule.not_preceded_within_lines && rule.not_preceded_within_lines.lines > 0) {
-          const win = rule.not_preceded_within_lines;
-          const start = Math.max(0, idx - win.lines);
+        if (triggered && winConfig && winConfig.lines > 0) {
+          const start = Math.max(0, idx - winConfig.lines);
           let guarded = false;
           for (let p = start; p < idx; p++) {
             const prevLine = lines[p];
+            const boundedPrev =
+              prevLine.length > MAX_PLUGIN_LINE_LEN ? prevLine.slice(0, MAX_PLUGIN_LINE_LEN) : prevLine;
             if (
-              win.patterns.some((pat) => {
-                try {
-                  return new RegExp(pat).test(prevLine) || prevLine.includes(pat);
-                } catch {
-                  return prevLine.includes(pat);
-                }
-              })
+              winCompiledPatterns.some(
+                ({ pat, rx }) => (rx ? rx.test(boundedPrev) : false) || boundedPrev.includes(pat)
+              )
             ) {
               guarded = true;
               break;
@@ -644,8 +930,7 @@ export function evaluatePluginRulesInBrowser(
           // Or propagated from an existing tainted variable in RHS
           let parentTaint: TaintVarState | null = null;
           for (const [vName, tState] of taintedVars.entries()) {
-            const idRx = new RegExp(`\\b${vName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
-            if (idRx.test(rhs)) {
+            if (containsWholeIdentifier(rhs, vName)) {
               parentTaint = tState;
               break;
             }
@@ -702,8 +987,7 @@ export function evaluatePluginRulesInBrowser(
           // Either a tainted SSA variable is passed to the sink, or an inline taint_source appears directly inside the sink call
           let hitTaint: TaintVarState | null = null;
           for (const [vName, tState] of taintedVars.entries()) {
-            const idRx = new RegExp(`\\b${vName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
-            if (idRx.test(trimmed)) {
+            if (containsWholeIdentifier(trimmed, vName)) {
               hitTaint = tState;
               break;
             }

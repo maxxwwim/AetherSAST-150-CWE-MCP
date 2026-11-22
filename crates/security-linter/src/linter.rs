@@ -1533,39 +1533,41 @@ impl SecurityLinter {
                 continue;
             }
 
-            if let Some(c) = contract {
-                // 2. Règle forbidden_imports (Architecture & Guardrail)
-                for forbidden in &c.frontmatter.forbidden_imports {
-                    let clean_pat = forbidden.trim_end_matches('*').trim_end_matches(':');
-                    if (trimmed.starts_with("use ") || trimmed.starts_with("import ") || trimmed.starts_with("from "))
-                        && trimmed.contains(clean_pat)
-                    {
+            if !is_test_file {
+                if let Some(c) = contract {
+                    // 2. Règle forbidden_imports (Architecture & Guardrail)
+                    for forbidden in &c.frontmatter.forbidden_imports {
+                        let clean_pat = forbidden.trim_end_matches('*').trim_end_matches(':');
+                        if (trimmed.starts_with("use ") || trimmed.starts_with("import ") || trimmed.starts_with("from "))
+                            && trimmed.contains(clean_pat)
+                        {
+                            violations.push(LinterViolation {
+                                file_path: file_path.to_string(),
+                                line_number: line_no,
+                                rule_id: "RULE_FORBIDDEN_IMPORT".to_string(),
+                                cve_id: "CWE-1075 / ARCH-CONTRACT-VIOLATION".to_string(),
+                                severity: "CRITICAL".to_string(),
+                                message: format!("Forbidden import detected: '{}' violates folder contract", forbidden),
+                                transmitted_data: Some(forbidden.clone()),
+                                transmitted_type: Some("ModuleImport (Illegal Galaxy Boundary Crossing)".to_string()),
+                                remediation: format!("Remove reference to '{}'. Pass dependencies via contracts/ abstractions.", forbidden),
+                            });
+                        }
+                    }
+                    // 2b. Règle forbidden_functions (appel de fonction / macro interdit par le contrat)
+                    if let Some(forbidden_fn) = c.forbidden_function_on_line(trimmed) {
                         violations.push(LinterViolation {
                             file_path: file_path.to_string(),
                             line_number: line_no,
-                            rule_id: "RULE_FORBIDDEN_IMPORT".to_string(),
+                            rule_id: "RULE_FORBIDDEN_FUNCTION".to_string(),
                             cve_id: "CWE-1075 / ARCH-CONTRACT-VIOLATION".to_string(),
                             severity: "CRITICAL".to_string(),
-                            message: format!("Forbidden import detected: '{}' violates folder contract", forbidden),
-                            transmitted_data: Some(forbidden.clone()),
-                            transmitted_type: Some("ModuleImport (Illegal Galaxy Boundary Crossing)".to_string()),
-                            remediation: format!("Remove reference to '{}'. Pass dependencies via contracts/ abstractions.", forbidden),
+                            message: format!("Forbidden function call detected: '{}' violates folder contract", forbidden_fn),
+                            transmitted_data: Some(forbidden_fn.clone()),
+                            transmitted_type: Some("FunctionCall (Forbidden by Folder Contract)".to_string()),
+                            remediation: format!("Replace the call to '{}' with an approved abstraction or update forbidden_functions in the folder contract.", forbidden_fn),
                         });
                     }
-                }
-                // 2b. Règle forbidden_functions (appel de fonction / macro interdit par le contrat)
-                if let Some(forbidden_fn) = c.forbidden_function_on_line(trimmed) {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "RULE_FORBIDDEN_FUNCTION".to_string(),
-                        cve_id: "CWE-1075 / ARCH-CONTRACT-VIOLATION".to_string(),
-                        severity: "CRITICAL".to_string(),
-                        message: format!("Forbidden function call detected: '{}' violates folder contract", forbidden_fn),
-                        transmitted_data: Some(forbidden_fn.clone()),
-                        transmitted_type: Some("FunctionCall (Forbidden by Folder Contract)".to_string()),
-                        remediation: format!("Replace the call to '{}' with an approved abstraction or update forbidden_functions in the folder contract.", forbidden_fn),
-                    });
                 }
             }
 

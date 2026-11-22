@@ -17,6 +17,16 @@ pub struct DualGraphBundle<'a> {
 
 fn ensure_system_prompt(graph: &AetherGraph) -> AetherGraph {
     let mut graph_clone = graph.clone();
+    graph_clone.dataflow_graph = None;
+    for n in &mut graph_clone.nodes {
+        let is_doc = n.file_path.to_ascii_lowercase().ends_with(".md");
+        if !is_doc {
+            n.metadata.raw_content = None;
+        }
+        if !n.metadata.cve_anomalies.is_empty() {
+            n.metadata.violations.clear();
+        }
+    }
     if graph_clone.system_prompt.is_none() {
         let p_path = graph_clone
             .project_path

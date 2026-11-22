@@ -127,7 +127,7 @@ pub struct McpAgentSession {
     pub explicit_identity: bool,
 }
 
-static MCP_SESSION: std::sync::OnceLock<std::sync::Mutex<McpAgentSession>> = std::sync::OnceLock::new();
+static MCP_SESSION: std::sync::OnceLock<parking_lot::Mutex<McpAgentSession>> = std::sync::OnceLock::new();
 
 fn default_mcp_session() -> McpAgentSession {
     let pid = std::process::id();
@@ -146,24 +146,23 @@ fn default_mcp_session() -> McpAgentSession {
     }
 }
 
-fn get_mcp_session() -> &'static std::sync::Mutex<McpAgentSession> {
-    MCP_SESSION.get_or_init(|| std::sync::Mutex::new(default_mcp_session()))
+fn get_mcp_session() -> &'static parking_lot::Mutex<McpAgentSession> {
+    MCP_SESSION.get_or_init(|| parking_lot::Mutex::new(default_mcp_session()))
 }
 
 #[allow(dead_code)]
 pub fn init_mcp_session_identity(agent_id: Option<&str>, agent_name: Option<&str>, color: Option<&str>) {
-    if let Ok(mut session) = get_mcp_session().lock() {
-        if let Some(id) = agent_id.map(str::trim).filter(|s| !s.is_empty()) {
-            session.agent_id = id.to_string();
-            session.explicit_identity = true;
-        }
-        if let Some(name) = agent_name.map(str::trim).filter(|s| !s.is_empty()) {
-            session.agent_name = name.to_string();
-            session.explicit_identity = true;
-        }
-        let resolved_color = mcp_assign_agent_color(&session.agent_id, Some(&session.agent_name), color);
-        session.color = resolved_color;
+    let mut session = get_mcp_session().lock();
+    if let Some(id) = agent_id.map(str::trim).filter(|s| !s.is_empty()) {
+        session.agent_id = id.to_string();
+        session.explicit_identity = true;
     }
+    if let Some(name) = agent_name.map(str::trim).filter(|s| !s.is_empty()) {
+        session.agent_name = name.to_string();
+        session.explicit_identity = true;
+    }
+    let resolved_color = mcp_assign_agent_color(&session.agent_id, Some(&session.agent_name), color);
+    session.color = resolved_color;
 }
 
 pub fn register_mcp_client_info(client_name: &str) {
@@ -171,19 +170,18 @@ pub fn register_mcp_client_info(client_name: &str) {
     if clean_name.is_empty() {
         return;
     }
-    if let Ok(mut session) = get_mcp_session().lock() {
-        if !session.explicit_identity {
-            let pid = std::process::id() % 10000;
-            let slug: String = clean_name
-                .chars()
-                .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
-                .collect();
-            let slug_trimmed = slug.trim_matches('-');
-            let base = if slug_trimmed.is_empty() { "mcp-ai" } else { slug_trimmed };
-            session.agent_id = format!("{}-{}", base, pid);
-            session.agent_name = format!("{} (#{})", clean_name, pid % 1000);
-            session.color = mcp_assign_agent_color(&session.agent_id, Some(&session.agent_name), None);
-        }
+    let mut session = get_mcp_session().lock();
+    if !session.explicit_identity {
+        let pid = std::process::id() % 10000;
+        let slug: String = clean_name
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+            .collect();
+        let slug_trimmed = slug.trim_matches('-');
+        let base = if slug_trimmed.is_empty() { "mcp-ai" } else { slug_trimmed };
+        session.agent_id = format!("{}-{}", base, pid);
+        session.agent_name = format!("{} (#{})", clean_name, pid % 1000);
+        session.color = mcp_assign_agent_color(&session.agent_id, Some(&session.agent_name), None);
     }
 }
 
@@ -213,15 +211,12 @@ pub fn resolve_mcp_agent_identity(arguments: &Value) -> (String, String, String)
         return (aid, aname, color);
     }
 
-    if let Ok(session) = get_mcp_session().lock() {
-        return (
-            session.agent_id.clone(),
-            session.agent_name.clone(),
-            session.color.clone(),
-        );
-    }
-    let fallback = default_mcp_session();
-    (fallback.agent_id, fallback.agent_name, fallback.color)
+    let session = get_mcp_session().lock();
+    (
+        session.agent_id.clone(),
+        session.agent_name.clone(),
+        session.color.clone(),
+    )
 }
 
 fn opt_str_arg<'a>(arguments: &'a Value, key: &str) -> Option<&'a str> {
@@ -349,6 +344,61 @@ fn format_swarm_roster(agents: &[Value], self_id: Option<&str>) -> String {
     format!("🌐 Essaim Multi-Agents actifs ({}):\n{}", agents.len(), lines.join("\n"))
 }
 
+fn is_same_project_path(
+    raw_target_path: &str,
+    requested_path: &Path,
+    server_project_path: Option<&str>,
+    default_path: &str,
+) -> bool {
+    let clean_raw = raw_target_path.trim();
+    if clean_raw.is_empty() || clean_raw == "." {
+        return true;
+    }
+    if let Some(srv_p) = server_project_path.map(str::trim).filter(|s| !s.is_empty()) {
+        return resolve_project_root(srv_p) == requested_path;
+    }
+    resolve_project_root(default_path) == requested_path
+}
+
+fn scan_project_graph_offline(p_buf: &Path) -> core_graph::graph::AetherGraph {
+    let is_vault_project = obsidian_vault::detect_project_type(p_buf)
+        .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
+        .unwrap_or(false);
+    if is_vault_project {
+        obsidian_vault::scan_obsidian_vault(p_buf)
+            .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(p_buf))
+    } else {
+        ast_scanner::ProjectScanner::default().scan_project(p_buf)
+    }
+}
+
+async fn fetch_mcp_graph_value(server_port: u16) -> Result<Value, String> {
+    let val = send_http_request(server_port, "GET", "/api/graph?mcp=1", None).await?;
+    if val.get("edges_compact").is_some() {
+        return send_http_request(server_port, "GET", "/api/graph?full=1", None).await;
+    }
+    Ok(val)
+}
+
+async fn fetch_or_scan_project_graph(
+    server_port: u16,
+    target_path: &str,
+    default_path: &str,
+) -> core_graph::graph::AetherGraph {
+    let p_buf = resolve_project_root(target_path);
+    if server_port > 0 {
+        if let Ok(val) = fetch_mcp_graph_value(server_port).await {
+            let srv_path = val.get("project_path").and_then(|v| v.as_str());
+            if is_same_project_path(target_path, &p_buf, srv_path, default_path) {
+                if let Ok(g) = serde_json::from_value::<core_graph::graph::AetherGraph>(val) {
+                    return g;
+                }
+            }
+        }
+    }
+    scan_project_graph_offline(&p_buf)
+}
+
 pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, default_path: &str) -> Option<JsonRpcResponse> {
     if let Some(res) = handle_catalog_request(&req, server_port, default_path).await {
         return res;
@@ -455,8 +505,10 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("Inspection").to_string();
                     let details = arguments.get("details").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let (self_id, self_name, self_color) = resolve_mcp_agent_identity(&arguments);
-                    let res = emit_mcp_telemetry(server_port, default_path, &target, &action, &details, &arguments).await;
-                    let peers = fetch_active_swarm_agents(server_port).await;
+                    let (res, peers) = tokio::join!(
+                        emit_mcp_telemetry(server_port, default_path, &target, &action, &details, &arguments),
+                        fetch_active_swarm_agents(server_port)
+                    );
                     let peer_note = if peers.len() > 1 {
                         format!("\n\n{}", format_swarm_roster(&peers, Some(&self_id)))
                     } else {
@@ -484,44 +536,74 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let include_tasks = arguments.get("include_tasks").and_then(|v| v.as_bool()).unwrap_or(true);
                     let severity_filter = arguments.get("severity").and_then(|v| v.as_str());
 
-                    let graph_val_res = if rescan || req_path_opt.is_some() {
-                        let scan_p = req_path_opt.unwrap_or(default_path);
+                    let target_path = req_path_opt.unwrap_or(default_path);
+                    let p_buf = resolve_project_root(target_path);
+
+                    let graph_val_res = if rescan {
                         let analyze_res = send_http_request(server_port, "POST", "/api/analyze", Some(&json!({
-                            "path": scan_p
+                            "path": target_path
                         }))).await;
                         match analyze_res {
                             Ok(val) => Ok(val),
-                            Err(_) => send_http_request(server_port, "GET", "/api/graph?full=1", None).await,
+                            Err(_) => fetch_mcp_graph_value(server_port).await,
                         }
                     } else {
-                        send_http_request(server_port, "GET", "/api/graph?full=1", None).await
+                        match fetch_mcp_graph_value(server_port).await {
+                            Ok(val) => {
+                                let srv_path = val.get("project_path").and_then(|v| v.as_str());
+                                if req_path_opt.is_none() || is_same_project_path(target_path, &p_buf, srv_path, default_path) {
+                                    Ok(val)
+                                } else {
+                                    send_http_request(server_port, "POST", "/api/analyze", Some(&json!({
+                                        "path": target_path
+                                    }))).await
+                                }
+                            }
+                            Err(e) => Err(e),
+                        }
                     };
-
-                    let target_path = req_path_opt.unwrap_or(default_path);
-                    let p_buf = resolve_project_root(target_path);
 
                     let proj_label = p_buf
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| "Projet".to_string());
-                    let _ = emit_mcp_telemetry(
-                        server_port,
-                        target_path,
-                        &proj_label,
-                        "Cartographie AST",
-                        "Analyse globale de l'architecture et des tâches du projet",
-                        &arguments,
-                    )
-                    .await;
 
-                    // Query project detection status if server is active
-                    let status_val_res = send_http_request(server_port, "GET", "/api/project/status", None).await;
-                    let status_opt = status_val_res.ok();
+                    let status_opt = if graph_val_res.is_ok() {
+                        let (_, st_res) = tokio::join!(
+                            emit_mcp_telemetry(
+                                server_port,
+                                target_path,
+                                &proj_label,
+                                "Cartographie AST",
+                                "Analyse globale de l'architecture et des tâches du projet",
+                                &arguments,
+                            ),
+                            send_http_request(server_port, "GET", "/api/project/status", None)
+                        );
+                        st_res.ok()
+                    } else {
+                        let payload = build_telemetry_payload(
+                            &proj_label,
+                            "Cartographie AST",
+                            "Analyse globale de l'architecture et des tâches du projet",
+                            &arguments,
+                        );
+                        persist_offline_telemetry_cache(&p_buf, &payload);
+                        None
+                    };
 
-                    let mut summary = match graph_val_res {
-                        Ok(graph_val) => format_graph_summary(&graph_val, status_opt.as_ref()),
+                    let (mut summary, resolved_graph_opt) = match graph_val_res {
+                        Ok(graph_val) => {
+                            let s = format_graph_summary(&graph_val, status_opt.as_ref());
+                            let g_opt = if severity_filter.is_some() {
+                                serde_json::from_value::<core_graph::graph::AetherGraph>(graph_val).ok()
+                            } else {
+                                None
+                            };
+                            (s, g_opt)
+                        }
                         Err(_) => {
-                            // Offline fallback: detect project type and scan
+                            // Offline fallback: detect project type and scan once
                             let report_res = obsidian_vault::detect_project_type(&p_buf);
                             let g = match report_res {
                                 Ok(ref rep) if rep.project_type.is_vault() || rep.project_type.is_mixed() => {
@@ -532,13 +614,13 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             };
                             let status_json = report_res.ok().map(|r| serde_json::to_value(&r).unwrap_or_default());
                             let g_val = serde_json::to_value(&g).unwrap_or_default();
-                            format_graph_summary(&g_val, status_json.as_ref())
+                            let s = format_graph_summary(&g_val, status_json.as_ref());
+                            (s, Some(g))
                         }
                     };
 
                     if let Some(sev) = severity_filter {
-                        let scanner = ast_scanner::ProjectScanner::default();
-                        let g = scanner.scan_project(&p_buf);
+                        let g = resolved_graph_opt.unwrap_or_else(|| ast_scanner::ProjectScanner::default().scan_project(&p_buf));
                         summary.push_str("\n\n---\n");
                         summary.push_str(&format_violations_response(&g, Some(sev), None, None));
                     }
@@ -771,38 +853,33 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             "text": format!("🛡️ [SÉCURITÉ V2 / SECRET GUARD] Accès interdit : Le fichier ou symbole '{}' est un fichier de secrets ou de configuration sensible (.env, clés privées, credentials). L'accès direct par l'IA est strictement bloqué pour protéger vos secrets.", symbol_id)
                         }]), true)
                     } else {
-                        // 1. Téléportation automatique de la caméra 3D + télémétrie multi-agents HUD
-                        let _ = emit_mcp_telemetry(server_port, target_path, &symbol_id, action, details, &arguments).await;
+                        // 1 & 2. Téléportation caméra 3D + Récupération du contexte cible & contrat EARS en parallèle
+                        let target_body = json!({ "symbol_id": symbol_id });
+                        let (_, res) = tokio::join!(
+                            emit_mcp_telemetry(server_port, target_path, &symbol_id, action, details, &arguments),
+                            send_http_request(server_port, "POST", "/api/ai/target", Some(&target_body))
+                        );
 
-                        // 2. RÃ©cupÃ©ration du contexte cible + contrat EARS + Handshake
-                        let res = send_http_request(server_port, "POST", "/api/ai/target", Some(&json!({
-                            "symbol_id": symbol_id
-                        }))).await;
-
-                        let (mut text, is_err) = match res {
+                        let (text, is_err) = match res {
                             Ok(val) if val.get("status").and_then(|v| v.as_str()) == Some("ok") => {
-                                let t = format_active_target_response(&val);
+                                let mut t = format_active_target_response(&val);
+                                if let Some(flow_text) = format_trace_flow_from_target_val(&val, &symbol_id, trace_direction) {
+                                    t.push_str("\n\n---\n");
+                                    t.push_str(&flow_text);
+                                }
                                 (t, false)
                             }
                             _ => {
-                                let t = offline_active_target_fallback(target_path, &symbol_id);
+                                let t = offline_active_target_fallback_with_trace(
+                                    target_path,
+                                    &symbol_id,
+                                    trace_direction,
+                                    max_depth,
+                                );
                                 let err = t.starts_with("⚠️") || t.contains("introuvable dans") || t.starts_with("âš");
                                 (t, err)
                             }
                         };
-
-                        // 3. TraÃ§age automatique des flux amont/aval combinÃ© dans la mÃªme rÃ©ponse
-                        if !is_err && trace_direction != "none" {
-                            let p_buf = resolve_project_root(target_path);
-                            let scanner = ast_scanner::ProjectScanner::default();
-                            let g = scanner.scan_project(&p_buf);
-                            let flow_text = format_trace_flow_response(&g, &symbol_id, trace_direction, max_depth);
-                            if !flow_text.starts_with("âš ï¸") {
-                                text.push_str("\n\n---\n");
-                                text.push_str(&flow_text);
-                            }
-                        }
-
                         let sanitized_text = SecretMasker::mask_text(&text);
                         (json!([{ "type": "text", "text": sanitized_text }]), is_err)
                     }
@@ -1091,15 +1168,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let scope_mode = arguments.get("scope_mode").and_then(|v| v.as_str()).unwrap_or("all");
 
                     let p_buf = resolve_project_root(req_path);
-                    let is_vault_project = obsidian_vault::detect_project_type(&p_buf)
-                        .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
-                        .unwrap_or(false);
-                    let mut g = if is_vault_project {
-                        obsidian_vault::scan_obsidian_vault(&p_buf)
-                            .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
-                    } else {
-                        ast_scanner::ProjectScanner::default().scan_project(&p_buf)
-                    };
+                    let mut g = fetch_or_scan_project_graph(server_port, req_path, default_path).await;
                     g.nodes.retain(|n| !SecretGuard::is_secret_path(&n.file_path));
 
                     if scope_mode == "recommend_scope" {
@@ -1208,18 +1277,19 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             .or(cwe_id)
                             .unwrap_or("Codebase Search");
 
-                        let _ = emit_mcp_telemetry(
-                            server_port,
-                            req_path,
-                            search_target,
-                            "Recherche AST",
-                            &format!("Recherche query='{}' layer={:?} kind={:?} cwe={:?}", query, layer, kind, cwe_id),
-                            &arguments,
-                        )
-                        .await;
-
+                        let telem_details = format!("Recherche query='{}' layer={:?} kind={:?} cwe={:?}", query, layer, kind, cwe_id);
+                        let (_, peers) = tokio::join!(
+                            emit_mcp_telemetry(
+                                server_port,
+                                req_path,
+                                search_target,
+                                "Recherche AST",
+                                &telem_details,
+                                &arguments,
+                            ),
+                            fetch_active_swarm_agents(server_port)
+                        );
                         let (self_id, _, _) = resolve_mcp_agent_identity(&arguments);
-                        let peers = fetch_active_swarm_agents(server_port).await;
                         let active_others: Vec<Value> = peers
                             .into_iter()
                             .filter(|p| {
@@ -1246,17 +1316,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         let direction = arguments.get("direction").and_then(|v| v.as_str()).unwrap_or("both");
                         let max_depth = arguments.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
                         let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
-
-                    let p_buf = resolve_project_root(req_path);
-                    let is_vault_project = obsidian_vault::detect_project_type(&p_buf)
-                        .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
-                        .unwrap_or(false);
-                    let g = if is_vault_project {
-                        obsidian_vault::scan_obsidian_vault(&p_buf)
-                            .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
-                    } else {
-                        ast_scanner::ProjectScanner::default().scan_project(&p_buf)
-                    };
+                        let g = fetch_or_scan_project_graph(server_port, req_path, default_path).await;
                         let text = format_trace_flow_response(&g, symbol_id, direction, max_depth);
                         (json!([{ "type": "text", "text": text }]), false)
                     }
@@ -1268,16 +1328,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let file_pattern = arguments.get("file_pattern").and_then(|v| v.as_str());
                     let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
 
-                    let p_buf = resolve_project_root(req_path);
-                    let is_vault_project = obsidian_vault::detect_project_type(&p_buf)
-                        .map(|rep| rep.project_type.is_vault() || rep.project_type.is_mixed())
-                        .unwrap_or(false);
-                    let g = if is_vault_project {
-                        obsidian_vault::scan_obsidian_vault(&p_buf)
-                            .unwrap_or_else(|_| ast_scanner::ProjectScanner::default().scan_project(&p_buf))
-                    } else {
-                        ast_scanner::ProjectScanner::default().scan_project(&p_buf)
-                    };
+                    let g = fetch_or_scan_project_graph(server_port, req_path, default_path).await;
                     let text = format_violations_response(&g, severity, cwe_id, file_pattern);
                     (json!([{ "type": "text", "text": text }]), false)
                 }
@@ -1830,7 +1881,17 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     } else {
 
                         let req_path = opt_str_arg(&arguments, "path").unwrap_or(default_path);
-                        let p_buf = resolve_project_root(req_path);
+                        let mut p_buf = resolve_project_root(req_path);
+                        if (req_path.trim().is_empty() || req_path.trim() == ".")
+                            && server_port > 0
+                            && files.first().is_some_and(|f| !p_buf.join(f.trim()).exists())
+                        {
+                            if let Ok(ws_val) = send_http_request(server_port, "GET", "/api/workspace", None).await {
+                                if let Some(ws_str) = ws_val.get("workspace").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                                    p_buf = resolve_project_root(ws_str);
+                                }
+                            }
+                        }
                         let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
 
                         if let Some(first_file) = files.first() {
@@ -1939,13 +2000,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_mcp_initialize_declares_multi_primitives() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root_str = temp_dir.path().to_str().expect("utf8 path");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(1)),
             method: "initialize".to_string(),
             params: None,
         };
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("initialize should return response");
+        let resp = handle_mcp_request(req, 0, root_str).await.expect("initialize should return response");
         assert_eq!(resp.jsonrpc, "2.0");
         assert_eq!(resp.id, Some(json!(1)));
         let res = resp.result.expect("result should be present");
@@ -2093,6 +2156,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_aetherscope_verify_patch() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            "[package]\nname = \"tmp-verify\"\nversion = \"0.1.0\"\n",
+        )
+        .expect("write Cargo.toml");
+        let root_str = temp_dir.path().to_str().expect("utf8 path");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(17)),
@@ -2100,17 +2170,20 @@ mod tests {
             params: Some(json!({
                 "name": "aetherscope_verify_patch",
                 "arguments": {
+                    "path": root_str,
                     "files_modified": ["Cargo.toml"]
                 }
             })),
         };
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("aetherscope_verify_patch response");
+        let resp = handle_mcp_request(req, 0, root_str).await.expect("aetherscope_verify_patch response");
         let res = resp.result.expect("aetherscope_verify_patch result");
         assert!(!res["content"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn test_tool_aetherscope_teleport_camera() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root_str = temp_dir.path().to_str().expect("utf8 path");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(101)),
@@ -2124,7 +2197,7 @@ mod tests {
                 }
             })),
         };
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("teleport_camera response");
+        let resp = handle_mcp_request(req, 0, root_str).await.expect("teleport_camera response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
         assert!(res["content"].as_array().is_some());
@@ -2132,16 +2205,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_aetherscope_get_graph_summary() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp_dir.path().join("src")).expect("mkdir src");
+        std::fs::write(temp_dir.path().join("src/lib.rs"), "pub fn summary_ok() -> i32 { 1 }\n")
+            .expect("write lib.rs");
+        let root_str = temp_dir.path().to_str().expect("utf8 path");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(102)),
             method: "tools/call".to_string(),
             params: Some(json!({
                 "name": "aetherscope_get_graph_summary",
-                "arguments": { "path": "." }
+                "arguments": { "path": root_str }
             })),
         };
-        let resp = handle_mcp_request(req, 0, ".").await.expect("get_graph_summary response");
+        let resp = handle_mcp_request(req, 0, root_str).await.expect("get_graph_summary response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
         let content = res["content"].as_array().expect("content array");
@@ -2196,17 +2274,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_aetherscope_get_active_target() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp_dir.path().join("src")).expect("mkdir src");
+        std::fs::write(temp_dir.path().join("src/mcp_sample.rs"), "pub fn active_ok() {}\n")
+            .expect("write mcp_sample.rs");
+        let root_str = temp_dir.path().to_str().expect("utf8 path");
+
         let req_valid = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(106)),
             method: "tools/call".to_string(),
             params: Some(json!({
                 "name": "aetherscope_get_active_target",
-                "arguments": { "symbol_id": "crates/desktop-shell/src/mcp.rs" }
+                "arguments": {
+                    "path": root_str,
+                    "symbol_id": "src/mcp_sample.rs"
+                }
             })),
         };
-        let resp_valid = handle_mcp_request(req_valid, 3030, ".").await.expect("get_active_target response");
-        assert!(resp_valid.result.is_some());
+        let resp_valid = handle_mcp_request(req_valid, 0, root_str).await.expect("get_active_target response");
+        let res_valid = resp_valid.result.expect("result present");
+        assert_eq!(res_valid["isError"], false);
 
         let req_empty = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -2214,10 +2302,13 @@ mod tests {
             method: "tools/call".to_string(),
             params: Some(json!({
                 "name": "aetherscope_get_active_target",
-                "arguments": { "symbol_id": "" }
+                "arguments": {
+                    "path": root_str,
+                    "symbol_id": ""
+                }
             })),
         };
-        let resp_empty = handle_mcp_request(req_empty, 3030, ".").await.expect("empty symbol target response");
+        let resp_empty = handle_mcp_request(req_empty, 0, root_str).await.expect("empty symbol target response");
         let res_empty = resp_empty.result.expect("result present");
         assert_eq!(res_empty["isError"], true);
     }
@@ -2240,6 +2331,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_aetherscope_create_task() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root_str = temp_dir.path().to_str().expect("utf8 path");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(109)),
@@ -2247,6 +2340,7 @@ mod tests {
             params: Some(json!({
                 "name": "aetherscope_create_task",
                 "arguments": {
+                    "path": root_str,
                     "title": "M8ven 100/100 Tool Annotation Audit Task",
                     "kind": "test",
                     "priority": "high",
@@ -2254,8 +2348,10 @@ mod tests {
                 }
             })),
         };
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("create_task response");
-        assert!(resp.result.is_some());
+        let resp = handle_mcp_request(req, 0, root_str).await.expect("create_task response");
+        let res = resp.result.expect("result present");
+        assert_eq!(res["isError"], false);
+        assert!(temp_dir.path().join(".aether").join("TASKS_SUMMARY.md").exists());
     }
 
     #[tokio::test]
@@ -2309,6 +2405,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_aetherscope_search_symbols() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp_dir.path().join("src")).expect("mkdir src");
+        std::fs::write(temp_dir.path().join("src/mcp.rs"), "pub fn mcp_search_target() {}\n")
+            .expect("write mcp.rs");
+        let root_str = temp_dir.path().to_str().expect("utf8 path");
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(113)),
@@ -2316,12 +2417,13 @@ mod tests {
             params: Some(json!({
                 "name": "aetherscope_search_symbols",
                 "arguments": {
+                    "path": root_str,
                     "query": "mcp",
                     "limit": 5
                 }
             })),
         };
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("search_symbols response");
+        let resp = handle_mcp_request(req, 0, root_str).await.expect("search_symbols response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
     }
@@ -2515,7 +2617,7 @@ mod tests {
             })),
         };
 
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("get_active_target note response");
+        let resp = handle_mcp_request(req, 0, temp_dir.path().to_str().unwrap()).await.expect("get_active_target note response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
         let text = res["content"][0]["text"].as_str().unwrap();
@@ -2549,7 +2651,7 @@ mod tests {
             })),
         };
 
-        let resp = handle_mcp_request(req, 3030, ".").await.expect("search_symbols tag response");
+        let resp = handle_mcp_request(req, 0, temp_dir.path().to_str().unwrap()).await.expect("search_symbols tag response");
         let res = resp.result.expect("result present");
         assert_eq!(res["isError"], false);
         let text = res["content"][0]["text"].as_str().unwrap();

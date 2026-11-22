@@ -553,6 +553,10 @@ async fn run_audit_cli(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    if is_sarif && args.output.is_none() {
+        return Ok(());
+    }
+
     if mcp::check_server_listening(args.port) {
         println!(
             "ðŸ“¡ [SYNCHRO EN DIRECT] Cockpit AetherScope dÃ©tectÃ© sur http://127.0.0.1:{} : actualisation du Cockpit 3D & du MCP...",
@@ -1095,9 +1099,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                     last_change_time = None;
 
                     // Invalidate cached git status so subsequent git diff queries see disk changes immediately
-                    if let Ok(mut git_guard) = watcher_state.git_raw_cache.lock() {
-                        *git_guard = None;
-                    }
+                    *watcher_state.git_raw_cache.lock().await = None;
 
                     let rel_changed_files: Vec<String> = files_to_process
                         .iter()
@@ -1626,6 +1628,21 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
                         let g = state.graph.read().await;
                         return axum::Json(g.clone()).into_response();
                     }
+                    let is_mcp = q
+                        .get("mcp")
+                        .map(|v| {
+                            let t = v.trim();
+                            t == "1" || t.eq_ignore_ascii_case("true")
+                        })
+                        .unwrap_or(false);
+                    if is_mcp {
+                        let bytes = state.mcp_graph_json().await;
+                        return (
+                            [(axum::http::header::CONTENT_TYPE, "application/json")],
+                            bytes.as_ref().clone(),
+                        )
+                            .into_response();
+                    }
                     // UI : JSON compact et mis en cache par version (aretes en tableaux d'indices).
                     let bytes = state.ui_graph_json().await;
                     (
@@ -1952,38 +1969,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             "/api/contracts/sign",
             axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<SignContractsRequest>| {
                 let state = state_sign_contracts.clone();
-                async move {
-                    let p_root = state.project_root.read().await.clone();
-                    let target_root = req
-                        .project_path
-                        .as_deref()
-                        .filter(|s| !s.trim().is_empty() && s.trim() != ".")
-                        .map(PathBuf::from)
-                        .unwrap_or(p_root);
-
-                    let (signed_count, blake3_hash) = sign_project_contracts(&target_root, req.folder.as_deref())
-                        .unwrap_or((0, None));
-
-                    let exclusions = state.custom_exclusions.read().await.clone();
-                    let scanner = ProjectScanner::default()
-                        .with_plugin_selection(state.plugin_selection.clone());
-                    let new_graph = scanner.scan_project_with_exclusions(&target_root, &exclusions);
-                    {
-                        let mut cg_guard = state.code_graph.write().await;
-                        *cg_guard = Some(new_graph.clone());
-                        let mut g_guard = state.graph.write().await;
-                        *g_guard = new_graph.clone();
-                    }
-                    state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-                    axum::Json(SignContractsResponse {
-                        status: "ok".to_string(),
-                        message: format!("{} contrat(s) README.md signÃ©(s) avec BLAKE3 dans aether.lock.toml", signed_count),
-                        signed_count,
-                        blake3_hash,
-                        graph: new_graph,
-                    })
-                }
+                async move { handle_contracts_sign(&state, req).await }
             }),
         )
         // Modification directe d'un contrat (dossier ou fichier) depuis Aether + scellement BLAKE3
@@ -1991,56 +1977,7 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
             "/api/contracts/update",
             axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<UpdateContractRequest>| {
                 let state = state_update_contract.clone();
-                async move {
-                    let p_root = state.project_root.read().await.clone();
-                    let target_root = req
-                        .project_path
-                        .as_deref()
-                        .filter(|s| !s.trim().is_empty() && s.trim() != ".")
-                        .map(PathBuf::from)
-                        .unwrap_or(p_root);
-
-                    match update_contract_rules(&target_root, &req) {
-                        Ok((contract_path, blake3_hash, file_blake3_hash, effective_max_lines)) => {
-                            let exclusions = state.custom_exclusions.read().await.clone();
-                            let scanner = ProjectScanner::default()
-                                .with_plugin_selection(state.plugin_selection.clone());
-                            let new_graph = scanner.scan_project_with_exclusions(&target_root, &exclusions);
-                            {
-                                let mut cg_guard = state.code_graph.write().await;
-                                *cg_guard = Some(new_graph.clone());
-                                let mut g_guard = state.graph.write().await;
-                                *g_guard = new_graph.clone();
-                            }
-                            state.graph_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-                            axum::Json(UpdateContractResponse {
-                                status: "ok".to_string(),
-                                message: format!(
-                                    "Contrat '{}' mis a jour (max {} lignes) et scelle BLAKE3",
-                                    contract_path, effective_max_lines
-                                ),
-                                contract_path,
-                                blake3_hash,
-                                file_blake3_hash,
-                                effective_max_lines,
-                                graph: new_graph,
-                            })
-                        }
-                        Err(e) => {
-                            let cur_graph = state.graph.read().await.clone();
-                            axum::Json(UpdateContractResponse {
-                                status: "error".to_string(),
-                                message: e,
-                                contract_path: req.folder.unwrap_or_else(|| "README.md".to_string()),
-                                blake3_hash: String::new(),
-                                file_blake3_hash: None,
-                                effective_max_lines: 300,
-                                graph: cur_graph,
-                            })
-                        }
-                    }
-                }
+                async move { handle_contracts_update(&state, req).await }
             }),
         )
         // Pont IA Zero-Shell : Ã©criture de .aether/ACTIVE_TARGET.md et gÃ©nÃ©ration du paquet <aether_handshake version="2.0">
@@ -3356,4 +3293,524 @@ pub async fn run_server_and_watcher(args: Args) -> Result<(), Box<dyn std::error
 
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn resolve_confined_contract_root(
+    state: &AppState,
+    project_path: Option<&str>,
+) -> Result<PathBuf, axum::response::Response> {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let p_root = state.project_root.read().await.clone();
+    let canonical_p_root = fs::canonicalize(&p_root).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "error": "internal_error",
+                "message": format!("Root canonicalization failed: {}", e)
+            })),
+        )
+            .into_response()
+    })?;
+
+    if let Some(raw_proj) = project_path {
+        let proj_trimmed = raw_proj.trim().trim_matches('"').trim_matches('\'');
+        let proj_clean = proj_trimmed.strip_prefix(r"\\?\").unwrap_or(proj_trimmed);
+        if !proj_clean.is_empty() && proj_clean != "." {
+            let candidate_proj = PathBuf::from(proj_clean);
+            if let Ok(canon_cand) = fs::canonicalize(&candidate_proj) {
+                if !canon_cand.starts_with(&canonical_p_root) {
+                    return Err((
+                        StatusCode::FORBIDDEN,
+                        axum::Json(serde_json::json!({
+                            "status": "error",
+                            "error": "forbidden",
+                            "message": "project_path escapes designated project_root"
+                        })),
+                    )
+                        .into_response());
+                }
+            } else if candidate_proj != p_root {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    axum::Json(serde_json::json!({
+                        "status": "error",
+                        "error": "bad_request",
+                        "message": "Invalid project_path"
+                    })),
+                )
+                    .into_response());
+            }
+        }
+    }
+
+    Ok(canonical_p_root)
+}
+
+fn validate_contract_inputs(
+    folder: Option<&str>,
+    file_path: Option<&str>,
+) -> Result<(), axum::response::Response> {
+    use axum::response::IntoResponse;
+
+    if let Some(raw_f) = folder {
+        let trimmed = raw_f.trim().trim_end_matches(['/', '\\']);
+        if !trimmed.is_empty() && trimmed != "." && trimmed != "root" {
+            let clean_folder = PathGuard::validate_client_relative_path(trimmed).map_err(|e| {
+                let (code, json_val) = security_error_to_status_and_json(&e);
+                (code, axum::Json(json_val)).into_response()
+            })?;
+            PathGuard::validate_not_sensitive(&clean_folder).map_err(|e| {
+                let (code, json_val) = security_error_to_status_and_json(&e);
+                (code, axum::Json(json_val)).into_response()
+            })?;
+        }
+    }
+
+    if let Some(raw_fp) = file_path {
+        let trimmed = raw_fp.trim();
+        if !trimmed.is_empty() {
+            let clean_fp = PathGuard::validate_client_relative_path(trimmed).map_err(|e| {
+                let (code, json_val) = security_error_to_status_and_json(&e);
+                (code, axum::Json(json_val)).into_response()
+            })?;
+            PathGuard::validate_not_sensitive(&clean_fp).map_err(|e| {
+                let (code, json_val) = security_error_to_status_and_json(&e);
+                (code, axum::Json(json_val)).into_response()
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn rescan_and_sync_after_contracts(
+    state: &AppState,
+    canonical_root: &Path,
+    changed_files: Vec<String>,
+) -> Result<core_graph::graph::AetherGraph, axum::response::Response> {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let exclusions = state.custom_exclusions.read().await.clone();
+    let active_rules = state.active_cve_rules.read().await.clone();
+    let ignored_cwes = state.ignored_cwes.read().await.clone();
+    let sel = state.plugin_selection.clone();
+    let scan_root = canonical_root.to_path_buf();
+
+    let mut new_graph = tokio::task::spawn_blocking(move || {
+        let scanner = ProjectScanner::default().with_plugin_selection(sel);
+        scanner.scan_project_with_exclusions(&scan_root, &exclusions)
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "error": "internal_error",
+                "message": format!("Contract rescan failed: {}", e)
+            })),
+        )
+            .into_response()
+    })?;
+
+    apply_settings_filters_to_graph(&mut new_graph, active_rules.as_deref(), &ignored_cwes);
+
+    {
+        let mut cg_guard = state.code_graph.write().await;
+        *cg_guard = Some(new_graph.clone());
+    }
+    let mode = state.get_active_view_mode().await;
+    if mode != "vault" && mode != "vault-notes" {
+        let mut g_guard = state.graph.write().await;
+        *g_guard = new_graph.clone();
+    }
+    *state.ui_graph_cache.write().await = None;
+    state
+        .graph_version
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    state.notify_graph_change(changed_files, "contracts");
+
+    Ok(new_graph)
+}
+
+async fn handle_contracts_sign(
+    state: &Arc<AppState>,
+    req: SignContractsRequest,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let canonical_root = match resolve_confined_contract_root(state, req.project_path.as_deref()).await {
+        Ok(r) => r,
+        Err(resp) => return resp,
+    };
+
+    if let Err(resp) = validate_contract_inputs(req.folder.as_deref(), None) {
+        return resp;
+    }
+
+    let (signed_count, blake3_hash) = match sign_project_contracts(&canonical_root, req.folder.as_deref()) {
+        Ok(res) => res,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "error": "bad_request",
+                    "message": e
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let new_graph = match rescan_and_sync_after_contracts(
+        state,
+        &canonical_root,
+        vec!["aether.lock.toml".to_string()],
+    )
+    .await
+    {
+        Ok(g) => g,
+        Err(resp) => return resp,
+    };
+
+    (
+        StatusCode::OK,
+        axum::Json(SignContractsResponse {
+            status: "ok".to_string(),
+            message: format!(
+                "{} contrat(s) README.md signé(s) avec BLAKE3 dans aether.lock.toml",
+                signed_count
+            ),
+            signed_count,
+            blake3_hash,
+            graph: new_graph,
+        }),
+    )
+        .into_response()
+}
+
+async fn handle_contracts_update(
+    state: &Arc<AppState>,
+    req: UpdateContractRequest,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let canonical_root = match resolve_confined_contract_root(state, req.project_path.as_deref()).await {
+        Ok(r) => r,
+        Err(resp) => return resp,
+    };
+
+    if let Err(resp) = validate_contract_inputs(req.folder.as_deref(), req.file_path.as_deref()) {
+        return resp;
+    }
+
+    match update_contract_rules(&canonical_root, &req) {
+        Ok((contract_path, blake3_hash, file_blake3_hash, effective_max_lines)) => {
+            let new_graph = match rescan_and_sync_after_contracts(
+                state,
+                &canonical_root,
+                vec![contract_path.clone(), "aether.lock.toml".to_string()],
+            )
+            .await
+            {
+                Ok(g) => g,
+                Err(resp) => return resp,
+            };
+
+            (
+                StatusCode::OK,
+                axum::Json(UpdateContractResponse {
+                    status: "ok".to_string(),
+                    message: format!(
+                        "Contrat '{}' mis a jour (max {} lignes) et scelle BLAKE3",
+                        contract_path, effective_max_lines
+                    ),
+                    contract_path,
+                    blake3_hash,
+                    file_blake3_hash,
+                    effective_max_lines,
+                    graph: new_graph,
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "error": "bad_request",
+                "message": e,
+                "contract_path": req.folder.unwrap_or_else(|| "README.md".to_string()),
+                "blake3_hash": "",
+                "effective_max_lines": 300
+            })),
+        )
+            .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod contracts_route_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    async fn spawn_contracts_test_server(
+        root: PathBuf,
+        view_mode: &str,
+    ) -> (u16, tokio::task::JoinHandle<()>, Arc<AppState>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind ephemeral listener");
+        let port = listener.local_addr().expect("local addr").port();
+
+        let code_g = core_graph::graph::AetherGraph::new("CodeContractsTest");
+        let vault_g = core_graph::graph::AetherGraph::new("VaultContractsTest");
+        let initial_g = if view_mode == "vault" || view_mode == "vault-notes" {
+            vault_g.clone()
+        } else {
+            code_g.clone()
+        };
+
+        let state = Arc::new(AppState::new(
+            initial_g,
+            root,
+            obsidian_vault::DetectedProjectType::Mixed,
+            view_mode.to_string(),
+            Some(code_g),
+            Some(vault_g),
+            None,
+        ));
+
+        let s_sign = state.clone();
+        let s_update = state.clone();
+        let app = axum::Router::new()
+            .route(
+                "/api/contracts/sign",
+                axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<SignContractsRequest>| {
+                    let st = s_sign.clone();
+                    async move { handle_contracts_sign(&st, req).await }
+                }),
+            )
+            .route(
+                "/api/contracts/update",
+                axum::routing::post(move |axum::extract::Json(req): axum::extract::Json<UpdateContractRequest>| {
+                    let st = s_update.clone();
+                    async move { handle_contracts_update(&st, req).await }
+                }),
+            );
+
+        let handle = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        (port, handle, state)
+    }
+
+    async fn post_json(port: u16, path: &str, body: &serde_json::Value) -> (u16, serde_json::Value) {
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .expect("connect test server");
+        let body_str = serde_json::to_string(body).expect("serialize body");
+        let req = format!(
+            "POST {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            path,
+            port,
+            body_str.len(),
+            body_str
+        );
+        stream.write_all(req.as_bytes()).await.expect("write req");
+
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.expect("read resp");
+        let raw = String::from_utf8_lossy(&buf);
+        let mut parts = raw.splitn(2, "\r\n\r\n");
+        let headers = parts.next().unwrap_or("");
+        let body_part = parts.next().unwrap_or("");
+        let status: u16 = headers
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let val: serde_json::Value = serde_json::from_str(body_part).unwrap_or(serde_json::Value::Null);
+        (status, val)
+    }
+
+    #[tokio::test]
+    async fn test_contracts_sign_valid_cache_invalidation_and_readme_preservation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().to_path_buf();
+        fs::create_dir_all(root.join("crates/sub")).unwrap();
+
+        let original_readme = "---\nid: root\nlayer: core\nmax_lines_per_file: 420\n---\n# Root\n\n# Keep exact bytes!\n";
+        let sub_readme = "---\nid: sub\nlayer: domain\nmax_lines_per_file: 250\n---\n# Sub\n";
+        fs::write(root.join("README.md"), original_readme).unwrap();
+        fs::write(root.join("crates/sub/README.md"), sub_readme).unwrap();
+        fs::write(root.join("crates/sub/lib.rs"), "pub fn ok() {}\n").unwrap();
+
+        let (port, handle, state) = spawn_contracts_test_server(root.clone(), "code").await;
+        let mut rx = state.event_tx.subscribe();
+
+        // Populate ui_graph_cache first so we can verify invalidation
+        let _ = state.ui_graph_json().await;
+        assert!(state.ui_graph_cache.read().await.is_some());
+        let ver_before = state.graph_version.load(std::sync::atomic::Ordering::SeqCst);
+        let fs_before = state.fs_version.load(std::sync::atomic::Ordering::SeqCst);
+
+        // 1. Sign with project_path = None, folder = Some(".")
+        let (status, json) = post_json(port, "/api/contracts/sign", &serde_json::json!({ "folder": "." })).await;
+        assert_eq!(status, 200);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["signed_count"], 1);
+        assert_eq!(fs::read_to_string(root.join("README.md")).unwrap(), original_readme);
+        assert!(root.join("aether.lock.toml").exists());
+        assert!(state.ui_graph_cache.read().await.is_none(), "ui_graph_cache must be invalidated");
+        assert_eq!(state.graph_version.load(std::sync::atomic::Ordering::SeqCst), ver_before + 1);
+        assert_eq!(state.fs_version.load(std::sync::atomic::Ordering::SeqCst), fs_before + 1);
+        let ev = rx.recv().await.expect("SSE watch event");
+        assert_eq!(ev.kind, "contracts");
+
+        // 2. Sign with project_path = temp_root, folder = "crates/sub"
+        let (status2, json2) = post_json(
+            port,
+            "/api/contracts/sign",
+            &serde_json::json!({
+                "project_path": root.to_string_lossy(),
+                "folder": "crates/sub"
+            }),
+        )
+        .await;
+        assert_eq!(status2, 200);
+        assert_eq!(json2["signed_count"], 1);
+        assert_eq!(fs::read_to_string(root.join("crates/sub/README.md")).unwrap(), sub_readme);
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_contracts_sign_preserves_vault_graph_in_vault_mode() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().to_path_buf();
+        fs::write(root.join("README.md"), "---\nid: root\nlayer: core\nmax_lines_per_file: 300\n---\n# Root\n").unwrap();
+
+        let (port, handle, state) = spawn_contracts_test_server(root, "vault").await;
+        let (status, json) = post_json(port, "/api/contracts/sign", &serde_json::json!({ "folder": "root" })).await;
+        assert_eq!(status, 200);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(state.graph.read().await.project_name, "VaultContractsTest");
+        assert!(state.code_graph.read().await.is_some());
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_contracts_routes_reject_traversal_and_sensitive_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        let root = dir.path().to_path_buf();
+        fs::write(root.join("README.md"), "---\nid: root\nlayer: core\nmax_lines_per_file: 300\n---\n# Root\n").unwrap();
+
+        let (port, handle, _state) = spawn_contracts_test_server(root, "code").await;
+
+        // 1. Existing outside project_path -> 403 FORBIDDEN
+        let (s1, _) = post_json(
+            port,
+            "/api/contracts/sign",
+            &serde_json::json!({ "project_path": outside.path().to_string_lossy() }),
+        )
+        .await;
+        assert_eq!(s1, 403);
+
+        // 2. Non-existent relative escaping project_path -> 400 BAD_REQUEST
+        let (s2, _) = post_json(
+            port,
+            "/api/contracts/update",
+            &serde_json::json!({ "project_path": "../outside_nonexistent" }),
+        )
+        .await;
+        assert_eq!(s2, 400);
+
+        // 3. Traversal folder -> 400 BAD_REQUEST
+        let (s3, _) = post_json(
+            port,
+            "/api/contracts/update",
+            &serde_json::json!({ "folder": "../../evil", "max_lines_per_file": 100 }),
+        )
+        .await;
+        assert_eq!(s3, 400);
+        assert!(!outside.path().join("README.md").exists());
+
+        // 4. Traversal file_path -> 400 BAD_REQUEST
+        let (s4, _) = post_json(
+            port,
+            "/api/contracts/update",
+            &serde_json::json!({ "folder": ".", "file_path": "../../etc/passwd", "file_max_lines": 50 }),
+        )
+        .await;
+        assert_eq!(s4, 400);
+
+        // 5. Sensitive folder (.git) -> 403 FORBIDDEN
+        let (s5, _) = post_json(
+            port,
+            "/api/contracts/sign",
+            &serde_json::json!({ "folder": ".git" }),
+        )
+        .await;
+        assert_eq!(s5, 403);
+
+        // 6. Sensitive file (.env) -> 403 FORBIDDEN
+        let (s6, _) = post_json(
+            port,
+            "/api/contracts/update",
+            &serde_json::json!({ "folder": ".", "file_path": ".env", "file_max_lines": 50 }),
+        )
+        .await;
+        assert_eq!(s6, 403);
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_contracts_update_valid_invalidates_cache_and_emits_event() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().to_path_buf();
+        fs::create_dir_all(root.join("crates/sub")).unwrap();
+        fs::write(root.join("crates/sub/lib.rs"), "pub fn run() {}\n").unwrap();
+
+        let (port, handle, state) = spawn_contracts_test_server(root.clone(), "code").await;
+        let mut rx = state.event_tx.subscribe();
+        let _ = state.ui_graph_json().await;
+        assert!(state.ui_graph_cache.read().await.is_some());
+
+        let (status, json) = post_json(
+            port,
+            "/api/contracts/update",
+            &serde_json::json!({
+                "project_path": ".",
+                "folder": "crates/sub",
+                "file_path": "crates/sub/lib.rs",
+                "max_lines_per_file": 333
+            }),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["contract_path"], "crates/sub/README.md");
+        assert_eq!(json["effective_max_lines"], 333);
+        assert!(root.join("crates/sub/README.md").exists());
+        assert!(root.join("aether.lock.toml").exists());
+        assert!(state.ui_graph_cache.read().await.is_none());
+        let ev = rx.recv().await.expect("SSE watch event");
+        assert_eq!(ev.kind, "contracts");
+
+        handle.abort();
+    }
 }

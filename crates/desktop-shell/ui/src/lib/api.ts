@@ -1,7 +1,93 @@
-import type { AetherGraph, TaskItem } from '../types/graph';
+import type { AetherGraph, GitStatusResponse, SinkKind, SourceKind, TaskItem } from '../types/graph';
 import type { VisualPluginPack } from '../engine/visualPlugins';
 
-interface VisualPluginsInventoryResponse {
+export type UiGraphPayload = AetherGraph;
+export type { GitStatusResponse };
+
+export interface PluginTaintSourceRule {
+  name: string;
+  source_kind: SourceKind | string;
+  cwe: string;
+  patterns: string[];
+  language?: string | null;
+  description?: string;
+}
+
+export interface PluginTaintSinkRule {
+  name: string;
+  sink_kind: SinkKind | string;
+  cwe: string;
+  rule_id?: string;
+  severity?: string;
+  patterns: string[];
+  language?: string | null;
+  description?: string;
+}
+
+export interface PluginSanitizerRule {
+  name: string;
+  target_cwes?: string[];
+  neutralizes_cwes?: string[];
+  patterns?: string[];
+  match_kind?: string;
+  language?: string | null;
+  neutralizes_all?: boolean;
+}
+
+export interface AiChatMessage {
+  id: string;
+  sender: string;
+  text: string;
+  target_symbol?: string | null;
+  timestamp: number;
+  agent_id?: string | null;
+  agent_name?: string | null;
+  recipient?: string | null;
+  color?: string | null;
+}
+
+export interface SettingsResponse {
+  exclusions?: string[];
+  active_cve_rules?: string[] | null;
+  ignored_cwes?: string[] | null;
+  cve_catalogue?: Record<string, unknown>[] | null;
+  mcp_binary_path?: string | null;
+  show_alerts?: boolean | null;
+  show_cwe_bubbles?: boolean | null;
+  show_cwe_titles?: boolean | null;
+  show_folder_titles?: boolean | null;
+  show_file_titles?: boolean | null;
+  low_memory_mode?: boolean | null;
+  active_visual_plugin?: string | null;
+  ui_settings?: Record<string, unknown> | null;
+}
+
+export interface SaveSettingsResponse {
+  status: string;
+  exclusions: string[];
+  active_cve_rules: string[];
+  ignored_cwes: string[];
+  cve_catalogue: Record<string, unknown>[];
+  total_nodes: number;
+  total_edges: number;
+}
+
+export interface UpdateContractPayload {
+  project_path?: string;
+  folder?: string;
+  file_path?: string;
+  max_lines_per_file?: number;
+  file_max_lines?: number;
+  clear_file_override?: boolean;
+  allowed_imports?: string[];
+  forbidden_imports?: string[];
+  forbidden_functions?: string[];
+  allowed_extensions?: string[];
+  forbidden_extensions?: string[];
+  max_files_per_folder?: number;
+}
+
+export interface VisualPluginsInventoryResponse {
   status: string;
   visuals_dir: string;
   active_visual_plugin: string;
@@ -47,9 +133,9 @@ export interface PluginEntryInfo {
   taint_sinks_count: number;
   sanitizers_count: number;
   rules: PluginRuleSummary[];
-  taint_sources: any[];
-  taint_sinks: any[];
-  sanitizers: any[];
+  taint_sources: PluginTaintSourceRule[];
+  taint_sinks: PluginTaintSinkRule[];
+  sanitizers: PluginSanitizerRule[];
 }
 
 export interface PluginsInventoryResponse {
@@ -96,6 +182,14 @@ class AetherApiClient {
 
   async getGraph(): Promise<AetherGraph> {
     const res = await fetch(`${this.baseUrl}/api/graph`);
+    return res.json();
+  }
+
+  async getGitStatus(): Promise<GitStatusResponse> {
+    const res = await fetch(`${this.baseUrl}/api/git/status`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
     return res.json();
   }
 
@@ -159,7 +253,7 @@ class AetherApiClient {
       agent_name?: string;
       color?: string;
     }
-  ): Promise<any> {
+  ): Promise<{ status: string; task?: TaskItem; message?: string }> {
     const res = await fetch(`${this.baseUrl}/api/tasks/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -180,7 +274,7 @@ class AetherApiClient {
     sender: 'user' | 'ai' = 'user',
     targetSymbol?: string,
     agent?: { agent_id?: string; agent_name?: string; recipient?: string; color?: string }
-  ): Promise<{ status: string; message?: any }> {
+  ): Promise<{ status: string; message?: AiChatMessage }> {
     const res = await fetch(`${this.baseUrl}/api/ai/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -197,7 +291,7 @@ class AetherApiClient {
     return res.json();
   }
 
-  async getChatHistory(): Promise<{ messages: any[]; agent_status: string }> {
+  async getChatHistory(): Promise<{ messages: AiChatMessage[]; agent_status: string }> {
     const res = await fetch(`${this.baseUrl}/api/ai/chat`);
     return res.json();
   }
@@ -255,7 +349,11 @@ class AetherApiClient {
     return res.json();
   }
 
-  async launchCli(tool: string, projectPath?: string, prompt?: string): Promise<any> {
+  async launchCli(
+    tool: string,
+    projectPath?: string,
+    prompt?: string
+  ): Promise<{ status: string; message: string; tool: string; project_path?: string | null; prompt?: string | null }> {
     const res = await fetch(`${this.baseUrl}/api/ai/launch_cli`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -269,7 +367,7 @@ class AetherApiClient {
     action?: string,
     details?: string,
     agent?: { agent_id?: string; agent_name?: string; color?: string }
-  ): Promise<any> {
+  ): Promise<{ status: string; event?: Record<string, unknown> }> {
     const res = await fetch(`${this.baseUrl}/api/ai/telemetry`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -344,7 +442,7 @@ class AetherApiClient {
     return data;
   }
 
-  async getSettings(): Promise<any> {
+  async getSettings(): Promise<SettingsResponse> {
     const res = await fetch(`${this.baseUrl}/api/settings`);
     return res.json();
   }
@@ -359,9 +457,9 @@ class AetherApiClient {
     show_folder_titles?: boolean;
     show_file_titles?: boolean;
     low_memory_mode?: boolean;
-    ui_settings?: any;
+    ui_settings?: Record<string, unknown>;
     rescan?: boolean;
-  }): Promise<any> {
+  }): Promise<SaveSettingsResponse> {
     const res = await fetch(`${this.baseUrl}/api/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -370,7 +468,7 @@ class AetherApiClient {
     return res.json();
   }
 
-  async exportHtml(path?: string): Promise<any> {
+  async exportHtml(path?: string): Promise<{ status: string; viewer_path: string; total_nodes: number; total_edges: number }> {
     const res = await fetch(`${this.baseUrl}/api/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -385,7 +483,7 @@ class AetherApiClient {
     return res.json();
   }
 
-  async switchViewMode(mode: 'code' | 'vault' | 'vault-notes' | 'ide'): Promise<any> {
+  async switchViewMode(mode: 'code' | 'vault' | 'vault-notes' | 'ide'): Promise<AetherGraph & { status?: string; message?: string }> {
     const res = await fetch(`${this.baseUrl}/api/view_mode`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -399,13 +497,19 @@ class AetherApiClient {
     return res.json();
   }
 
-  async getFileContent(path: string, raw: boolean = true): Promise<any> {
+  async getFileContent(
+    path: string,
+    raw: boolean = true
+  ): Promise<{ status: string; path?: string; content?: string; error?: string; message?: string }> {
     const rawParam = raw ? '&raw=true' : '';
     const res = await fetch(`${this.baseUrl}/api/file_content?path=${encodeURIComponent(path)}${rawParam}`);
     return res.json();
   }
 
-  async saveFile(filePath: string, content: string): Promise<any> {
+  async saveFile(
+    filePath: string,
+    content: string
+  ): Promise<{ status: string; file_path?: string; bytes_written?: number; error?: string; message?: string }> {
     const res = await fetch(`${this.baseUrl}/api/save_file`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -436,7 +540,7 @@ class AetherApiClient {
     check_web_forms?: boolean;
     check_sensitive_files?: boolean;
     custom_ports?: string;
-  }): Promise<any> {
+  }): Promise<{ scan_duration_ms?: number; security_score?: number; grade?: string; [key: string]: unknown }> {
     const res = await fetch(`${this.baseUrl}/api/surface_scan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -485,26 +589,15 @@ class AetherApiClient {
     return res.json();
   }
 
-  async updateContract(payload: {
-    project_path?: string;
-    folder?: string;
-    file_path?: string;
-    max_lines_per_file?: number;
-    file_max_lines?: number;
-    clear_file_override?: boolean;
-    allowed_imports?: string[];
-    forbidden_imports?: string[];
-    forbidden_functions?: string[];
-    allowed_extensions?: string[];
-    forbidden_extensions?: string[];
-    max_files_per_folder?: number;
-  }): Promise<{
+  async updateContract(payload: UpdateContractPayload): Promise<{
     status: string;
     message: string;
-    folder: string;
-    blake3_hash?: string;
+    contract_path?: string;
+    folder?: string;
+    blake3_hash: string;
+    file_blake3_hash?: string;
     effective_max_lines: number;
-    graph?: AetherGraph;
+    graph: AetherGraph;
   }> {
     const res = await fetch(`${this.baseUrl}/api/contracts/update`, {
       method: 'POST',
@@ -540,7 +633,10 @@ class AetherApiClient {
     return data;
   }
 
-  async setAiTarget(symbolId: string, actionType?: string): Promise<any> {
+  async setAiTarget(
+    symbolId: string,
+    actionType?: string
+  ): Promise<{ status: string; active_target_path?: string; handshake_xml?: string; [key: string]: unknown }> {
     const res = await fetch(`${this.baseUrl}/api/ai/target`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -581,7 +677,18 @@ class AetherApiClient {
     mode?: string;
     updated_by?: string;
     rationale?: string;
-  }): Promise<any> {
+  }): Promise<{
+    status: string;
+    scope: {
+      in_scope: string[];
+      out_of_scope: string[];
+      mode: string;
+      updated_by?: string;
+      rationale?: string;
+      timestamp: number;
+    };
+    recommendations: Record<string, unknown>[];
+  }> {
     const res = await fetch(`${this.baseUrl}/api/bounty/scope`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -599,7 +706,17 @@ class AetherApiClient {
     return data;
   }
 
-  async togglePlugin(relPath: string, enabled: boolean): Promise<any> {
+  async togglePlugin(
+    relPath: string,
+    enabled: boolean
+  ): Promise<{
+    status: string;
+    plugin: string;
+    enabled: boolean;
+    total_nodes: number;
+    total_edges: number;
+    inventory: PluginsInventoryResponse;
+  }> {
     const res = await fetch(`${this.baseUrl}/api/plugins/toggle`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -625,7 +742,13 @@ class AetherApiClient {
     return data;
   }
 
-  async initCommunityPluginBundle(): Promise<any> {
+  async initCommunityPluginBundle(): Promise<{
+    status: string;
+    path: string;
+    total_nodes: number;
+    total_edges: number;
+    inventory: PluginsInventoryResponse;
+  }> {
     const res = await fetch(`${this.baseUrl}/api/plugins/init_bundle`, {
       method: 'POST',
     });
@@ -636,7 +759,18 @@ class AetherApiClient {
     return data;
   }
 
-  async importSemgrepPlugin(pluginName: string, yamlContent: string): Promise<any> {
+  async importSemgrepPlugin(
+    pluginName: string,
+    yamlContent: string
+  ): Promise<{
+    status: string;
+    plugin: string;
+    rules_imported: number;
+    rel_path: string;
+    total_nodes: number;
+    total_edges: number;
+    inventory: PluginsInventoryResponse;
+  }> {
     const res = await fetch(`${this.baseUrl}/api/plugins/import_semgrep`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -673,10 +807,18 @@ class AetherApiClient {
     not_in_path_matching?: string[];
     ast_scope?: string | null;
     test_cases?: { name: string; file_name: string; code: string; should_trigger: boolean }[];
-    taint_sources?: any[];
-    taint_sinks?: any[];
-    sanitizers?: any[];
-  }): Promise<any> {
+    taint_sources?: PluginTaintSourceRule[];
+    taint_sinks?: PluginTaintSinkRule[];
+    sanitizers?: PluginSanitizerRule[];
+  }): Promise<{
+    status: string;
+    plugin: string;
+    rule_id: string;
+    tests_passed: number;
+    total_nodes: number;
+    total_edges: number;
+    inventory: PluginsInventoryResponse;
+  }> {
     const res = await fetch(`${this.baseUrl}/api/plugins/upsert`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -692,7 +834,13 @@ class AetherApiClient {
     return data;
   }
 
-  async deletePlugin(relPath: string): Promise<any> {
+  async deletePlugin(relPath: string): Promise<{
+    status: string;
+    deleted: string;
+    total_nodes: number;
+    total_edges: number;
+    inventory: PluginsInventoryResponse;
+  }> {
     const res = await fetch(`${this.baseUrl}/api/plugins/delete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -739,7 +887,12 @@ class AetherApiClient {
     backdrop_glsl?: string | null;
     node_sdf_glsl?: string | null;
     activate?: boolean;
-  }): Promise<any> {
+  }): Promise<{
+    status: string;
+    id: string;
+    visual_version: number;
+    inventory: VisualPluginsInventoryResponse;
+  }> {
     const res = await fetch(`${this.baseUrl}/api/visual_plugins/upsert`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -752,7 +905,12 @@ class AetherApiClient {
     return data;
   }
 
-  async deleteVisualPlugin(id: string): Promise<any> {
+  async deleteVisualPlugin(id: string): Promise<{
+    status: string;
+    deleted: string;
+    visual_version: number;
+    inventory: VisualPluginsInventoryResponse;
+  }> {
     const res = await fetch(`${this.baseUrl}/api/visual_plugins/delete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

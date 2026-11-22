@@ -14,17 +14,37 @@
     return p.replace(/^\\\\\?\\/, '');
   }
 
+  function normalizeFolderPrefix(raw: string | null | undefined): string {
+    if (!raw) return '';
+    const cleaned = raw
+      .trim()
+      .replace(/\\/g, '/')
+      .replace(/^(?:\.\/)+/, '')
+      .replace(/^\/+|\/+$/g, '');
+    if (!cleaned || cleaned === '.' || cleaned === 'root') return '';
+    return cleaned;
+  }
+
   $effect(() => {
     if (cockpitState.isCreateFileModalOpen) {
       projectPath = stripWinPrefix(cockpitState.graph.project_path || '.');
       feedback = null;
       const pending = cockpitState.pendingImportFile;
+      const folderPrefix = normalizeFolderPrefix(cockpitState.pendingCreateFolder);
       if (pending) {
         const cleanName = pending.fileName.replace(/\\/g, '/').replace(/^\/+/, '');
-        relPath = cleanName.includes('/') ? cleanName : `imported/${cleanName}`;
+        relPath = cleanName.includes('/')
+          ? cleanName
+          : folderPrefix
+            ? `${folderPrefix}/${cleanName}`
+            : `imported/${cleanName}`;
         codeContent = pending.content;
         cockpitState.pendingImportFile = null;
+      } else if (cockpitState.pendingCreateFolder !== null) {
+        relPath = folderPrefix ? `${folderPrefix}/` : '';
       }
+    } else if (cockpitState.pendingCreateFolder !== null) {
+      cockpitState.pendingCreateFolder = null;
     }
   });
 
@@ -73,6 +93,7 @@
         const hit = cockpitState.resolveTargetNode(res.file_path || res.created_symbol || '');
         if (hit) cockpitState.selectSymbol(hit.id, true);
       }
+      cockpitState.pendingCreateFolder = null;
       cockpitState.isCreateFileModalOpen = false;
     } catch (e: any) {
       feedback = e?.message || 'Erreur lors de la création du fichier.';
@@ -82,6 +103,7 @@
   }
 
   function closeModal() {
+    cockpitState.pendingCreateFolder = null;
     cockpitState.isCreateFileModalOpen = false;
   }
 </script>

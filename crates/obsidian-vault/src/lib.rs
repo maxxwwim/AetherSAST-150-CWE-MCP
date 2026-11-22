@@ -10,7 +10,9 @@
 
 pub mod confinement;
 pub mod detector;
+pub mod error;
 pub mod graph_builder;
+pub mod lexical;
 pub mod parser;
 pub mod types;
 

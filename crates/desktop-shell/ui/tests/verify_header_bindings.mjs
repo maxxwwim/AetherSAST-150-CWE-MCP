@@ -1,5 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uiRoot = path.resolve(__dirname, '..');
 
 function findFile(relPath) {
   if (fs.existsSync(relPath)) return relPath;
@@ -7,6 +11,8 @@ function findFile(relPath) {
   if (fs.existsSync(sub)) return sub;
   const stripped = relPath.replace(/^crates\/desktop-shell\/ui\//, '');
   if (fs.existsSync(stripped)) return stripped;
+  const fromUiRoot = path.join(uiRoot, stripped);
+  if (fs.existsSync(fromUiRoot)) return fromUiRoot;
   return relPath;
 }
 

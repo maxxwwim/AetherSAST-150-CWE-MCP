@@ -301,6 +301,27 @@ pub mod ui_payload {
     pub fn to_json_bytes(g: &AetherGraph) -> Vec<u8> {
         serde_json::to_vec(&build_payload(g)).unwrap_or_default()
     }
+
+    pub fn to_mcp_json_bytes(g: &AetherGraph) -> Vec<u8> {
+        let mut nodes = g.nodes.clone();
+        for n in nodes.iter_mut() {
+            n.metadata.raw_content = None;
+            if !n.metadata.cve_anomalies.is_empty() {
+                n.metadata.violations.clear();
+            }
+        }
+        let slim = AetherGraph {
+            project_name: g.project_name.clone(),
+            project_path: g.project_path.clone(),
+            generated_at: g.generated_at.clone(),
+            system_prompt: None,
+            nodes,
+            edges: g.edges.clone(),
+            stats: g.stats.clone(),
+            dataflow_graph: None,
+        };
+        serde_json::to_vec(&slim).unwrap_or_default()
+    }
 }
 
 pub fn settings_file_path(project_root: &Path) -> PathBuf {
@@ -913,9 +934,12 @@ pub struct AppState {
     /// Cache des octets JSON du graphe pour l'UI (clé : version, nb noeuds, nb arêtes).
     #[allow(clippy::type_complexity)]
     pub ui_graph_cache: RwLock<Option<(u64, usize, usize, std::sync::Arc<Vec<u8>>)>>,
+    /// Cache des octets JSON du graphe allégé pour MCP (sans raw_content/dataflow_graph, arêtes non compactées).
+    #[allow(clippy::type_complexity)]
+    pub mcp_graph_cache: RwLock<Option<(u64, usize, usize, std::sync::Arc<Vec<u8>>)>>,
     /// Cache court de `git status` (évite de relancer git toutes les 2 s sur 16k fichiers).
     #[allow(clippy::type_complexity)]
-    pub git_raw_cache: std::sync::Mutex<Option<(std::time::Instant, Option<(String, Option<String>)>)>>,
+    pub git_raw_cache: tokio::sync::Mutex<Option<(std::time::Instant, Option<(String, Option<String>)>)>>,
 
     // === Obsidian Vault & Dual-Vision Vision Mode Extensions (M2) ===
     pub project_type: RwLock<DetectedProjectType>,
@@ -983,7 +1007,8 @@ impl AppState {
             active_visual_plugin: RwLock::new(active_visual_plugin),
             visual_plugins_version: std::sync::atomic::AtomicU64::new(1),
             ui_graph_cache: RwLock::new(None),
-            git_raw_cache: std::sync::Mutex::new(None),
+            mcp_graph_cache: RwLock::new(None),
+            git_raw_cache: tokio::sync::Mutex::new(None),
             project_type: RwLock::new(project_type),
             active_view_mode: RwLock::new(active_view_mode),
             code_graph: RwLock::new(code_graph),
@@ -1128,16 +1153,30 @@ impl AppState {
         bytes
     }
 
+    /// JSON du graphe allégé pour MCP, mis en cache par version.
+    pub async fn mcp_graph_json(&self) -> std::sync::Arc<Vec<u8>> {
+        let ver = self.graph_version.load(std::sync::atomic::Ordering::SeqCst);
+        let g = self.graph.read().await;
+        let key = (ver, g.nodes.len(), g.edges.len());
+        if let Some((v, n, e, bytes)) = self.mcp_graph_cache.read().await.as_ref() {
+            if (*v, *n, *e) == key {
+                return bytes.clone();
+            }
+        }
+        let bytes = std::sync::Arc::new(ui_payload::to_mcp_json_bytes(&g));
+        *self.mcp_graph_cache.write().await = Some((key.0, key.1, key.2, bytes.clone()));
+        bytes
+    }
+
     /// `git status` brut mis en cache 3 s ; ne touche jamais au graphe (zéro clone).
     pub async fn git_status_cached(&self) -> GitStatusResponse {
         let p_root = self.project_root.read().await.clone();
         let cached = {
-            let guard = self.git_raw_cache.lock().ok();
-            guard.and_then(|g| {
-                g.as_ref()
-                    .filter(|(t, _)| t.elapsed() < std::time::Duration::from_secs(3))
-                    .map(|(_, raw)| raw.clone())
-            })
+            let guard = self.git_raw_cache.lock().await;
+            guard
+                .as_ref()
+                .filter(|(t, _)| t.elapsed() < std::time::Duration::from_secs(3))
+                .map(|(_, raw)| raw.clone())
         };
         let raw = match cached {
             Some(raw) => raw,
@@ -1146,7 +1185,8 @@ impl AppState {
                     .await
                     .ok()
                     .flatten();
-                if let Ok(mut guard) = self.git_raw_cache.lock() {
+                {
+                    let mut guard = self.git_raw_cache.lock().await;
                     *guard = Some((std::time::Instant::now(), fresh.clone()));
                 }
                 fresh
@@ -1569,8 +1609,34 @@ pub fn discover_candidate_projects(workspace_root: &Path) -> Vec<ProjectItem> {
 
 /// Calcule les hashes BLAKE3 des contrats README.md et met à jour aether.lock.toml
 pub fn sign_project_contracts(base: &Path, folder_filter: Option<&str>) -> Result<(usize, Option<String>), String> {
-    let lock_file = base.join("aether.lock.toml");
-    let proj_name = base
+    let guard = PathGuard::new(base).map_err(|e| e.to_string())?;
+    let canon_base = guard.canonical_root();
+
+    let norm_filter: Option<String> = match folder_filter {
+        None => None,
+        Some(raw_f) => {
+            let trimmed = raw_f.trim().trim_end_matches(['/', '\\']);
+            if trimmed.is_empty() {
+                Some(String::new())
+            } else if trimmed == "." || trimmed == "root" {
+                Some("root".to_string())
+            } else {
+                let clean_folder = PathGuard::validate_client_relative_path(trimmed)
+                    .map_err(|e| e.to_string())?;
+                PathGuard::validate_not_sensitive(&clean_folder)
+                    .map_err(|e| e.to_string())?;
+                let norm = clean_folder.to_string_lossy().replace('\\', "/");
+                if norm.is_empty() || norm == "." {
+                    Some("root".to_string())
+                } else {
+                    Some(norm)
+                }
+            }
+        }
+    };
+
+    let lock_file = canon_base.join("aether.lock.toml");
+    let proj_name = canon_base
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "project".to_string());
@@ -1586,36 +1652,36 @@ pub fn sign_project_contracts(base: &Path, folder_filter: Option<&str>) -> Resul
     let mut signed_count = 0usize;
     let mut last_hash = None;
 
-    let norm_filter = folder_filter.map(|f| {
-        f.trim_start_matches("./")
-            .trim_start_matches('/')
-            .replace('\\', "/")
-    });
-
-    for entry in walkdir::WalkDir::new(base)
+    for entry in walkdir::WalkDir::new(canon_base)
         .into_iter()
         .filter_entry(|e| {
+            if e.depth() == 0 {
+                return true;
+            }
             let name = e.file_name().to_string_lossy();
             !name.starts_with('.') && name != "target" && name != "node_modules" && name != "dist"
         })
         .filter_map(|e| e.ok())
     {
         if entry.file_type().is_file() && entry.file_name().to_string_lossy().eq_ignore_ascii_case("README.md") {
+            let Ok(verified_readme) = guard.resolve_and_verify(entry.path()) else {
+                continue;
+            };
             let rel_folder = entry
                 .path()
                 .parent()
-                .and_then(|p| p.strip_prefix(base).ok())
+                .and_then(|p| p.strip_prefix(canon_base).ok())
                 .map(|p| p.to_string_lossy().replace('\\', "/"))
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "root".to_string());
 
             if let Some(ref f) = norm_filter {
-                if !f.is_empty() && f != &rel_folder && !(f == "." && rel_folder == "root") {
+                if !f.is_empty() && f != &rel_folder {
                     continue;
                 }
             }
 
-            if let Ok(content) = fs::read_to_string(entry.path()) {
+            if let Ok(content) = fs::read_to_string(&verified_readme) {
                 if let Ok(contract) = ReadmeContract::parse(&rel_folder, &content) {
                     let hash = contract.blake3_hash.clone();
                     last_hash = Some(hash.clone());
@@ -1662,23 +1728,44 @@ pub fn update_contract_rules(
     base: &Path,
     req: &UpdateContractRequest,
 ) -> Result<(String, String, Option<String>, usize), String> {
-    let norm_file = req.file_path.as_ref().map(|f| {
-        f.trim_start_matches("./")
-            .trim_start_matches('/')
-            .replace('\\', "/")
-    });
+    let guard = PathGuard::new(base).map_err(|e| e.to_string())?;
+    let canon_base = guard.canonical_root();
+
+    let clean_file_opt: Option<PathBuf> = match req.file_path.as_deref() {
+        Some(raw_fp) => {
+            let trimmed = raw_fp.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                let clean = PathGuard::validate_client_relative_path(trimmed)
+                    .map_err(|e| e.to_string())?;
+                PathGuard::validate_not_sensitive(&clean)
+                    .map_err(|e| e.to_string())?;
+                Some(clean)
+            }
+        }
+        None => None,
+    };
+    let norm_file = clean_file_opt
+        .as_ref()
+        .map(|p| p.to_string_lossy().replace('\\', "/"));
 
     // Déterminer le dossier cible du contrat README.md
-    let target_folder = if let Some(ref f) = req.folder {
-        let cf = f
-            .trim_start_matches("./")
-            .trim_start_matches('/')
-            .trim_end_matches('/')
-            .replace('\\', "/");
-        if cf.is_empty() || cf == "." || cf == "root" {
+    let target_folder = if let Some(ref raw_f) = req.folder {
+        let trimmed = raw_f.trim().trim_end_matches(['/', '\\']);
+        if trimmed.is_empty() || trimmed == "." || trimmed == "root" {
             "root".to_string()
         } else {
-            cf
+            let clean_folder = PathGuard::validate_client_relative_path(trimmed)
+                .map_err(|e| e.to_string())?;
+            PathGuard::validate_not_sensitive(&clean_folder)
+                .map_err(|e| e.to_string())?;
+            let norm = clean_folder.to_string_lossy().replace('\\', "/");
+            if norm.is_empty() || norm == "." {
+                "root".to_string()
+            } else {
+                norm
+            }
         }
     } else if let Some(ref fp) = norm_file {
         // Remonter depuis le dossier parent du fichier jusqu'à trouver un README.md existant, sinon utiliser le dossier direct du fichier
@@ -1690,14 +1777,15 @@ pub fn update_contract_rules(
         if chosen != "root" {
             let mut cur = file_folder;
             loop {
-                if base.join(cur).join("README.md").exists() {
+                let rel_readme = format!("{}/README.md", cur);
+                if guard.resolve_and_verify(&rel_readme).is_ok() {
                     chosen = cur.to_string();
                     break;
                 }
                 if let Some(idx) = cur.rfind('/') {
                     cur = &cur[..idx];
                 } else {
-                    if base.join("README.md").exists() {
+                    if guard.resolve_and_verify("README.md").is_ok() {
                         chosen = "root".to_string();
                     }
                     break;
@@ -1709,11 +1797,12 @@ pub fn update_contract_rules(
         "root".to_string()
     };
 
-    let readme_path = if target_folder == "root" {
-        base.join("README.md")
+    let rel_readme = if target_folder == "root" {
+        PathBuf::from("README.md")
     } else {
-        base.join(&target_folder).join("README.md")
+        PathBuf::from(&target_folder).join("README.md")
     };
+    let readme_path = guard.resolve_write_target(&rel_readme).map_err(|e| e.to_string())?;
 
     // Si le README cible n'existe pas encore dans ce sous-dossier, hériter éventuellement du parent le plus proche
     let existing_content = if readme_path.exists() {
@@ -1723,14 +1812,16 @@ pub fn update_contract_rules(
         let mut cur = target_folder.as_str();
         while let Some(idx) = cur.rfind('/') {
             cur = &cur[..idx];
-            let p_readme = base.join(cur).join("README.md");
-            if p_readme.exists() {
-                parent_content = fs::read_to_string(&p_readme).ok();
+            let p_rel = format!("{}/README.md", cur);
+            if let Ok(verified_p) = guard.resolve_and_verify(&p_rel) {
+                parent_content = fs::read_to_string(&verified_p).ok();
                 break;
             }
         }
         if parent_content.is_none() {
-            parent_content = fs::read_to_string(base.join("README.md")).ok();
+            if let Ok(verified_root) = guard.resolve_and_verify("README.md") {
+                parent_content = fs::read_to_string(&verified_root).ok();
+            }
         }
         parent_content
     };
@@ -1765,12 +1856,13 @@ pub fn update_contract_rules(
     fs::write(&readme_path, &updated_content).map_err(|e| e.to_string())?;
 
     let parsed = ReadmeContract::parse(&target_folder, &updated_content)?;
-    let _ = sign_project_contracts(base, Some(&target_folder))?;
+    let _ = sign_project_contracts(canon_base, Some(&target_folder))?;
 
-    let file_blake3_hash = norm_file.as_ref().and_then(|fp| {
-        let full_fp = base.join(fp);
-        fs::read_to_string(&full_fp)
+    let file_blake3_hash = clean_file_opt.as_ref().and_then(|clean_fp| {
+        guard
+            .resolve_and_verify(clean_fp)
             .ok()
+            .and_then(|verified| fs::read_to_string(&verified).ok())
             .map(|s| ReadmeContract::compute_blake3_hex(&s))
     });
 
@@ -1792,6 +1884,31 @@ pub fn update_contract_rules(
         file_blake3_hash,
         effective_max,
     ))
+}
+
+fn validate_path_relative_join(base: &Path, rel: &str) -> Option<PathBuf> {
+    if rel.is_empty() || rel.contains('\0') || rel.contains('\\') || rel.contains(':') {
+        return None;
+    }
+    let p = Path::new(rel);
+    if p.is_absolute() || p.has_root() {
+        return None;
+    }
+    let mut joined = base.to_path_buf();
+    let mut has_normal = false;
+    for comp in p.components() {
+        match comp {
+            std::path::Component::Normal(seg) => {
+                if seg == "." || seg == ".." {
+                    return None;
+                }
+                joined.push(seg);
+                has_normal = true;
+            }
+            _ => return None,
+        }
+    }
+    if has_normal { Some(joined) } else { None }
 }
 
 pub fn init_project_structure_with_topology(
@@ -1878,7 +1995,9 @@ pub fn init_project_structure_with_topology(
 
     let mut created = Vec::new();
     for (rel_dir, readme_content) in structure {
-        let dir_path = base.join(rel_dir);
+        let Some(dir_path) = validate_path_relative_join(base, rel_dir) else {
+            continue;
+        };
         let _ = fs::create_dir_all(&dir_path);
         let readme_path = dir_path.join("README.md");
         let _ = fs::write(&readme_path, readme_content);
@@ -2447,7 +2566,9 @@ Logique métier pure et orchestration des flux entre modèles et contrôleurs.
     };
 
     for (rel_file, file_content) in code_files {
-        let fpath = base.join(rel_file);
+        let Some(fpath) = validate_path_relative_join(base, rel_file) else {
+            continue;
+        };
         if let Some(parent) = fpath.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -2676,7 +2797,11 @@ pub fn empty_git_status() -> GitStatusResponse {
 /// Exécute `git status --porcelain` + branche courante. Ne dépend pas du graphe.
 pub fn run_git_porcelain(project_root: &Path) -> Option<(String, Option<String>)> {
     let mut cmd = std::process::Command::new("git");
-    cmd.args(["status", "--porcelain=v1", "-uall", "--ignored=no"])
+    cmd.arg("status")
+        .arg("--porcelain=v1")
+        .arg("-uall")
+        .arg("--ignored=no")
+        .arg("--")
         .current_dir(project_root);
 
     #[cfg(windows)]
@@ -2692,7 +2817,9 @@ pub fn run_git_porcelain(project_root: &Path) -> Option<(String, Option<String>)
 
     let mut branch_cmd = std::process::Command::new("git");
     branch_cmd
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .arg("rev-parse")
+        .arg("--abbrev-ref")
+        .arg("HEAD")
         .current_dir(project_root);
 
     #[cfg(windows)]
@@ -3470,6 +3597,174 @@ mod app_state_tests {
         assert!(final_mode == "code" || final_mode == "vault-notes");
         let final_graph = state.get_active_graph().await;
         assert!(final_graph.project_name == "CodeGraph" || final_graph.project_name == "VaultGraph");
+    }
+
+    #[test]
+    fn test_run_git_porcelain_temp_repo_clean_branch_and_status() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+
+        let init_ok = std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(root)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(init_ok, "git init failed");
+
+        let _ = std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(root)
+            .status();
+        let _ = std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(root)
+            .status();
+
+        fs::write(root.join("tracked.rs"), "pub fn a() {}\n").unwrap();
+        let _ = std::process::Command::new("git")
+            .args(["add", "tracked.rs"])
+            .current_dir(root)
+            .status();
+        let _ = std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(root)
+            .status();
+
+        fs::write(root.join("tracked.rs"), "pub fn b() {}\n").unwrap();
+        fs::write(root.join("untracked.rs"), "pub fn c() {}\n").unwrap();
+
+        let (stdout, branch) = run_git_porcelain(root).expect("run_git_porcelain");
+        let branch_name = branch.expect("branch name");
+        assert!(!branch_name.is_empty());
+        assert!(!branch_name.contains("--"), "branch should not contain --: {:?}", branch_name);
+        assert!(!branch_name.contains('\n'), "branch should be single line: {:?}", branch_name);
+        assert!(stdout.contains("tracked.rs"), "stdout missing tracked.rs: {}", stdout);
+        assert!(stdout.contains("untracked.rs"), "stdout missing untracked.rs: {}", stdout);
+    }
+
+    #[test]
+    fn test_validate_path_relative_join_valid_and_rejected() {
+        let base = Path::new("project_root");
+        assert_eq!(
+            validate_path_relative_join(base, "client/ui").unwrap(),
+            base.join("client").join("ui")
+        );
+        assert_eq!(
+            validate_path_relative_join(base, "contracts/src/lib.rs").unwrap(),
+            base.join("contracts").join("src").join("lib.rs")
+        );
+        assert_eq!(
+            validate_path_relative_join(base, "default.project.json").unwrap(),
+            base.join("default.project.json")
+        );
+
+        let rejected = [
+            "",
+            ".",
+            "./client",
+            "..",
+            "../evil",
+            "client/../evil",
+            "/etc/passwd",
+            r"\Windows",
+            "C:foo",
+            r"a\b",
+            "bad\0path",
+        ];
+        for case in rejected {
+            assert!(
+                validate_path_relative_join(base, case).is_none(),
+                "Expected None for {:?}",
+                case
+            );
+        }
+    }
+
+    #[test]
+    fn test_sign_and_update_contracts_confinement_and_preservation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("crates/sub")).unwrap();
+
+        let original_readme = "---\nid: root\nlayer: core\nmax_lines_per_file: 420\n---\n# Root Contract\n\nCustom formatting preserved.\n";
+        let sub_readme = "---\nid: sub\nlayer: domain\nmax_lines_per_file: 250\n---\n# Sub Contract\n";
+        fs::write(root.join("README.md"), original_readme).unwrap();
+        fs::write(root.join("crates/sub/README.md"), sub_readme).unwrap();
+        fs::write(root.join("crates/sub/lib.rs"), "pub fn ok() -> i32 { 1 }\n").unwrap();
+
+        // Sign root via "." and "root", preserving README.md byte-for-byte
+        let (cnt_dot, hash_dot) = sign_project_contracts(root, Some(".")).expect("sign dot");
+        assert_eq!(cnt_dot, 1);
+        assert!(hash_dot.is_some());
+        assert_eq!(fs::read_to_string(root.join("README.md")).unwrap(), original_readme);
+
+        let (cnt_root, _) = sign_project_contracts(root, Some("root")).expect("sign root");
+        assert_eq!(cnt_root, 1);
+
+        let (cnt_all, _) = sign_project_contracts(root, None).expect("sign all");
+        assert_eq!(cnt_all, 2);
+        assert!(root.join("aether.lock.toml").exists());
+
+        // Traversal & sensitive rejections in sign_project_contracts
+        assert!(sign_project_contracts(root, Some("../../evil")).is_err());
+        assert!(sign_project_contracts(root, Some("/etc/passwd")).is_err());
+        assert!(sign_project_contracts(root, Some(".git")).is_err());
+        assert!(sign_project_contracts(root, Some(".env")).is_err());
+
+        // Update contract rules inside confined subfolder
+        let req_ok = UpdateContractRequest {
+            project_path: None,
+            folder: Some("crates/sub".to_string()),
+            file_path: Some("crates/sub/lib.rs".to_string()),
+            max_lines_per_file: Some(275),
+            file_max_lines: None,
+            clear_file_override: false,
+            allowed_imports: None,
+            forbidden_imports: None,
+            forbidden_functions: None,
+            allowed_extensions: None,
+            forbidden_extensions: None,
+            max_files_per_folder: None,
+        };
+        let (cpath, blake, fblake, eff_max) = update_contract_rules(root, &req_ok).expect("update ok");
+        assert_eq!(cpath, "crates/sub/README.md");
+        assert!(!blake.is_empty());
+        assert!(fblake.is_some());
+        assert_eq!(eff_max, 275);
+
+        // Traversal rejections in update_contract_rules
+        let req_bad_folder = UpdateContractRequest {
+            project_path: None,
+            folder: Some("../../evil".to_string()),
+            file_path: None,
+            max_lines_per_file: Some(100),
+            file_max_lines: None,
+            clear_file_override: false,
+            allowed_imports: None,
+            forbidden_imports: None,
+            forbidden_functions: None,
+            allowed_extensions: None,
+            forbidden_extensions: None,
+            max_files_per_folder: None,
+        };
+        assert!(update_contract_rules(root, &req_bad_folder).is_err());
+
+        let req_bad_file = UpdateContractRequest {
+            project_path: None,
+            folder: Some("crates/sub".to_string()),
+            file_path: Some("../../etc/passwd".to_string()),
+            max_lines_per_file: None,
+            file_max_lines: Some(100),
+            clear_file_override: false,
+            allowed_imports: None,
+            forbidden_imports: None,
+            forbidden_functions: None,
+            allowed_extensions: None,
+            forbidden_extensions: None,
+            max_files_per_folder: None,
+        };
+        assert!(update_contract_rules(root, &req_bad_file).is_err());
     }
 }
 

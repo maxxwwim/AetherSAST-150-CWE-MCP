@@ -849,3 +849,72 @@ pub fn run_worker(user_env: std::collections::HashMap<String, String>) {
     assert_rule_passes("src/worker/spawner.rs", safe_env, "CVE-INJ-PROCESS-ENV-LOADER-POISON");
 }
 
+#[test]
+fn test_posix_flag_smuggling_static_and_dynamic_args_regressions() {
+    // Negative 1: static compile-time array in Command::new("git").args([...])
+    let safe_static_porcelain = r#"
+pub fn run_git_porcelain(project_root: &std::path::Path) {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["status", "--porcelain=v1", "-uall", "--ignored=no"])
+        .current_dir(project_root);
+}
+"#;
+    assert_rule_passes("src/api_routes.rs", safe_static_porcelain, "CVE-INJ-POSIX-FLAG-SMUGGLING");
+
+    // Negative 2: static compile-time array for branch rev-parse
+    let safe_static_rev_parse = r#"
+pub fn current_branch(project_root: &std::path::Path) {
+    let mut branch_cmd = std::process::Command::new("git");
+    branch_cmd
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(project_root);
+}
+"#;
+    assert_rule_passes("src/api_routes.rs", safe_static_rev_parse, "CVE-INJ-POSIX-FLAG-SMUGGLING");
+
+    // Negative 3: static borrowed slice literal &["log", "-n", "1"]
+    let safe_static_slice_ref = r#"
+pub fn recent_log(project_root: &std::path::Path) {
+    std::process::Command::new("git")
+        .args(&["log", "-n", "1"])
+        .current_dir(project_root)
+        .output()
+        .ok();
+}
+"#;
+    assert_rule_passes("src/api_routes.rs", safe_static_slice_ref, "CVE-INJ-POSIX-FLAG-SMUGGLING");
+
+    // Positive 1: dynamic slice/vec variable passed to .args(user_args)
+    let vuln_dynamic_var = r#"
+pub fn run_git_custom(user_args: &[String]) {
+    std::process::Command::new("git")
+        .args(user_args)
+        .status()
+        .unwrap();
+}
+"#;
+    assert_rule_triggers("src/vcs/git_runner.rs", vuln_dynamic_var, "CVE-INJ-POSIX-FLAG-SMUGGLING");
+
+    // Positive 2: array containing non-literal identifier .args(["diff", user_ref])
+    let vuln_array_with_ident = r#"
+pub fn run_git_diff(user_ref: &str) {
+    std::process::Command::new("git")
+        .args(["diff", user_ref])
+        .status()
+        .unwrap();
+}
+"#;
+    assert_rule_triggers("src/vcs/git_runner.rs", vuln_array_with_ident, "CVE-INJ-POSIX-FLAG-SMUGGLING");
+
+    // Positive 3: array containing formatted string .args(["clone", &format!("--upload-pack={}", user_cmd)])
+    let vuln_array_with_format = r#"
+pub fn run_git_clone(user_cmd: &str, repo: &str) {
+    std::process::Command::new("git")
+        .args(["clone", &format!("--upload-pack={}", user_cmd), repo])
+        .status()
+        .unwrap();
+}
+"#;
+    assert_rule_triggers("src/vcs/git_runner.rs", vuln_array_with_format, "CVE-INJ-POSIX-FLAG-SMUGGLING");
+}
+

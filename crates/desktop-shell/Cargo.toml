@@ -34,6 +34,7 @@ toml.workspace = true
 wry = "0.42"
 tao = "0.28"
 rfd = "0.15"
+parking_lot.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

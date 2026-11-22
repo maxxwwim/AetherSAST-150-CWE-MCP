@@ -36,7 +36,9 @@ export class PhysicsController {
         (typeof window !== 'undefined' && (window as any).__PHYSICS_WORKER_CODE__) ||
         physicsWorkerRaw;
       const blob = new Blob([workerCode], { type: 'application/javascript' });
-      this.worker = new Worker(URL.createObjectURL(blob));
+      const blobUrl = URL.createObjectURL(blob);
+      this.worker = new Worker(blobUrl);
+      URL.revokeObjectURL(blobUrl);
 
       this.worker.onmessage = (e: MessageEvent) => {
         const { type, positions, clusters, isSleeping } = e.data;
@@ -147,6 +149,10 @@ export class PhysicsController {
     if (this.worker) {
       this.worker.postMessage({ type: 'DRAG_END' });
     }
+  }
+
+  public isIdle(): boolean {
+    return this.isSleeping;
   }
 
   public destroy() {

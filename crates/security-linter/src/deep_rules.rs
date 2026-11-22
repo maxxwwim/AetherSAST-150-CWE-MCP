@@ -1404,8 +1404,19 @@ impl DeepSecurityRules {
                             continue;
                         }
 
-                        let window_end = (idx + 4).min(lines.len().saturating_sub(1));
-                        let window_str = lines[idx..=window_end].join(" ");
+                        let max_end = if is_rust {
+                            let mut end = (idx + 6).min(lines.len().saturating_sub(1));
+                            for j in (idx + 1)..=end {
+                                if lines[j].contains("Command::new(") {
+                                    end = j - 1;
+                                    break;
+                                }
+                            }
+                            end
+                        } else {
+                            (idx + 4).min(lines.len().saturating_sub(1))
+                        };
+                        let window_str = lines[idx..=max_end].join(" ");
 
                         let is_spawn_line = (is_rust && trimmed.contains("Command::new(") && posix_bins.iter().any(|b| trimmed.contains(b)))
                             || (is_js_ts && (trimmed.contains("execFile(") || trimmed.contains("spawn(") || trimmed.contains("execFileSync(") || trimmed.contains("spawnSync(")) && posix_bins.iter().any(|b| trimmed.contains(b)))
@@ -1417,7 +1428,10 @@ impl DeepSecurityRules {
                                 window_str.split(".arg(").skip(1).any(|seg| {
                                     let arg_head = seg.trim_start();
                                     !arg_head.starts_with('"') && !arg_head.starts_with('\'')
-                                }) || window_str.contains(".args(")
+                                }) || window_str
+                                    .split(".args(")
+                                    .skip(1)
+                                    .any(Self::is_dynamic_rust_args_call)
                             } else if is_js_ts {
                                 if let (Some(lb), Some(rb)) = (window_str.find('['), window_str.rfind(']')) {
                                     let inside = &window_str[lb + 1..rb];
@@ -1677,5 +1691,196 @@ impl DeepSecurityRules {
         }
 
         violations
+    }
+
+    fn is_dynamic_rust_args_call(seg: &str) -> bool {
+        let bytes = seg.as_bytes();
+        let len = bytes.len();
+        let mut i = 0usize;
+        let mut depth = 1i32;
+        let mut close_idx: Option<usize> = None;
+
+        while i < len {
+            let b = bytes[i];
+            if b == b'"' {
+                i += 1;
+                while i < len {
+                    if bytes[i] == b'\\' {
+                        i += 2;
+                        continue;
+                    }
+                    if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            if b == b'r' && (i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_')) {
+                let mut j = i + 1;
+                while j < len && bytes[j] == b'#' {
+                    j += 1;
+                }
+                if j < len && bytes[j] == b'"' {
+                    let hashes = j - (i + 1);
+                    i = j + 1;
+                    while i < len {
+                        if bytes[i] == b'"' {
+                            let mut h = 0usize;
+                            while h < hashes && i + 1 + h < len && bytes[i + 1 + h] == b'#' {
+                                h += 1;
+                            }
+                            if h == hashes {
+                                i = i + 1 + hashes;
+                                break;
+                            }
+                        }
+                        i += 1;
+                    }
+                    continue;
+                }
+            }
+            if b == b'(' {
+                depth += 1;
+            } else if b == b')' {
+                depth -= 1;
+                if depth == 0 {
+                    close_idx = Some(i);
+                    break;
+                }
+            }
+            i += 1;
+        }
+
+        let Some(end) = close_idx else {
+            return true;
+        };
+
+        let mut inner = seg[..end].trim();
+        if let Some(after_amp) = inner.strip_prefix('&') {
+            inner = after_amp.trim_start();
+        }
+        if !inner.starts_with('[') || !inner.ends_with(']') {
+            return true;
+        }
+        let body = &inner[1..inner.len() - 1];
+        let body_bytes = body.as_bytes();
+        let mut elements: Vec<&str> = Vec::new();
+        let mut elem_start = 0usize;
+        let mut k = 0usize;
+        let mut paren_d = 0i32;
+        let mut bracket_d = 0i32;
+        let mut brace_d = 0i32;
+
+        while k < body_bytes.len() {
+            let b = body_bytes[k];
+            if b == b'"' {
+                k += 1;
+                while k < body_bytes.len() {
+                    if body_bytes[k] == b'\\' {
+                        k += 2;
+                        continue;
+                    }
+                    if body_bytes[k] == b'"' {
+                        k += 1;
+                        break;
+                    }
+                    k += 1;
+                }
+                continue;
+            }
+            if b == b'r' && (k == 0 || !(body_bytes[k - 1].is_ascii_alphanumeric() || body_bytes[k - 1] == b'_')) {
+                let mut j = k + 1;
+                while j < body_bytes.len() && body_bytes[j] == b'#' {
+                    j += 1;
+                }
+                if j < body_bytes.len() && body_bytes[j] == b'"' {
+                    let hashes = j - (k + 1);
+                    k = j + 1;
+                    while k < body_bytes.len() {
+                        if body_bytes[k] == b'"' {
+                            let mut h = 0usize;
+                            while h < hashes && k + 1 + h < body_bytes.len() && body_bytes[k + 1 + h] == b'#' {
+                                h += 1;
+                            }
+                            if h == hashes {
+                                k = k + 1 + hashes;
+                                break;
+                            }
+                        }
+                        k += 1;
+                    }
+                    continue;
+                }
+            }
+            match b {
+                b'(' => paren_d += 1,
+                b')' => paren_d -= 1,
+                b'[' => bracket_d += 1,
+                b']' => bracket_d -= 1,
+                b'{' => brace_d += 1,
+                b'}' => brace_d -= 1,
+                b',' if paren_d == 0 && bracket_d == 0 && brace_d == 0 => {
+                    elements.push(&body[elem_start..k]);
+                    elem_start = k + 1;
+                }
+                _ => {}
+            }
+            k += 1;
+        }
+        elements.push(&body[elem_start..]);
+
+        elements
+            .into_iter()
+            .map(str::trim)
+            .filter(|e| !e.is_empty())
+            .any(|e| !Self::is_rust_string_literal(e))
+    }
+
+    fn is_rust_string_literal(s: &str) -> bool {
+        let bytes = s.as_bytes();
+        if bytes.is_empty() {
+            return false;
+        }
+        if bytes[0] == b'"' {
+            let mut i = 1usize;
+            while i < bytes.len() {
+                if bytes[i] == b'\\' {
+                    i += 2;
+                    continue;
+                }
+                if bytes[i] == b'"' {
+                    return i == bytes.len() - 1;
+                }
+                i += 1;
+            }
+            return false;
+        }
+        if bytes[0] == b'r' {
+            let mut j = 1usize;
+            while j < bytes.len() && bytes[j] == b'#' {
+                j += 1;
+            }
+            if j >= bytes.len() || bytes[j] != b'"' {
+                return false;
+            }
+            let hashes = j - 1;
+            let mut i = j + 1;
+            while i < bytes.len() {
+                if bytes[i] == b'"' {
+                    let mut h = 0usize;
+                    while h < hashes && i + 1 + h < bytes.len() && bytes[i + 1 + h] == b'#' {
+                        h += 1;
+                    }
+                    if h == hashes {
+                        return i + 1 + hashes == bytes.len();
+                    }
+                }
+                i += 1;
+            }
+            return false;
+        }
+        false
     }
 }

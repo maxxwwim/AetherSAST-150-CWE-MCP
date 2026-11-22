@@ -868,6 +868,7 @@ dependencies = [
  "core-graph",
  "futures-util",
  "obsidian-vault",
+ "parking_lot",
  "rfd",
  "security-linter",
  "serde",

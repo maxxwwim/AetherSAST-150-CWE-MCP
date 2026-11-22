@@ -1,3 +1,17 @@
+---
+id: root
+layer: utility
+max_lines_per_file: 300
+file_max_lines:
+  README.md: 300
+allowed_imports: []
+forbidden_imports: []
+security_rules:
+  no_raw_sql: false
+  no_env_access: false
+  untrusted_client_input: false
+  deterministic_only: false
+---
 <div align="center">
 
 <p align="center">

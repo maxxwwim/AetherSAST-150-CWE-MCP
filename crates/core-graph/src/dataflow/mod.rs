@@ -5,8 +5,10 @@
 
 pub mod engine;
 pub mod graph;
+pub mod rules;
 pub mod types;
 
 pub use engine::*;
 pub use graph::*;
+pub use rules::*;
 pub use types::*;

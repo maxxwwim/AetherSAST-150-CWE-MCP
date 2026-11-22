@@ -419,7 +419,7 @@ impl TaskManager {
         }
         if let Some(p) = progress {
             task.progress = p.min(100);
-            if task.progress == 100 && task.status == TaskStatus::Pending {
+            if task.progress == 100 && (task.status == TaskStatus::Pending || task.status == TaskStatus::InProgress) {
                 task.status = TaskStatus::Done;
             } else if task.progress > 0 && task.status == TaskStatus::Pending {
                 task.status = TaskStatus::InProgress;

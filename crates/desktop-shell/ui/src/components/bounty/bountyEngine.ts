@@ -309,10 +309,30 @@ export function parsePatternLines(text: string): string[] {
     .filter(Boolean);
 }
 
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesStarGlob(text: string, pat: string): boolean {
+  if (pat.length > 256) return false;
+  const collapsed = pat.replace(/\*+/g, '*');
+  const parts = collapsed.split('*');
+  if (parts.length === 1) return text === parts[0];
+  if (!text.startsWith(parts[0])) return false;
+  let rest = text.slice(parts[0].length);
+  for (let i = 1; i < parts.length - 1; i++) {
+    if (!parts[i]) continue;
+    const idx = rest.indexOf(parts[i]);
+    if (idx === -1) return false;
+    rest = rest.slice(idx + parts[i].length);
+  }
+  return rest.endsWith(parts[parts.length - 1]);
+}
+
 export function matchesWildcardPattern(filePath: string, pattern: string): boolean {
   const normPath = (filePath || '').replace(/\\/g, '/').toLowerCase();
   const normPat = (pattern || '').replace(/\\/g, '/').trim().toLowerCase();
-  if (!normPat) return false;
+  if (!normPat || normPat.length > 256) return false;
   if (!normPat.includes('*')) {
     return (
       normPath === normPat ||
@@ -320,19 +340,9 @@ export function matchesWildcardPattern(filePath: string, pattern: string): boole
       normPath.includes('/' + normPat + '/')
     );
   }
-  const regexStr =
-    '^' +
-    normPat
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*') +
-    '$';
-  try {
-    if (new RegExp(regexStr, 'i').test(normPath)) return true;
-    const prefix = normPat.replace(/\/?\*+$/, '');
-    if (prefix && (normPath === prefix || normPath.startsWith(prefix + '/'))) return true;
-  } catch {
-    // ignore invalid regex
-  }
+  if (matchesStarGlob(normPath, normPat)) return true;
+  const prefix = normPat.replace(/\/?\*+$/, '');
+  if (prefix && (normPath === prefix || normPath.startsWith(prefix + '/'))) return true;
   return false;
 }
 

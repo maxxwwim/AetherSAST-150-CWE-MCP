@@ -96,7 +96,7 @@ pub(crate) fn port_service_info(port: u16) -> (&'static str, &'static str, &'sta
     }
 }
 
-pub(crate) fn extract_version_token(raw: &str) -> Option<String> {
+pub(crate) fn extract_version_label(raw: &str) -> Option<String> {
     for token in raw.split([' ', ';', '(', ')']) {
         let t = token.trim();
         if t.contains('/') && t.chars().any(|c| c.is_ascii_digit()) {
@@ -165,7 +165,7 @@ pub(crate) async fn probe_single_port(host: String, port: u16, grab_banner: bool
                     }
                 }
                 if detected_version.is_none() {
-                    detected_version = extract_version_token(&first_line);
+                    detected_version = extract_version_label(&first_line);
                 }
                 if !first_line.is_empty() {
                     banner = Some(first_line.chars().take(90).collect());
@@ -488,11 +488,11 @@ pub(crate) fn fingerprint_technologies(
     };
 
     if let Some(srv) = headers.get("server") {
-        let ver = extract_version_token(srv).or_else(|| Some(srv.clone()));
+        let ver = extract_version_label(srv).or_else(|| Some(srv.clone()));
         push_tech(srv, "Serveur Web", ver, "Header HTTP Server", "Haute (100%)");
     }
     if let Some(xpb) = headers.get("x-powered-by") {
-        let ver = extract_version_token(xpb).or_else(|| Some(xpb.clone()));
+        let ver = extract_version_label(xpb).or_else(|| Some(xpb.clone()));
         push_tech(xpb, "Framework / Runtime", ver, "Header X-Powered-By", "Haute (100%)");
     }
     if headers.contains_key("cf-ray") || headers.get("server").map(|s| s.to_lowercase().contains("cloudflare")).unwrap_or(false) {
@@ -502,7 +502,7 @@ pub(crate) fn fingerprint_technologies(
         push_tech("Vercel Edge Network", "CDN / Reverse-Proxy", None, "Header X-Vercel-Id", "Haute (100%)");
     }
     if let Some(via) = headers.get("via") {
-        push_tech(via, "CDN / Reverse-Proxy", extract_version_token(via), "Header Via", "Haute (95%)");
+        push_tech(via, "CDN / Reverse-Proxy", extract_version_label(via), "Header Via", "Haute (95%)");
     }
 
     if let Some(cookies) = headers.get("set-cookie") {

@@ -4,6 +4,7 @@
   import IdeDocSidebar from './IdeDocSidebar.svelte';
   import IdeEditor from './IdeEditor.svelte';
   import DocReaderDrawer from '../DocReaderDrawer.svelte';
+  import RadarMinimap from '../RadarMinimap.svelte';
   import { cockpitState } from '../../state/graphState.svelte';
   import {
     FolderTree,
@@ -12,11 +13,14 @@
     Columns2,
     ChevronLeft,
     ChevronRight,
-    PanelLeftOpen
+    PanelLeftOpen,
+    Radar
   } from '@lucide/svelte';
 
   let sidebarMode = $state<'files' | 'symbols' | 'docs' | 'split'>('split');
   let ideDocWide = $state(false);
+  let showConstellationPip = $state(true);
+  let pipMode = $state<'local' | 'global'>('local');
 
   // Left Sidebar adjustable width & minimizable state
   let sidebarWidth = $state(320);
@@ -285,8 +289,29 @@
   {/if}
 
   <!-- Main Code Editor Pane (Flex-1) -->
-  <main class="flex-1 h-full min-w-0 flex flex-col overflow-hidden bg-[#060810]">
+  <main class="flex-1 h-full min-w-0 flex flex-col overflow-hidden bg-[#060810] relative">
     <IdeEditor />
+
+    <!-- Floating Mini-Hub Radar / Local Constellation PiP Widget (F15) -->
+    <div class="absolute bottom-8 right-3 z-20 flex flex-col items-end gap-1.5 pointer-events-auto">
+      {#if showConstellationPip}
+        <div class="w-72 shadow-2xl">
+          <RadarMinimap engine={cockpitState.engine} bind:mode={pipMode} embedded={true} />
+        </div>
+      {/if}
+      <button
+        type="button"
+        onclick={() => (showConstellationPip = !showConstellationPip)}
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono border shadow-lg cursor-pointer transition-all
+          {showConstellationPip
+            ? 'bg-cyan-950/90 text-cyan-200 border-cyan-400/40 hover:bg-cyan-900/90'
+            : 'bg-[#090d16]/90 text-slate-400 border-white/10 hover:text-white hover:border-cyan-400/30'}"
+        title="Afficher / Masquer le Mini-Hub Radar & Constellation Locale PiP"
+      >
+        <Radar class="w-3.5 h-3.5 text-cyan-400" />
+        <span>Radar / Constellation PiP</span>
+      </button>
+    </div>
   </main>
 
   <!-- Right Doc Pane Drag Resizer & Container -->

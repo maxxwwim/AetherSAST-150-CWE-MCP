@@ -15,7 +15,9 @@ pub struct SecurityRules {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadmeFrontmatter {
+    #[serde(default = "default_id")]
     pub id: String,
+    #[serde(default = "default_layer")]
     pub layer: String,
     #[serde(default = "default_max_lines")]
     pub max_lines_per_file: usize,
@@ -94,6 +96,14 @@ pub struct ContractStructureUpdate {
     pub allowed_extensions: Option<Vec<String>>,
     pub forbidden_extensions: Option<Vec<String>>,
     pub max_files_per_folder: Option<usize>,
+}
+
+fn default_id() -> String {
+    "module".to_string()
+}
+
+fn default_layer() -> String {
+    "domain".to_string()
 }
 
 fn default_max_lines() -> usize {

@@ -590,6 +590,93 @@ pub fn read_safe(req_path: &str, parts: &[&str]) -> std::io::Result<String> {
 }
 
 #[test]
+fn test_rust_path_join_prefix_wipe_self_scan_regressions() {
+    // Negative 1: Vec<String>::push on plural `bases` (ast-scanner lang/{php,java,csharp}.rs pattern)
+    let vec_bases = r#"
+use std::path::Path;
+pub fn analyze_php_like(rel_path: &str, implements_str: &str) {
+    let _p = Path::new(rel_path);
+    let mut bases: Vec<String> = Vec::new();
+    for imp in implements_str.split(',') {
+        let clean = imp.trim();
+        if !clean.is_empty() {
+            bases.push(clean.to_string());
+        }
+    }
+}
+"#;
+    assert_passes("src/lang/php.rs", vec_bases, "AETHER-RUST-PATH-JOIN-PREFIX-WIPE");
+
+    // Negative 2: Vec::with_capacity + push on `sampled_md_paths` (obsidian-vault detector.rs:159 pattern)
+    let vec_sampled_paths = r#"
+use std::path::Path;
+pub fn detect_files(root: &Path, entry: &Path) {
+    let mut sampled_md_paths = Vec::with_capacity(64);
+    if root.exists() {
+        sampled_md_paths.push(entry.to_path_buf());
+    }
+}
+"#;
+    assert_passes("src/detector.rs", vec_sampled_paths, "AETHER-RUST-PATH-JOIN-PREFIX-WIPE");
+
+    // Negative 3: `self.paths.push(...)` plural collection receiver
+    let self_paths_push = r#"
+use std::path::Path;
+pub fn collect_entries(collector: &mut Collector, rel_path: &str) {
+    let _p = Path::new(rel_path);
+    collector.paths.push(rel_path.to_string());
+}
+"#;
+    assert_passes("src/collector.rs", self_paths_push, "AETHER-RUST-PATH-JOIN-PREFIX-WIPE");
+
+    // Negative 4: `Self::validate_client_relative_path` confinement (confinement.rs resolve_write_target pattern)
+    let confined_write_target = r#"
+use std::fs;
+use std::path::{Path, PathBuf};
+pub fn resolve_write_target(canonical_root: &Path, candidate_rel: &Path) -> Result<PathBuf, ()> {
+    let path_str = candidate_rel.to_string_lossy();
+    let clean_rel = Self::validate_client_relative_path(&path_str)?;
+    let full_target = canonical_root.join(&clean_rel);
+    fs::canonicalize(&full_target).map_err(|_| ())
+}
+"#;
+    assert_passes("src/confinement.rs", confined_write_target, "AETHER-RUST-PATH-JOIN-PREFIX-WIPE");
+
+    // Positive 1: PathBuf::from("instances").join(&m.server_id) (runner/src/main.rs pattern)
+    let vuln_pathbuf_join = r#"
+use std::path::PathBuf;
+pub fn install_instance(server_id: &str, dir: Option<PathBuf>) -> PathBuf {
+    let target_dir = dir.unwrap_or_else(|| PathBuf::from("instances").join(&server_id));
+    std::fs::create_dir_all(&target_dir).ok();
+    target_dir
+}
+"#;
+    assert_triggers("src/runner.rs", vuln_pathbuf_join, "AETHER-RUST-PATH-JOIN-PREFIX-WIPE");
+
+    // Positive 2: PathBuf::push with untrusted request path must STILL trigger
+    let vuln_pathbuf_push = r#"
+use std::path::PathBuf;
+pub fn write_upload(req_subpath: &str) -> std::io::Result<String> {
+    let mut dest_dir = PathBuf::from("/srv/uploads");
+    dest_dir.push(req_subpath);
+    std::fs::read_to_string(dest_dir)
+}
+"#;
+    assert_triggers("src/http/upload.rs", vuln_pathbuf_push, "AETHER-RUST-PATH-JOIN-PREFIX-WIPE");
+
+    // Positive 3: Plural identifier explicitly typed as PathBuf MUST still trigger on .push()
+    let vuln_explicit_pathbuf_plural = r#"
+use std::path::PathBuf;
+pub fn build_upload(req_subpath: &str) -> std::io::Result<String> {
+    let mut upload_dirs = PathBuf::from("/srv/uploads");
+    upload_dirs.push(req_subpath);
+    std::fs::read_to_string(upload_dirs)
+}
+"#;
+    assert_triggers("src/http/upload2.rs", vuln_explicit_pathbuf_plural, "AETHER-RUST-PATH-JOIN-PREFIX-WIPE");
+}
+
+#[test]
 fn test_rust_assert_unwindsafe_torn_state_and_readonly() {
     let torn = r#"
 use std::panic::{catch_unwind, AssertUnwindSafe};

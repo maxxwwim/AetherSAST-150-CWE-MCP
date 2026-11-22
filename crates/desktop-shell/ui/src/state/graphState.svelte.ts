@@ -413,6 +413,7 @@ export class CockpitState {
   isTasksModalOpen = $state(false);
   isCreateFileModalOpen = $state(false);
   pendingImportFile = $state<{ fileName: string; content: string } | null>(null);
+  pendingCreateFolder = $state<string | null>(null);
   isIgnoredCweModalOpen = $state(false);
   isPluginsModalOpen = $state(false);
   pluginsModalTab = $state<'plugins' | 'create' | 'taint' | 'playground' | 'semgrep' | 'visuals'>('plugins');
@@ -601,6 +602,7 @@ export class CockpitState {
   aiAgentStatus = $state<'ready' | 'thinking' | 'idle'>('ready');
   mcpConnected = $state(true);
   lastTelemetryTs = $state(0);
+  private lastTelemetrySig = '';
 
   saveLocalAiCache() {
     try {
@@ -780,6 +782,7 @@ export class CockpitState {
         ? [ev]
         : [];
     if (incoming.length === 0 && (!historyList || historyList.length === 0)) {
+      this.lastTelemetrySig = '';
       if (hasAuthoritativeAgentsList) {
         if (this.activeAgents.length > 0 || this.aiTelemetry !== null) {
           this.activeAgents = [];
@@ -791,6 +794,14 @@ export class CockpitState {
       }
       return;
     }
+
+    const headHist = historyList && historyList.length > 0 ? historyList[0] : null;
+    const sig = `${incoming.map((a) => `${a.agent_id || a.agent_name || ''}:${a.target}:${a.action}:${a.timestamp}`).join('|')}#${historyList?.length || 0}:${headHist?.timestamp || 0}:${headHist?.target || ''}`;
+    if (hasAuthoritativeAgentsList && sig === this.lastTelemetrySig) {
+      this.pruneInactiveAgents();
+      return;
+    }
+    this.lastTelemetrySig = sig;
 
     let anyNew = false;
     let latestAutoFocusId: string | null = null;
@@ -971,6 +982,7 @@ export class CockpitState {
   }
 
   clearAiTrail() {
+    this.lastTelemetrySig = '';
     this.aiTrail = [];
     this.agentTrails = {};
     this.activeAgents = [];
@@ -1762,6 +1774,9 @@ export class CockpitState {
     if (g && Array.isArray(g.nodes)) {
       g.nodes.length = 0; // Free raw JSON objects from memory
     }
+    if (g && (g as any).dataflow_graph) {
+      delete (g as any).dataflow_graph;
+    }
 
     this.nodeById.clear();
     for (let i = 0; i < normalizedNodes.length; i++) {
@@ -1796,9 +1811,7 @@ export class CockpitState {
 
   async fetchGitStatus(forceRefresh = false): Promise<GitStatusResponse | null> {
     try {
-      const data: GitStatusResponse = typeof (api as any).getGitStatus === 'function'
-        ? await (api as any).getGitStatus()
-        : await (await fetch('/api/git/status')).json();
+      const data = await api.getGitStatus();
 
       if (!data) return null;
 
