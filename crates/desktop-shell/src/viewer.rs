@@ -20,7 +20,8 @@ fn ensure_system_prompt(graph: &AetherGraph) -> AetherGraph {
     graph_clone.dataflow_graph = None;
     for n in &mut graph_clone.nodes {
         let is_doc = n.file_path.to_ascii_lowercase().ends_with(".md");
-        if !is_doc {
+        let is_showcase = n.file_path.starts_with("demo_showcase/");
+        if !is_doc && !is_showcase {
             n.metadata.raw_content = None;
         }
         if !n.metadata.cve_anomalies.is_empty() {
@@ -302,14 +303,208 @@ mod tests {
         assert!(html.contains("src/lib.rs::compute"));
     }
 
+    fn build_demo_showcase_graph() -> AetherGraph {
+        let tmp = tempfile::tempdir().expect("create temp dir for demo showcase");
+        let showcase_dir = tmp.path().join("demo_showcase");
+        std::fs::create_dir_all(&showcase_dir).expect("create demo_showcase dir");
+
+        let demo_readme = r#"---
+id: demo_showcase
+layer: domain
+max_lines_per_file: 120
+forbidden_imports: ["std::process::Command"]
+forbidden_functions: ["eval"]
+security_rules:
+  no_raw_sql: true
+  no_env_access: false
+  untrusted_client_input: true
+---
+# 🧪 Demo Showcase — Live SAST, SSA Taint & CWE Arena
+
+Interactive vulnerable polyglot sandbox (**TypeScript**, **Python**, **Rust**) embedded exclusively in the standalone GitHub Pages demo (`docs/index.html`) so visitors can explore live **CWE red beacons**, **SSA Taint source→sink traces**, **exploit reachability paths**, and **BLAKE3 contract violations** — while `aether-engine` itself remains **0-violation clean** on self-audit.
+
+## 🎯 Included Live Vulnerabilities
+- **TypeScript (`auth_controller.ts`)**: SQL Injection (`CWE-89`), OS Command Injection (`CWE-78`), Dynamic Code Eval (`CWE-94` + `RULE_FORBIDDEN_FUNCTION`), DOM XSS (`CWE-79`), Prototype Pollution (`CWE-1321`).
+- **Python (`payment_gateway.py`)**: Insecure Deserialization (`CWE-502`), Command Injection (`CWE-78`), SQL Injection (`CWE-89`), Path Traversal (`CWE-22`), Weak Crypto MD5 (`CWE-328`).
+- **Rust (`vault_bridge.rs`)**: Forbidden Import (`RULE_FORBIDDEN_IMPORT`), Unsafe Transmute (`CWE-119`), Command Injection (`CWE-78`), Path Join Prefix Wipe (`AETHER-PATH-008`), Async Mutex across `.await`.
+"#;
+
+        let auth_ts = r#"import express from 'express';
+import { exec } from 'child_process';
+
+const app = express();
+
+export function lookupUserByEmail(db: any, email: string) {
+    const sql = "SELECT id, role FROM users WHERE email = '" + email + "'";
+    return db.query(sql);
+}
+
+export function runDiagnosticPing(host: string) {
+    return exec("ping -c 1 " + host);
+}
+
+export function evaluatePricingFormula(formula: string) {
+    return eval(formula);
+}
+
+export function renderWelcomeBanner(req: any, container: HTMLElement) {
+    const bannerHtml = req.query.banner;
+    const markup = "<div>" + bannerHtml + "</div>";
+    container.innerHTML = markup;
+}
+
+export function searchAuditLogs(req: any, db: any) {
+    const rawQuery = req.query.search;
+    const sql = "SELECT id, event FROM audit_logs WHERE msg = '" + rawQuery + "'";
+    return db.query(sql);
+}
+
+export function mergeUserProfile(req: any, target: Record<string, any>) {
+    const payload: any = req.body;
+    return Object.assign(target, payload);
+}
+
+app.post('/api/demo/auth/login', (req: any, res: any) => {
+    const email = req.query.email;
+    const host = req.query.host;
+    const formula = req.body.formula;
+    lookupUserByEmail(req.app.locals.db, email);
+    searchAuditLogs(req, req.app.locals.db);
+    runDiagnosticPing(host);
+    const price = evaluatePricingFormula(formula);
+    mergeUserProfile(req, {});
+    res.send(req.query.banner + String(price));
+});
+"#;
+
+        let payment_py = r#"import hashlib
+import pickle
+import sqlite3
+import subprocess
+from flask import Flask, request
+
+app = Flask(__name__)
+
+def fetch_invoice(conn, invoice_id):
+    cursor = conn.cursor()
+    query = "SELECT * FROM invoices WHERE ref = '" + invoice_id + "'"
+    return cursor.execute(query).fetchall()
+
+def deserialize_receipt(raw_blob):
+    return pickle.loads(raw_blob)
+
+def dispatch_webhook(callback_url):
+    return subprocess.Popen("curl -s " + callback_url, shell=True)
+
+def read_statement_pdf(filename):
+    with open("/var/billing/statements/" + filename, "rb") as handle:
+        return handle.read()
+
+def hash_pin_legacy(pin_code):
+    return hashlib.md5(pin_code.encode("utf-8")).hexdigest()
+
+@app.route('/api/demo/payments/process', methods=['POST'])
+def process_payment():
+    invoice_id = request.args.get("invoice_id", "")
+    callback_url = request.args.get("callback", "")
+    filename = request.args.get("file", "")
+    conn = sqlite3.connect(":memory:")
+    fetch_invoice(conn, invoice_id)
+    deserialize_receipt(request.data)
+    dispatch_webhook(callback_url)
+    read_statement_pdf(filename)
+    return hash_pin_legacy(request.form.get("pin", ""))
+"#;
+
+        let vault_rs = r#"use std::path::PathBuf;
+use std::process::Command;
+use std::sync::Mutex;
+
+pub fn execute_vault_hook(user_cmd: &str) -> std::io::Result<std::process::Output> {
+    Command::new("sh").arg("-c").arg(user_cmd).output()
+}
+
+pub fn resolve_vault_export(base_dir: &PathBuf, user_rel_path: &str) -> PathBuf {
+    base_dir.join(user_rel_path)
+}
+
+pub fn read_raw_slot(raw_addr: u64) -> *const u8 {
+    unsafe { std::mem::transmute::<u64, *const u8>(raw_addr) }
+}
+
+pub async fn sync_vault_state(shared_lock: &Mutex<String>) {
+    let mut guard = shared_lock.lock().unwrap();
+    guard.push_str("syncing");
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+}
+"#;
+
+        std::fs::write(showcase_dir.join("README.md"), demo_readme).unwrap();
+        std::fs::write(showcase_dir.join("auth_controller.ts"), auth_ts).unwrap();
+        std::fs::write(showcase_dir.join("payment_gateway.py"), payment_py).unwrap();
+        std::fs::write(showcase_dir.join("vault_bridge.rs"), vault_rs).unwrap();
+
+        let scanner = ast_scanner::scanner::ProjectScanner::default();
+        scanner.scan_project(tmp.path())
+    }
+
     #[test]
     fn test_export_docs_index_html() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root = std::fs::canonicalize(manifest_dir.join("../..")).unwrap();
         let scanner = ast_scanner::scanner::ProjectScanner::default();
-        let code_graph = scanner.scan_project(&root);
-        println!("Exporting docs/index.html for root: {:?}, nodes: {}", root, code_graph.nodes.len());
+        let mut code_graph = scanner.scan_project(&root);
+
+        // Merge isolated polyglot CWE/Taint showcase strictly into the standalone demo export
+        // so visitors see live CWE beacons, SSA taint flows & contract alerts while keeping
+        // the real `aether-engine` repository at 0 violations.
+        let showcase_graph = build_demo_showcase_graph();
+        let existing_ids: std::collections::HashSet<String> =
+            code_graph.nodes.iter().map(|n| n.id.clone()).collect();
+        let (max_x, min_y) = code_graph.nodes.iter().fold((0.0f64, 0.0f64), |(mx, my), n| {
+            (mx.max(n.x), my.min(n.y))
+        });
+        let offset_x = max_x + 900.0;
+        let offset_y = min_y + 400.0;
+
+        let mut added_nodes = 0usize;
+        for mut node in showcase_graph.nodes {
+            if existing_ids.contains(&node.id) {
+                continue;
+            }
+            node.x += offset_x;
+            node.y += offset_y;
+            for pt in [
+                node.layouts.obsidian.as_mut(),
+                node.layouts.system.as_mut(),
+                node.layouts.flow.as_mut(),
+                node.layouts.classes.as_mut(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                pt.x += offset_x;
+                pt.y += offset_y;
+            }
+            code_graph.nodes.push(node);
+            added_nodes += 1;
+        }
+        code_graph.edges.extend(showcase_graph.edges);
+        code_graph.stats.files_scanned += showcase_graph.stats.files_scanned;
+        code_graph.compute_stats();
+
+        println!(
+            "Exporting docs/index.html for root: {:?}, nodes: {} (+{} demo_showcase), violations: {}",
+            root,
+            code_graph.nodes.len(),
+            added_nodes,
+            code_graph.stats.violation_count
+        );
         assert!(code_graph.nodes.len() > 50, "Graph must contain nodes!");
+        assert!(
+            code_graph.stats.violation_count > 0,
+            "Standalone demo must expose live demo_showcase CWE findings!"
+        );
 
         let detection_report = obsidian_vault::detect_project_type(&root).ok();
         let project_type = detection_report
