@@ -1,5 +1,5 @@
 # 🪐 AETHER-ENGINE — CATALOGUE OFFICIEL DES 222+ RÈGLES SAST/CWE, PATTERNS ZERO-DAY & BACKDOORS AETHER-*
-> **Moteur SAST Spatial AetherScope V2 (v2.6.0)**  
+> **Moteur SAST Spatial AetherScope V2 (v2.7.0)**  
 > **Total des règles intégrées :** `222 règles natives` (dont `28 détecteurs hors-CWE AETHER-*`) + `24 règles Semgrep OWASP/CWE communautaires` = **`246 règles au total`**  
 > **Technologies auditées :** PHP (WordPress / API), Zig (Systems / C-ABI / SIMD), C# (.NET / ASP.NET Core / EF Core), Rust (Memory Unsafe / LLVM), C++ (Réseau / Protocoles), Node.js / TypeScript, Python, Java, Smart Contracts (Solidity / Move / ZK).
 

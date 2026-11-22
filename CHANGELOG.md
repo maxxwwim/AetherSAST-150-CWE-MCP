@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.7.0] - 2026-11-22
+
+### Performance & Engine Acceleration
+- **⚡ 220x Faster MCP Server (`< 15 ms`) & Zero-Rescan In-Memory Graph Cache (`mcp.rs`, `mcp_catalog.rs`, `api_routes.rs`, `main.rs`, `patch_verifier.rs`)**:
+  - **Dedicated Slimmed MCP Cache (`GET /api/graph?mcp=1` / `AppState::mcp_graph_cache`)**: Caches versioned JSON bytes in RAM while stripping multi-megabyte `raw_content`, `dataflow_graph`, and `system_prompt` payloads and preserving 100% uncompacted `nodes` and `edges`. Cuts graph transfer from **9.06 MB (`2,914 ms`)** down to **2.62 MB (`13 ms` warm)**.
+  - **Eliminated Redundant Full-Disk AST Scans**:
+    - `aetherscope_get_graph_summary`: No longer triggers `POST /api/analyze` when `rescan: false` and `"path": "."` (or matching project root), and reuses the in-memory graph for `severity` violation filtering instead of launching a second disk scan.
+    - `aetherscope_get_active_target`: Executes 3D telemetry and `POST /api/ai/target` concurrently via `tokio::join!` and extracts upstream/downstream architectural flow directly from the response (`0` disk scans online; single combined scan offline via `offline_active_target_fallback_with_trace`).
+    - `aetherscope_search_symbols`, `aetherscope_trace_flow`, and `aetherscope_query_violations`: Query the active server's in-RAM graph (`fetch_or_scan_project_graph`) in `< 15 ms` with automatic offline fallback.
+    - `aetherscope_verify_patch`: Skips downloading the full graph and running global reachability when the incremental patch introduces `0` violations, and automatically resolves the active workspace via `GET /api/workspace` when `aetherscope-mcp` is spawned from an external working directory.
+- **🚀 120 FPS WebGL 2 / Canvas 2D Engine & Browser Memory Optimization (`-60% HTML/Heap`) (`engine.ts`, `physics.ts`, `viewer.rs`, `App.svelte`, `graphState.svelte.ts`)**:
+  - **Idle-Aware Cellular Membrane Throttling**: `syncLiveClusterEnvelopes()` pauses per-frame O(N) `Math.hypot`/`Math.atan2` cluster geometry recalculations and `Float32Array` allocations when physics is sleeping (`physics.isIdle()`) or membranes are hidden (`showFolderMembranes = false`), while preserving 120 FPS breathing splines and instant wake-up on zoom, drag, or filter changes.
+  - **Standalone Bundle Slimming & Anti-OOM (`0x80000003`) Guard**: Stripped inline `dataflow_graph` and non-doc `raw_content` from `window.__AETHERSCOPE_DUAL_GRAPH__` in `viewer.rs` (shrinking `GET /` and `docs/index.html` from **> 10.5 MB to ~4.0 MB**), revoked temporary Worker Blob URLs, added re-entrancy guards on the 2s background poll, and added signature deduplication in `recordAiTelemetry` / `getTasks` to prevent redundant `localStorage` writes and Svelte 5 `$state` proxy churn.
+
+### Added
+- **📡 Real-Time SSE Push Stream (`/api/graph/events`) & IDE Auto-Save / VS Code Shortcuts (`main.rs`, `App.svelte`, `IdeEditor.svelte`, `SettingsModal.svelte`)**:
+  - Sub-150ms Server-Sent Events push stream (`GraphWatchEvent`) for instant IDE file, AST graph, and `.glsl` visual plugin hot-reload, paired with dynamic new-folder attachment in `FileWatcherBridge`.
+  - Configurable IDE & Docs save mode (`Save Auto` on edit vs manual `Ctrl+S`) with integrated VS Code / Notepad keyboard shortcuts.
+- **📚 Bilingual GitBook Documentation Suite (`gitbook/en` & `gitbook/fr`)**:
+  - Comprehensive 68-page English & French GitBook documentation covering hexagonal crate architecture, 246 SAST/CWE rules, SSA taint dataflow, BLAKE3 governance, WebGL visual plugins, MCP server, and REST API.
+- **🧩 Modular Multi-Language AST & Dataflow Architecture (`crates/ast-scanner/src/lang/*`, `crates/core-graph/src/dataflow/rules.rs`, `crates/obsidian-vault/src/{error,lexical}.rs`, `beaconsOverlay.ts`, `agentOverlay.ts`)**:
+  - Clean modular decomposition of language parsers, SSA taint rules, lexical path confinement, and Canvas 2D security beacon / multi-agent overlays.
+
+---
+
 ## [2.6.0] - 2026-11-19
 
 ### Added
