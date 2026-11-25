@@ -9,7 +9,7 @@ use tokio::time::{timeout, Duration};
 #[derive(Deserialize, Debug, Clone)]
 pub struct SurfaceScanRequest {
     pub target: String,
-    /// 1 = Furtif/Passif, 2 = Services/Versions, 3 = Black-Box Web & Forms, 4 = Audit d'Exposition (.env, .git, Configs - CWE-538 MasquÃ©)
+    /// 1 = Furtif/Passif, 2 = Services/Versions, 3 = Black-Box Web & Forms, 4 = Audit d'Exposition (.env, .git, Configs - CWE-538 Masqué)
     pub scan_level: Option<u8>,
     pub check_dns: Option<bool>,
     pub check_ports: Option<bool>,
@@ -255,7 +255,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
     let mut resolved_ips = Vec::new();
     let mut target_classification = "Inconnu".to_string();
 
-    // 1. RÃ©solution DNS & Classification RÃ©seau
+    // 1. Résolution DNS & Classification Réseau
     let dns_start = Instant::now();
     let mut is_loopback_or_private = false;
     let is_literal_ip = host.parse::<IpAddr>().is_ok();
@@ -292,27 +292,27 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
             id: "SURFACE-DNS-UNRESOLVED".to_string(),
             cwe: "CWE-706 / DNS-RESOLUTION-FAILURE".to_string(),
             severity: "HIGH".to_string(),
-            category: "DNS & RÃ©seau".to_string(),
-            title: format!("Impossible de rÃ©soudre l'hÃ´te `{}`", host),
-            description: "Le rÃ©solveur DNS n'a retournÃ© aucune adresse IPv4 ou IPv6 pour cette cible dans le dÃ©lai imparti.".to_string(),
-            remediation: "VÃ©rifier l'orthographe du domaine, les enregistrements DNS A/AAAA ou la connectivitÃ© rÃ©seau locale.".to_string(),
+            category: "DNS & Réseau".to_string(),
+            title: format!("Impossible de résoudre l'hôte `{}`", host),
+            description: "Le résolveur DNS n'a retourné aucune adresse IPv4 ou IPv6 pour cette cible dans le délai imparti.".to_string(),
+            remediation: "Vérifier l'orthographe du domaine, les enregistrements DNS A/AAAA ou la connectivité réseau locale.".to_string(),
         });
     } else if !is_literal_ip && is_loopback_or_private && host != "localhost" && !host.ends_with(".local") {
         findings.push(SurfaceFinding {
             id: "SURFACE-DNS-REBIND-PRIVATE-IP".to_string(),
             cwe: "CWE-350 / DNS-REBINDING-INTERNAL-RESOLUTION".to_string(),
             severity: "HIGH".to_string(),
-            category: "DNS & RÃ©seau".to_string(),
-            title: "Domaine rÃ©solvant vers une IP interne / Loopback (Risque DNS Rebinding / SSRF)".to_string(),
+            category: "DNS & Réseau".to_string(),
+            title: "Domaine résolvant vers une IP interne / Loopback (Risque DNS Rebinding / SSRF)".to_string(),
             description: format!(
-                "Le nom d'hÃ´te `{}` rÃ©sout vers une adresse privÃ©e ou locale ({:?}). Si ce domaine est acceptÃ© par un webhook backend, il contourne les filtres SSRF basÃ©s uniquement sur le nom.",
+                "Le nom d'hôte `{}` résout vers une adresse privée ou locale ({:?}). Si ce domaine est accepté par un webhook backend, il contourne les filtres SSRF basés uniquement sur le nom.",
                 host, resolved_ips
             ),
-            remediation: "Valider systÃ©matiquement l'adresse IP rÃ©solue par le socket contre les plages RFC 1918, 127.0.0.0/8 et 169.254.0.0/16.".to_string(),
+            remediation: "Valider systématiquement l'adresse IP résolue par le socket contre les plages RFC 1918, 127.0.0.0/8 et 169.254.0.0/16.".to_string(),
         });
     }
 
-    // 2. Scan de posture des ports TCP + Banner Grabbing (selon le niveau d'impact/visibilitÃ©)
+    // 2. Scan de posture des ports TCP + Banner Grabbing (selon le niveau d'impact/visibilité)
     let mut ports_to_scan = if scan_level == 1 {
         vec![primary_port]
     } else if scan_level == 2 {
@@ -350,17 +350,17 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                         cwe: "CWE-284 / EXPOSED-DATASTORE-PORT".to_string(),
                         severity: if matches!(res.port, 6379 | 27017 | 9200 | 23) { "CRITICAL".to_string() } else { "HIGH".to_string() },
                         category: "Ports & Services".to_string(),
-                        title: format!("Service critique exposÃ© sur le port TCP :{} ({})", res.port, res.service),
+                        title: format!("Service critique exposé sur le port TCP :{} ({})", res.port, res.service),
                         description: format!(
-                            "Le dÃ©mon `{}` rÃ©pond sur `{}:{}` ({} ms){}.",
+                            "Le démon `{}` répond sur `{}:{}` ({} ms){}.",
                             res.service,
                             host,
                             res.port,
                             res.latency_ms.unwrap_or(0),
-                            res.banner.as_ref().map(|b| format!(" avec la banniÃ¨re `{}`", b)).unwrap_or_default()
+                            res.banner.as_ref().map(|b| format!(" avec la bannière `{}`", b)).unwrap_or_default()
                         ),
                         remediation: format!(
-                            "Isoler le port {} ({}) sur 127.0.0.1 ou un VPC privÃ© et imposer une authentification mutuelle.",
+                            "Isoler le port {} ({}) sur 127.0.0.1 ou un VPC privé et imposer une authentification mutuelle.",
                             res.port, res.service
                         ),
                     });
@@ -371,7 +371,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         open_ports.sort_by_key(|p| (!p.open, p.port));
     }
 
-    // 3. Audit HTTP, Headers, Stack Technologique & DÃ©couverte Web Visuelle / Formulaires
+    // 3. Audit HTTP, Headers, Stack Technologique & Découverte Web Visuelle / Formulaires
     let mut http_status = None;
     let mut raw_headers = HashMap::new();
     let mut headers_audit = Vec::new();
@@ -408,7 +408,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                     value: Some(csp.clone()),
                     status: if has_unsafe { "WARN".to_string() } else { "PASS".to_string() },
                     recommendation: if has_unsafe {
-                        "CSP prÃ©sente mais contient 'unsafe-inline' ou 'unsafe-eval'.".to_string()
+                        "CSP présente mais contient 'unsafe-inline' ou 'unsafe-eval'.".to_string()
                     } else {
                         "Politique CSP stricte active.".to_string()
                     },
@@ -419,15 +419,15 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                     present: false,
                     value: None,
                     status: "FAIL".to_string(),
-                    recommendation: "Absent : dÃ©finir default-src 'self'; frame-ancestors 'none'.".to_string(),
+                    recommendation: "Absent : définir default-src 'self'; frame-ancestors 'none'.".to_string(),
                 });
                 findings.push(SurfaceFinding {
                     id: "SURFACE-MISSING-CSP".to_string(),
                     cwe: "CWE-693 / MISSING-CONTENT-SECURITY-POLICY".to_string(),
                     severity: "MEDIUM".to_string(),
                     category: "Headers HTTP & CORS".to_string(),
-                    title: "Absence d'en-tÃªte Content-Security-Policy (CSP)".to_string(),
-                    description: "La rÃ©ponse HTTP ne dÃ©finit pas de Content-Security-Policy contre l'injection XSS et le chargement de scripts non autorisÃ©s.".to_string(),
+                    title: "Absence d'en-tête Content-Security-Policy (CSP)".to_string(),
+                    description: "La réponse HTTP ne définit pas de Content-Security-Policy contre l'injection XSS et le chargement de scripts non autorisés.".to_string(),
                     remediation: "Ajouter `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; object-src 'none'`.".to_string(),
                 });
             }
@@ -455,8 +455,8 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                     severity: "LOW".to_string(),
                     category: "Headers HTTP & CORS".to_string(),
                     title: "Absence de protection MIME-Sniffing (X-Content-Type-Options: nosniff)".to_string(),
-                    description: "Sans `nosniff`, le navigateur peut deviner et exÃ©cuter un type MIME dangereux sur les ressources chargÃ©es.".to_string(),
-                    remediation: "Ajouter `X-Content-Type-Options: nosniff` sur toutes les rÃ©ponses.".to_string(),
+                    description: "Sans `nosniff`, le navigateur peut deviner et exécuter un type MIME dangereux sur les ressources chargées.".to_string(),
+                    remediation: "Ajouter `X-Content-Type-Options: nosniff` sur toutes les réponses.".to_string(),
                 });
             }
 
@@ -492,7 +492,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                     severity: "MEDIUM".to_string(),
                     category: "Headers HTTP & CORS".to_string(),
                     title: "Protection Anti-Clickjacking manquante (X-Frame-Options)".to_string(),
-                    description: "Les pages et formulaires peuvent Ãªtre embarquÃ©s dans une `<iframe>` externe pour piÃ©ger les clics de l'utilisateur.".to_string(),
+                    description: "Les pages et formulaires peuvent être embarqués dans une `<iframe>` externe pour piéger les clics de l'utilisateur.".to_string(),
                     remediation: "Ajouter `X-Frame-Options: DENY` (ou `SAMEORIGIN`) et `frame-ancestors 'none'`.".to_string(),
                 });
             }
@@ -521,7 +521,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                         cwe: "CWE-319 / MISSING-HSTS-HEADER".to_string(),
                         severity: "MEDIUM".to_string(),
                         category: "Headers HTTP & CORS".to_string(),
-                        title: "En-tÃªte HSTS (Strict-Transport-Security) absent sur cible distante".to_string(),
+                        title: "En-tête HSTS (Strict-Transport-Security) absent sur cible distante".to_string(),
                         description: "Expose les utilisateurs au SSL-Stripping lors de la connexion initiale.".to_string(),
                         remediation: "Activer `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`.".to_string(),
                     });
@@ -540,16 +540,16 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                         present: true,
                         value: Some(acao.clone()),
                         status: "FAIL".to_string(),
-                        recommendation: "RÃ©flexion d'origine arbitraire critique dÃ©tectÃ©e !".to_string(),
+                        recommendation: "Réflexion d'origine arbitraire critique détectée !".to_string(),
                     });
                     findings.push(SurfaceFinding {
                         id: "SURFACE-CORS-ORIGIN-REFLECTION".to_string(),
                         cwe: "CWE-942 / OVERLY-PERMISSIVE-CORS-POLICY".to_string(),
                         severity: "CRITICAL".to_string(),
                         category: "Headers HTTP & CORS".to_string(),
-                        title: "Politique CORS dangereuse : rÃ©flexion de l'Origin arbitraire".to_string(),
-                        description: format!("Le serveur reflÃ¨te l'origine de sonde dans `Access-Control-Allow-Origin: {}`.", acao),
-                        remediation: "Valider l'en-tÃªte `Origin` contre une liste blanche stricte.".to_string(),
+                        title: "Politique CORS dangereuse : réflexion de l'Origin arbitraire".to_string(),
+                        description: format!("Le serveur reflète l'origine de sonde dans `Access-Control-Allow-Origin: {}`.", acao),
+                        remediation: "Valider l'en-tête `Origin` contre une liste blanche stricte.".to_string(),
                     });
                 } else {
                     headers_audit.push(HeaderControlResult {
@@ -566,7 +566,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                     present: false,
                     value: None,
                     status: "PASS".to_string(),
-                    recommendation: "Isolation Same-Origin stricte par dÃ©faut.".to_string(),
+                    recommendation: "Isolation Same-Origin stricte par défaut.".to_string(),
                 });
             }
 
@@ -579,9 +579,9 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                     value: Some(srv.clone()),
                     status: if leaks_version { "WARN".to_string() } else { "PASS".to_string() },
                     recommendation: if leaks_version {
-                        "Version logicielle exposÃ©e dans les en-tÃªtes.".to_string()
+                        "Version logicielle exposée dans les en-têtes.".to_string()
                     } else {
-                        "BanniÃ¨re serveur sobre.".to_string()
+                        "Bannière serveur sobre.".to_string()
                     },
                 });
                 if leaks_version {
@@ -590,14 +590,14 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                         cwe: "CWE-200 / SERVER-VERSION-FINGERPRINT-EXPOSURE".to_string(),
                         severity: "LOW".to_string(),
                         category: "Services & Versions".to_string(),
-                        title: format!("Version exacte du serveur divulguÃ©e (`{}`)", srv),
-                        description: "Facilite l'identification automatisÃ©e de CVE spÃ©cifiques Ã  cette version.".to_string(),
+                        title: format!("Version exacte du serveur divulguée (`{}`)", srv),
+                        description: "Facilite l'identification automatisée de CVE spécifiques à cette version.".to_string(),
                         remediation: "Masquer la version exacte (`server_tokens off` / `ServerTokens Prod`).".to_string(),
                     });
                 }
             }
 
-            // 4. DÃ©couverte des Endpoints (robots.txt & security.txt) + Cartographie Web & Formulaires
+            // 4. Découverte des Endpoints (robots.txt & security.txt) + Cartographie Web & Formulaires
             let mut robots_entries = Vec::new();
             let mut security_txt_present = false;
             let probe_scheme = if probed_port == 443 || probed_port == 8443 { "https" } else { &scheme };
@@ -632,7 +632,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                     robots_entries,
                     security_txt_present,
                 );
-                // Sonde rapide sur /api/health si prÃ©sent
+                // Sonde rapide sur /api/health si présent
                 if let Some((hlth_st, _, _)) = send_http_probe(probe_scheme, &host, probed_port, "/api/health", "GET").await {
                     if hlth_st.contains(" 200 ") && !disc.routes.iter().any(|r| r.path == "/api/health") {
                         disc.routes.push(DiscoveredRoute {
@@ -671,7 +671,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         if let Some(ref gen) = wd.meta_generator {
             final_tech_stack.push(TechFingerprint {
                 name: gen.clone(),
-                category: "CMS / GÃ©nÃ©rateur".to_string(),
+                category: "CMS / Générateur".to_string(),
                 version: extract_version_label(gen),
                 source: "Balise <meta name=\"generator\">".to_string(),
                 confidence: "Haute (100%)".to_string(),
@@ -679,7 +679,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         }
     }
 
-    // 5. Matrice de Niveau d'Impact & VisibilitÃ©
+    // 5. Matrice de Niveau d'Impact & Visibilité
     let open_services_count = open_ports.iter().filter(|p| p.open).count();
     let versions_count = open_ports.iter().filter(|p| p.detected_version.is_some()).count()
         + final_tech_stack.iter().filter(|t| t.version.is_some()).count();
@@ -693,27 +693,27 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
 
     let (level_name, visibility_footprint, impact_rating, packets_est) = match scan_level {
         1 => (
-            "Niveau 1 â€¢ Furtif & Empreinte Passive".to_string(),
-            "ðŸŸ¢ VisibilitÃ© Minimale (1 rÃ©solution DNS + 1 sonde HEAD)".to_string(),
-            "Impact Nul (0 Ã©criture, 0 crawl)".to_string(),
+            "Niveau 1 • Furtif & Empreinte Passive".to_string(),
+            "🟢 Visibilité Minimale (1 résolution DNS + 1 sonde HEAD)".to_string(),
+            "Impact Nul (0 écriture, 0 crawl)".to_string(),
             "~2-3 paquets TCP".to_string(),
         ),
         2 => (
-            "Niveau 2 â€¢ Empreinte Services, BanniÃ¨res & Versions".to_string(),
-            "ðŸŸ¡ VisibilitÃ© ModÃ©rÃ©e (Handshake TCP + Lecture BanniÃ¨res)".to_string(),
-            "Impact TrÃ¨s Faible (Lecture passive des banniÃ¨res)".to_string(),
+            "Niveau 2 • Empreinte Services, Bannières & Versions".to_string(),
+            "🟡 Visibilité Modérée (Handshake TCP + Lecture Bannières)".to_string(),
+            "Impact Très Faible (Lecture passive des bannières)".to_string(),
             "~12-18 paquets TCP".to_string(),
         ),
         3 => (
-            "Niveau 3 â€¢ Black-Box Complet & Cartographie Web/Forms".to_string(),
-            "ðŸ”´ VisibilitÃ© ComplÃ¨te (Ports + BanniÃ¨res + DOM HTML + Formulaires Â«FormÂ» + robots.txt)".to_string(),
-            "Impact ContrÃ´lÃ© (RequÃªtes GET standard en lecture seule)".to_string(),
+            "Niveau 3 • Black-Box Complet & Cartographie Web/Forms".to_string(),
+            "🔴 Visibilité Complète (Ports + Bannières + DOM HTML + Formulaires «Form» + robots.txt)".to_string(),
+            "Impact Contrôlé (Requêtes GET standard en lecture seule)".to_string(),
             "~25-35 paquets TCP/HTTP".to_string(),
         ),
         _ => (
-            "Niveau 4 â€¢ Audit d'Exposition (.env, .git, Configs & Specs â€” MasquÃ©)".to_string(),
-            "ðŸŸ£ VisibilitÃ© Ã‰levÃ©e (Ports + Web + Â«FormÂ» + Sondes CWE-538 /.env, /.git/HEAD, /docker-compose.yml)".to_string(),
-            "Impact DÃ©fensif (VÃ©rification anti-Soft-404 avec masquage strict des valeurs [MASQUÃ‰])".to_string(),
+            "Niveau 4 • Audit d'Exposition (.env, .git, Configs & Specs — Masqué)".to_string(),
+            "🟣 Visibilité Élevée (Ports + Web + «Form» + Sondes CWE-538 /.env, /.git/HEAD, /docker-compose.yml)".to_string(),
+            "Impact Défensif (Vérification anti-Soft-404 avec masquage strict des valeurs [MASQUÉ])".to_string(),
             "~35-45 paquets TCP/HTTP".to_string(),
         ),
     };
@@ -756,7 +756,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
 
     let scan_duration_ms = u64::try_from(scan_start.elapsed().as_millis()).unwrap_or(0);
 
-    // 7. Construction des 4 FrontiÃ¨res de Confiance (Swimlanes) & Suite de VÃ©rification DÃ©fensive
+    // 7. Construction des 4 Frontières de Confiance (Swimlanes) & Suite de Vérification Défensive
     let has_csp = headers_audit.iter().any(|h| h.header == "Content-Security-Policy" && h.status == "PASS");
     let has_hsts = headers_audit.iter().any(|h| h.header == "Strict-Transport-Security" && h.status == "PASS");
     let has_xfo = headers_audit.iter().any(|h| h.header == "X-Frame-Options" && h.status == "PASS");
@@ -799,8 +799,8 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
     let trust_zones = vec![
         TrustZoneSummary {
             zone_id: 1,
-            title: "Zone 1 â€¢ Client & Fichiers (.html/.js)".to_string(),
-            subtitle: format!("{} fichier(s) inspectÃ©(s)", files_cnt),
+            title: "Zone 1 • Client & Fichiers (.html/.js)".to_string(),
+            subtitle: format!("{} fichier(s) inspecté(s)", files_cnt),
             posture: zone1_posture.to_string(),
             controls: vec![
                 format!("CSP : {}", if has_csp { "Active" } else { "Manquante/Partielle" }),
@@ -809,31 +809,31 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         },
         TrustZoneSummary {
             zone_id: 2,
-            title: "Zone 2 â€¢ EntrÃ©es & Formulaires (Â«FormÂ»)".to_string(),
-            subtitle: format!("{} form(s) â€¢ {} champ(s)", forms_count, inputs_count),
+            title: "Zone 2 • Entrées & Formulaires («Form»)".to_string(),
+            subtitle: format!("{} form(s) • {} champ(s)", forms_count, inputs_count),
             posture: zone2_posture.to_string(),
             controls: vec![
-                format!("Validation CSRF : {}", if zone2_posture == "PASS" { "Conforme" } else { "Ã€ renforcer" }),
-                format!("Transport Secrets : {}", if scheme == "https" || is_loopback_or_private { "IsolÃ©/TLS" } else { "HTTP Clair" }),
+                format!("Validation CSRF : {}", if zone2_posture == "PASS" { "Conforme" } else { "À renforcer" }),
+                format!("Transport Secrets : {}", if scheme == "https" || is_loopback_or_private { "Isolé/TLS" } else { "HTTP Clair" }),
             ],
         },
         TrustZoneSummary {
             zone_id: 3,
-            title: "Zone 3 â€¢ Passerelle, Dossiers & API".to_string(),
-            subtitle: format!("{} dossier(s) â€¢ {} route(s)", dirs_cnt, routes_count),
+            title: "Zone 3 • Passerelle, Dossiers & API".to_string(),
+            subtitle: format!("{} dossier(s) • {} route(s)", dirs_cnt, routes_count),
             posture: zone3_posture.to_string(),
             controls: vec![
-                format!("Isolation CORS : {}", if zone3_posture == "CRITICAL" { "RÃ©flexion !" } else { "Conforme" }),
-                format!("HSTS : {}", if has_hsts { "Actif" } else { "Non dÃ©fini" }),
+                format!("Isolation CORS : {}", if zone3_posture == "CRITICAL" { "Réflexion !" } else { "Conforme" }),
+                format!("HSTS : {}", if has_hsts { "Actif" } else { "Non défini" }),
             ],
         },
         TrustZoneSummary {
             zone_id: 4,
-            title: "Zone 4 â€¢ Services TCP & Fichiers (.env/.git)".to_string(),
-            subtitle: format!("{} port(s) â€¢ {} exposition(s)", open_services_count, exposures_count),
+            title: "Zone 4 • Services TCP & Fichiers (.env/.git)".to_string(),
+            subtitle: format!("{} port(s) • {} exposition(s)", open_services_count, exposures_count),
             posture: zone4_posture.to_string(),
             controls: vec![
-                format!("Dotfiles CWE-538 : {}", if exposures_count == 0 { "ProtÃ©gÃ©s" } else { "EXPOSÃ‰S !" }),
+                format!("Dotfiles CWE-538 : {}", if exposures_count == 0 { "Protégés" } else { "EXPOSÉS !" }),
                 format!("Versions : {} empreinte(s)", versions_count),
             ],
         },
@@ -848,7 +848,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
     let verification_suite = vec![
         DefensiveVerificationCheck {
             id: "VERIFY-HEADERS-POSTURE".to_string(),
-            title: "VÃ©rification de non-rÃ©gression des en-tÃªtes de sÃ©curitÃ© HTTP (CSP, HSTS, XFO, Nosniff)".to_string(),
+            title: "Vérification de non-régression des en-têtes de sécurité HTTP (CSP, HSTS, XFO, Nosniff)".to_string(),
             category: "Headers & Gouvernance HTTP".to_string(),
             assertion_cmd: format!("curl -sSI \"{}/\" | findstr /I \"Content-Security-Policy X-Content-Type-Options X-Frame-Options Strict-Transport-Security\"", base_url),
             expected_result: "Doit retourner Content-Security-Policy (sans unsafe-inline), X-Content-Type-Options: nosniff et X-Frame-Options: DENY.".to_string(),
@@ -856,26 +856,26 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         },
         DefensiveVerificationCheck {
             id: "VERIFY-CORS-ISOLATION".to_string(),
-            title: "Test de non-rÃ©flexion d'origine CORS arbitraire (CWE-942)".to_string(),
+            title: "Test de non-réflexion d'origine CORS arbitraire (CWE-942)".to_string(),
             category: "Passerelle API & CORS".to_string(),
             assertion_cmd: format!("curl -sSI -H \"Origin: https://untrusted-verify.example\" \"{}/\" | findstr /I \"Access-Control-Allow-Origin\"", base_url),
-            expected_result: "Ne doit JAMAIS reflÃ©ter `https://untrusted-verify.example` ni combiner `*` avec `Access-Control-Allow-Credentials: true`.".to_string(),
+            expected_result: "Ne doit JAMAIS refléter `https://untrusted-verify.example` ni combiner `*` avec `Access-Control-Allow-Credentials: true`.".to_string(),
             patch_hint: "Remplacer CorsLayer::permissive() par CorsLayer::new().allow_origin([\"http://127.0.0.1:3030\".parse()?])".to_string(),
         },
         DefensiveVerificationCheck {
             id: "VERIFY-DOTFILES-BLOCKED".to_string(),
-            title: "VÃ©rification d'inaccessibilitÃ© des fichiers sensibles (/.env et /.git/HEAD â€” CWE-538)".to_string(),
-            category: "Module 4 â€¢ Fichiers Sensibles".to_string(),
+            title: "Vérification d'inaccessibilité des fichiers sensibles (/.env et /.git/HEAD — CWE-538)".to_string(),
+            category: "Module 4 • Fichiers Sensibles".to_string(),
             assertion_cmd: format!("curl -s -o NUL -w \"%{{http_code}}\" \"{}/.env\" && curl -s -o NUL -w \" %{{http_code}}\" \"{}/.git/HEAD\"", base_url, base_url),
             expected_result: "Codes HTTP attendus : `403` ou `404` (ou Soft-404 HTML sans aucune paire KEY=VALUE ni signature `ref: refs/`).".to_string(),
-            patch_hint: "Nginx : location ~ /\\.(?!well-known) { deny all; return 404; } | Ne jamais monter la racine du dÃ©pÃ´t dans ServeDir.".to_string(),
+            patch_hint: "Nginx : location ~ /\\.(?!well-known) { deny all; return 404; } | Ne jamais monter la racine du dépôt dans ServeDir.".to_string(),
         },
     ];
 
-    // 8. CÃ´tÃ© 1 Boosted : Sondes de Faiblesse de FrontiÃ¨re (Externe Black-Box Non-Destructif)
+    // 8. Côté 1 Boosted : Sondes de Faiblesse de Frontière (Externe Black-Box Non-Destructif)
     let mut boundary_weaknesses = Vec::new();
 
-    // 8.1 Sonde CORS & RÃ©flexion d'Origine (CWE-942)
+    // 8.1 Sonde CORS & Réflexion d'Origine (CWE-942)
     let acao_val = raw_headers
         .get("access-control-allow-origin")
         .cloned()
@@ -887,7 +887,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
     let cors_status = if acao_val.contains("scanner-probe.aetherscope.local")
         || (acao_val == "*" && acac_val.eq_ignore_ascii_case("true"))
     {
-        "EXPOSÃ‰"
+        "EXPOSÉ"
     } else if acao_val == "*" {
         "FAIBLESSE"
     } else {
@@ -896,13 +896,13 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
     boundary_weaknesses.push(BoundaryWeaknessProbe {
         id: "WEAKNESS-CORS-ORIGIN".to_string(),
         cwe: "CWE-942".to_string(),
-        side_one_vector: format!("Header Origin: https://scanner-probe.aetherscope.local âž” {}", base_url),
-        category: "CORS & Origine CroisÃ©e".to_string(),
+        side_one_vector: format!("Header Origin: https://scanner-probe.aetherscope.local ➔ {}", base_url),
+        category: "CORS & Origine Croisée".to_string(),
         status: cors_status.to_string(),
         observed_behavior: if acao_val.is_empty() {
-            "Aucun en-tÃªte Access-Control-Allow-Origin permissif retournÃ© (Isolation inter-origine stricte).".to_string()
+            "Aucun en-tête Access-Control-Allow-Origin permissif retourné (Isolation inter-origine stricte).".to_string()
         } else {
-            format!("ACA-Origin retournÃ© : `{}` (Credentials : `{}`).", acao_val, if acac_val.is_empty() { "false" } else { &acac_val })
+            format!("ACA-Origin retourné : `{}` (Credentials : `{}`).", acao_val, if acac_val.is_empty() { "false" } else { &acac_val })
         },
         side_two_ast_target: "Middleware CORS / CorsLayer (Passerelle HTTP)".to_string(),
         positive_test_spec: format!(
@@ -912,8 +912,8 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         negative_test_spec: "Test Négatif : Envoyer une requête avec `Origin: https://untrusted.invalid` et vérifier que `Access-Control-Allow-Origin` est absent (ou rejeté `403`) sans refléter l'origine.".to_string(),
     });
 
-    // 8.2 Sonde Active des Verbes HTTP (OPTIONS â€” CWE-650 / CWE-749)
-    let mut allowed_methods_obs = "Sonde OPTIONS non exÃ©cutÃ©e (Niveau 1).".to_string();
+    // 8.2 Sonde Active des Verbes HTTP (OPTIONS — CWE-650 / CWE-749)
+    let mut allowed_methods_obs = "Sonde OPTIONS non exécutée (Niveau 1).".to_string();
     let mut methods_status = "ROBUSTE";
     if scan_level >= 2 && http_status.is_some() {
         if let Some((opt_status, opt_hdrs, _)) =
@@ -926,24 +926,24 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                 .unwrap_or_default();
             let upper_allow = allow_h.to_uppercase();
             if upper_allow.contains("TRACE") {
-                methods_status = "EXPOSÃ‰";
+                methods_status = "EXPOSÉ";
             } else if upper_allow.contains("DELETE") || upper_allow.contains("PUT") {
                 methods_status = "FAIBLESSE";
             }
             allowed_methods_obs = if allow_h.is_empty() {
-                format!("RÃ©ponse OPTIONS : `{}` (Aucun verbe dangereux annoncÃ© dans Allow).", opt_status)
+                format!("Réponse OPTIONS : `{}` (Aucun verbe dangereux annoncé dans Allow).", opt_status)
             } else {
-                format!("RÃ©ponse OPTIONS : `{}` â€” MÃ©thodes annoncÃ©es : `{}`.", opt_status, allow_h)
+                format!("Réponse OPTIONS : `{}` — Méthodes annoncées : `{}`.", opt_status, allow_h)
             };
         } else {
-            allowed_methods_obs = "OPTIONS rejetÃ© ou fermÃ© par le serveur (Surface rÃ©duite).".to_string();
+            allowed_methods_obs = "OPTIONS rejeté ou fermé par le serveur (Surface réduite).".to_string();
         }
     }
     boundary_weaknesses.push(BoundaryWeaknessProbe {
         id: "WEAKNESS-HTTP-VERBS".to_string(),
         cwe: "CWE-650".to_string(),
         side_one_vector: format!("OPTIONS {}", path),
-        category: "Verbes & MÃ©thodes HTTP".to_string(),
+        category: "Verbes & Méthodes HTTP".to_string(),
         status: methods_status.to_string(),
         observed_behavior: allowed_methods_obs,
         side_two_ast_target: "Routeur HTTP / Table des Routes AST (get/post MethodFilter)".to_string(),
@@ -959,7 +959,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
     let (cookie_status, cookie_obs) = if set_cookie_val.is_empty() {
         (
             "ROBUSTE",
-            "Aucun cookie de session Ã©mis sur l'entrÃ©e (Architecture sans Ã©tat / Stateless).".to_string(),
+            "Aucun cookie de session émis sur l'entrée (Architecture sans état / Stateless).".to_string(),
         )
     } else {
         let lower_c = set_cookie_val.to_lowercase();
@@ -970,21 +970,21 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
             (
                 "FAIBLESSE",
                 format!(
-                    "Cookie dÃ©tectÃ© avec drapeaux incomplets (HttpOnly: {}, SameSite: {}, Secure: {}).",
+                    "Cookie détecté avec drapeaux incomplets (HttpOnly: {}, SameSite: {}, Secure: {}).",
                     has_httponly, has_samesite, has_secure
                 ),
             )
         } else {
             (
                 "ROBUSTE",
-                "Cookie(s) protÃ©gÃ©(s) par HttpOnly, SameSite et Secure.".to_string(),
+                "Cookie(s) protégé(s) par HttpOnly, SameSite et Secure.".to_string(),
             )
         }
     };
     boundary_weaknesses.push(BoundaryWeaknessProbe {
         id: "WEAKNESS-COOKIE-FLAGS".to_string(),
         cwe: "CWE-1004".to_string(),
-        side_one_vector: "En-tÃªte HTTP Set-Cookie".to_string(),
+        side_one_vector: "En-tête HTTP Set-Cookie".to_string(),
         category: "Session & Cookies".to_string(),
         status: cookie_status.to_string(),
         observed_behavior: cookie_obs,
@@ -993,12 +993,12 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         negative_test_spec: "Test Négatif : Rejeter tout cookie de session forgé, expiré ou dépourvu de signature valide (`401/403`) et interdire l'émission sans `HttpOnly; SameSite=Strict`.".to_string(),
     });
 
-    // 8.4 Sonde d'Indexation des Dossiers DÃ©couverts (CWE-548 â€” Directory Listing)
+    // 8.4 Sonde d'Indexation des Dossiers Découverts (CWE-548 — Directory Listing)
     if let Some(ref wd) = web_discovery {
         if let Some(first_dir) = wd.directories.first() {
             let mut dir_status = "ROBUSTE";
             let mut dir_obs = format!(
-                "Dossier `{}` rÃ©fÃ©rencÃ© ({}x) sans exposition d'index dÃ©tectÃ©e.",
+                "Dossier `{}` référencé ({}x) sans exposition d'index détectée.",
                 first_dir.folder_path, first_dir.call_count
             );
             if scan_level >= 3 && first_dir.folder_path.starts_with('/') {
@@ -1007,14 +1007,14 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                 {
                     let lb = d_body.to_lowercase();
                     if lb.contains("index of /") || lb.contains("directory listing for") {
-                        dir_status = "EXPOSÃ‰";
+                        dir_status = "EXPOSÉ";
                         dir_obs = format!(
-                            "Indexation de rÃ©pertoire active (`Index of /`) sur `{}` ({}) !",
+                            "Indexation de répertoire active (`Index of /`) sur `{}` ({}) !",
                             first_dir.folder_path, d_st
                         );
                     } else {
                         dir_obs = format!(
-                            "Sonde GET `{}` âž” `{}` (Aucun Directory Listing `Index of /` exposÃ©).",
+                            "Sonde GET `{}` ➔ `{}` (Aucun Directory Listing `Index of /` exposé).",
                             first_dir.folder_path, d_st
                         );
                     }
@@ -1039,10 +1039,10 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
             });
         }
 
-        // 8.5 Contrats des Formulaires Â«FormÂ» dÃ©couverts (CWE-352 / CWE-20)
+        // 8.5 Contrats des Formulaires «Form» découverts (CWE-352 / CWE-20)
         for f in wd.forms.iter().take(4) {
             let f_status = if f.security_posture == "CRITICAL" {
-                "EXPOSÃ‰"
+                "EXPOSÉ"
             } else if f.security_posture == "WARN" {
                 "FAIBLESSE"
             } else {
@@ -1056,12 +1056,12 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                 } else {
                     "CWE-20".to_string()
                 },
-                side_one_vector: format!("Form #{} Â«{}Â» [{} {}]", f.index, f.id_or_name, f.method, f.action),
-                category: "Contrat Formulaire Â«FormÂ»".to_string(),
+                side_one_vector: format!("Form #{} «{}» [{} {}]", f.index, f.id_or_name, f.method, f.action),
+                category: "Contrat Formulaire «Form»".to_string(),
                 status: f_status.to_string(),
                 observed_behavior: format!(
-                    "CSRF: {} â€¢ {} champ(s) : {}",
-                    if f.has_csrf_token { "PrÃ©sent" } else { "Absent" },
+                    "CSRF: {} • {} champ(s) : {}",
+                    if f.has_csrf_token { "Présent" } else { "Absent" },
                     f.inputs.len(),
                     if inp_names.is_empty() { "aucun".to_string() } else { inp_names.join(", ") }
                 ),
@@ -1080,7 +1080,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
             });
         }
 
-        // 8.6 Contrats de SchÃ©ma JSON & Routes API extraits des fichiers .js (CWE-20 / CWE-88 / CWE-94)
+        // 8.6 Contrats de Schéma JSON & Routes API extraits des fichiers .js (CWE-20 / CWE-88 / CWE-94)
         for wf in wd.web_files.iter().filter(|w| !w.json_payload_keys.is_empty() || !w.api_and_asset_refs.is_empty()).take(5) {
             let api_refs: Vec<String> = wf
                 .api_and_asset_refs
@@ -1090,7 +1090,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                 .collect();
             if !wf.json_payload_keys.is_empty() || !api_refs.is_empty() {
                 let keys_preview = if wf.json_payload_keys.is_empty() {
-                    "Aucune clÃ© JSON explicite".to_string()
+                    "Aucune clé JSON explicite".to_string()
                 } else {
                     wf.json_payload_keys.join(", ")
                 };
@@ -1102,14 +1102,14 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
                 boundary_weaknesses.push(BoundaryWeaknessProbe {
                     id: format!("WEAKNESS-JSON-CONTRACT-{}", wf.path.replace(['/', '.'], "-")),
                     cwe: "CWE-20 / CWE-88".to_string(),
-                    side_one_vector: format!("Fichier {} âž” {}", wf.path, routes_preview),
-                    category: "Contrat API & ClÃ©s JSON".to_string(),
+                    side_one_vector: format!("Fichier {} ➔ {}", wf.path, routes_preview),
+                    category: "Contrat API & Clés JSON".to_string(),
                     status: (if wf.has_sourcemap { "FAIBLESSE" } else { "ROBUSTE" }).to_string(),
                     observed_behavior: format!(
-                        "ClÃ©s JSON dÃ©tectÃ©es dans `{}` : [{}]{}.",
+                        "Clés JSON détectées dans `{}` : [{}]{}.",
                         wf.path,
                         keys_preview,
-                        if wf.has_sourcemap { " (SourceMap .map exposÃ©e CWE-540)" } else { "" }
+                        if wf.has_sourcemap { " (SourceMap .map exposée CWE-540)" } else { "" }
                     ),
                     side_two_ast_target: format!("Struct DTO / Deserializer & Sink AST pour `{}`", routes_preview),
                     positive_test_spec: format!(
@@ -1125,7 +1125,7 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
         }
     }
 
-    // 8.7 Sonde d'Ã‰tanchÃ©itÃ© des Fichiers Sensibles (CWE-538)
+    // 8.7 Sonde d'Étanchéité des Fichiers Sensibles (CWE-538)
     if !exposed_artifacts.is_empty() {
         let exp_list: Vec<String> = exposed_artifacts
             .iter()
@@ -1137,11 +1137,11 @@ pub async fn run_surface_scan(req: SurfaceScanRequest) -> SurfaceScanResponse {
             cwe: "CWE-538".to_string(),
             side_one_vector: format!("Sondes GET /.env, /.git/HEAD ({} cibles)", exposed_artifacts.len()),
             category: "Fichiers Config & Secrets".to_string(),
-            status: if exp_list.is_empty() { "ROBUSTE" } else { "EXPOSÃ‰" }.to_string(),
+            status: if exp_list.is_empty() { "ROBUSTE" } else { "EXPOSÉ" }.to_string(),
             observed_behavior: if exp_list.is_empty() {
-                format!("0/{} fichiers sensibles exposÃ©s (Protection 403/404 et filtrage Anti-Soft-404 validÃ©s).", exposed_artifacts.len())
+                format!("0/{} fichiers sensibles exposés (Protection 403/404 et filtrage Anti-Soft-404 validés).", exposed_artifacts.len())
             } else {
-                format!("{} fichier(s) exposÃ©(s) (Valeurs masquÃ©es [MASQUÃ‰]) : {}", exp_list.len(), exp_list.join(", "))
+                format!("{} fichier(s) exposé(s) (Valeurs masquées [MASQUÉ]) : {}", exp_list.len(), exp_list.join(", "))
             },
             side_two_ast_target: "Filtre de routage statique / Isolation des dotfiles".to_string(),
             positive_test_spec: "Test Positif : Requêter les routes publiques légitimes (`/`, `/api/health`, `/.well-known/security.txt`) et vérifier qu'elles répondent `200 OK` sans faux positif du filtre.".to_string(),

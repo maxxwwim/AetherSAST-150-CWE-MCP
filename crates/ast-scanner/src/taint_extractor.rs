@@ -157,24 +157,60 @@ impl TaintExtractor {
         call_sites: &mut Vec<CallSite>,
     ) {
         let is_php = file_path.ends_with(".php") || file_path.ends_with(".phtml");
-        let is_js = file_path.ends_with(".js") || file_path.ends_with(".ts") || file_path.ends_with(".jsx") || file_path.ends_with(".tsx");
+        let is_sfc = file_path.ends_with(".svelte") || file_path.ends_with(".vue");
+        let is_js = file_path.ends_with(".js")
+            || file_path.ends_with(".ts")
+            || file_path.ends_with(".jsx")
+            || file_path.ends_with(".tsx")
+            || is_sfc;
         let is_py = file_path.ends_with(".py");
         let is_rs = file_path.ends_with(".rs");
         let is_zig = file_path.ends_with(".zig");
         let is_cs = file_path.ends_with(".cs");
 
-        let lines: Vec<&str> = content.lines().collect();
+        let masked_sfc;
+        let effective_content = if is_sfc {
+            masked_sfc = security_linter::lexer::mask_literals(
+                content,
+                security_linter::lexer::Lang::CLike,
+            );
+            masked_sfc.as_str()
+        } else {
+            content
+        };
+        let lines: Vec<&str> = effective_content.lines().collect();
 
         let mut current_scope = "global".to_string();
         let mut scope_versions: HashMap<String, usize> = HashMap::new();
         let mut brace_depth: i32 = 0;
         let mut in_function = false;
+        let mut in_sfc_script = !is_sfc;
 
         for (line_idx, raw_line) in lines.iter().enumerate() {
             let line_num = line_idx + 1;
             let trimmed = raw_line.trim();
 
-            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('#') || trimmed.starts_with("/*") || trimmed.starts_with('*') {
+            if is_sfc {
+                if trimmed.starts_with("<script") {
+                    in_sfc_script = true;
+                    continue;
+                }
+                if trimmed.starts_with("</script") {
+                    in_sfc_script = false;
+                    continue;
+                }
+                if !in_sfc_script {
+                    continue;
+                }
+            }
+
+            if trimmed.is_empty()
+                || trimmed.starts_with("//")
+                || trimmed.starts_with('#')
+                || trimmed.starts_with("/*")
+                || trimmed.starts_with('*')
+                || trimmed.starts_with('<')
+            {
                 continue;
             }
 

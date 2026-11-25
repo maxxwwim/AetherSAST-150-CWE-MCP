@@ -684,7 +684,7 @@ function scopeMatchesRequirement(reqScope: string | null | undefined, detected: 
 export function evaluatePluginRulesInBrowser(
   pluginsOrFilePath: PluginEntryInfo[] | string,
   filePathOrCode: string,
-  codeOrRules?: string | Array<PluginEntryInfo | PluginRuleInfo>
+  codeOrRules?: string | Array<PluginEntryInfo | PluginRuleSummary>
 ): PlaygroundFinding[] {
   let plugins: PluginEntryInfo[];
   let filePath: string;
@@ -694,18 +694,19 @@ export function evaluatePluginRulesInBrowser(
     filePath = pluginsOrFilePath;
     code = typeof filePathOrCode === 'string' ? filePathOrCode : '';
     const rawList = Array.isArray(codeOrRules) ? codeOrRules : [];
-    const bareRules: PluginRuleInfo[] = [];
+    const bareRules: PluginRuleSummary[] = [];
     plugins = [];
     for (const item of rawList) {
       if (item && typeof item === 'object' && 'rules' in item && Array.isArray((item as PluginEntryInfo).rules)) {
         plugins.push(item as PluginEntryInfo);
       } else if (item && typeof item === 'object') {
-        bareRules.push(item as PluginRuleInfo);
+        bareRules.push(item as PluginRuleSummary);
       }
     }
     if (bareRules.length > 0) {
       plugins.push({
         name: 'inline-eval',
+        rel_path: 'inline-eval.yaml',
         version: '1.0.0',
         author: 'AetherScope',
         description: 'Inline rule evaluation',
@@ -713,9 +714,14 @@ export function evaluatePluginRulesInBrowser(
         profile: 'default',
         tags: [],
         rules_count: bareRules.length,
-        taint_rules_count: 0,
+        test_cases_count: 0,
+        taint_sources_count: 0,
+        taint_sinks_count: 0,
+        sanitizers_count: 0,
         rules: bareRules,
-        taint_rules: []
+        taint_sources: [],
+        taint_sinks: [],
+        sanitizers: []
       });
     }
   } else {

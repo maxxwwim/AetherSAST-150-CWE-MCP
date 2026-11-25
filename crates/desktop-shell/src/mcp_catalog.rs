@@ -17,19 +17,19 @@ pub(crate) async fn handle_catalog_request(
                     {
                         "uri": "aether://graph/summary",
                         "name": "AetherScope 3D AST Graph Summary",
-                        "description": "SynthÃ¨se temps rÃ©el du graphe AST 3D (nÅ“uds, arÃªtes, clusters, mÃ©triques de santÃ©) pour injection de contexte immÃ©diat.",
+                        "description": "Synthèse temps réel du graphe AST 3D (nœuds, arêtes, clusters, métriques de santé) pour injection de contexte immédiat.",
                         "mimeType": "application/json"
                     },
                     {
                         "uri": "aether://audit/live",
                         "name": "AetherScope Live Security Audit (SAST/CWE)",
-                        "description": "Rapport d'audit SAST live (.aether/LIVE_AUDIT.md) analysant les 150+ motifs de vulnÃ©rabilitÃ©s CWE dÃ©tectÃ©es.",
+                        "description": "Rapport d'audit SAST live (.aether/LIVE_AUDIT.md) analysant les 150+ motifs de vulnérabilités CWE détectées.",
                         "mimeType": "text/markdown"
                     },
                     {
                         "uri": "aether://contracts/manifest",
                         "name": "Aether Architecture Manifest",
-                        "description": "Manifeste d'architecture aether.manifest.json ou aether.lock.toml dÃ©finissant les contrats EARS et les frontiÃ¨res de couches.",
+                        "description": "Manifeste d'architecture aether.manifest.json ou aether.lock.toml définissant les contrats EARS et les frontières de couches.",
                         "mimeType": "application/json"
                     },
                     {
@@ -55,8 +55,8 @@ pub(crate) async fn handle_catalog_request(
 
             match uri {
                 "aether://graph/summary" => {
-                    let res = send_http_request(server_port, "GET", "/api/graph?full=1", None).await;
-                    let text = match res {
+                    let res = send_http_request(server_port, "GET", "/api/graph?mcp=1", None).await;
+                    let raw_text = match res {
                         Ok(val) => serde_json::to_string_pretty(&val).unwrap_or_default(),
                         Err(_) => {
                             let p_buf = PathBuf::from(default_path);
@@ -65,6 +65,7 @@ pub(crate) async fn handle_catalog_request(
                             serde_json::to_string_pretty(&g).unwrap_or_default()
                         }
                     };
+                    let text = security_linter::SecretMasker::mask_text(&raw_text);
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
@@ -83,7 +84,7 @@ pub(crate) async fn handle_catalog_request(
 
                 "aether://audit/live" => {
                     let audit_path = Path::new(default_path).join(".aether").join("LIVE_AUDIT.md");
-                    let text = if audit_path.exists() {
+                    let raw_text = if audit_path.exists() {
                         std::fs::read_to_string(&audit_path).unwrap_or_else(|e| format!("Erreur lecture LIVE_AUDIT.md: {}", e))
                     } else {
                         let p_buf = PathBuf::from(default_path);
@@ -91,6 +92,7 @@ pub(crate) async fn handle_catalog_request(
                         let g = scanner.scan_project(&p_buf);
                         format_ast_summary(&g, &p_buf)
                     };
+                    let text = security_linter::SecretMasker::mask_text(&raw_text);
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
@@ -111,19 +113,23 @@ pub(crate) async fn handle_catalog_request(
                     let manifest_path = Path::new(default_path).join("aether.manifest.json");
                     let dot_manifest_path = Path::new(default_path).join(".aether").join("manifest.json");
                     let lock_path = Path::new(default_path).join("aether.lock.toml");
-                    let text = if manifest_path.exists() {
-                        std::fs::read_to_string(&manifest_path).unwrap_or_default()
+                    let (raw_text, mime_type) = if manifest_path.exists() {
+                        (std::fs::read_to_string(&manifest_path).unwrap_or_default(), "application/json")
                     } else if dot_manifest_path.exists() {
-                        std::fs::read_to_string(&dot_manifest_path).unwrap_or_default()
+                        (std::fs::read_to_string(&dot_manifest_path).unwrap_or_default(), "application/json")
                     } else if lock_path.exists() {
-                        std::fs::read_to_string(&lock_path).unwrap_or_default()
+                        (std::fs::read_to_string(&lock_path).unwrap_or_default(), "application/toml")
                     } else {
-                        json!({
-                            "project": default_path,
-                            "status": "unlocked",
-                            "info": "Aucun fichier aether.manifest.json ou aether.lock.toml dÃ©tectÃ© Ã  la racine."
-                        }).to_string()
+                        (
+                            json!({
+                                "project": default_path,
+                                "status": "unlocked",
+                                "info": "Aucun fichier aether.manifest.json ou aether.lock.toml détecté à la racine."
+                            }).to_string(),
+                            "application/json",
+                        )
                     };
+                    let text = security_linter::SecretMasker::mask_text(&raw_text);
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
@@ -131,7 +137,7 @@ pub(crate) async fn handle_catalog_request(
                             "contents": [
                                 {
                                     "uri": "aether://contracts/manifest",
-                                    "mimeType": "application/json",
+                                    "mimeType": mime_type,
                                     "text": text
                                 }
                             ]
@@ -144,7 +150,8 @@ pub(crate) async fn handle_catalog_request(
                     let p_buf = PathBuf::from(default_path);
                     let raw_tasks = ai_file_bridge::TaskManager::list_tasks(&p_buf);
                     let active_tasks: Vec<_> = raw_tasks.into_iter().filter(|t| t.status != ai_file_bridge::TaskStatus::Done && t.status != ai_file_bridge::TaskStatus::Cancelled).collect();
-                    let text = serde_json::to_string_pretty(&active_tasks).unwrap_or_else(|_| "[]".to_string());
+                    let raw_text = serde_json::to_string_pretty(&active_tasks).unwrap_or_else(|_| "[]".to_string());
+                    let text = security_linter::SecretMasker::mask_text(&raw_text);
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
@@ -170,11 +177,12 @@ pub(crate) async fn handle_catalog_request(
                         .and_then(|v| v.get("messages").and_then(|m| m.as_array()))
                         .map(|arr| arr.iter().rev().take(20).cloned().collect::<Vec<_>>().into_iter().rev().collect())
                         .unwrap_or_default();
-                    let text = serde_json::to_string_pretty(&json!({
+                    let raw_text = serde_json::to_string_pretty(&json!({
                         "agents_count": agents.as_array().map(|a| a.len()).unwrap_or(0),
                         "agents": agents,
                         "recent_messages": messages
                     })).unwrap_or_else(|_| "{}".to_string());
+                    let text = security_linter::SecretMasker::mask_text(&raw_text);
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
@@ -210,18 +218,18 @@ pub(crate) async fn handle_catalog_request(
                 "prompts": [
                     {
                         "name": "diagnostic_session_start",
-                        "description": "Initialise la session IA en 1 seule commande MCP combinÃ©e : rÃ©sumÃ© du graphe 3D, audit des failles CWE actives et liste des tÃ¢ches en cours.",
+                        "description": "Initialise la session IA en 1 seule commande MCP combinée : résumé du graphe 3D, audit des failles CWE actives et liste des tâches en cours.",
                         "arguments": [
                             {
                                 "name": "path",
-                                "description": "Chemin optionnel du projet Ã  analyser (par dÃ©faut '.').",
+                                "description": "Chemin optionnel du projet à analyser (par défaut '.').",
                                 "required": false
                             }
                         ]
                     },
                     {
                         "name": "surgical_feature_workflow",
-                        "description": "Workflow guidÃ© d'implÃ©mentation ou de refactoring chirurgical utilisant les commandes MCP combinÃ©es (Cible+CamÃ©ra+Flux -> TÃ¢che -> Code -> Pare-Feu Verify Patch).",
+                        "description": "Workflow guidé d'implémentation ou de refactoring chirurgical utilisant les commandes MCP combinées (Cible+Caméra+Flux -> Tâche -> Code -> Pare-Feu Verify Patch).",
                         "arguments": [
                             {
                                 "name": "symbol_id",
@@ -230,30 +238,30 @@ pub(crate) async fn handle_catalog_request(
                             },
                             {
                                 "name": "objective",
-                                "description": "Objectif technique Ã  rÃ©aliser sur la cible.",
+                                "description": "Objectif technique à réaliser sur la cible.",
                                 "required": true
                             }
                         ]
                     },
                     {
                         "name": "audit_security_cwe",
-                        "description": "GÃ©nÃ¨re un prompt d'audit, PoC ou remÃ©diation ciblÃ©e pour une vulnÃ©rabilitÃ© SAST / violation CWE avec les commandes MCP combinÃ©es explicites.",
+                        "description": "Génère un prompt d'audit, PoC ou remédiation ciblée pour une vulnérabilité SAST / violation CWE avec les commandes MCP combinées explicites.",
                         "arguments": [
                             {
                                 "name": "symbol_name",
-                                "description": "Nom du symbole (fonction, classe, struct) ou chemin du fichier Ã  auditer.",
+                                "description": "Nom du symbole (fonction, classe, struct) ou chemin du fichier à auditer.",
                                 "required": true
                             },
                             {
                                 "name": "cwe_id",
-                                "description": "Identifiant CWE ou catÃ©gorie de la faille (ex: CWE-89, CWE-79, CVE-RUST-DESER-BOMB-OOM).",
+                                "description": "Identifiant CWE ou catégorie de la faille (ex: CWE-89, CWE-79, CVE-RUST-DESER-BOMB-OOM).",
                                 "required": false
                             }
                         ]
                     },
                     {
                         "name": "refactor_contract_violation",
-                        "description": "GÃ©nÃ¨re un prompt d'analyse et de correction lorsqu'une rupture de contrat EARS, de limite de lignes ou d'import interdit est dÃ©tectÃ©e.",
+                        "description": "Génère un prompt d'analyse et de correction lorsqu'une rupture de contrat EARS, de limite de lignes ou d'import interdit est détectée.",
                         "arguments": [
                             {
                                 "name": "contract_name",
@@ -262,14 +270,14 @@ pub(crate) async fn handle_catalog_request(
                             },
                             {
                                 "name": "violation_details",
-                                "description": "DÃ©tails de l'incompatibilitÃ© ou de la violation de frontiÃ¨re.",
+                                "description": "Détails de l'incompatibilité ou de la violation de frontière.",
                                 "required": false
                             }
                         ]
                     },
                     {
                         "name": "scaffold_game_server",
-                        "description": "GÃ©nÃ¨re un prompt guidÃ© pour l'implÃ©mentation d'une architecture serveur de jeu (Roblox Luau ou Minecraft Paper/Purpur) pilotÃ©e par les commandes MCP combinÃ©es.",
+                        "description": "Génère un prompt guidé pour l'implémentation d'une architecture serveur de jeu (Roblox Luau ou Minecraft Paper/Purpur) pilotée par les commandes MCP combinées.",
                         "arguments": [
                             {
                                 "name": "engine",
@@ -278,7 +286,7 @@ pub(crate) async fn handle_catalog_request(
                             },
                             {
                                 "name": "package_name",
-                                "description": "Nom du composant ou plugin serveur Ã  crÃ©er.",
+                                "description": "Nom du composant ou plugin serveur à créer.",
                                 "required": true
                             }
                         ]
@@ -297,24 +305,24 @@ pub(crate) async fn handle_catalog_request(
                 "diagnostic_session_start" => {
                     let proj_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(".");
                     let prompt_text = format!(
-                        "# ðŸª PROTOCOLE D'INITIALISATION MCP COMBINÃ‰ â€” AETHERSCOPE V2\n\n\
-                        ExÃ©cutez votre diagnostic initial en **un minimum d'appels MCP combinÃ©s** :\n\n\
-                        1. **Diagnostic Global + TÃ¢ches + Violations (1 seul appel)** :\n\
+                        "# 🪐 PROTOCOLE D'INITIALISATION MCP COMBINÉ — AETHERSCOPE V2\n\n\
+                        Exécutez votre diagnostic initial en **un minimum d'appels MCP combinés** :\n\n\
+                        1. **Diagnostic Global + Tâches + Violations (1 seul appel)** :\n\
                            Appelez `aetherscope_get_graph_summary` avec `{{\"path\": \"{}\", \"rescan\": false, \"include_tasks\": true}}`.\n\
                            *(Cette commande unique remplace `get_graph_summary` + `list_tasks` + `query_violations`).*\n\
-                        2. **Recherche CiblÃ©e Symboles & Failles CWE (si nÃ©cessaire)** :\n\
+                        2. **Recherche Ciblée Symboles & Failles CWE (si nécessaire)** :\n\
                            Appelez `aetherscope_search_symbols` avec `{{\"query\": \"...\", \"has_violation\": true, \"severity\": \"critical\"}}`.\n\
-                        3. **Inspection ComplÃ¨te Cible + CamÃ©ra 3D + Flux Amont/Aval (1 seul appel)** :\n\
-                           DÃ¨s qu'un symbole cible est identifiÃ©, appelez `aetherscope_get_active_target` avec :\n\
+                        3. **Inspection Complète Cible + Caméra 3D + Flux Amont/Aval (1 seul appel)** :\n\
+                           Dès qu'un symbole cible est identifié, appelez `aetherscope_get_active_target` avec :\n\
                            `{{\"symbol_id\": \"<symbole>\", \"action\": \"Inspection\", \"details\": \"Analyse du contrat EARS et des flux\", \"trace_direction\": \"both\"}}`.\n\
-                           *(Cette commande unique tÃ©lÃ©porte automatiquement la camÃ©ra WebGL 3D, charge le contrat EARS et trace les dÃ©pendances amont/aval).*",
+                           *(Cette commande unique téléporte automatiquement la caméra WebGL 3D, charge le contrat EARS et trace les dépendances amont/aval).*",
                         proj_path
                     );
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
                         result: Some(json!({
-                            "description": format!("Diagnostic initial MCP combinÃ© pour {}", proj_path),
+                            "description": format!("Diagnostic initial MCP combiné pour {}", proj_path),
                             "messages": [{
                                 "role": "user",
                                 "content": { "type": "text", "text": prompt_text }
@@ -326,20 +334,20 @@ pub(crate) async fn handle_catalog_request(
 
                 "surgical_feature_workflow" => {
                     let symbol_id = arguments.get("symbol_id").and_then(|v| v.as_str()).unwrap_or("<symbole>");
-                    let objective = arguments.get("objective").and_then(|v| v.as_str()).unwrap_or("ImplÃ©mentation chirurgicale");
+                    let objective = arguments.get("objective").and_then(|v| v.as_str()).unwrap_or("Implémentation chirurgicale");
                     let prompt_text = format!(
-                        "# âš¡ WORKFLOW D'IMPLÃ‰MENTATION CHIRURGICALE MCP â€” AETHERSCOPE V2\n\
+                        "# ⚡ WORKFLOW D'IMPLÉMENTATION CHIRURGICALE MCP — AETHERSCOPE V2\n\
                         - **Cible :** `{}`\n\
                         - **Objectif :** {}\n\n\
-                        ## ðŸ› ï¸ SÃ‰QUENCE STRICTE DES COMMANDES MCP COMBINÃ‰ES\n\
-                        1. **Inspection + CamÃ©ra 3D + Trace Flux (1 appel)** :\n\
+                        ## 🛠️ SÉQUENCE STRICTE DES COMMANDES MCP COMBINÉES\n\
+                        1. **Inspection + Caméra 3D + Trace Flux (1 appel)** :\n\
                            `aetherscope_get_active_target({{\"symbol_id\": \"{}\", \"action\": \"Analyse\", \"details\": \"{}\", \"trace_direction\": \"both\"}})`\n\
-                        2. **CrÃ©ation / Suivi de TÃ¢che + Focus CamÃ©ra (1 appel)** :\n\
+                        2. **Création / Suivi de Tâche + Focus Caméra (1 appel)** :\n\
                            `aetherscope_manage_tasks({{\"action\": \"create\", \"title\": \"{}\", \"kind\": \"function\", \"target_symbol\": \"{}\", \"priority\": \"high\"}})`\n\
                         3. **Modification Chirurgicale du Code** :\n\
-                           Ã‰ditez uniquement les fonctions ciblÃ©es dans le respect strict du `README.md` parent (invariants EARS, imports autorisÃ©s, budget de lignes).\n\
-                        4. **Pare-Feu Temps RÃ©el <50ms + ClÃ´ture TÃ¢che + Debrief Chat (1 appel combinÃ©)** :\n\
-                           `aetherscope_verify_patch({{\"files_modified\": [\"<fichier_modifiÃ©>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"progress_note\": \"Patch validÃ© par le pare-feu SAST/EARS\", \"chat_message\": \"Objectif terminÃ© et certifiÃ© sans rÃ©gression sur `{}`.\"}})`",
+                           Éditez uniquement les fonctions ciblées dans le respect strict du `README.md` parent (invariants EARS, imports autorisés, budget de lignes).\n\
+                        4. **Pare-Feu Temps Réel <50ms + Clôture Tâche + Debrief Chat (1 appel combiné)** :\n\
+                           `aetherscope_verify_patch({{\"files_modified\": [\"<fichier_modifié>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"progress_note\": \"Patch validé par le pare-feu SAST/EARS\", \"chat_message\": \"Objectif terminé et certifié sans régression sur `{}`.\"}})`",
                         symbol_id, objective, symbol_id, objective, objective, symbol_id, symbol_id
                     );
                     Some(JsonRpcResponse {
@@ -360,25 +368,25 @@ pub(crate) async fn handle_catalog_request(
                     let symbol_name = arguments.get("symbol_name").and_then(|v| v.as_str()).unwrap_or("<symbole>");
                     let cwe_id = arguments.get("cwe_id").and_then(|v| v.as_str()).unwrap_or("CWE Anomaly");
                     let prompt_text = format!(
-                        "# ðŸ›¡ï¸ AUDIT & REMÃ‰DIATION SAST/CWE MCP â€” AETHERSCOPE V2\n\
-                        Vous Ãªtes l'architecte de sÃ©curitÃ© AetherScope. Auditez et corrigez la cible `{}` concernÃ©e par la vulnÃ©rabilitÃ© `{}`.\n\n\
-                        ## ðŸ› ï¸ COMMANDES MCP COMBINÃ‰ES Ã€ EXÃ‰CUTER\n\
-                        1. **Focus CamÃ©ra 3D + Contrat EARS + Trace d'AtteignabilitÃ© Source-to-Sink (1 appel)** :\n\
+                        "# 🛡️ AUDIT & REMÉDIATION SAST/CWE MCP — AETHERSCOPE V2\n\
+                        Vous êtes l'architecte de sécurité AetherScope. Auditez et corrigez la cible `{}` concernée par la vulnérabilité `{}`.\n\n\
+                        ## 🛠️ COMMANDES MCP COMBINÉES À EXÉCUTER\n\
+                        1. **Focus Caméra 3D + Contrat EARS + Trace d'Atteignabilité Source-to-Sink (1 appel)** :\n\
                            `aetherscope_get_active_target({{\"symbol_id\": \"{}\", \"action\": \"Correction CVE\", \"details\": \"Audit {} sur {}\", \"trace_direction\": \"both\"}})`\n\
-                        2. **Filtrage PrÃ©cis des Violations CWE (si besoin de contexte additionnel)** :\n\
+                        2. **Filtrage Précis des Violations CWE (si besoin de contexte additionnel)** :\n\
                            `aetherscope_search_symbols({{\"query\": \"{}\", \"cwe_id\": \"{}\", \"has_violation\": true}})`\n\
-                        3. **DÃ©claration de la TÃ¢che de SÃ©curitÃ© (1 appel)** :\n\
+                        3. **Déclaration de la Tâche de Sécurité (1 appel)** :\n\
                            `aetherscope_manage_tasks({{\"action\": \"create\", \"title\": \"Fix {} sur {}\", \"kind\": \"security_fix\", \"target_symbol\": \"{}\", \"priority\": \"critical\"}})`\n\
-                        4. **Application du Patch Minimal & Certification Pare-Feu <50ms + ClÃ´ture (1 appel)** :\n\
-                           AprÃ¨s avoir corrigÃ© la faille sans casser les signatures publiques, appelez obligatoirement :\n\
-                           `aetherscope_verify_patch({{\"files_modified\": [\"<fichier_corrigÃ©>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"VulnÃ©rabilitÃ© {} corrigÃ©e et vÃ©rifiÃ©e sur `{}`.\"}})`",
+                        4. **Application du Patch Minimal & Certification Pare-Feu <50ms + Clôture (1 appel)** :\n\
+                           Après avoir corrigé la faille sans casser les signatures publiques, appelez obligatoirement :\n\
+                           `aetherscope_verify_patch({{\"files_modified\": [\"<fichier_corrigé>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Vulnérabilité {} corrigée et vérifiée sur `{}`.\"}})`",
                         symbol_name, cwe_id, symbol_name, cwe_id, symbol_name, symbol_name, cwe_id, cwe_id, symbol_name, symbol_name, cwe_id, symbol_name
                     );
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
                         result: Some(json!({
-                            "description": format!("Audit de sÃ©curitÃ© AetherScope pour {} ({})", symbol_name, cwe_id),
+                            "description": format!("Audit de sécurité AetherScope pour {} ({})", symbol_name, cwe_id),
                             "messages": [
                                 {
                                     "role": "user",
@@ -398,24 +406,24 @@ pub(crate) async fn handle_catalog_request(
                     let package_name = arguments.get("package_name").and_then(|v| v.as_str()).unwrap_or("GameCore");
                     let prompt_text = if engine.to_lowercase().contains("roblox") {
                         format!(
-                            "# ðŸŽ® SCAFFOLDING SERVEUR ROBLOX LUAU MCP â€” `{}`\n\n\
-                            SpÃ©cifications techniques :\n\
-                            - Architecture contractuelle stricte : `contracts/` pour les paquets rÃ©seau RemoteEvent/RemoteFunction avec typage Luau strict (`--!strict`).\n\
-                            - SÃ©paration stricte : `server/` (logique d'autoritÃ© exclusive), `client/` (prÃ©diction locale, zÃ©ro trust), `data-nodes/` (sauvegarde DataStore atomique).\n\n\
-                            ## ðŸ› ï¸ COMMANDES MCP COMBINÃ‰ES Ã€ EXÃ‰CUTER\n\
+                            "# 🎮 SCAFFOLDING SERVEUR ROBLOX LUAU MCP — `{}`\n\n\
+                            Spécifications techniques :\n\
+                            - Architecture contractuelle stricte : `contracts/` pour les paquets réseau RemoteEvent/RemoteFunction avec typage Luau strict (`--!strict`).\n\
+                            - Séparation stricte : `server/` (logique d'autorité exclusive), `client/` (prédiction locale, zéro trust), `data-nodes/` (sauvegarde DataStore atomique).\n\n\
+                            ## 🛠️ COMMANDES MCP COMBINÉES À EXÉCUTER\n\
                             1. `aetherscope_manage_tasks({{\"action\": \"create\", \"title\": \"Scaffolding module Roblox {}\", \"kind\": \"function\", \"target_symbol\": \"{}\", \"priority\": \"high\"}})`\n\
-                            2. `aetherscope_verify_patch({{\"files_modified\": [\"<fichiers_crÃ©Ã©s>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Module Roblox Luau `{}` gÃ©nÃ©rÃ© et validÃ©.\"}})`",
+                            2. `aetherscope_verify_patch({{\"files_modified\": [\"<fichiers_créés>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Module Roblox Luau `{}` généré et validé.\"}})`",
                             package_name, package_name, package_name, package_name
                         )
                     } else {
                         format!(
-                            "# ðŸŽ® SCAFFOLDING SERVEUR MINECRAFT PAPER/PURPUR MCP â€” `{}`\n\n\
-                            SpÃ©cifications techniques :\n\
-                            - Architecture dÃ©couplÃ©e : API & Contrats d'Ã©vÃ©nements sÃ©parÃ©s de l'implÃ©mentation Bukkit/Spigot.\n\
+                            "# 🎮 SCAFFOLDING SERVEUR MINECRAFT PAPER/PURPUR MCP — `{}`\n\n\
+                            Spécifications techniques :\n\
+                            - Architecture découplée : API & Contrats d'événements séparés de l'implémentation Bukkit/Spigot.\n\
                             - Concurrency & Tick-safety : Aucun blocage sur le Main Thread tick de 50ms, utilisation d'AsyncScheduler et collections concurrentes.\n\n\
-                            ## ðŸ› ï¸ COMMANDES MCP COMBINÃ‰ES Ã€ EXÃ‰CUTER\n\
+                            ## 🛠️ COMMANDES MCP COMBINÉES À EXÉCUTER\n\
                             1. `aetherscope_manage_tasks({{\"action\": \"create\", \"title\": \"Scaffolding plugin Paper {}\", \"kind\": \"function\", \"target_symbol\": \"{}\", \"priority\": \"high\"}})`\n\
-                            2. `aetherscope_verify_patch({{\"files_modified\": [\"<fichiers_crÃ©Ã©s>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Plugin Minecraft `{}` gÃ©nÃ©rÃ© et validÃ©.\"}})`",
+                            2. `aetherscope_verify_patch({{\"files_modified\": [\"<fichiers_créés>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Plugin Minecraft `{}` généré et validé.\"}})`",
                             package_name, package_name, package_name, package_name
                         )
                     };
@@ -440,26 +448,26 @@ pub(crate) async fn handle_catalog_request(
 
                 "refactor_contract_violation" => {
                     let contract_name = arguments.get("contract_name").and_then(|v| v.as_str()).unwrap_or("<contrat>");
-                    let details = arguments.get("violation_details").and_then(|v| v.as_str()).unwrap_or("Non-respect des rÃ¨gles EARS ou fuite de dÃ©pendances.");
+                    let details = arguments.get("violation_details").and_then(|v| v.as_str()).unwrap_or("Non-respect des règles EARS ou fuite de dépendances.");
                     let prompt_text = format!(
-                        "# ðŸ›ï¸ RÃ‰SOLUTION DE VIOLATION DE CONTRAT EARS MCP â€” `{}`\n\
-                        DÃ©tails de l'infraction : `{}`\n\n\
-                        ## ðŸ› ï¸ COMMANDES MCP COMBINÃ‰ES Ã€ EXÃ‰CUTER\n\
-                        1. **Inspection Cible + CamÃ©ra 3D + Trace Flux Amont/Aval (1 appel)** :\n\
-                           `aetherscope_get_active_target({{\"symbol_id\": \"{}\", \"action\": \"Refactoring\", \"details\": \"RÃ©solution violation de contrat EARS\", \"trace_direction\": \"both\"}})`\n\
-                        2. **CrÃ©ation de la TÃ¢che de Refactoring (1 appel)** :\n\
-                           `aetherscope_manage_tasks({{\"action\": \"create\", \"title\": \"ConformitÃ© contrat EARS {}\", \"kind\": \"arch_refactor\", \"target_symbol\": \"{}\", \"priority\": \"high\"}})`\n\
+                        "# 🏛️ RÉSOLUTION DE VIOLATION DE CONTRAT EARS MCP — `{}`\n\
+                        Détails de l'infraction : `{}`\n\n\
+                        ## 🛠️ COMMANDES MCP COMBINÉES À EXÉCUTER\n\
+                        1. **Inspection Cible + Caméra 3D + Trace Flux Amont/Aval (1 appel)** :\n\
+                           `aetherscope_get_active_target({{\"symbol_id\": \"{}\", \"action\": \"Refactoring\", \"details\": \"Résolution violation de contrat EARS\", \"trace_direction\": \"both\"}})`\n\
+                        2. **Création de la Tâche de Refactoring (1 appel)** :\n\
+                           `aetherscope_manage_tasks({{\"action\": \"create\", \"title\": \"Conformité contrat EARS {}\", \"kind\": \"arch_refactor\", \"target_symbol\": \"{}\", \"priority\": \"high\"}})`\n\
                         3. **Correction Chirurgicale** :\n\
                            Supprimez les imports interdits (`RULE_FORBIDDEN_IMPORT`), respectez le budget de lignes (`RULE_MAX_LINES`) et les invariants EARS du `README.md`.\n\
-                        4. **Validation Pare-Feu <50ms + ClÃ´ture TÃ¢che + Notification Chat (1 appel)** :\n\
-                           `aetherscope_verify_patch({{\"files_modified\": [\"<fichier_modifiÃ©>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Contrat EARS restaurÃ© et certifiÃ© pour `{}`.\"}})`",
+                        4. **Validation Pare-Feu <50ms + Clôture Tâche + Notification Chat (1 appel)** :\n\
+                           `aetherscope_verify_patch({{\"files_modified\": [\"<fichier_modifié>\"], \"task_id\": \"<task_id>\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Contrat EARS restauré et certifié pour `{}`.\"}})`",
                         contract_name, details, contract_name, contract_name, contract_name, contract_name
                     );
                     Some(JsonRpcResponse {
                         jsonrpc: "2.0".to_string(),
                         id,
                         result: Some(json!({
-                            "description": format!("RÃ©solution violation contrat {}", contract_name),
+                            "description": format!("Résolution violation contrat {}", contract_name),
                             "messages": [
                                 {
                                     "role": "user",
@@ -896,7 +904,7 @@ pub(crate) async fn handle_catalog_request(
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Pare-Feu IA Temps RÃ©el + ClÃ´ture TÃ¢che & Chat CombinÃ©s",
+                            "title": "Pare-Feu IA Temps Réel + Clôture Tâche & Chat Combinés",
                             "readOnlyHint": true,
                             "destructiveHint": false,
                             "idempotentHint": true,
@@ -951,7 +959,7 @@ pub(crate) async fn handle_catalog_request(
                             "additionalProperties": false
                         },
                         "annotations": {
-                            "title": "Chat Copilot AetherScope CombinÃ© (Send & History)",
+                            "title": "Chat Copilot AetherScope Combiné (Send & History)",
                             "readOnlyHint": false,
                             "destructiveHint": false,
                             "idempotentHint": false,
@@ -1080,7 +1088,7 @@ pub(crate) async fn handle_catalog_request(
                     },
                     {
                         "name": "aetherscope_teleport_camera",
-                        "description": "Oriente directement la camÃ©ra WebGL 3D d'AetherScope vers un symbole ou un fichier et met Ã  jour le fil d'Ariane stellaire (utile pour un dÃ©placement rapide sans recharger le contrat complet).",
+                        "description": "Oriente directement la caméra WebGL 3D d'AetherScope vers un symbole ou un fichier et met à jour le fil d'Ariane stellaire (utile pour un déplacement rapide sans recharger le contrat complet).",
                         "readOnlyHint": true,
                         "destructiveHint": false,
                         "idempotentHint": true,
@@ -1358,20 +1366,20 @@ pub(crate) fn format_ast_summary(g: &core_graph::graph::AetherGraph, project_roo
             } else {
                 String::new()
             };
-            violations.push(format!("- ðŸš¨ `{}`{} â€” `{}`", n.name, cve_desc, n.file_path));
+            violations.push(format!("- 🚨 `{}`{} — `{}`", n.name, cve_desc, n.file_path));
         }
     }
 
     let mut folders_str = String::new();
     for (f, cnt) in folders.iter().take(15) {
-        folders_str.push_str(&format!("  - ðŸ“ `{}` : {} symbole(s)\n", f, cnt));
+        folders_str.push_str(&format!("  - 📁 `{}` : {} symbole(s)\n", f, cnt));
     }
     if folders.len() > 15 {
         folders_str.push_str(&format!("  - ... et {} autre(s) dossier(s)\n", folders.len() - 15));
     }
 
     let violations_str = if violations.is_empty() {
-        "âœ… Aucune violation de sÃ©curitÃ© ou CVE dÃ©tectÃ©e.".to_string()
+        "✅ Aucune violation de sécurité ou CVE détectée.".to_string()
     } else {
         let total_v = violations.len();
         let display_v: Vec<String> = violations.into_iter().take(15).collect();
@@ -1380,18 +1388,18 @@ pub(crate) fn format_ast_summary(g: &core_graph::graph::AetherGraph, project_roo
         } else {
             String::new()
         };
-        format!("âš ï¸ {} Violation(s) de sÃ©curitÃ© / CVE dÃ©tectÃ©e(s) :\n{}{}", total_v, display_v.join("\n"), more_msg)
+        format!("⚠️ {} Violation(s) de sécurité / CVE détectée(s) :\n{}{}", total_v, display_v.join("\n"), more_msg)
     };
 
     format!(
-        "ðŸª RÃ©sumÃ© Architectural AetherScope V2 (Mode Autonome AST) :\n\
-         â€¢ Projet Actif : `{}`\n\
-         â€¢ Emplacement : `{}`\n\
-         â€¢ Total NÅ“uds (Bulles) : {}\n\
-         â€¢ Total Relations (ArÃªtes) : {}\n\
-         â€¢ Modules / Dossiers ({} au total) :\n{}\
-         â€¢ Statut SÃ©curitÃ© & RÃ¨gles :\n{}\n\
-         â€¢ Note : Lancez `aether-engine` pour activer la vue WebGL 2 interactive en direct.",
+        "🪐 Résumé Architectural AetherScope V2 (Mode Autonome AST) :\n\
+         • Projet Actif : `{}`\n\
+         • Emplacement : `{}`\n\
+         • Total Nœuds (Bulles) : {}\n\
+         • Total Relations (Arêtes) : {}\n\
+         • Modules / Dossiers ({} au total) :\n{}\
+         • Statut Sécurité & Règles :\n{}\n\
+         • Note : Lancez `aether-engine` pour activer la vue WebGL 2 interactive en direct.",
         g.project_name, project_root.display(), total_nodes, total_edges, folders.len(), folders_str, violations_str
     )
 }
@@ -1399,13 +1407,13 @@ pub(crate) fn format_ast_summary(g: &core_graph::graph::AetherGraph, project_roo
 pub(crate) fn format_active_target_response(val: &Value) -> String {
     let status = val.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
     if status != "ok" {
-        return "âš ï¸ Symbole ou module non trouvÃ© dans le graphe actif AetherScope.".to_string();
+        return "⚠️ Symbole ou module non trouvé dans le graphe actif AetherScope.".to_string();
     }
 
     if let Some(md) = val.get("formatted_doc_and_liaisons").and_then(|v| v.as_str()) {
         let handshake = val.get("handshake_xml").and_then(|v| v.as_str()).unwrap_or("");
         if !handshake.is_empty() {
-            format!("{}\n\n### ðŸ¤ Handshake Copilote IA :\n```xml\n{}\n```", md, handshake)
+            format!("{}\n\n### 🤝 Handshake Copilote IA :\n```xml\n{}\n```", md, handshake)
         } else {
             md.to_string()
         }
@@ -1723,7 +1731,7 @@ pub(crate) fn offline_active_target_fallback_with_trace(
 
         if trace_direction != "none" {
             let flow_text = format_trace_flow_response(&g, &sym.id, trace_direction, max_depth);
-            if !flow_text.starts_with("⚠️") && !flow_text.starts_with("âš") {
+            if !flow_text.starts_with("⚠️") {
                 base.push_str("\n\n---\n");
                 base.push_str(&flow_text);
             }
@@ -1823,7 +1831,7 @@ pub async fn send_http_request(
 
     tokio::task::spawn_blocking(move || {
         let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(250))
-            .map_err(|e| format!("AetherScope non connectÃ© sur http://127.0.0.1:{} ({})", addr.port(), e))?;
+            .map_err(|e| format!("AetherScope non connecté sur http://127.0.0.1:{} ({})", addr.port(), e))?;
 
         stream.set_read_timeout(Some(Duration::from_secs(45))).map_err(|e| e.to_string())?;
         stream.set_write_timeout(Some(Duration::from_secs(30))).map_err(|e| e.to_string())?;
@@ -2036,9 +2044,9 @@ pub(crate) fn format_trace_flow_response(
                 .take(5)
                 .collect();
             if !suggestions.is_empty() {
-                return format!("âš ï¸ Symbole '{}' introuvable pour le traÃ§age.\nðŸ’¡ Symboles proches : {}\nðŸ‘‰ Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id, suggestions.join(", "));
+                return format!("⚠️ Symbole '{}' introuvable pour le traçage.\n💡 Symboles proches : {}\n👉 Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id, suggestions.join(", "));
             } else {
-                return format!("âš ï¸ Symbole '{}' introuvable pour le traÃ§age. Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id);
+                return format!("⚠️ Symbole '{}' introuvable pour le traçage. Utilisez `aetherscope_search_symbols` pour trouver le nom exact.", symbol_id);
             }
         }
     };
@@ -2048,12 +2056,12 @@ pub(crate) fn format_trace_flow_response(
     let trace_down = dir_lower == "downstream" || dir_lower == "both" || dir_lower == "all";
 
     let mut out = format!(
-        "# ðŸŒŠ TraÃ§age de Flux Architectural pour `{}`\n- **Fichier :** `{}:{}`\n- **Couche :** `{}` | **Galaxie :** `{}` | **StÃ©rÃ©otype :** `{}`\n\n",
+        "# 🌊 Traçage de Flux Architectural pour `{}`\n- **Fichier :** `{}:{}`\n- **Couche :** `{}` | **Galaxie :** `{}` | **Stéréotype :** `{}`\n\n",
         sym.name, sym.file_path, sym.line_number, sym.layer, sym.galaxy, sym.stereotype
     );
 
     if trace_up {
-        out.push_str("### ðŸ“¥ Flux Amont (Appelants, Vues UI & ContrÃ´leurs dÃ©clencheurs) :\n");
+        out.push_str("### 📥 Flux Amont (Appelants, Vues UI & Contrôleurs déclencheurs) :\n");
         let incoming: Vec<&core_graph::edge::AffiliationEdge> = g
             .edges
             .iter()
@@ -2061,7 +2069,7 @@ pub(crate) fn format_trace_flow_response(
             .collect();
 
         if incoming.is_empty() {
-            out.push_str("*(Aucun flux amont direct dÃ©tectÃ© â€” point d'entrÃ©e ou racine)*\n\n");
+            out.push_str("*(Aucun flux amont direct détecté — point d'entrée ou racine)*\n\n");
         } else {
             for e in incoming.iter().take(15) {
                 let src_node = g.nodes.iter().find(|n| n.id == e.source);
@@ -2070,7 +2078,7 @@ pub(crate) fn format_trace_flow_response(
                     None => (e.source.as_str(), "inconnu", ""),
                 };
                 out.push_str(&format!(
-                    "- âž” `[{}]` **{}** (`{}`) via `{}`\n",
+                    "- ➔ `[{}]` **{}** (`{}`) via `{}`\n",
                     src_layer, src_name, src_file, e.relation
                 ));
             }
@@ -2079,7 +2087,7 @@ pub(crate) fn format_trace_flow_response(
     }
 
     if trace_down {
-        out.push_str("### ðŸ“¤ Flux Aval (Services appelÃ©s, ModÃ¨les & Persistance DB) :\n");
+        out.push_str("### 📤 Flux Aval (Services appelés, Modèles & Persistance DB) :\n");
         let outgoing: Vec<&core_graph::edge::AffiliationEdge> = g
             .edges
             .iter()
@@ -2087,7 +2095,7 @@ pub(crate) fn format_trace_flow_response(
             .collect();
 
         if outgoing.is_empty() {
-            out.push_str("*(Aucun flux aval direct dÃ©tectÃ© â€” feuille ou logique pure)*\n\n");
+            out.push_str("*(Aucun flux aval direct détecté — feuille ou logique pure)*\n\n");
         } else {
             for e in outgoing.iter().take(15) {
                 let tgt_node = g.nodes.iter().find(|n| n.id == e.target);
@@ -2096,7 +2104,7 @@ pub(crate) fn format_trace_flow_response(
                     None => (e.target.as_str(), "inconnu", ""),
                 };
                 out.push_str(&format!(
-                    "- âž” `[{}]` **{}** (`{}`) via `{}`\n",
+                    "- ➔ `[{}]` **{}** (`{}`) via `{}`\n",
                     tgt_layer, tgt_name, tgt_file, e.relation
                 ));
             }
@@ -2142,19 +2150,19 @@ pub(crate) fn format_violations_response(
     }
 
     if list.is_empty() {
-        return "âœ… Aucune violation de sÃ©curitÃ© ne correspond aux filtres demandÃ©s.".to_string();
+        return "✅ Aucune violation de sécurité ne correspond aux filtres demandés.".to_string();
     }
 
-    let mut out = format!("ðŸ›¡ï¸ **Audit des Violations SAST/CWE ({}) :**\n\n", list.len());
+    let mut out = format!("🛡️ **Audit des Violations SAST/CWE ({}) :**\n\n", list.len());
     for (sev, f, line, cwe, msg, fix, sym) in list.iter().take(20) {
         let icon = match sev.as_str() {
-            "CRITICAL" => "ðŸ”´",
-            "HIGH" => "ðŸŸ ",
-            "MEDIUM" => "ðŸŸ¡",
-            _ => "âšª",
+            "CRITICAL" => "🔴",
+            "HIGH" => "🟠",
+            "MEDIUM" => "🟡",
+            _ => "⚪",
         };
         out.push_str(&format!(
-            "- {} **[{}] {}** dans `{}:{}` (symbole: `{}`)\n  - *ProblÃ¨me :* {}\n  - *RemÃ©diation :* {}\n\n",
+            "- {} **[{}] {}** dans `{}:{}` (symbole: `{}`)\n  - *Problème :* {}\n  - *Remédiation :* {}\n\n",
             icon, sev, cwe, f, line, sym, msg, fix
         ));
     }

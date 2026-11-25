@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title AetherScope V2.4 - Control Center
+title AetherScope V2.7 - Control Center
 chcp 65001 >nul
 
 set "SCRIPT_DIR=%~dp0"
@@ -34,7 +34,7 @@ if not defined ENGINE_EXE (
 :MENU
 cls
 echo ==============================================================
-echo       🪐 AETHERSCOPE V2.4 — COCKPIT SPATIAL ET MCP SUITE
+echo       🪐 AETHERSCOPE V2.7 — COCKPIT SPATIAL ET MCP SUITE
 echo ==============================================================
 echo   Binaire actif : %ENGINE_EXE%
 echo.
@@ -87,20 +87,19 @@ exit /b 0
 
 :LAUNCH_GUI
 cls
-echo [INFO] Verification du port 3030 et synchronisation des binaires V2.4...
+echo [INFO] Verification du port 3030 et synchronisation des binaires V2.7...
 call :SYNC_BINARIES
-echo [INFO] Demarrage du Cockpit AetherScope V2.4...
+echo [INFO] Demarrage du Cockpit AetherScope V2.7...
 start "" "%ENGINE_EXE%"
 
-echo [OK] Cockpit V2.4 actif sur http://127.0.0.1:3030 !
+echo [OK] Cockpit V2.7 actif sur http://127.0.0.1:3030 ^^!
 echo Vos assistants IA (Claude, Cursor, Antigravity) communiquent directement via le serveur MCP standard stdio.
-timeout /t 2 >nul
 exit /b 0
 
 :LAUNCH_MCP
 cls
 echo ==============================================================
-echo       🤖 AETHERSCOPE V2.4 — SERVEUR MCP STDIO DEDIE
+echo       🤖 AETHERSCOPE V2.7 — SERVEUR MCP STDIO DEDIE
 echo ==============================================================
 echo.
 echo Le serveur MCP communique en JSON-RPC 2.0 sur stdio.

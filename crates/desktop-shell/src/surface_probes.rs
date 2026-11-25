@@ -56,7 +56,7 @@ pub(crate) fn classify_ip(ip: &IpAddr) -> &'static str {
             if v4.is_loopback() {
                 "Loopback / Localhost (127.0.0.0/8)"
             } else if v4.is_private() {
-                "RÃ©seau PrivÃ© Interne (RFC 1918)"
+                "Réseau Privé Interne (RFC 1918)"
             } else if v4.is_link_local() {
                 "Lien-Local / Cloud Metadata (169.254.0.0/16)"
             } else {
@@ -136,7 +136,7 @@ pub(crate) async fn probe_single_port(host: String, port: u16, grab_banner: bool
     let mut detected_version = None;
 
     if grab_banner {
-        // Pour les ports HTTP, envoyer un HEAD lÃ©ger afin d'extraire la banniÃ¨re Server / X-Powered-By
+        // Pour les ports HTTP, envoyer un HEAD léger afin d'extraire la bannière Server / X-Powered-By
         if matches!(port, 80 | 3000 | 3030 | 5000 | 8000 | 8080 | 9200) {
             let probe = format!(
                 "HEAD / HTTP/1.1\r\nHost: {}\r\nUser-Agent: AetherScope-ServiceScanner/2.0\r\nConnection: close\r\n\r\n",
@@ -193,7 +193,7 @@ pub(crate) async fn send_http_probe(
     path: &str,
     method: &str,
 ) -> Option<(String, HashMap<String, String>, String)> {
-    // Si HTTPS (ou port 443/8443), utiliser curl en mode passif sÃ©curisÃ© pour gÃ©rer le handshake TLS
+    // Si HTTPS (ou port 443/8443), utiliser curl en mode passif sécurisé pour gérer le handshake TLS
     if scheme == "https" || port == 443 || port == 8443 {
         let url = if (scheme == "https" && port == 443) || (scheme == "http" && port == 80) {
             format!("{}://{}{}", scheme, host, path)
@@ -545,7 +545,7 @@ pub(crate) fn fingerprint_technologies(
     for p in open_ports {
         if p.open {
             if let Some(ref ver) = p.detected_version {
-                push_tech(&p.service, "Service RÃ©seau TCP", Some(ver.clone()), &format!("Port TCP :{}", p.port), "Haute (95%)");
+                push_tech(&p.service, "Service Réseau TCP", Some(ver.clone()), &format!("Port TCP :{}", p.port), "Haute (95%)");
             }
         }
     }
@@ -1077,17 +1077,17 @@ pub(crate) fn parse_html_architecture_and_forms(
                     }
 
                     let classification = if is_csrf {
-                        "ðŸ›¡ï¸ Jeton Anti-CSRF"
+                        "🛡️ Jeton Anti-CSRF"
                     } else if itype == "password" || name_low.contains("pass") || name_low.contains("secret") || name_low.contains("token") {
-                        "ðŸ”‘ Secret / Authentification"
+                        "🔑 Secret / Authentification"
                     } else if itype == "file" {
-                        "ðŸ“‚ Upload de Fichier"
+                        "📂 Upload de Fichier"
                     } else if itype == "email" || name_low.contains("user") || name_low.contains("login") {
-                        "ðŸ‘¤ Identifiant / Email"
+                        "👤 Identifiant / Email"
                     } else if itype == "hidden" {
-                        "ðŸ”’ ParamÃ¨tre CachÃ© (Hidden)"
+                        "🔒 Paramètre Caché (Hidden)"
                     } else {
-                        "ðŸ“ EntrÃ©e Utilisateur"
+                        "📝 Entrée Utilisateur"
                     }
                     .to_string();
 
@@ -1117,7 +1117,7 @@ pub(crate) fn parse_html_architecture_and_forms(
 
         if method == "POST" && !has_csrf_token {
             posture = "WARN".to_string();
-            security_notes.push("Absence de champ anti-CSRF dÃ©tectÃ© dans le formulaire POST (CWE-352).".to_string());
+            security_notes.push("Absence de champ anti-CSRF détecté dans le formulaire POST (CWE-352).".to_string());
             findings.push(SurfaceFinding {
                 id: format!("SURFACE-FORM-MISSING-CSRF-{}", form_idx),
                 cwe: "CWE-352 / FORM-MISSING-CSRF-TOKEN".to_string(),
@@ -1125,49 +1125,49 @@ pub(crate) fn parse_html_architecture_and_forms(
                 category: "Architecture Web & Formulaires".to_string(),
                 title: format!("Formulaire POST `{}` (`{}`) sans jeton anti-CSRF apparent", id_or_name, action),
                 description: format!(
-                    "Le formulaire `{}` soumet {} champ(s) en POST vers `{}` sans champ CSRF (`_token`, `csrf_token`). S'il s'appuie sur des cookies de session sans SameSite=Strict, il est exposÃ© au CSRF.",
+                    "Le formulaire `{}` soumet {} champ(s) en POST vers `{}` sans champ CSRF (`_token`, `csrf_token`). S'il s'appuie sur des cookies de session sans SameSite=Strict, il est exposé au CSRF.",
                     id_or_name, inputs.len(), action
                 ),
-                remediation: "Injecter un jeton anti-CSRF alÃ©atoire par session ou imposer l'authentification par en-tÃªte Authorization / SameSite=Strict.".to_string(),
+                remediation: "Injecter un jeton anti-CSRF aléatoire par session ou imposer l'authentification par en-tête Authorization / SameSite=Strict.".to_string(),
             });
         }
 
         if has_password_field && method == "GET" {
             posture = "CRITICAL".to_string();
-            security_notes.push("CRITIQUE : Champ mot de passe transmis via mÃ©thode GET (exposÃ© dans l'URL et les logs) !".to_string());
+            security_notes.push("CRITIQUE : Champ mot de passe transmis via méthode GET (exposé dans l'URL et les logs) !".to_string());
             findings.push(SurfaceFinding {
                 id: format!("SURFACE-FORM-PASSWORD-IN-GET-{}", form_idx),
                 cwe: "CWE-598 / PASSWORD-TRANSMITTED-IN-GET-QUERY".to_string(),
                 severity: "HIGH".to_string(),
                 category: "Architecture Web & Formulaires".to_string(),
                 title: format!("Formulaire `{}` transmettant un mot de passe via GET", id_or_name),
-                description: "Un champ de type `password` est envoyÃ© avec `method=\"GET\"`, exposant le secret en clair dans la barre d'adresse, l'historique navigateur et les journaux d'accÃ¨s HTTP.".to_string(),
+                description: "Un champ de type `password` est envoyé avec `method=\"GET\"`, exposant le secret en clair dans la barre d'adresse, l'historique navigateur et les journaux d'accès HTTP.".to_string(),
                 remediation: "Forcer `method=\"POST\"` sur tout formulaire contenant des identifiants ou secrets.".to_string(),
             });
         }
 
         if has_password_field && scheme == "http" && !is_loopback {
             posture = "CRITICAL".to_string();
-            security_notes.push("CRITIQUE : Formulaire d'authentification servi sur HTTP non chiffrÃ©.".to_string());
+            security_notes.push("CRITIQUE : Formulaire d'authentification servi sur HTTP non chiffré.".to_string());
             findings.push(SurfaceFinding {
                 id: format!("SURFACE-FORM-CLEARTEXT-AUTH-{}", form_idx),
                 cwe: "CWE-319 / CLEARTEXT-TRANSMISSION-OF-CREDENTIALS".to_string(),
                 severity: "CRITICAL".to_string(),
                 category: "Architecture Web & Formulaires".to_string(),
-                title: format!("Formulaire avec mot de passe (`{}`) servi en HTTP non chiffrÃ©", id_or_name),
-                description: "Les identifiants saisis dans ce formulaire sont transmis sans chiffrement TLS sur le rÃ©seau.".to_string(),
+                title: format!("Formulaire avec mot de passe (`{}`) servi en HTTP non chiffré", id_or_name),
+                description: "Les identifiants saisis dans ce formulaire sont transmis sans chiffrement TLS sur le réseau.".to_string(),
                 remediation: "Forcer la redirection HTTPS (301) et activer HSTS avant d'afficher tout formulaire d'authentification.".to_string(),
             });
         }
 
         if has_file_upload {
-            security_notes.push("Surface d'Upload de Fichier dÃ©tectÃ©e : vÃ©rifier le filtrage MIME, l'absence de wrapper phar:// et le stockage hors webroot (CWE-434).".to_string());
+            security_notes.push("Surface d'Upload de Fichier détectée : vérifier le filtrage MIME, l'absence de wrapper phar:// et le stockage hors webroot (CWE-434).".to_string());
         }
 
         routes.push(DiscoveredRoute {
             path: action.clone(),
             method: method.clone(),
-            source: format!("Form Action Â«{}Â»", id_or_name),
+            source: format!("Form Action «{}»", id_or_name),
             status: None,
         });
 
@@ -1297,7 +1297,7 @@ pub(crate) fn parse_html_architecture_and_forms(
                             cwe: "CWE-353 / MISSING-SUBRESOURCE-INTEGRITY".to_string(),
                             severity: "MEDIUM".to_string(),
                             category: "Architecture Web & Formulaires".to_string(),
-                            title: format!("Script tiers chargÃ© sans hachage d'intÃ©gritÃ© SRI (`{}`)", src),
+                            title: format!("Script tiers chargé sans hachage d'intégrité SRI (`{}`)", src),
                             description: "Une balise `<script src=\"...\">` charge du code externe sans attribut `integrity=\"sha384-...\"` (Subresource Integrity).".to_string(),
                             remediation: "Ajouter les attributs `integrity=\"sha384-...\"` et `crossorigin=\"anonymous\"` sur tous les scripts CDN tiers.".to_string(),
                         });
@@ -1333,7 +1333,7 @@ pub(crate) fn parse_html_architecture_and_forms(
         }
     }
 
-    // Extraction des routes /api/... mentionnÃ©es dans le HTML/JS (y compris interpolations ${...}/api/...)
+    // Extraction des routes /api/... mentionnées dans le HTML/JS (y compris interpolations ${...}/api/...)
     for token in body.split(['\'', '"', '`']) {
         if let Some(clean_route) = normalize_route_token(token) {
             if (clean_route.starts_with("/api/")
@@ -1598,15 +1598,15 @@ pub(crate) fn extract_calls_from_asset(content: &str) -> (Vec<String>, Vec<Strin
 pub(crate) fn classify_directory(dir: &str) -> &'static str {
     let dl = dir.to_lowercase();
     if dl.contains("/api") || dl.contains("/v1") || dl.contains("/v2") || dl.contains("/graphql") || dl.contains("/rpc") {
-        "âš¡ API & Endpoints Backend"
+        "⚡ API & Endpoints Backend"
     } else if dl.contains("/admin") || dl.contains("/internal") || dl.contains("/config") || dl.contains("/debug") || dl.contains("/.well-known") {
-        "ðŸ” Administration & Gouvernance"
+        "🔐 Administration & Gouvernance"
     } else if dl.contains("/upload") || dl.contains("/media") || dl.contains("/files") || dl.contains("/storage") {
-        "ðŸ“‚ Stockage & Uploads"
+        "📂 Stockage & Uploads"
     } else if dl.contains("/asset") || dl.contains("/static") || dl.contains("/js") || dl.contains("/css") || dl.contains("/dist") || dl.contains("/public") {
-        "ðŸ“¦ Assets & Bundles Frontend"
+        "📦 Assets & Bundles Frontend"
     } else {
-        "ðŸ“ RÃ©pertoire Application"
+        "📁 Répertoire Application"
     }
 }
 
@@ -1707,8 +1707,8 @@ pub(crate) async fn inspect_web_files_and_directories(
         }
     };
 
-    // 1. Analyser le fichier d'entrÃ©e HTML lui-mÃªme
-    let entry_label = if entry_path == "/" { "/index.html (EntrÃ©e)" } else { entry_path };
+    // 1. Analyser le fichier d'entrée HTML lui-même
+    let entry_label = if entry_path == "/" { "/index.html (Entrée)" } else { entry_path };
     let (entry_folders, entry_refs, entry_json_keys) = extract_calls_from_asset(entry_body);
     for f in &entry_folders {
         record_dir(f, entry_label);
@@ -1785,7 +1785,7 @@ pub(crate) async fn inspect_web_files_and_directories(
         has_sourcemap: false,
     });
 
-    // 1b. Extraire les bundles <script type="module"> / <script> inline (> 256 octets) liÃ©s Ã  la source HTML
+    // 1b. Extraire les bundles <script type="module"> / <script> inline (> 256 octets) liés à la source HTML
     let mut inl_pos = 0usize;
     let mut inl_idx = 1usize;
     while let Some(s_rel) = lower_html.get(inl_pos..).and_then(|s| s.find("<script")) {
@@ -1822,7 +1822,7 @@ pub(crate) async fn inspect_web_files_and_directories(
         inl_pos = s_close + 1;
     }
 
-    // 2. Inspecter chaque fichier local dÃ©couvert (.js, .css, .html, .json) pour extraire ses appels d'API et de dossiers
+    // 2. Inspecter chaque fichier local découvert (.js, .css, .html, .json) pour extraire ses appels d'API et de dossiers
     for (file_path, file_type) in candidate_local_files.into_iter().take(6) {
         if let Some((st_line, _fhdrs, fbody)) = send_http_probe(scheme, host, port, &file_path, "GET").await {
             let is_200 = st_line.contains(" 200 ");
@@ -1869,7 +1869,7 @@ pub(crate) async fn inspect_web_files_and_directories(
                 record_dir(ff, &file_path);
             }
 
-            // Ajouter les endpoints /api/* dÃ©couverts dans le fichier JS/HTML Ã  la carte des routes avec leur type de requÃªte
+            // Ajouter les endpoints /api/* découverts dans le fichier JS/HTML à la carte des routes avec leur type de requête
             for rf in &frefs {
                 if (rf.starts_with("/api/")
                     || rf.starts_with("/v1/")
@@ -1897,12 +1897,12 @@ pub(crate) async fn inspect_web_files_and_directories(
                     cwe: "CWE-540 / SOURCEMAP-EXPOSURE".to_string(),
                     severity: "LOW".to_string(),
                     category: "Architecture Fichiers (.html / .js)".to_string(),
-                    title: format!("Directive SourceMap dÃ©tectÃ©e dans `{}`", file_path),
+                    title: format!("Directive SourceMap détectée dans `{}`", file_path),
                     description: format!(
-                        "Le script `{}` rÃ©fÃ©rence une SourceMap (`//# sourceMappingURL=`). En production, cela permet de reconstruire l'arborescence source originale.",
+                        "Le script `{}` référence une SourceMap (`//# sourceMappingURL=`). En production, cela permet de reconstruire l'arborescence source originale.",
                         file_path
                     ),
-                    remediation: "DÃ©sactiver la gÃ©nÃ©ration ou restreindre l'accÃ¨s aux fichiers `.js.map` en production.".to_string(),
+                    remediation: "Désactiver la génération ou restreindre l'accès aux fichiers `.js.map` en production.".to_string(),
                 });
             }
 
@@ -2035,63 +2035,63 @@ pub(crate) async fn probe_sensitive_artifacts(
     let mut results = Vec::new();
     let mut findings = Vec::new();
 
-    // Liste dÃ©fensive d'artefacts sensibles de racine Web (CWE-538 / CWE-215)
+    // Liste défensive d'artefacts sensibles de racine Web (CWE-538 / CWE-215)
     let candidates: [(&str, &str, &str, &str, &str); 8] = [
         (
             "/.env",
             "Fichier d'environnement (.env)",
             "Configuration & Secrets",
             "CRITICAL",
-            "Bloquer l'accÃ¨s aux dotfiles (`location ~ /\\. { deny all; }`) et dÃ©placer `.env` hors du document root.",
+            "Bloquer l'accès aux dotfiles (`location ~ /\\. { deny all; }`) et déplacer `.env` hors du document root.",
         ),
         (
             "/.env.local",
             "Environnement local (.env.local)",
             "Configuration & Secrets",
             "CRITICAL",
-            "Retirer `.env.local` du rÃ©pertoire public et rÃ©voquer tout jeton potentiellement exposÃ©.",
+            "Retirer `.env.local` du répertoire public et révoquer tout jeton potentiellement exposé.",
         ),
         (
             "/.git/HEAD",
-            "Index Git exposÃ© (.git/HEAD)",
-            "DÃ©pÃ´t VCS ExposÃ©",
+            "Index Git exposé (.git/HEAD)",
+            "Dépôt VCS Exposé",
             "CRITICAL",
-            "Supprimer le dossier `.git` des artefacts de dÃ©ploiement ou interdire `/.git` au niveau du reverse-proxy.",
+            "Supprimer le dossier `.git` des artefacts de déploiement ou interdire `/.git` au niveau du reverse-proxy.",
         ),
         (
             "/docker-compose.yml",
             "Manifeste Docker Compose",
             "Infrastructure & Conteneurs",
             "HIGH",
-            "Ne jamais servir les fichiers d'orchestration YAML dans le rÃ©pertoire statique.",
+            "Ne jamais servir les fichiers d'orchestration YAML dans le répertoire statique.",
         ),
         (
             "/actuator/health",
             "Spring Boot Actuator",
-            "TÃ©lÃ©mÃ©trie & Debug",
+            "Télémétrie & Debug",
             "MEDIUM",
             "Isoler les endpoints `/actuator/*` sur un port d'administration interne.",
         ),
         (
             "/server-status",
             "Apache mod_status",
-            "TÃ©lÃ©mÃ©trie & Debug",
+            "Télémétrie & Debug",
             "HIGH",
-            "Restreindre `/server-status` Ã  `127.0.0.1` via `Require local`.",
+            "Restreindre `/server-status` à `127.0.0.1` via `Require local`.",
         ),
         (
             "/openapi.json",
-            "SpÃ©cification OpenAPI (JSON)",
+            "Spécification OpenAPI (JSON)",
             "Documentation API",
             "INFO",
-            "VÃ©rifier que la publication du schÃ©ma OpenAPI est intentionnelle en production.",
+            "Vérifier que la publication du schéma OpenAPI est intentionnelle en production.",
         ),
         (
             "/swagger.json",
-            "SpÃ©cification Swagger (JSON)",
+            "Spécification Swagger (JSON)",
             "Documentation API",
             "INFO",
-            "ProtÃ©ger Swagger UI / swagger.json par authentification si l'API est privÃ©e.",
+            "Protéger Swagger UI / swagger.json par authentification si l'API est privée.",
         ),
     ];
 
@@ -2101,7 +2101,7 @@ pub(crate) async fn probe_sensitive_artifacts(
             let lower_body = body.trim().to_lowercase();
             let content_type = hdrs.get("content-type").cloned().unwrap_or_default().to_lowercase();
 
-            // Filtrage anti-Soft-404 (Ã©vite les faux positifs sur les SPA qui renvoient index.html en 200 OK)
+            // Filtrage anti-Soft-404 (évite les faux positifs sur les SPA qui renvoient index.html en 200 OK)
             let is_html_fallback = lower_body.starts_with("<!doctype")
                 || lower_body.starts_with("<html")
                 || content_type.contains("text/html") && !path.contains("server-status");
@@ -2111,7 +2111,7 @@ pub(crate) async fn probe_sensitive_artifacts(
 
             if is_200 && !is_html_fallback {
                 if path.starts_with("/.env") {
-                    // VÃ©rifier la prÃ©sence de paires KEY=VALUE et masquer strictement toutes les valeurs (aucune exfiltration)
+                    // Vérifier la présence de paires KEY=VALUE et masquer strictement toutes les valeurs (aucune exfiltration)
                     let mut masked_keys = Vec::new();
                     for line in body.lines().take(25) {
                         let trimmed = line.trim();
@@ -2124,7 +2124,7 @@ pub(crate) async fn probe_sensitive_artifacts(
                                 && key.len() <= 48
                                 && key.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
                             {
-                                masked_keys.push(format!("{}=******** [MASQUÃ‰]", key));
+                                masked_keys.push(format!("{}=******** [MASQUÉ]", key));
                             }
                         }
                     }
@@ -2132,7 +2132,7 @@ pub(crate) async fn probe_sensitive_artifacts(
                         confirmed_exposed = true;
                         let preview_list = masked_keys.into_iter().take(5).collect::<Vec<_>>().join(", ");
                         redacted_preview = Some(format!(
-                            "ClÃ©s dÃ©tectÃ©es (valeurs strictement masquÃ©es) : {}",
+                            "Clés détectées (valeurs strictement masquées) : {}",
                             preview_list
                         ));
                     }
@@ -2141,29 +2141,29 @@ pub(crate) async fn probe_sensitive_artifacts(
                         confirmed_exposed = true;
                         let first_line = body.lines().next().unwrap_or("ref: refs/heads/*").trim();
                         redacted_preview = Some(format!(
-                            "Signature Git HEAD confirmÃ©e : `{}` (Contenu du dÃ©pÃ´t non tÃ©lÃ©chargÃ©)",
+                            "Signature Git HEAD confirmée : `{}` (Contenu du dépôt non téléchargé)",
                             first_line.chars().take(48).collect::<String>()
                         ));
                     }
                 } else if path == "/docker-compose.yml" {
                     if lower_body.contains("services:") && (lower_body.contains("image:") || lower_body.contains("build:")) {
                         confirmed_exposed = true;
-                        redacted_preview = Some("Structure YAML `services:` dÃ©tectÃ©e (valeurs d'environnement masquÃ©es)".to_string());
+                        redacted_preview = Some("Structure YAML `services:` détectée (valeurs d'environnement masquées)".to_string());
                     }
                 } else if path == "/actuator/health" {
                     if lower_body.contains("\"status\"") && (lower_body.contains("\"up\"") || lower_body.contains("\"down\"")) {
                         confirmed_exposed = true;
-                        redacted_preview = Some("RÃ©ponse JSON Spring Actuator `{ \"status\": ... }` active".to_string());
+                        redacted_preview = Some("Réponse JSON Spring Actuator `{ \"status\": ... }` active".to_string());
                     }
                 } else if path == "/server-status" {
                     if lower_body.contains("apache server status") || lower_body.contains("server version:") {
                         confirmed_exposed = true;
-                        redacted_preview = Some("Page de tÃ©lÃ©mÃ©trie Apache `mod_status` accessible publiquement".to_string());
+                        redacted_preview = Some("Page de télémétrie Apache `mod_status` accessible publiquement".to_string());
                     }
                 } else if (path == "/openapi.json" || path == "/swagger.json")
                     && (lower_body.contains("\"openapi\"") || lower_body.contains("\"swagger\"")) && lower_body.contains("\"paths\"") {
                         confirmed_exposed = true;
-                        redacted_preview = Some("SchÃ©ma JSON OpenAPI / Swagger public dÃ©tectÃ©".to_string());
+                        redacted_preview = Some("Schéma JSON OpenAPI / Swagger public détecté".to_string());
                     }
             }
 
@@ -2172,13 +2172,13 @@ pub(crate) async fn probe_sensitive_artifacts(
                     id: format!("SURFACE-EXPOSED-ARTIFACT-{}", path.replace(['/', '.'], "").to_uppercase()),
                     cwe: "CWE-538 / SENSITIVE-FILE-EXPOSURE".to_string(),
                     severity: risk.to_string(),
-                    category: "Module 4 â€¢ Fichiers Sensibles (.env / .git)".to_string(),
-                    title: format!("Exposition critique dÃ©tectÃ©e sur `{}` ({})", path, label),
+                    category: "Module 4 • Fichiers Sensibles (.env / .git)".to_string(),
+                    title: format!("Exposition critique détectée sur `{}` ({})", path, label),
                     description: format!(
-                        "L'endpoint `{}` est publiquement accessible ({}) et expose une signature structurelle valide ({}). Par sÃ©curitÃ©, AetherScope masque automatiquement toutes les valeurs secrÃ¨tes.",
+                        "L'endpoint `{}` est publiquement accessible ({}) et expose une signature structurelle valide ({}). Par sécurité, AetherScope masque automatiquement toutes les valeurs secrètes.",
                         path,
                         status_line,
-                        redacted_preview.as_deref().unwrap_or("signature confirmÃ©e")
+                        redacted_preview.as_deref().unwrap_or("signature confirmée")
                     ),
                     remediation: remediation.to_string(),
                 });
@@ -2190,9 +2190,9 @@ pub(crate) async fn probe_sensitive_artifacts(
                 category: category.to_string(),
                 exposed: confirmed_exposed,
                 http_status: if confirmed_exposed {
-                    format!("{} (EXPOSÃ‰)", status_line)
+                    format!("{} (EXPOSÉ)", status_line)
                 } else if is_200 && is_html_fallback {
-                    "200 Soft-404 (ProtÃ©gÃ© / Fallback SPA)".to_string()
+                    "200 Soft-404 (Protégé / Fallback SPA)".to_string()
                 } else {
                     status_line
                 },
@@ -2206,7 +2206,7 @@ pub(crate) async fn probe_sensitive_artifacts(
                 label: label.to_string(),
                 category: category.to_string(),
                 exposed: false,
-                http_status: "FermÃ© / Non accessible".to_string(),
+                http_status: "Fermé / Non accessible".to_string(),
                 risk_level: risk.to_string(),
                 redacted_preview: None,
                 remediation: remediation.to_string(),

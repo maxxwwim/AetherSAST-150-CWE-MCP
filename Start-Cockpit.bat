@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title AetherScope V2.4 - Lancement du Cockpit
+title AetherScope V2.7 - Lancement du Cockpit
 chcp 65001 >nul
 
 set "SCRIPT_DIR=%~dp0"
@@ -47,10 +47,10 @@ if exist "%SCRIPT_DIR%Cargo.toml" (
     )
 )
 
-:: 4. Demarrage immediat du Cockpit WebGL 2 & Svelte 5 v2.4 sur 127.0.0.1:3030
-echo [INFO] Lancement du Cockpit AetherScope V2.4 (%ENGINE_EXE%) sur http://127.0.0.1:3030...
+:: 4. Demarrage immediat du Cockpit WebGL 2 & Svelte 5 v2.7 sur 127.0.0.1:3030
+setlocal disabledelayedexpansion
+echo [INFO] Lancement du Cockpit AetherScope V2.7 (%ENGINE_EXE%) sur http://127.0.0.1:3030...
 start "" "%ENGINE_EXE%"
 
-echo [OK] Cockpit V2.4 actif ! Vos assistants IA (Claude, Cursor, Antigravity) sont synchronises.
-timeout /t 2 >nul
+echo [OK] Cockpit V2.7 actif ! Vos assistants IA (Claude, Cursor, Antigravity) sont synchronises.
 exit /b 0

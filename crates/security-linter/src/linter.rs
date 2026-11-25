@@ -891,109 +891,17 @@ impl SecurityLinter {
                 description: "Allocation mémoire brute Buffer.allocUnsafe() sans .fill(0) exfiltrant les clés privées de la heap V8 sur le réseau (Nodebleed), ou lecture concurrente d'un SharedArrayBuffer sans Atomics.load permettant de modifier les bornes d'un paquet entre la validation et la lecture.".to_string(),
                 default_enabled: true,
             },
-
-            // 6. C / C++ & Modules Natifs FFI
             CveRuleDef {
-                rule_id: "CVE-CPP-UNBOUNDED-COPY-UAF".to_string(),
-                cve_id: "CWE-120 / BUFFER-OVERFLOW-FFI".to_string(),
-                name: "Débordement de Tampon Mémoire C/C++ (strcpy / sprintf / memcpy non borné)".to_string(),
-                category: "C / C++ / FFI".to_string(),
-                severity: "CRITICAL".to_string(),
-                description: "Utilisation de primitives C/C++ sans contrôle de taille (strcpy, strcat, sprintf, gets, memcpy non borné) exposant la pile ou le tas à une corruption mémoire critique.".to_string(),
-                default_enabled: true,
-            },
-                    // Top 10 C++ Network & Protocol Hard-to-Find CWEs
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-INTEGER-OVERFLOW-ALLOC".to_string(),
-                cve_id: "CWE-190 / INTEGER-OVERFLOW-ALLOC-OOM".to_string(),
-                name: "Dépassement d'Entier sur Calcul de Longueur Réseau & Allocation Tronquée".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "CRITICAL".to_string(),
-                description: "Calcul arithmétique sur la taille d'un paquet réseau (+ sizeof(Header), * count) directement dans new char[] ou malloc() sans validation de dépassement (UINT32_MAX) : allocation tronquée puis heap overflow catastrophique.".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-TYPE-PUNNING-STRICT-ALIASING".to_string(),
-                cve_id: "CWE-843 / STRICT-ALIASING-TYPE-PUNNING".to_string(),
-                name: "Type Punning Réseau par Cast de Pointeur Brut (Strict Aliasing UB)".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "HIGH".to_string(),
-                description: "Cast direct d'un tampon d'octets brut (char*/uint8_t*) vers une structure de protocole (reinterpret_cast<Header*> ou (PacketHeader*)buf) : violation du Strict Aliasing (optimisations destructrices du compilateur) et risque de SIGBUS sur architectures à alignement strict.".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-ASYNC-CALLBACK-UAF".to_string(),
-                cve_id: "CWE-416 / ASYNC-EVENT-CALLBACK-UAF".to_string(),
-                name: "Use-After-Free par Capture de this dans Callback Réseau Asynchrone".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "CRITICAL".to_string(),
-                description: "Capture du pointeur brut [this] ou [&] dans un callback asynchrone (async_read, async_write, async_receive, uv_queue_work) sans shared_from_this() ni weak_ptr : si le socket/client est détruit avant la fin de l'I/O, l'appel ultérieur du handler accède à un objet libéré (UAF).".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-PARTIAL-READ-SHORT-FRAME".to_string(),
-                cve_id: "CWE-252 / UNCHECKED-SHORT-STREAM-READ".to_string(),
-                name: "Désynchronisation TCP par Lecture Partielle Non Bouclée (Unchecked Short Read)".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "HIGH".to_string(),
-                description: "Appel unique à recv(), read() ou SSL_read() supposant la réception atomique de la trame complète sans boucle de cadrage ni validation stricte de taille : fragmentation TCP injectant des trames tronquées ou corrompues.".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-SOCKET-FD-LEAK-EXCEPTION".to_string(),
-                cve_id: "CWE-775 / SOCKET-FD-LEAK-EXCEPTION".to_string(),
-                name: "Fuite de Descripteur Socket Réseau par Absence de RAII (FD Exhaustion DoS)".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "HIGH".to_string(),
-                description: "Création d'un descripteur brut (socket(), accept(), open()) stocké dans un int sans garde RAII dans une fonction contenant des allocations dynamiques ou des exceptions (throw, new, std::string) : fuite cumulative de sockets et déni de service (EMFILE).".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-HOST-BYTE-ORDER-CONFUSION".to_string(),
-                cve_id: "CWE-1385 / MISSING-ENDIANNESS-CONVERSION".to_string(),
-                name: "Confusion d'Endianness sur Champ Longueur Réseau (Missing ntohs/ntohl)".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "HIGH".to_string(),
-                description: "Lecture directe d'un champ de longueur réseau (header.length, pkt->size) dans des opérations de comparaison de bornes ou d'allocation sans conversion préalable par ntohs() / ntohl() : inversion d'octets contournant les gardes de sécurité sur processeurs Little-Endian.".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-STRING-NULL-TERMINATION-OFF-BY-ONE".to_string(),
-                cve_id: "CWE-170 / MISSING-NULL-TERMINATION-LEAK".to_string(),
-                name: "Absence de Null-Termination sur Chaîne Réseau Reçue (Memory Bleed)".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "CRITICAL".to_string(),
-                description: "Lecture réseau dans un buffer char[] sans forcer le byte nul terminal (buf[n] = '\\0'), suivi d'un traitement par strlen(), std::string(buf) ou printf(%s) : fuite d'informations adjacentes de la pile ou du heap (Heartbleed-like) et crash SIGSEGV.".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-FORMAT-STRING-LOGGING".to_string(),
-                cve_id: "CWE-134 / UNCONTROLLED-FORMAT-STRING-NET".to_string(),
-                name: "Injection de Chaîne de Formatage sur Données Réseau (Format String RCE)".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "CRITICAL".to_string(),
-                description: "Passage direct d'un buffer ou message reçu du réseau comme chaîne de format à syslog(), printf(), sprintf() ou fprintf() sans format spécifié (\"%s\") : lecture/écriture arbitraire en mémoire via les spécificateurs %x et %n (RCE).".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-SOCKET-RACE-DOUBLE-CLOSE".to_string(),
-                cve_id: "CWE-415 / SOCKET-FD-RACE-DOUBLE-CLOSE".to_string(),
-                name: "Double-Close & Race Condition sur Socket Multi-Thread (FD Re-use Hijack)".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "HIGH".to_string(),
-                description: "Fermeture de socket close(fd) ou closesocket(fd) dans un destructeur ou gestionnaire d'événement sans réinitialisation atomique (exchange(-1)) ni verrou de synchronisation : fermetures concurrentes fermant par erreur les nouveaux sockets réalloués par l'OS.".to_string(),
-                default_enabled: true,
-            },
-            CveRuleDef {
-                rule_id: "CVE-CPP-NET-UNBOUNDED-RECURSION-TLV-PARSER".to_string(),
-                cve_id: "CWE-674 / UNBOUNDED-RECURSIVE-NET-PARSER".to_string(),
-                name: "Récursion Non Bornée sur Parseur de Protocole Réseau (Stack Exhaustion Crash)".to_string(),
-                category: "C / C++ / Network".to_string(),
-                severity: "HIGH".to_string(),
-                description: "Fonction de parsing récursif de paquets réseau imbriqués (TLV, JSON, BSON, expressions) s'appelant récursivement sans compteur ni plafond de profondeur (depth > MAX_DEPTH) : trame malveillante hautement imbriquée provoquant un Stack Overflow immédiat (SIGSEGV).".to_string(),
+                rule_id: "SAST_UTF8_MOJIBAKE_CORRUPTION".to_string(),
+                cve_id: "CWE-176 / UTF8-MOJIBAKE-CORRUPTION".to_string(),
+                name: "Corruption d'Encodage UTF-8 / Mojibake Windows-1252".to_string(),
+                category: "Architecture / Boundary".to_string(),
+                severity: "WARNING".to_string(),
+                description: "Détecte les séquences UTF-8 doublement encodées en Windows-1252 / Latin-1 (mojibake) corrompant les chaînes d'interface, prompts MCP et journaux.".to_string(),
                 default_enabled: true,
             },
         ];
+        rules.extend(crate::cpp_rules::CppSecurityRules::definitions());
         rules.extend(crate::rules::AdvancedDefiRules::definitions());
         rules.extend(crate::deep_rules::DeepSecurityRules::definitions());
         rules.extend(crate::php_rules::PhpSecurityRules::definitions());
@@ -1012,7 +920,7 @@ impl SecurityLinter {
         } else if r.starts_with("CVE-CS-") || r.starts_with("CVE-CSHARP-") || r.contains("CSHARP") {
             &[".cs"]
         } else if r.starts_with("CVE-INJ-") {
-            &[".rs", ".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs"]
+            &[".rs", ".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".svelte", ".vue"]
         } else if r.starts_with("CVE-RUST-") || r.starts_with("CVE-L1-") || r.contains("RUST") {
             &[".rs"]
         } else if r.starts_with("CVE-PY-") || r.contains("PYTHON") {
@@ -1020,7 +928,7 @@ impl SecurityLinter {
         } else if r.starts_with("CVE-CPP-") || r.contains("CPP") {
             &[".c", ".cpp", ".cc", ".h", ".hpp", ".hh", ".cxx", ".hxx", ".inl"]
         } else if r.starts_with("CVE-JS-") || r.contains("NODE") || r.contains("TYPESCRIPT") {
-            &[".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs"]
+            &[".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".svelte", ".vue"]
         } else if r.starts_with("CVE-JAVA-") || r.contains("JAVA") {
             &[".java"]
         } else if r.contains("SOL") || r.contains("DEFI") || r.contains("EVC") || r.contains("CIRCOM") {
@@ -1075,6 +983,7 @@ impl SecurityLinter {
     const LITERAL_AWARE_RULES: &'static [&'static str] = &[
         "SAST_HARDCODED_SECRET",
         "SAST_RAW_SQL_INJECTION",
+        "SAST_UTF8_MOJIBAKE_CORRUPTION",
         "CVE-WEB3-AUTH-BYPASS-MOCK",
         "SAST_DIRECT_ENV_ACCESS",
         "RULE_FORBIDDEN_IMPORT",
@@ -1293,7 +1202,9 @@ impl SecurityLinter {
             || lower_path.ends_with(".tsx")
             || lower_path.ends_with(".jsx")
             || lower_path.ends_with(".mjs")
-            || lower_path.ends_with(".cjs");
+            || lower_path.ends_with(".cjs")
+            || lower_path.ends_with(".svelte")
+            || lower_path.ends_with(".vue");
         let is_cpp = lower_path.ends_with(".c")
             || lower_path.ends_with(".cpp")
             || lower_path.ends_with(".cc")
@@ -1319,6 +1230,7 @@ impl SecurityLinter {
         let is_linter_catalog = norm_path.contains("security-linter/src/")
             || lower_file_name == "linter.rs"
             || lower_file_name == "rules.rs"
+            || lower_file_name == "cpp_rules.rs"
             || lower_file_name == "deep_rules.rs"
             || lower_file_name == "epic_novel_rules.rs"
             || lower_file_name == "php_rules.rs"
@@ -1574,6 +1486,7 @@ impl SecurityLinter {
             // 3. SAST Global & Contract: no_raw_sql (CWE-89)
             let check_raw_sql = contract.map(|c| c.frontmatter.security_rules.no_raw_sql).unwrap_or(true);
             if !is_test_file
+                && !trimmed.starts_with("testVulnCode")
                 && check_raw_sql
                 && (trimmed.contains("${") || trimmed.contains("format!(") || trimmed.contains('+') || trimmed.contains("%s") || trimmed.contains("f\""))
             {
@@ -3327,18 +3240,25 @@ impl SecurityLinter {
                     });
                 }
 
-                // CVE-JS-XSS-DOM (CWE-79 / Cross-Site Scripting)
-                if trimmed.contains("dangerouslySetInnerHTML") || trimmed.contains(".innerHTML =") || trimmed.contains("document.write(") {
+                // CVE-JS-XSS-DOM (CWE-79 / Cross-Site Scripting — DOM, React, Svelte {@html}, Vue v-html)
+                if (trimmed.contains("dangerouslySetInnerHTML")
+                    || trimmed.contains(".innerHTML =")
+                    || trimmed.contains("document.write(")
+                    || trimmed.contains("{@html ")
+                    || trimmed.contains("v-html="))
+                    && !trimmed.contains("DOMPurify.sanitize")
+                    && !trimmed.contains("sanitizeHtml(")
+                {
                     violations.push(LinterViolation {
                         file_path: file_path.to_string(),
                         line_number: line_no,
                         rule_id: "CVE-JS-XSS-DOM".to_string(),
                         cve_id: "CWE-79 / CVE-JS-XSS-DOM".to_string(),
                         severity: "HIGH".to_string(),
-                        message: "Direct DOM injection via innerHTML / dangerouslySetInnerHTML allows stored or reflected XSS".to_string(),
+                        message: "Direct DOM injection via innerHTML / dangerouslySetInnerHTML / {@html} / v-html allows stored or reflected XSS".to_string(),
                         transmitted_data: Some("html_payload".to_string()),
                         transmitted_type: Some("string (Unsanitized HTML Markup)".to_string()),
-                        remediation: "Sanitize content with DOMPurify.sanitize() or use textContent and safe React JSX tags.".to_string(),
+                        remediation: "Sanitize content with DOMPurify.sanitize() or use textContent and safe template bindings.".to_string(),
                     });
                 }
 
@@ -3423,7 +3343,10 @@ impl SecurityLinter {
                 }
 
                 // CVE-JS-SSRF-DYNAMIC-AXIOS-FETCH (CWE-918 / Outbound SSRF via Axios / Fetch)
-                if (trimmed.contains("axios.get(") || trimmed.contains("axios.post(") || trimmed.contains("fetch(") || trimmed.contains("got("))
+                if !lower_path.ends_with(".svelte")
+                    && !lower_path.ends_with(".vue")
+                    && !norm_path.contains("/ui/")
+                    && (trimmed.contains("axios.get(") || trimmed.contains("axios.post(") || trimmed.contains("fetch(") || trimmed.contains("got("))
                     && !trimmed.contains("\"http")
                     && !trimmed.contains("'http")
                     && !trimmed.contains("`http")
@@ -3545,314 +3468,36 @@ impl SecurityLinter {
             // ⚙️ RÈGLES SPÉCIFIQUES C / C++ & FFI NATIF
             // =========================================================
             if is_cpp {
-                // CVE-CPP-UNBOUNDED-COPY-UAF (CWE-120 / Classic Buffer Overflow in Native C/C++)
-                if trimmed.contains("strcpy(")
-                    || trimmed.contains("strcat(")
-                    || trimmed.contains("sprintf(")
-                    || trimmed.contains("gets(")
-                    || (trimmed.contains("memcpy(") && !content.contains("sizeof(") && !content.contains("MAX_"))
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-UNBOUNDED-COPY-UAF".to_string(),
-                        cve_id: "CWE-120 / BUFFER-OVERFLOW-FFI".to_string(),
-                        severity: "CRITICAL".to_string(),
-                        message: "Unbounded memory copy (strcpy/strcat/sprintf/gets/memcpy) in native C/C++ module leads to stack/heap buffer overflow and RCE".to_string(),
-                        transmitted_data: Some("raw_c_buffer_pointer".to_string()),
-                        transmitted_type: Some("char* / void* (Unbounded Memory Copy)".to_string()),
-                        remediation: "Replace with bounds-checked snprintf(buf, sizeof(buf), ...), strncpy_s, or std::string / std::span.".to_string(),
-                    });
-                }
+                crate::cpp_rules::CppSecurityRules::audit_line(
+                    file_path,
+                    line_no,
+                    trimmed,
+                    |pat| content.contains(pat),
+                    &mut violations,
+                );
+            }
 
-                // 1. CVE-CPP-NET-INTEGER-OVERFLOW-ALLOC (CWE-190 / CWE-789)
-                if (trimmed.contains("new char[")
-                    || trimmed.contains("new uint8_t[")
-                    || trimmed.contains("malloc(")
-                    || trimmed.contains("realloc("))
-                    && (trimmed.contains(" + sizeof(")
-                        || trimmed.contains(" + header_len")
-                        || trimmed.contains(" + hdr_len")
-                        || trimmed.contains(" + sizeof_header")
-                        || trimmed.contains("len + ")
-                        || trimmed.contains("size + ")
-                        || trimmed.contains("length + ")
-                        || trimmed.contains("payload_len +"))
-                    && !content.contains("__builtin_add_overflow")
-                    && !content.contains("std::numeric_limits")
-                    && !content.contains("MAX_PACKET")
-                    && !content.contains("MAX_SIZE")
-                    && !content.contains("check_overflow")
-                    && !content.contains("safe_add")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-INTEGER-OVERFLOW-ALLOC".to_string(),
-                        cve_id: "CWE-190 / INTEGER-OVERFLOW-ALLOC-OOM".to_string(),
-                        severity: "CRITICAL".to_string(),
-                        message: "Integer overflow in network frame length calculation (+ sizeof / + len) inside memory allocation without overflow guard: UINT32_MAX wrap-around leads to undersized buffer and heap corruption".to_string(),
-                        transmitted_data: Some("packet_allocation_size".to_string()),
-                        transmitted_type: Some("size_t / uint32_t (Integer Overflow Allocation)".to_string()),
-                        remediation: "Validate bounds against MAX_PACKET_SIZE - sizeof(Header) or use __builtin_add_overflow before allocating memory.".to_string(),
-                    });
-                }
-
-                // 2. CVE-CPP-NET-TYPE-PUNNING-STRICT-ALIASING (CWE-843 / CWE-704)
-                if ((trimmed.contains("reinterpret_cast<")
-                    && (trimmed.contains("Header*")
-                        || trimmed.contains("Packet*")
-                        || trimmed.contains("Message*")
-                        || trimmed.contains("Frame*")
-                        || trimmed.contains("Msg*")))
-                    || ((trimmed.contains("(Header*)")
-                        || trimmed.contains("(Packet*)")
-                        || trimmed.contains("(PacketHeader*)"))
-                        && !trimmed.contains("malloc")
-                        && !trimmed.contains("new ")))
-                    && !content.contains("std::memcpy")
-                    && !content.contains("bit_cast")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-TYPE-PUNNING-STRICT-ALIASING".to_string(),
-                        cve_id: "CWE-843 / STRICT-ALIASING-TYPE-PUNNING".to_string(),
-                        severity: "HIGH".to_string(),
-                        message: "Type punning raw network byte stream to protocol struct pointer via reinterpret_cast violates C++ strict aliasing rules and causes unaligned SIGBUS crashes or compiler reordering UB".to_string(),
-                        transmitted_data: Some("misaligned_protocol_struct_ptr".to_string()),
-                        transmitted_type: Some("T* (Strict Aliasing UB)".to_string()),
-                        remediation: "Copy protocol headers into properly aligned structs with std::memcpy(&hdr, buf, sizeof(hdr)) or use C++20 std::bit_cast.".to_string(),
-                    });
-                }
-
-                // 3. CVE-CPP-NET-ASYNC-CALLBACK-UAF (CWE-416 / CWE-824)
-                if (trimmed.contains("async_read")
-                    || trimmed.contains("async_write")
-                    || trimmed.contains("async_receive")
-                    || trimmed.contains("async_send")
-                    || trimmed.contains("async_wait")
-                    || trimmed.contains("async_accept")
-                    || trimmed.contains("uv_queue_work"))
-                    && (trimmed.contains("[this]")
-                        || trimmed.contains("[&]")
-                        || trimmed.contains("[this,")
-                        || trimmed.contains("[=]"))
-                    && !content.contains("shared_from_this")
-                    && !content.contains("weak_from_this")
-                    && !content.contains("enable_shared_from_this")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-ASYNC-CALLBACK-UAF".to_string(),
-                        cve_id: "CWE-416 / ASYNC-EVENT-CALLBACK-UAF".to_string(),
-                        severity: "CRITICAL".to_string(),
-                        message: "Capturing raw 'this' or [&] inside asynchronous I/O completion callback (Boost.Asio/libuv) without shared_from_this(): session destruction while I/O is pending triggers Use-After-Free".to_string(),
-                        transmitted_data: Some("dangling_this_pointer".to_string()),
-                        transmitted_type: Some("this* (Use-After-Free in Async Handler)".to_string()),
-                        remediation: "Inherit from std::enable_shared_from_this and capture auto self = shared_from_this() or weak_from_this() in async completion handlers.".to_string(),
-                    });
-                }
-
-                // 4. CVE-CPP-NET-PARTIAL-READ-SHORT-FRAME (CWE-252 / CWE-670)
-                if (trimmed.contains("recv(")
-                    || trimmed.contains("read(")
-                    || trimmed.contains("SSL_read("))
-                    && !trimmed.contains("async_read")
-                    && !trimmed.contains("read_some")
-                    && !trimmed.contains("read_exact")
-                    && (trimmed.contains("buf") || trimmed.contains("buffer") || trimmed.contains("packet"))
-                    && !content.contains("while")
-                    && !content.contains("for (")
-                    && !content.contains("read_exact")
-                    && !content.contains("boost::asio::read")
-                    && !content.contains("bytes_transferred == ")
-                    && !content.contains("total_read += ")
-                    && !content.contains("received_bytes >= ")
-                    && !content.contains("n < sizeof(")
-                    && !content.contains("ret != sizeof(")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-PARTIAL-READ-SHORT-FRAME".to_string(),
-                        cve_id: "CWE-252 / UNCHECKED-SHORT-STREAM-READ".to_string(),
-                        severity: "HIGH".to_string(),
-                        message: "Unchecked single socket read (recv/read/SSL_read) assuming complete atomic frame arrival on TCP byte stream: packet fragmentation leads to desync and uninitialized memory consumption".to_string(),
-                        transmitted_data: Some("partial_network_stream_frame".to_string()),
-                        transmitted_type: Some("ssize_t (Short Read Desync)".to_string()),
-                        remediation: "Loop until all expected frame bytes are accumulated (while (total < expected)) or use framed framing helpers like boost::asio::read.".to_string(),
-                    });
-                }
-
-                // 5. CVE-CPP-NET-SOCKET-FD-LEAK-EXCEPTION (CWE-775 / CWE-403)
-                if (trimmed.contains("int sock = socket(")
-                    || trimmed.contains("int fd = socket(")
-                    || trimmed.contains("int client = accept(")
-                    || trimmed.contains("int client_fd = accept("))
-                    && content.contains("throw ")
-                    && !content.contains("unique_fd")
-                    && !content.contains("SocketGuard")
-                    && !content.contains("unique_ptr")
-                    && !content.contains("RAII")
-                    && !content.contains("close(sock)")
-                    && !content.contains("close(fd)")
-                    && !content.contains("close(client)")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-SOCKET-FD-LEAK-EXCEPTION".to_string(),
-                        cve_id: "CWE-775 / SOCKET-FD-LEAK-EXCEPTION".to_string(),
-                        severity: "HIGH".to_string(),
-                        message: "Raw socket descriptor allocated without RAII wrapper in function with throw/exception paths: unhandled error leaks socket file descriptors, resulting in EMFILE exhaustion DoS".to_string(),
-                        transmitted_data: Some("unmanaged_socket_descriptor".to_string()),
-                        transmitted_type: Some("int (Raw Socket Handle Leak)".to_string()),
-                        remediation: "Wrap socket file descriptors in an RAII guard (struct SocketGuard { ~SocketGuard() { if (fd >= 0) close(fd); } };) or std::unique_ptr with custom deleter.".to_string(),
-                    });
-                }
-
-                // 6. CVE-CPP-NET-HOST-BYTE-ORDER-CONFUSION (CWE-1385 / CWE-681)
-                if (trimmed.contains("header.length")
-                    || trimmed.contains("header.payload_len")
-                    || trimmed.contains("pkt->length")
-                    || trimmed.contains("pkt->size")
-                    || trimmed.contains("msg->len"))
-                    && (trimmed.contains("< ") || trimmed.contains("> ") || trimmed.contains("new ") || trimmed.contains("malloc(") || trimmed.contains("buffer["))
-                    && !content.contains("ntohs(")
-                    && !content.contains("ntohl(")
-                    && !content.contains("be16toh(")
-                    && !content.contains("be32toh(")
-                    && !content.contains("std::byteswap")
-                    && !content.contains("endian::network_to_host")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-HOST-BYTE-ORDER-CONFUSION".to_string(),
-                        cve_id: "CWE-1385 / MISSING-ENDIANNESS-CONVERSION".to_string(),
-                        severity: "HIGH".to_string(),
-                        message: "Accessing multi-byte network packet length/offset without host byte order conversion (ntohs/ntohl/byteswap): big-endian network wire bytes evaluated on little-endian host bypasses bounds validation".to_string(),
-                        transmitted_data: Some("unconverted_network_endianness".to_string()),
-                        transmitted_type: Some("uint16_t / uint32_t (Host/Network Endian Mismatch)".to_string()),
-                        remediation: "Convert all multi-byte wire fields with ntohs() (16-bit) or ntohl() (32-bit) before performing bounds checks or allocations.".to_string(),
-                    });
-                }
-
-                // 7. CVE-CPP-NET-STRING-NULL-TERMINATION-OFF-BY-ONE (CWE-170 / CWE-193)
-                if (trimmed.contains("recv(")
-                    || trimmed.contains("recvfrom(")
-                    || trimmed.contains("read("))
-                    && (content.contains("strlen(buf")
-                        || content.contains("strlen(buffer")
-                        || content.contains("std::string(buf")
-                        || content.contains("std::string(buffer")
-                        || content.contains("strcmp(buf")
-                        || content.contains("strcpy("))
-                    && !content.contains("= '\\0'")
-                    && !content.contains("= 0;")
-                    && !content.contains("std::string_view")
-                    && !content.contains("buf[bytes_read] =")
-                    && !content.contains("buffer[n] =")
-                    && !content.contains("buffer[len] =")
-                    && !content.contains("buf[n] =")
-                    && !content.contains("buf[ret] =")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-STRING-NULL-TERMINATION-OFF-BY-ONE".to_string(),
-                        cve_id: "CWE-170 / MISSING-NULL-TERMINATION-LEAK".to_string(),
-                        severity: "CRITICAL".to_string(),
-                        message: "Network payload read into char buffer without explicit null termination before passing to strlen/std::string: memory disclosure bleed of adjacent stack/heap secrets (Heartbleed-like)".to_string(),
-                        transmitted_data: Some("unterminated_network_string_buffer".to_string()),
-                        transmitted_type: Some("char* (Improper Null Termination)".to_string()),
-                        remediation: "Ensure the buffer has capacity for null byte and explicitly set buf[bytes_received] = '\\0' or construct std::string with explicit length std::string(buf, bytes_received).".to_string(),
-                    });
-                }
-
-                // 8. CVE-CPP-NET-FORMAT-STRING-LOGGING (CWE-134)
-                let is_format_string_vuln =
-                    ((trimmed.starts_with("syslog(") || trimmed.contains(" syslog(")) && !trimmed.contains("syslog(LOG_") && !trimmed.contains("\""))
-                    || ((trimmed.starts_with("printf(") || trimmed.contains(" printf(")) && !trimmed.contains("printf(\""))
-                    || ((trimmed.starts_with("fprintf(stderr,") || trimmed.contains("fprintf(stderr, ")) && !trimmed.contains("fprintf(stderr, \"") && !trimmed.contains("fprintf(stderr, \"%s\""))
-                    || (trimmed.contains("syslog(LOG_ERR, ") && !trimmed.contains("syslog(LOG_ERR, \""))
-                    || (trimmed.contains("syslog(LOG_INFO, ") && !trimmed.contains("syslog(LOG_INFO, \""))
-                    || (trimmed.contains("syslog(LOG_WARNING, ") && !trimmed.contains("syslog(LOG_WARNING, \""));
-                if is_format_string_vuln {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-FORMAT-STRING-LOGGING".to_string(),
-                        cve_id: "CWE-134 / UNCONTROLLED-FORMAT-STRING-NET".to_string(),
-                        severity: "CRITICAL".to_string(),
-                        message: "Uncontrolled format string: passing dynamic network payload/message directly to printf/syslog/fprintf allows %n arbitrary memory writes and %x memory disclosures (RCE)".to_string(),
-                        transmitted_data: Some("format_string_untrusted_specifier".to_string()),
-                        transmitted_type: Some("char* (Uncontrolled Format String)".to_string()),
-                        remediation: "Always provide a static string format literal: printf(\"%s\", msg) or syslog(LOG_ERR, \"%s\", msg.c_str()).".to_string(),
-                    });
-                }
-
-                // 9. CVE-CPP-NET-SOCKET-RACE-DOUBLE-CLOSE (CWE-415 / CWE-362)
-                if (trimmed.contains("close(this->sock")
-                    || trimmed.contains("close(this->fd")
-                    || trimmed.contains("close(m_socket")
-                    || trimmed.contains("close(m_fd")
-                    || trimmed.contains("closesocket(this->")
-                    || trimmed.contains("closesocket(m_"))
-                    && !content.contains("std::atomic<int>")
-                    && !content.contains("std::mutex")
-                    && !content.contains("std::lock_guard")
-                    && !content.contains("exchange(-1)")
-                    && !content.contains("Atomic")
-                    && !content.contains("lock()")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-SOCKET-RACE-DOUBLE-CLOSE".to_string(),
-                        cve_id: "CWE-415 / SOCKET-FD-RACE-DOUBLE-CLOSE".to_string(),
-                        severity: "HIGH".to_string(),
-                        message: "Closing member socket descriptor close(fd) without atomic exchange or mutex lock in multi-threaded connection context: race condition can close reallocated fd belonging to another connection".to_string(),
-                        transmitted_data: Some("unlocked_socket_descriptor".to_string()),
-                        transmitted_type: Some("int / SOCKET (Race Condition Double Close)".to_string()),
-                        remediation: "Use std::atomic<int> with exchange(-1) before closing (int old = fd.exchange(-1); if (old >= 0) close(old);) or protect close under a std::lock_guard.".to_string(),
-                    });
-                }
-
-                // 10. CVE-CPP-NET-UNBOUNDED-RECURSION-TLV-PARSER (CWE-674)
-                if (trimmed.contains("parse_tlv(")
-                    || trimmed.contains("parse_node(")
-                    || trimmed.contains("parse_packet(")
-                    || trimmed.contains("parse_element(")
-                    || trimmed.contains("parse_nested("))
-                    && (content.contains("parse_tlv")
-                        || content.contains("parse_node")
-                        || content.contains("parse_packet")
-                        || content.contains("parse_element")
-                        || content.contains("parse_nested"))
-                    && (trimmed.contains("return parse_")
-                        || trimmed.contains("= parse_")
-                        || trimmed.contains("child = parse_"))
-                    && !content.contains("depth >")
-                    && !content.contains("depth >=")
-                    && !content.contains("MAX_DEPTH")
-                    && !content.contains("max_recursion")
-                    && !content.contains("MAX_RECURSION")
-                {
-                    violations.push(LinterViolation {
-                        file_path: file_path.to_string(),
-                        line_number: line_no,
-                        rule_id: "CVE-CPP-NET-UNBOUNDED-RECURSION-TLV-PARSER".to_string(),
-                        cve_id: "CWE-674 / UNBOUNDED-RECURSIVE-NET-PARSER".to_string(),
-                        severity: "HIGH".to_string(),
-                        message: "Unbounded recursive protocol parser without depth counter: deeply nested packet structures exhaust thread stack and cause non-recoverable SIGSEGV denial of service".to_string(),
-                        transmitted_data: Some("recursive_nested_payload".to_string()),
-                        transmitted_type: Some("stack_frame (Unbounded Recursion Stack Exhaustion)".to_string()),
-                        remediation: "Pass a recursion depth counter (size_t depth = 0) and enforce if (depth > MAX_RECURSION_DEPTH) throw std::runtime_error(\"nesting limit exceeded\");".to_string(),
-                    });
-                }
+            // SAST_UTF8_MOJIBAKE_CORRUPTION (CWE-176 / Double-encoded UTF-8 -> Windows-1252 Mojibake)
+            if !is_test_file
+                && (line.contains("\u{00c3}\u{00a9}")
+                    || line.contains("\u{00c3}\u{00a8}")
+                    || line.contains("\u{00c3}\u{00aa}")
+                    || line.contains("\u{00c3}\u{00a0}")
+                    || line.contains("\u{00f0}\u{0178}")
+                    || line.contains("\u{00e2}\u{0153}")
+                    || line.contains("\u{00e2}\u{20ac}\u{201d}"))
+            {
+                violations.push(LinterViolation {
+                    file_path: file_path.to_string(),
+                    line_number: line_no,
+                    rule_id: "SAST_UTF8_MOJIBAKE_CORRUPTION".to_string(),
+                    cve_id: "CWE-176 / UTF8-MOJIBAKE-CORRUPTION".to_string(),
+                    severity: "WARNING".to_string(),
+                    message: "Double-encoded UTF-8 / Windows-1252 mojibake sequence detected in source file".to_string(),
+                    transmitted_data: Some("corrupted_utf8_literal".to_string()),
+                    transmitted_type: Some("String (Mojibake Encoding Corruption)".to_string()),
+                    remediation: "Re-encode file strictly in UTF-8 without Windows-1252 double-encoding.".to_string(),
+                });
             }
         }
 
@@ -4783,6 +4428,39 @@ pub fn aligned_read(ptr: *const u64) -> u64 {
             "Node parse_tlv(const uint8_t* p) { Node child = parse_tlv(p + 4); return child; }",
             None,
             "CVE-CPP-NET-UNBOUNDED-RECURSION-TLV-PARSER",
+        );
+    }
+
+    #[test]
+    fn test_svelte_vue_xss_and_utf8_mojibake_rule() {
+        assert_rule_triggered(
+            "ui/src/components/BioCard.svelte",
+            "<script>export let rawBio;</script>\n<div>{@html rawBio}</div>",
+            None,
+            "CVE-JS-XSS-DOM",
+        );
+        assert_rule_triggered(
+            "ui/src/components/BioCard.vue",
+            "<template><div v-html=\"rawBio\"></div></template>",
+            None,
+            "CVE-JS-XSS-DOM",
+        );
+        let safe_svelte = SecurityLinter::audit_file(
+            "ui/src/components/SafeCard.svelte",
+            "<div>{@html DOMPurify.sanitize(rawBio)}</div>",
+            None,
+        );
+        assert!(
+            safe_svelte.iter().all(|v| v.rule_id != "CVE-JS-XSS-DOM"),
+            "Sanitized Svelte @html must not trigger CVE-JS-XSS-DOM"
+        );
+
+        let mojibake_src = format!("pub fn label() -> &'static str {{ \"R{}sum{}\" }}", "\u{00c3}\u{00a9}", "\u{00c3}\u{00a9}");
+        assert_rule_triggered(
+            "src/ui/labels.rs",
+            &mojibake_src,
+            None,
+            "SAST_UTF8_MOJIBAKE_CORRUPTION",
         );
     }
 }

@@ -445,7 +445,18 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             "agent_name": agent_name,
                             "color": color
                         }
-                    }
+                    },
+                    "instructions": "# Directives du Serveur AetherScope V2.7 (MCP — 10 Commandes Combinées)\n\
+1. `aetherscope_get_graph_summary` (4-en-1) : Résumé global du graphe 3D, violations SAST/CWE, tâches actives et rescan optionnel.\n\
+2. `aetherscope_get_active_target` (3-en-1) : Téléportation caméra 3D, contrat EARS + Handshake XML et traçage des flux amont/aval.\n\
+3. `aetherscope_search_symbols` (2-en-1) : Recherche multi-critères dans l'AST/Obsidian et audit filtré des violations CWE.\n\
+4. `aetherscope_switch_view_mode` : Permutation entre les modes 3D 'code' (AST) et 'vault' (Obsidian).\n\
+5. `aetherscope_manage_tasks` (4-en-1) : Cycle de vie des tâches (.aether/tasks/) via 'list', 'create', 'update', 'delete'.\n\
+6. `aetherscope_verify_patch` (4-en-1) : Pare-Feu IA Temps Réel (< 50 ms) certifiant 0 violation SAST/EARS/BLAKE3/SecretGuard après chaque modification.\n\
+7. `aetherscope_chat` (3-en-1) : Canal multi-agents du cockpit ('send', 'history', 'swarm').\n\
+8. `aetherscope_manage_plugins` (6-en-1) : Gestion des plugins YAML DSL v2 & Taint SSA ('list', 'test', 'scan', 'upsert', 'toggle', 'init_bundle').\n\
+9. `aetherscope_teleport_camera` : Déplacement rapide de la caméra 3D WebGL.\n\
+10. `aetherscope_scan_project` : Réanalyse complète AST/SAST du projet."
                 })),
                 error: None,
             })
@@ -630,13 +641,13 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             .into_iter()
                             .filter(|t| t.status != ai_file_bridge::TaskStatus::Done && t.status != ai_file_bridge::TaskStatus::Cancelled)
                             .collect();
-                        summary.push_str(&format!("\n\nðŸ“‹ **TÃ¢ches Actives ({} en cours) :**\n", active_tasks.len()));
+                        summary.push_str(&format!("\n\n📋 **Tâches Actives ({} en cours) :**\n", active_tasks.len()));
                         if active_tasks.is_empty() {
-                            summary.push_str("  - Aucune tÃ¢che active. Utilisez `aetherscope_manage_tasks({\"action\": \"create\", ...})` pour structurer votre mission.\n");
+                            summary.push_str("  - Aucune tâche active. Utilisez `aetherscope_manage_tasks({\"action\": \"create\", ...})` pour structurer votre mission.\n");
                         } else {
                             for t in active_tasks.iter().take(10) {
                                 summary.push_str(&format!(
-                                    "  - `{}` [{:?}] **{}** ({:?}, {}%) â€” Cible: `{}`\n",
+                                    "  - `{}` [{:?}] **{}** ({:?}, {}%) — Cible: `{}`\n",
                                     t.id,
                                     t.kind,
                                     t.title,
@@ -749,7 +760,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let target = arguments.get("target_symbol").and_then(|v| v.as_str()).map(|s| s.to_string());
 
                     if text.trim().is_empty() {
-                        (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'text' ne peut pas Ãªtre vide." }]), true)
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'text' ne peut pas être vide." }]), true)
                     } else {
                         let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
                         if let Some(ref sym) = target {
@@ -841,7 +852,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let symbol_id = arguments.get("symbol_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let target_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
                     let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("Inspection");
-                    let details = arguments.get("details").and_then(|v| v.as_str()).unwrap_or("Inspection combinÃ©e Cible + Contrat EARS + Flux");
+                    let details = arguments.get("details").and_then(|v| v.as_str()).unwrap_or("Inspection combinée Cible + Contrat EARS + Flux");
                     let trace_direction = arguments.get("trace_direction").and_then(|v| v.as_str()).unwrap_or("both");
                     let max_depth = arguments.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
 
@@ -876,7 +887,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                     trace_direction,
                                     max_depth,
                                 );
-                                let err = t.starts_with("⚠️") || t.contains("introuvable dans") || t.starts_with("âš");
+                                let err = t.starts_with("⚠️") || t.contains("introuvable dans");
                                 (t, err)
                             }
                         };
@@ -896,7 +907,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             let _ = send_http_request(server_port, "POST", "/api/ai/telemetry", Some(&json!({
                                 "target": scan_path,
                                 "action": "Scan de Projet AST",
-                                "details": "RÃ©analyse complÃ¨te dÃ©clenchÃ©e par l'agent IA via MCP"
+                                "details": "Réanalyse complète déclenchée par l'agent IA via MCP"
                             }))).await;
 
                             let status_opt = send_http_request(server_port, "GET", "/api/project/status", None).await.ok();
@@ -929,7 +940,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                 }
 
                 "aetherscope_create_task" => {
-                    let title = arguments.get("title").and_then(|v| v.as_str()).unwrap_or("Nouvelle tÃ¢che").to_string();
+                    let title = arguments.get("title").and_then(|v| v.as_str()).unwrap_or("Nouvelle tâche").to_string();
                     let kind_str = arguments.get("kind").and_then(|v| v.as_str()).unwrap_or("function").to_string();
                     let target_symbol = arguments.get("target_symbol").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let target_file = arguments.get("target_file").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -964,7 +975,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             let task_id = task_obj.and_then(|t| t.get("id")).and_then(|i| i.as_str()).unwrap_or("");
                             (json!([{
                                 "type": "text",
-                                "text": format!("ðŸ“‹ TÃ¢che `{}` crÃ©Ã©e avec succÃ¨s !\nðŸ“ Mini-README disponible dans `.aether/tasks/{}/README.md`\n{}", task_id, task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
+                                "text": format!("📋 Tâche `{}` créée avec succès !\n📁 Mini-README disponible dans `.aether/tasks/{}/README.md`\n{}", task_id, task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
                             }]), false)
                         }
                         Err(_) => {
@@ -985,9 +996,9 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             ) {
                                 Ok(t) => (json!([{
                                     "type": "text",
-                                    "text": format!("ðŸ“‹ TÃ¢che `{}` crÃ©Ã©e (mode offline) !\nðŸ“ Fichier : `.aether/tasks/{}/README.md`", t.id, t.id)
+                                    "text": format!("📋 Tâche `{}` créée (mode offline) !\n📁 Fichier : `.aether/tasks/{}/README.md`", t.id, t.id)
                                 }]), false),
-                                Err(e) => (json!([{ "type": "text", "text": format!("âš ï¸ Erreur crÃ©ation tÃ¢che : {}", e) }]), true),
+                                Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur création tâche : {}", e) }]), true),
                             }
                         }
                     }
@@ -1007,7 +1018,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     let (agent_id, agent_name, color) = resolve_mcp_agent_identity(&arguments);
 
                     if task_id.trim().is_empty() {
-                        (json!([{ "type": "text", "text": "âš ï¸ Erreur: 'task_id' requis pour la mise Ã  jour." }]), true)
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: 'task_id' requis pour la mise à jour." }]), true)
                     } else {
                         if let Some(sym) = target_symbol.as_ref().or(target_file.as_ref()) {
                             if !sym.trim().is_empty() {
@@ -1042,7 +1053,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         match res {
                             Ok(val) => (json!([{
                                 "type": "text",
-                                "text": format!("âš¡ TÃ¢che `{}` mise Ã  jour avec succÃ¨s :\n{}", task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
+                                "text": format!("⚡ Tâche `{}` mise à jour avec succès :\n{}", task_id, serde_json::to_string_pretty(&val).unwrap_or_default())
                             }]), false),
                             Err(_) => {
                                 let p_buf = resolve_project_root(req_path);
@@ -1064,10 +1075,10 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                                 ) {
                                     Ok(Some(t)) => (json!([{
                                         "type": "text",
-                                        "text": format!("âš¡ TÃ¢che `{}` mise Ã  jour (mode offline). Statut: {:?}, ProgrÃ¨s: {}%", t.id, t.status, t.progress)
+                                        "text": format!("⚡ Tâche `{}` mise à jour (mode offline). Statut: {:?}, Progrès: {}%", t.id, t.status, t.progress)
                                     }]), false),
-                                    Ok(None) => (json!([{ "type": "text", "text": format!("âš ï¸ TÃ¢che `{}` introuvable.", task_id) }]), true),
-                                    Err(e) => (json!([{ "type": "text", "text": format!("âš ï¸ Erreur mise Ã  jour tÃ¢che : {}", e) }]), true),
+                                    Ok(None) => (json!([{ "type": "text", "text": format!("⚠️ Tâche `{}` introuvable.", task_id) }]), true),
+                                    Err(e) => (json!([{ "type": "text", "text": format!("⚠️ Erreur mise à jour tâche : {}", e) }]), true),
                                 }
                             }
                         }
@@ -1136,9 +1147,9 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                     }).collect();
 
                     if filtered.is_empty() {
-                        (json!([{ "type": "text", "text": "ðŸ“‹ Aucune tÃ¢che trouvÃ©e pour ce filtre." }]), false)
+                        (json!([{ "type": "text", "text": "📋 Aucune tâche trouvée pour ce filtre." }]), false)
                     } else {
-                        let mut output = format!("ðŸ“‹ TÃ¢ches AetherScope (Total : {}):\n\n", filtered.len());
+                        let mut output = format!("📋 Tâches AetherScope (Total : {}):\n\n", filtered.len());
                         for t in filtered {
                             let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("");
                             let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
@@ -1148,7 +1159,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                             let target = t.get("target_symbol").and_then(|v| v.as_str()).unwrap_or("-");
                             let summary = t.get("readme_summary").and_then(|v| v.as_str()).unwrap_or("");
 
-                            output.push_str(&format!("â€¢ `{}` [{}] **{}** ({}, {}%)\n  - Cible : `{}`\n  - Avancement : {}\n\n", id, kind, title, status, progress, target, summary));
+                            output.push_str(&format!("• `{}` [{}] **{}** ({}, {}%)\n  - Cible : `{}`\n  - Avancement : {}\n\n", id, kind, title, status, progress, target, summary));
                         }
                         (json!([{ "type": "text", "text": output }]), false)
                     }
@@ -1311,7 +1322,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                 "aetherscope_trace_flow" => {
                     let symbol_id = arguments.get("symbol_id").and_then(|v| v.as_str()).unwrap_or("");
                     if symbol_id.trim().is_empty() {
-                        (json!([{ "type": "text", "text": "âš ï¸ Erreur: Le paramÃ¨tre 'symbol_id' est requis." }]), true)
+                        (json!([{ "type": "text", "text": "⚠️ Erreur: Le paramètre 'symbol_id' est requis." }]), true)
                     } else {
                         let direction = arguments.get("direction").and_then(|v| v.as_str()).unwrap_or("both");
                         let max_depth = arguments.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
@@ -1435,7 +1446,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                 "aetherscope_scan_with_plugins" => {
                     let target_str = arguments.get("target_path").and_then(|v| v.as_str()).unwrap_or("");
                     if target_str.is_empty() {
-                        (json!([{ "type": "text", "text": "ParamÃ¨tre 'target_path' manquant pour le scan par plugins." }]), true)
+                        (json!([{ "type": "text", "text": "Paramètre 'target_path' manquant pour le scan par plugins." }]), true)
                     } else {
                         let req_path = arguments.get("path").and_then(|v| v.as_str()).unwrap_or(default_path);
                         let plugins_sub = arguments.get("plugins_dir").and_then(|v| v.as_str()).unwrap_or(".aether/plugins");
@@ -1866,7 +1877,7 @@ pub(crate) async fn handle_mcp_request(req: JsonRpcRequest, server_port: u16, de
                         (
                             json!([{
                                 "type": "text",
-                                "text": "âš ï¸ Erreur: Le paramÃ¨tre 'files_modified' ne peut pas Ãªtre une liste vide."
+                                "text": "⚠️ Erreur: Le paramètre 'files_modified' ne peut pas être une liste vide."
                             }]),
                             true,
                         )

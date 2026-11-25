@@ -1,5 +1,6 @@
 pub mod community_bundle;
 pub mod contract;
+pub mod cpp_rules;
 pub mod csharp_rules;
 pub mod deep_rules;
 pub mod epic_novel_rules;
@@ -17,6 +18,7 @@ pub mod zig_rules;
 
 pub use community_bundle::CommunityBundle;
 pub use contract::{EarsRequirement, ReadmeContract, ReadmeFrontmatter, SecurityRules};
+pub use cpp_rules::CppSecurityRules;
 pub use csharp_rules::CSharpSecurityRules;
 pub use deep_rules::DeepSecurityRules;
 pub use epic_novel_rules::EpicNovelRules;

@@ -12,20 +12,20 @@ use crate::scanner::{
 
 static_regex!(
     re_js_import,
-    r#"import\s+(?:(\{[^}]+\})|([A-Za-z0-9_]+)|\*\s+as\s+([A-Za-z0-9_]+))?\s*(?:from\s*)?['"]([^'"]+)['"]"#
+    r#"import\s+(?:(\{[^};]+\})|([A-Za-z0-9_]+)|\*\s+as\s+([A-Za-z0-9_]+))?\s*(?:from\s*)?['"]([^'"\n]+)['"]"#
 );
-static_regex!(re_js_require, r#"require\s*\(\s*['"]([^'"]+)['"]\s*\)"#);
+static_regex!(re_js_require, r#"require\s*\(\s*['"]([^'"\n]+)['"]\s*\)"#);
 static_regex!(
     re_js_class,
     r#"(?:export\s+)?(?:class|interface)\s+([A-Za-z0-9_]+)(?:\s+extends\s+([A-Za-z0-9_]+))?"#
 );
 static_regex!(
     re_js_func,
-    r#"(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(([^)]*)\)"#
+    r#"(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(([^){;]*)\)"#
 );
 static_regex!(
     re_js_arrow,
-    r#"(?:export\s+)?const\s+([A-Za-z0-9_]+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>"#
+    r#"(?:export\s+)?const\s+([A-Za-z0-9_]+)\s*=\s*(?:async\s*)?\(([^);\n]*)\)\s*=>"#
 );
 static_regex!(re_jsx_tag, r#"<([A-Z][A-Za-z0-9_]+)"#);
 static_regex!(
@@ -68,6 +68,9 @@ pub(crate) fn analyze_jsts(rel_path: &str, content: &str) -> FileAnalysis {
     let ws_handlers = Vec::new();
     let mut ws_emits = Vec::new();
 
+    let is_svelte = rel_path.ends_with(".svelte");
+    let is_vue = rel_path.ends_with(".vue");
+    let is_sfc = is_svelte || is_vue;
     let is_react = rel_path.ends_with(".jsx")
         || rel_path.ends_with(".tsx")
         || content.contains("React")
@@ -75,7 +78,11 @@ pub(crate) fn analyze_jsts(rel_path: &str, content: &str) -> FileAnalysis {
 
     let galaxy = detect_galaxy(rel_path);
     let file_node_id = format!("file::{}", rel_path);
-    let file_layer = detect_layer(rel_path, "");
+    let file_layer = if is_sfc {
+        "ui".to_string()
+    } else {
+        detect_layer(rel_path, "")
+    };
     let file_name = Path::new(rel_path)
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
@@ -84,7 +91,7 @@ pub(crate) fn analyze_jsts(rel_path: &str, content: &str) -> FileAnalysis {
 
     let mut file_bubble = SymbolBubble::new(
         file_node_id.clone(),
-        file_name,
+        file_name.clone(),
         rel_path.to_string(),
         1,
         SymbolKind::File,
@@ -96,12 +103,56 @@ pub(crate) fn analyze_jsts(rel_path: &str, content: &str) -> FileAnalysis {
     file_bubble.lines_count = content.lines().count();
     file_bubble.complexity = compute_complexity(content);
     file_bubble.metadata.lines = file_bubble.lines_count;
-    file_bubble.metadata.file_type = if is_react {
+    file_bubble.metadata.file_type = if is_svelte {
+        "svelte".to_string()
+    } else if is_vue {
+        "vue".to_string()
+    } else if is_react {
         "react".to_string()
     } else {
         "javascript".to_string()
     };
+    if is_sfc {
+        file_bubble.stereotype = "«Component»".to_string();
+        file_bubble.symbol_type = "component".to_string();
+    }
     nodes.push(file_bubble);
+
+    if is_sfc {
+        let comp_stem = Path::new(&file_name)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mut seen_sfc_renders = HashSet::new();
+        for j_cap in re_jsx_tag().captures_iter(content) {
+            let rendered = j_cap.get(1).map(|m| m.as_str()).unwrap_or("");
+            if !rendered.is_empty()
+                && rendered != comp_stem
+                && seen_sfc_renders.insert(rendered.to_string())
+            {
+                calls.push(RawCall {
+                    caller: file_node_id.clone(),
+                    callee: rendered.to_string(),
+                    relation: "renders".to_string(),
+                    order_label: format!("Rend <{}/>", rendered),
+                });
+            }
+        }
+        for net_cap in re_js_network().captures_iter(content) {
+            if let Some(endpoint) = net_cap.get(1) {
+                let ep = endpoint.as_str().trim();
+                if !ep.is_empty() {
+                    calls.push(RawCall {
+                        caller: file_node_id.clone(),
+                        callee: ep.to_string(),
+                        relation: "network".to_string(),
+                        order_label: format!("Réseau {}", ep),
+                    });
+                    routes_called.push((ep.to_string(), file_node_id.clone()));
+                }
+            }
+        }
+    }
 
     let cur_dir = Path::new(rel_path)
         .parent()
@@ -221,10 +272,20 @@ pub(crate) fn analyze_jsts(rel_path: &str, content: &str) -> FileAnalysis {
 
     // 3. Functions & React Components
     let mut seen_fn_ids = HashSet::new();
+    let masked_sfc_storage;
+    let fn_scan_content = if is_sfc {
+        masked_sfc_storage = security_linter::lexer::mask_literals(
+            content,
+            security_linter::lexer::Lang::CLike,
+        );
+        masked_sfc_storage.as_str()
+    } else {
+        content
+    };
 
     for cap in re_js_func()
-        .captures_iter(content)
-        .chain(re_js_arrow().captures_iter(content))
+        .captures_iter(fn_scan_content)
+        .chain(re_js_arrow().captures_iter(fn_scan_content))
     {
         let name = cap.get(1).map(|m| m.as_str()).unwrap_or("");
         if name.is_empty() {

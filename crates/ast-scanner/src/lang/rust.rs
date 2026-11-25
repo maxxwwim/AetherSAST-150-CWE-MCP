@@ -29,7 +29,7 @@ static_regex!(
 );
 static_regex!(
     re_rs_fn,
-    r#"(?:^|\n)\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*->\s*([^{\n]+))?"#
+    r#"(?:^|\n)\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*->\s*([^{;\n]+))?"#
 );
 static_regex!(re_rs_qual_call, r#"\b([A-Za-z0-9_]+)::([a-zA-Z0-9_]+)\s*\("#);
 static_regex!(

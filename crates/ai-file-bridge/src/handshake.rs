@@ -4,6 +4,26 @@ use security_linter::contract::ReadmeContract;
 
 pub struct HandshakePacker;
 
+fn escape_xml(input: &str) -> String {
+    let mut out = String::with_capacity(input.len() + 8);
+    for ch in input.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn clean_liaison_item(item: &str) -> String {
+    let without_backticks = item.replace('`', "");
+    escape_xml(without_backticks.trim())
+}
+
 impl HandshakePacker {
     pub fn build_categorized_prompt(
         action_type: &str,
@@ -13,13 +33,19 @@ impl HandshakePacker {
         contract: Option<&ReadmeContract>,
     ) -> String {
         let mut xml = String::new();
+        let safe_action = escape_xml(action_type);
+        let safe_name = escape_xml(&symbol.name);
+        let safe_file = escape_xml(&symbol.file_path);
+        let safe_galaxy = escape_xml(&symbol.galaxy);
+        let safe_layer = escape_xml(&symbol.layer);
+
         xml.push_str("<aether_handshake version=\"2.1\">\n");
-        xml.push_str(&format!("  <action>{}</action>\n", action_type));
+        xml.push_str(&format!("  <action>{}</action>\n", safe_action));
         xml.push_str("  <target>\n");
-        xml.push_str(&format!("    <name>{}</name>\n", symbol.name));
-        xml.push_str(&format!("    <file>{}:{}</file>\n", symbol.file_path, symbol.line_number));
-        xml.push_str(&format!("    <galaxy>{}</galaxy>\n", symbol.galaxy));
-        xml.push_str(&format!("    <layer>{}</layer>\n", symbol.layer));
+        xml.push_str(&format!("    <name>{}</name>\n", safe_name));
+        xml.push_str(&format!("    <file>{}:{}</file>\n", safe_file, symbol.line_number));
+        xml.push_str(&format!("    <galaxy>{}</galaxy>\n", safe_galaxy));
+        xml.push_str(&format!("    <layer>{}</layer>\n", safe_layer));
         xml.push_str("  </target>\n");
 
         xml.push_str("  <context>\n");
@@ -27,7 +53,7 @@ impl HandshakePacker {
             if !list.is_empty() {
                 xml.push_str(&format!("      <{}_group count=\"{}\">\n", tag, list.len()));
                 for item in list.iter().take(4) {
-                    xml.push_str(&format!("        <{}>{}</{}>\n", tag, item.trim_matches('`'), tag));
+                    xml.push_str(&format!("        <{}>{}</{}>\n", tag, clean_liaison_item(item), tag));
                 }
                 if list.len() > 4 {
                     xml.push_str(&format!("        <more_hidden count=\"{}\" />\n", list.len() - 4));
@@ -62,32 +88,32 @@ impl HandshakePacker {
             xml.push_str(&format!("    <max_lines>{}</max_lines>\n", c.effective_max_lines(&symbol.file_path)));
             xml.push_str("    <allowed_imports>\n");
             for a in &c.frontmatter.allowed_imports {
-                xml.push_str(&format!("      <import>{}</import>\n", a));
+                xml.push_str(&format!("      <import>{}</import>\n", escape_xml(a)));
             }
             xml.push_str("    </allowed_imports>\n");
             xml.push_str("    <forbidden_imports>\n");
             for f in &c.frontmatter.forbidden_imports {
-                xml.push_str(&format!("      <forbidden>{}</forbidden>\n", f));
+                xml.push_str(&format!("      <forbidden>{}</forbidden>\n", escape_xml(f)));
             }
             xml.push_str("    </forbidden_imports>\n");
             if !c.frontmatter.forbidden_functions.is_empty() {
                 xml.push_str("    <forbidden_functions>\n");
                 for f in &c.frontmatter.forbidden_functions {
-                    xml.push_str(&format!("      <function>{}</function>\n", f));
+                    xml.push_str(&format!("      <function>{}</function>\n", escape_xml(f)));
                 }
                 xml.push_str("    </forbidden_functions>\n");
             }
             if !c.frontmatter.allowed_extensions.is_empty() {
                 xml.push_str("    <allowed_extensions>\n");
                 for ext in &c.frontmatter.allowed_extensions {
-                    xml.push_str(&format!("      <ext>{}</ext>\n", ext));
+                    xml.push_str(&format!("      <ext>{}</ext>\n", escape_xml(ext)));
                 }
                 xml.push_str("    </allowed_extensions>\n");
             }
             if !c.frontmatter.forbidden_extensions.is_empty() {
                 xml.push_str("    <forbidden_extensions>\n");
                 for ext in &c.frontmatter.forbidden_extensions {
-                    xml.push_str(&format!("      <ext>{}</ext>\n", ext));
+                    xml.push_str(&format!("      <ext>{}</ext>\n", escape_xml(ext)));
                 }
                 xml.push_str("    </forbidden_extensions>\n");
             }
@@ -100,22 +126,22 @@ impl HandshakePacker {
         xml.push_str("  <mcp_commands>\n");
         xml.push_str(&format!(
             "    <inspect_and_teleport>aetherscope_get_active_target({{\"symbol_id\": \"{}\", \"action\": \"{}\", \"details\": \"Analyse EARS + flux amont/aval\", \"trace_direction\": \"both\"}})</inspect_and_teleport>\n",
-            symbol.name, action_type
+            safe_name, safe_action
         ));
         xml.push_str(&format!(
             "    <manage_task>aetherscope_manage_tasks({{\"action\": \"create\", \"title\": \"{} sur {}\", \"kind\": \"function\", \"target_symbol\": \"{}\", \"target_file\": \"{}\"}})</manage_task>\n",
-            action_type, symbol.name, symbol.name, symbol.file_path
+            safe_action, safe_name, safe_name, safe_file
         ));
         xml.push_str(&format!(
             "    <verify_and_close>aetherscope_verify_patch({{\"files_modified\": [\"{}\"], \"task_id\": \"&lt;task_id&gt;\", \"status\": \"done\", \"progress\": 100, \"chat_message\": \"Modification certifiée sur {}\"}})</verify_and_close>\n",
-            symbol.file_path, symbol.name
+            safe_file, safe_name
         ));
         xml.push_str("  </mcp_commands>\n");
 
         xml.push_str("  <instruction>\n");
         xml.push_str("    Avant d'écrire le code, réponds obligatoirement avec ce bloc de confirmation :\n");
         xml.push_str("    [AETHER_ACK]\n");
-        xml.push_str(&format!("    Cible : {}\n", symbol.name));
+        xml.push_str(&format!("    Cible : {}\n", safe_name));
         xml.push_str("    Imports interdits pris en compte : OUI\n");
         xml.push_str("    Commandes MCP combinées : aetherscope_get_active_target -> aetherscope_manage_tasks -> aetherscope_verify_patch\n");
         xml.push_str("    Audit live surveillé dans .aether/LIVE_AUDIT.md : OUI\n");
@@ -124,6 +150,37 @@ impl HandshakePacker {
         xml.push_str("</aether_handshake>\n");
 
         xml
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core_graph::bubble::SymbolKind;
+
+    #[test]
+    fn test_handshake_xml_escaping_and_backticks() {
+        let sym = SymbolBubble::new(
+            "fn::parse<T>".to_string(),
+            "parse<T>".to_string(),
+            "src/parser.rs".to_string(),
+            42,
+            SymbolKind::Function,
+            "core".to_string(),
+            "domain".to_string(),
+        );
+        let mut incoming = CategorizedLiaisons::default();
+        incoming
+            .internal_calls
+            .push("`crates/desktop-shell/src/main.rs::main` (Appel real_main<T> & Co)".to_string());
+        let outgoing = CategorizedLiaisons::default();
+
+        let xml = HandshakePacker::build_categorized_prompt("Target", &sym, &incoming, &outgoing, None);
+        assert!(xml.contains("<name>parse&lt;T&gt;</name>"));
+        assert!(!xml.contains('`'), "No orphan backticks should remain in XML");
+        assert!(xml.contains(
+            "<caller>crates/desktop-shell/src/main.rs::main (Appel real_main&lt;T&gt; &amp; Co)</caller>"
+        ));
     }
 }
 

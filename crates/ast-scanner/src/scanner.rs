@@ -395,9 +395,9 @@ impl ProjectScanner {
                 continue;
             }
             if [
-                "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "md", "cpp", "hpp", "cc", "hh",
-                "cxx", "hxx", "c", "h", "inl", "sol", "yul", "php", "phtml", "php3", "php4", "php5", "php7", "phps", "java", "lua", "luau",
-                "zig", "cs",
+                "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "svelte", "vue", "py", "md", "cpp",
+                "hpp", "cc", "hh", "cxx", "hxx", "c", "h", "inl", "sol", "yul", "php", "phtml",
+                "php3", "php4", "php5", "php7", "phps", "java", "lua", "luau", "zig", "cs",
             ]
             .contains(&ext.as_str())
             {
@@ -512,7 +512,7 @@ impl ProjectScanner {
         }
 
         // Parallel AST + SAST scan with deterministic BLAKE3 per-file incremental cache
-        let scanned_entries: Vec<(CachedFileScan, Option<String>)> = candidate_files
+        let scanned_entries: Vec<(CachedFileScan, Option<String>, String)> = candidate_files
             .par_iter()
             .filter_map(|path| {
                 let content = fs::read_to_string(path).ok()?;
@@ -543,7 +543,8 @@ impl ProjectScanner {
                     "v2|{}|{}|{}|{}",
                     rel_path, file_hash, contract_sig, plugin_digest
                 ));
-                let cache_file_path = ast_cache_dir.join(format!("{}.json", entry_key));
+                let cache_file_name = format!("{}.json", entry_key);
+                let cache_file_path = ast_cache_dir.join(&cache_file_name);
 
                 if self.use_cache && cache_file_path.is_file() {
                     if let Ok(bytes) = fs::read(&cache_file_path) {
@@ -553,7 +554,7 @@ impl ProjectScanner {
                             } else {
                                 None
                             };
-                            return Some((cached, taint_src));
+                            return Some((cached, taint_src, cache_file_name));
                         }
                     }
                 }
@@ -609,10 +610,11 @@ impl ProjectScanner {
                 } else {
                     None
                 };
-                Some((scan_entry, taint_src))
+                Some((scan_entry, taint_src, cache_file_name))
             })
             .collect();
 
+        let mut active_cache_files: HashSet<String> = HashSet::with_capacity(scanned_entries.len());
         let mut all_raw_calls = Vec::new();
         let mut routes_declared = Vec::new();
         let mut routes_called = Vec::new();
@@ -626,7 +628,8 @@ impl ProjectScanner {
         )> = Vec::new();
         let mut taint_files: Vec<(String, String)> = Vec::new();
 
-        for (entry, taint_src) in scanned_entries {
+        for (entry, taint_src, cache_file_name) in scanned_entries {
+            active_cache_files.insert(cache_file_name);
             file_hashes.insert(entry.rel_path.clone(), entry.file_hash);
             if let Some(raw_src) = taint_src {
                 taint_files.push((entry.rel_path.clone(), raw_src));
@@ -644,6 +647,21 @@ impl ProjectScanner {
             routes_called.extend(entry.routes_called);
             ws_handlers.extend(entry.ws_handlers);
             ws_emits.extend(entry.ws_emits);
+        }
+
+        // Garbage-collect stale BLAKE3 cache entries in .aether/cache/ast/ after a full scan
+        if self.use_cache && custom_exclusions.is_empty() && ast_cache_dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(&ast_cache_dir) {
+                for dir_entry in entries.filter_map(|e| e.ok()) {
+                    let fname = dir_entry.file_name().to_string_lossy().to_string();
+                    if fname.ends_with(".json")
+                        && !fname.starts_with(".tmp_")
+                        && !active_cache_files.contains(&fname)
+                    {
+                        let _ = fs::remove_file(dir_entry.path());
+                    }
+                }
+            }
         }
 
         // Run SSA Dataflow Taint Extraction while raw source strings are available, then drop immediately
@@ -1294,7 +1312,9 @@ pub(crate) fn extract_leading_doc(content: &str, start_byte: usize, is_rust: boo
 fn analyze_file_with_content(rel_path: &str, ext: &str, content: &str) -> Option<FileAnalysis> {
     set_active_line_index(content);
     match ext {
-        "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" => Some(crate::lang::analyze_jsts(rel_path, content)),
+        "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "svelte" | "vue" => {
+            Some(crate::lang::analyze_jsts(rel_path, content))
+        }
         "py" => Some(crate::lang::analyze_python(rel_path, content)),
         "rs" => Some(crate::lang::analyze_rust(rel_path, content)),
         "cpp" | "hpp" | "cc" | "hh" | "cxx" | "hxx" | "c" | "h" | "inl" => {
@@ -1343,6 +1363,27 @@ fn is_language_keyword_call(name: &str) -> bool {
     )
 }
 
+fn lang_family_of(file_path: &str) -> &'static str {
+    let ext = Path::new(file_path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    match ext.to_ascii_lowercase().as_str() {
+        "rs" => "rust",
+        "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "svelte" | "vue" => "web",
+        "py" => "python",
+        "cpp" | "hpp" | "cc" | "hh" | "cxx" | "hxx" | "c" | "h" | "inl" => "cpp",
+        "sol" | "yul" => "solidity",
+        "php" | "phtml" | "php3" | "php4" | "php5" | "php7" | "phps" => "php",
+        "java" => "java",
+        "lua" | "luau" => "luau",
+        "zig" => "zig",
+        "cs" => "csharp",
+        "md" => "docs",
+        _ => "other",
+    }
+}
+
 pub fn resolve_graph_edges(
     nodes: &mut Vec<SymbolBubble>,
     raw_calls: &[RawCall],
@@ -1351,10 +1392,13 @@ pub fn resolve_graph_edges(
     let mut node_by_filepath: HashMap<String, usize> = HashMap::new();
     let mut filepath_entries: Vec<(String, usize)> = Vec::new();
     let mut node_by_name: HashMap<String, usize> = HashMap::with_capacity(nodes.len());
+    let mut node_by_lang_and_name: HashMap<(&'static str, String), usize> =
+        HashMap::with_capacity(nodes.len());
     let mut db_node_flags: Vec<bool> = vec![false; nodes.len()];
 
     for (idx, n) in nodes.iter().enumerate() {
         node_idx_by_id.insert(n.id.clone(), idx);
+        let lang = lang_family_of(&n.file_path);
 
         if n.layer == "database"
             || n.folder == "data-nodes"
@@ -1372,6 +1416,9 @@ pub fn resolve_graph_edges(
             let p = Path::new(&fp);
             if let Some(stem) = p.file_stem() {
                 let stem_str = stem.to_string_lossy().to_string();
+                node_by_lang_and_name
+                    .entry((lang, stem_str.clone()))
+                    .or_insert(idx);
                 node_by_name.entry(stem_str).or_insert(idx);
                 if let Some(parent) = p.parent() {
                     let no_ext = parent.join(stem).to_string_lossy().replace('\\', "/");
@@ -1382,6 +1429,15 @@ pub fn resolve_graph_edges(
                     filepath_entries.push((idx_path, idx));
                 }
             }
+        }
+
+        let lang_existing = node_by_lang_and_name.get(&(lang, n.name.clone()));
+        if lang_existing.is_none()
+            || n.is_class
+            || n.symbol_type == "component"
+            || n.symbol_type == "form"
+        {
+            node_by_lang_and_name.insert((lang, n.name.clone()), idx);
         }
 
         let existing = node_by_name.get(&n.name);
@@ -1405,9 +1461,15 @@ pub fn resolve_graph_edges(
             continue;
         }
 
+        let caller_lang = node_idx_by_id
+            .get(src)
+            .map(|&i| lang_family_of(&nodes[i].file_path))
+            .unwrap_or("other");
+
         let mut tgt_idx = node_idx_by_id
             .get(callee)
             .or_else(|| node_by_filepath.get(callee))
+            .or_else(|| node_by_lang_and_name.get(&(caller_lang, callee.clone())))
             .or_else(|| node_by_name.get(callee))
             .copied();
 
@@ -1656,7 +1718,7 @@ pub(crate) fn extract_fn_body_slice(s: &str, start: usize, max_len: usize) -> &s
     let mut depth: i32 = 0;
     let mut opened = false;
     for (idx, b) in window.bytes().enumerate() {
-        if !opened && b == b';' && idx < 160 {
+        if !opened && b == b';' {
             return &window[..idx];
         }
         if b == b'{' {
@@ -2025,5 +2087,104 @@ public class OrderController : ControllerBase {
         let symbols = analyze_csharp_symbols(Path::new("src/Controllers/OrderController.cs"), cs_code);
         assert!(symbols.iter().any(|s| s.name == "OrderController"));
         assert!(symbols.iter().any(|s| s.name == "GetOrder"));
+    }
+
+    #[test]
+    fn test_svelte_scanning_cross_lang_isolation_extern_fn_and_cache_gc() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "aether_test_wave2_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let rs_dir = temp_dir.join("crates/core");
+        let ui_dir = temp_dir.join("ui/src");
+        let _ = std::fs::create_dir_all(&rs_dir);
+        let _ = std::fs::create_dir_all(&ui_dir);
+
+        // 1. Rust file with extern fn followed by main() and use SymbolBubble
+        let rs_models = "pub struct SymbolBubble { pub id: String }\n";
+        let rs_main = r#"
+use crate::models::SymbolBubble;
+extern "system" {
+    fn AttachConsole(dw_process_id: u32) -> i32;
+}
+fn main() {
+    real_main();
+}
+fn real_main() {}
+"#;
+        let _ = std::fs::write(rs_dir.join("models.rs"), rs_models);
+        let _ = std::fs::write(rs_dir.join("main.rs"), rs_main);
+
+        // 2. TypeScript file defining an identically-named SymbolBubble interface + Svelte components
+        let ts_types = "export interface SymbolBubble { id: string; }\n";
+        let svelte_child = "<script lang=\"ts\">\nexport function openChild() {}\n</script>\n<div>Header</div>\n";
+        let svelte_app = "<script lang=\"ts\">\nimport HeaderDeck from './HeaderDeck.svelte';\n</script>\n<HeaderDeck />\n";
+        let _ = std::fs::write(ui_dir.join("graph.ts"), ts_types);
+        let _ = std::fs::write(ui_dir.join("HeaderDeck.svelte"), svelte_child);
+        let _ = std::fs::write(ui_dir.join("App.svelte"), svelte_app);
+
+        // Seed a stale orphan cache file in .aether/cache/ast/
+        let cache_dir = temp_dir.join(".aether/cache/ast");
+        let _ = std::fs::create_dir_all(&cache_dir);
+        let stale_cache = cache_dir.join("deadbeef00000000stale.json");
+        let _ = std::fs::write(&stale_cache, "{}");
+        assert!(stale_cache.exists());
+
+        let scanner = ProjectScanner::default();
+        let graph = scanner.scan_project(&temp_dir);
+
+        // Verify stale cache entry was garbage-collected
+        assert!(
+            !stale_cache.exists(),
+            "Stale AST cache entry must be removed after full project scan"
+        );
+
+        // Verify .svelte files are scanned and App.svelte renders HeaderDeck.svelte
+        assert!(
+            graph.nodes.iter().any(|n| n.is_file && n.name == "App.svelte"),
+            "App.svelte must be present in the AST graph"
+        );
+        assert!(
+            graph.edges.iter().any(|e| {
+                e.source == "file::ui/src/App.svelte"
+                    && e.target == "file::ui/src/HeaderDeck.svelte"
+            }),
+            "App.svelte must have an import/render edge to HeaderDeck.svelte"
+        );
+
+        // Verify Rust `use SymbolBubble` resolves to Rust `crates/core/models.rs::SymbolBubble`, NOT TypeScript `ui/src/graph.ts::SymbolBubble`
+        assert!(
+            graph.edges.iter().any(|e| {
+                e.source == "file::crates/core/main.rs"
+                    && e.target == "crates/core/models.rs::SymbolBubble"
+            }),
+            "Rust use SymbolBubble must resolve to Rust struct, not TypeScript interface"
+        );
+        assert!(
+            !graph.edges.iter().any(|e| {
+                e.source == "file::crates/core/main.rs"
+                    && e.target == "ui/src/graph.ts::SymbolBubble"
+            }),
+            "Rust file must NOT link to TypeScript SymbolBubble"
+        );
+
+        // Verify extern fn AttachConsole does NOT swallow fn main() body and call real_main
+        assert!(
+            !graph.edges.iter().any(|e| {
+                e.source.ends_with("::AttachConsole") && e.target.ends_with("::real_main")
+            }),
+            "extern fn AttachConsole must not bleed into main() and claim to call real_main"
+        );
+        assert!(
+            graph.edges.iter().any(|e| {
+                e.source.ends_with("::main") && e.target.ends_with("::real_main")
+            }),
+            "fn main() must call real_main()"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
